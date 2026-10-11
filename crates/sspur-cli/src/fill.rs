@@ -63,11 +63,12 @@ fn fill_op(f: &synth::Filled, c: &synth::Cand, m: &Module) -> Json {
 }
 
 /// Adds the ranked candidates of each hole to its E_HOLE diagnostic as `fill` fixes.
-pub fn enrich(l: &Loaded, diags: &mut [Diag], args: &Args) {
-    if args.has("--no-fill") || !diags.iter().any(|d| d.code == "E_HOLE") || diags.iter().any(Diag::is_error) {
+pub fn enrich(l: &Loaded, diags: &mut [Diag], budget_ms: Option<u64>) {
+    let Some(budget_ms) = budget_ms else { return };
+    if !diags.iter().any(|d| d.code == "E_HOLE") || diags.iter().any(Diag::is_error) {
         return;
     }
-    let opts = synth::Opts { budget_ms: args.num("--fill-ms", 200) as u64, ..Default::default() };
+    let opts = synth::Opts { budget_ms, ..Default::default() };
     for f in fill_holes(l, &opts, None) {
         if let Some(d) = diags.iter_mut().find(|d| d.code == "E_HOLE" && d.span == [f.site.span.start, f.site.span.end]) {
             d.fix = f.cands.iter().map(|c| fill_op(&f, c, &l.module)).collect();
@@ -116,21 +117,15 @@ fn load(args: &Args) -> Result<(Target, Loaded, Vec<String>), ExitCode> {
     }
 }
 
-/// Replaces each hole's text with its candidate, in parentheses where the bare text would parse differently.
-fn apply_text(src: &str, mut edits: Vec<Edit>) -> Result<String, String> {
+/// Replaces each hole's text with its candidate, last hole first so the earlier spans stay put.
+fn apply_text(src: &str, mut edits: Vec<Edit>) -> String {
     edits.sort_by_key(|e| std::cmp::Reverse(e.0.start));
     let mut out = src.to_string();
     for (span, text, expr) in edits {
-        let m = sspur_syntax::parse(&out).map_err(|e| e.msg.clone())?;
-        let want = sspur_syntax::print_module(&synth::substitute(&m, span, &expr));
-        let (a, b) = (span.start as usize, span.end as usize);
-        let plain = format!("{}{text}{}", &out[..a], &out[b..]);
-        out = match sspur_syntax::parse(&plain) {
-            Ok(m2) if sspur_syntax::print_module(&m2) == want => plain,
-            _ => format!("{}({text}){}", &out[..a], &out[b..]),
-        };
+        let t = synth::fill_text(&out, span, &text, &expr);
+        out = format!("{}{t}{}", &out[..span.start as usize], &out[span.end as usize..]);
     }
-    Ok(out)
+    out
 }
 
 fn write_file(path: &str, text: &str) -> bool {
@@ -152,9 +147,9 @@ pub fn fill_report(l: &Loaded, opts: &synth::Opts, only: Option<&str>, all: bool
     let mut holes = Vec::new();
     let mut edits = Vec::new();
     let mut ops = Vec::new();
-    let mut good = !filled.is_empty();
+    let mut good = !filled.is_empty() || only.is_none();
     for mut f in filled {
-        if let Some(c) = f.cands.first_mut().filter(|c| c.ok() && c.contract) {
+        if let Some(c) = f.cands.first_mut().filter(|c| c.ok() && c.contract == Some("post")) {
             let z3 = solver.get_or_insert_with(Solver::new);
             if z3.available() {
                 c.proved = posts_proved(&synth::substitute(&l.module, f.site.span, &c.expr), &f.site.def, z3);
@@ -211,19 +206,15 @@ pub fn fill_cmd(args: &Args) -> ExitCode {
         return if good { ExitCode::SUCCESS } else { ExitCode::FAILURE };
     }
     match target {
-        Target::File(path, src) => match apply_text(&src, edits) {
-            Ok(out) if write_file(&path, &out) => {
-                if !args.has("--json") {
-                    println!("filled {} hole{} in {path}", ops.len(), if ops.len() == 1 { "" } else { "s" });
-                }
-                if good { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+        Target::File(path, src) => {
+            if !write_file(&path, &apply_text(&src, edits)) {
+                return ExitCode::FAILURE;
             }
-            Ok(_) => ExitCode::FAILURE,
-            Err(e) => {
-                eprintln!("cannot apply: {e}");
-                ExitCode::FAILURE
+            if !args.has("--json") {
+                println!("filled {} hole{} in {path}", ops.len(), if ops.len() == 1 { "" } else { "s" });
             }
-        },
+            if good { ExitCode::SUCCESS } else { ExitCode::FAILURE }
+        }
         Target::Head(store) => {
             let (t, ok) = agent::run_edit(&store, ops, "fill", None);
             println!("{t}");
@@ -316,7 +307,10 @@ pub fn suggest_report(l: &Loaded, only: Option<&str>, cases: usize, json_out: bo
         }
     }
     if lines.is_empty() {
-        lines.push("no suggestions".into());
+        lines.push(match only {
+            Some(f) if !out.iter().any(|s| s.name == f) => format!("no function {f}"),
+            _ => "no suggestions".into(),
+        });
     }
     (lines.join("\n"), out)
 }
@@ -332,6 +326,9 @@ pub fn suggest_cmd(args: &Args) -> ExitCode {
     let only = rest.first().map(String::as_str);
     let (text, out) = suggest_report(&l, only, args.num("--cases", 200), args.has("--json"));
     println!("{text}");
+    if only.is_some_and(|f| !out.iter().any(|s| s.name == f)) {
+        return ExitCode::FAILURE;
+    }
     if !args.has("--apply") {
         return ExitCode::SUCCESS;
     }

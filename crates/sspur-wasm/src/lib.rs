@@ -37,6 +37,7 @@ pub fn check(src: &str) -> String {
             {
                 d.push(lower_diag(e));
             }
+            fill_holes(&m, &mut d);
             let j = ide::diags_json(src, &d, Some(&m));
             ide::remember(src, m, c);
             j
@@ -190,6 +191,24 @@ fn prepare(src: &str) -> Result<(Interp, Vec<J>), Vec<J>> {
     }
     let (m, c) = executable(m.clone(), c).map_err(|d| ide::diags_json(src, &d, Some(&m)))?;
     Ok((interp(&m, &c), diags))
+}
+
+/// Ranked candidates for each typed hole, as the `fill` fixes `sspur check` gives, on a smaller budget.
+fn fill_holes(m: &Module, diags: &mut [Diag]) {
+    if !diags.iter().any(|d| d.code == "E_HOLE") || diags.iter().any(Diag::is_error) {
+        return;
+    }
+    start();
+    let (check, ctx) = sspur_check::check_holes(m);
+    let Ok((xm, xc)) = executable(m.clone(), sspur_check::check(m)) else { return };
+    let mut it = Interp::new(&xm, xc.record_types.clone(), xc.user_methods.clone(), xc.gen_loops.clone());
+    it.set_check(&xc);
+    let opts = sspur_eval::synth::Opts { budget_ms: 150, fuzz: 12, ..Default::default() };
+    for f in sspur_eval::synth::fill(m, &check, &ctx, &it, &opts, None) {
+        if let Some(d) = diags.iter_mut().find(|d| d.code == "E_HOLE" && d.span == [f.site.span.start, f.site.span.end]) {
+            d.fix = f.cands.iter().map(|c| json!({"op": "fill", "hole": f.site.label(), "expr": c.text, "evidence": c.evidence(), "ok": c.ok()})).collect();
+        }
+    }
 }
 
 /// The interpreter set up as `sspur run --interp` sets it up.

@@ -78,8 +78,8 @@ pub struct Cand {
     pub inputs: usize,
     pub broke: usize,
     pub traps: usize,
-    /// The enclosing function has a `post` or a refined result type.
-    pub contract: bool,
+    /// What the enclosing function promises about its result: `post`, `where` for a refined result type.
+    pub contract: Option<&'static str>,
     /// Set by a caller that proved the contracts with Z3.
     pub proved: bool,
     uses_input: bool,
@@ -98,13 +98,13 @@ impl Cand {
             (n, 0) => format!("passes {n} test{}", if n == 1 { "" } else { "s" }),
             (n, f) => format!("fails {f} of {n} tests"),
         }];
-        if self.contract {
+        if let Some(k) = self.contract {
             if self.broke > 0 {
-                parts.push(format!("breaks post on {} input{}", self.broke, if self.broke == 1 { "" } else { "s" }));
+                parts.push(format!("breaks {k} on {} input{}", self.broke, if self.broke == 1 { "" } else { "s" }));
             } else if self.proved {
-                parts.push("post proved".into());
+                parts.push(format!("{k} proved"));
             } else if self.inputs + total > 0 {
-                parts.push("post".into());
+                parts.push(k.into());
             }
         }
         if self.traps > 0 {
@@ -212,7 +212,8 @@ struct Comp {
     commutes: bool,
 }
 
-type Binds = HashMap<String, Type>;
+type Binds = BTreeMap<String, Type>;
+type Pool = Rc<Vec<Rc<Term>>>;
 
 fn bind(p: &Type, a: &Type, tp: &[String], b: &mut Binds) -> bool {
     match (p, a) {
@@ -259,6 +260,17 @@ fn has_var(t: &Type) -> bool {
     }
 }
 
+/// The outer constructor of a type, `List` for `List[Int]`, for indexing terms.
+fn head(t: &Type) -> String {
+    match t {
+        Type::Con(n, _) => n.clone(),
+        Type::Tuple(xs) => format!("({})", xs.len()),
+        Type::Fn(..) => "->".into(),
+        Type::Param(n) => format!("'{n}"),
+        Type::Var(_) => "?".into(),
+    }
+}
+
 fn con(t: &Type) -> Option<(&str, &[Type])> {
     match t {
         Type::Con(n, a) => Some((n, a)),
@@ -301,7 +313,7 @@ fn components(ctx: &HoleCtx, check: &CheckOutput, site: &HoleSite) -> Vec<Comp> 
             (SigKind::Global, "ok" | "err") => wraps("Res"),
             _ => true,
         };
-        if !wrap || !allowed(s) || !admitted(s) || s.params.is_empty() && !matches!(s.kind, SigKind::Fn) || s.name == site.def {
+        if !wrap || s.params.len() > 4 || !allowed(s) || !admitted(s) || s.params.is_empty() && !matches!(s.kind, SigKind::Fn) || s.name == site.def {
             continue;
         }
         let kind = match &s.kind {
@@ -370,6 +382,7 @@ struct En<'a> {
     terms: Vec<Term>,
     by_size: Vec<Vec<usize>>,
     by_ty: HashMap<(usize, String), Vec<usize>>,
+    by_head: HashMap<(usize, String), Vec<usize>>,
     seen: HashSet<String>,
     seen_obs: BTreeMap<(String, Rc<Vec<Obs>>), usize>,
     comps: Rc<Vec<Comp>>,
@@ -378,7 +391,8 @@ struct En<'a> {
     deadline: f64,
     explored: usize,
     spans: Rc<Cell<u32>>,
-    lambdas: HashMap<String, (usize, usize, Rc<Vec<Term>>)>,
+    /// Per element type: how many samples it was built from, the term count then, and the bodies.
+    lambdas: HashMap<String, (usize, usize, Pool)>,
     fn_values: Vec<(String, Type, Type)>,
     out_of_time: bool,
     steps: u64,
@@ -386,6 +400,20 @@ struct En<'a> {
     target: Option<Type>,
     max: usize,
     memo: HashMap<(String, usize), bool>,
+    /// One child of each input's environment with the argument slots, reused for every evaluation.
+    scratch: Vec<Rc<Env>>,
+}
+
+fn scratch(envs: &[Rc<Env>]) -> Vec<Rc<Env>> {
+    envs.iter()
+        .map(|e| {
+            let env = Env::child(e);
+            for s in SLOTS {
+                env.define(s, Value::Unit);
+            }
+            env
+        })
+        .collect()
 }
 
 fn mk(kind: ExprKind, span: Span) -> Expr {
@@ -423,7 +451,11 @@ impl<'a> En<'a> {
     }
 
     /// Adds a term unless an equal or smaller one already gives the same values on every input.
-    fn add(&mut self, mut t: Term) -> Option<usize> {
+    fn add(&mut self, t: Term) -> Option<usize> {
+        self.add_with(t, None)
+    }
+
+    fn add_with(&mut self, mut t: Term, obs: Option<Vec<Obs>>) -> Option<usize> {
         self.explored += 1;
         let key = t.ty.to_string();
         if matches!(t.ty, Type::Fn(..)) || self.envs.is_empty() {
@@ -431,7 +463,7 @@ impl<'a> En<'a> {
                 return None;
             }
         } else {
-            let obs = self.observe(&t.run);
+            let obs = obs.unwrap_or_else(|| self.observe(&t.run));
             if obs.iter().all(|o| *o == Obs::Trap) {
                 return None;
             }
@@ -455,6 +487,7 @@ impl<'a> En<'a> {
         }
         self.by_size[t.size].push(id);
         self.by_ty.entry((t.size, key)).or_default().push(id);
+        self.by_head.entry((t.size, head(&t.ty))).or_default().push(id);
         self.terms.push(t);
         Some(id)
     }
@@ -642,7 +675,7 @@ impl<'a> En<'a> {
                 if !bind(r, &t.ty, &c.tparams, &mut b2) {
                     continue;
                 }
-                picked.push(Arg::Lambda(Rc::new(t.clone())));
+                picked.push(Arg::Lambda(t.clone()));
                 self.args(c, i + 1, left - t.size, picked, &mut b2, site, out);
                 picked.pop();
             }
@@ -659,11 +692,15 @@ impl<'a> En<'a> {
             return;
         }
         let lo = if self.lambda && i == 0 { 0 } else { 1 };
+        let closed = !open(&p, &c.tparams);
+        let (key, hd) = (if closed { p.to_string() } else { String::new() }, head(&p));
         for sz in lo..=left - rest {
-            let ids: Vec<usize> = if open(&p, &c.tparams) {
+            let ids: Vec<usize> = if closed {
+                self.by_ty.get(&(sz, key.clone())).cloned().unwrap_or_default()
+            } else if matches!(&p, Type::Param(n) if c.tparams.contains(n)) {
                 self.by_size.get(sz).cloned().unwrap_or_default()
             } else {
-                self.by_ty.get(&(sz, p.to_string())).cloned().unwrap_or_default()
+                self.by_head.get(&(sz, hd.clone())).cloned().unwrap_or_default()
             };
             for id in ids {
                 let t = &self.terms[id];
@@ -671,6 +708,12 @@ impl<'a> En<'a> {
                     continue;
                 }
                 if c.commutes && i == 1 && matches!(picked[0], Arg::Term(a) if a > id) {
+                    continue;
+                }
+                if closed {
+                    picked.push(Arg::Term(id));
+                    self.args(c, i + 1, left - sz, picked, b, site, out);
+                    picked.pop();
                     continue;
                 }
                 let mut b2 = b.clone();
@@ -702,6 +745,9 @@ impl<'a> En<'a> {
         if matches!(c.kind, Kind::Bin(BinOp::Eq | BinOp::Ne)) && args.iter().any(|a| matches!(a, Arg::Term(id) if matches!(self.terms[*id].show.kind, ExprKind::Bool(_)))) {
             return;
         }
+        if self.redundant(c, args) {
+            return;
+        }
         let size: usize = 1 + args.iter().map(|a| self.arg_size(a)).sum::<usize>();
         if size > self.max.max(self.lambda_size) || !self.lambda && !self.useful(&ty, self.max.saturating_sub(size)) {
             return;
@@ -715,46 +761,34 @@ impl<'a> En<'a> {
                 return;
             }
         }
-        let mut shows = Vec::new();
-        let mut runs = Vec::new();
+        let mut quick = Vec::new();
         let mut size = 1;
         let mut fns: Vec<String> = vec![];
         let (mut local, mut var) = (false, false);
-        for a in args {
+        for (i, a) in args.iter().enumerate() {
             match a {
                 Arg::Term(id) => {
                     let t = &self.terms[*id];
-                    shows.push(t.show.clone());
-                    runs.push(t.run.clone());
+                    quick.push(mk(ExprKind::Name(format!("${i}")), t.run.span));
                     size += t.size;
                     fns.extend(t.fns.iter().cloned());
                     local |= t.local;
                     var |= t.var;
                 }
                 Arg::Lambda(t) => {
-                    let sp = self.span();
-                    shows.push(mk(ExprKind::Lambda { params: vec!["_".into()], body: Box::new(t.show.clone()), implicit: true }, sp));
-                    runs.push(mk(ExprKind::Lambda { params: vec!["_".into()], body: Box::new(t.run.clone()), implicit: true }, sp));
+                    quick.push(lambda(&t.run, t.run.span));
                     size += t.size;
                     fns.extend(t.fns.iter().cloned());
                     local |= t.local;
                 }
                 Arg::FnValue(f) => {
-                    let e = mk(ExprKind::Name(f.clone()), self.span());
-                    shows.push(e.clone());
-                    runs.push(e);
+                    quick.push(mk(ExprKind::Name(f.clone()), Span::default()));
                     size += 1;
                     fns.push(f.clone());
                 }
             }
         }
-        let sp = self.span();
-        let (show, run) = match &c.kind {
-            Kind::Call => {
-                fns.push(c.name.clone());
-                let f = mk(ExprKind::Name(c.name.clone()), self.span());
-                (mk(ExprKind::Call(Box::new(f.clone()), shows), sp), mk(ExprKind::Call(Box::new(f), runs), sp))
-            }
+        let unit = match &c.kind {
             Kind::Trait(tr) => {
                 let Some(Type::Con(self_ty, _)) = b.get("Self") else { return };
                 if !c.self_types.contains(self_ty) {
@@ -763,48 +797,138 @@ impl<'a> En<'a> {
                 let key = (tr.clone(), self_ty.clone());
                 let unit = self.check.traits.impls.get(&key).and_then(|i| i.fns.get(&c.name)).or_else(|| self.check.traits.defaults.get(&(tr.clone(), c.name.clone())));
                 let Some(unit) = unit.cloned() else { return };
-                fns.push(c.name.clone());
-                (mk(ExprKind::Call(Box::new(mk(ExprKind::Name(c.name.clone()), self.span())), shows), sp), mk(ExprKind::Call(Box::new(mk(ExprKind::Name(unit), self.span())), runs), sp))
+                Some(unit)
             }
-            Kind::Method => {
-                fns.push(c.name.clone());
-                let mut shows = shows.into_iter();
-                let mut runs = runs.into_iter();
-                let (r0, x0) = (shows.next().unwrap(), runs.next().unwrap());
-                if c.name == "sum" && ty == Type::con("F64") {
-                    self.it.synth_float.borrow_mut().insert((sp.start, sp.end));
-                }
-                if c.params.len() == 1 {
-                    (mk(ExprKind::Field(Box::new(r0), c.name.clone()), sp), mk(ExprKind::Field(Box::new(x0), c.name.clone()), sp))
-                } else {
-                    (mk(ExprKind::Method { recv: Box::new(r0), name: c.name.clone(), targs: vec![], args: shows.collect() }, sp), mk(ExprKind::Method { recv: Box::new(x0), name: c.name.clone(), targs: vec![], args: runs.collect() }, sp))
-                }
-            }
-            Kind::Field(f) => {
-                let (r0, x0) = (shows.pop().unwrap(), runs.pop().unwrap());
-                (mk(ExprKind::Field(Box::new(r0), f.clone()), sp), mk(ExprKind::Field(Box::new(x0), f.clone()), sp))
-            }
-            Kind::Record(fields) => {
-                let ctor = Some(c.name.clone());
-                (mk(ExprKind::Record { ctor: ctor.clone(), fields: fields.iter().cloned().zip(shows).collect() }, sp), mk(ExprKind::Record { ctor, fields: fields.iter().cloned().zip(runs).collect() }, sp))
-            }
-            Kind::Bin(op) => {
-                let (r1, x1) = (shows.pop().unwrap(), runs.pop().unwrap());
-                let (r0, x0) = (shows.pop().unwrap(), runs.pop().unwrap());
-                (mk(ExprKind::Binary(*op, Box::new(r0), Box::new(r1)), sp), mk(ExprKind::Binary(*op, Box::new(x0), Box::new(x1)), sp))
-            }
-            Kind::Un(op) => {
-                let (r0, x0) = (shows.pop().unwrap(), runs.pop().unwrap());
-                (mk(ExprKind::Unary(*op, Box::new(r0)), sp), mk(ExprKind::Unary(*op, Box::new(x0)), sp))
-            }
+            _ => None,
         };
+        if !matches!(c.kind, Kind::Field(_) | Kind::Record(_) | Kind::Bin(_) | Kind::Un(_)) {
+            fns.push(c.name.clone());
+        }
         fns.sort();
         fns.dedup();
-        self.add(Term { show, run, ty, size, fns, obs: Rc::new(vec![]), local, var });
+        let sp = self.span();
+        if matches!(c.kind, Kind::Method) && c.name == "sum" && ty == Type::con("F64") {
+            self.it.synth_float.borrow_mut().insert((sp.start, sp.end));
+        }
+        let callee = unit.as_deref().unwrap_or(&c.name).to_string();
+        // The node over the values its arguments already have, so each step evaluates one node.
+        let obs = (!self.envs.is_empty() && !matches!(ty, Type::Fn(..))).then(|| {
+            let top = self.node(c, &callee, quick, sp);
+            let vals: Vec<Option<&Rc<Vec<Obs>>>> = args.iter().map(|a| if let Arg::Term(id) = a { Some(&self.terms[*id].obs) } else { None }).collect();
+            let out: Vec<Obs> = (0..self.envs.len())
+                .map(|e| {
+                    let env = &self.scratch[e];
+                    for (i, v) in vals.iter().enumerate() {
+                        match v.map(|o| &o[e]) {
+                            Some(Obs::V(x)) => *env.cell(SLOTS[i]).unwrap().borrow_mut() = x.clone(),
+                            Some(other) => return other.clone(),
+                            None => {}
+                        }
+                    }
+                    self.it.fuel.set(EVAL_FUEL);
+                    self.it.depth.set(0);
+                    match self.it.eval(&top, env) {
+                        Ok(v) => Obs::V(v),
+                        Err(Ctrl::Raise(v)) => Obs::Raise(v),
+                        Err(_) => Obs::Trap,
+                    }
+                })
+                .collect();
+            Rc::new(out)
+        });
+        let key = ty.to_string();
+        if let Some(o) = &obs {
+            if o.iter().all(|x| *x == Obs::Trap) {
+                self.explored += 1;
+                return;
+            }
+            if let Some(&id) = self.seen_obs.get(&(key.clone(), o.clone())) {
+                // Same values as a term found before: keep the simpler of two of the same size.
+                self.explored += 1;
+                let old = &self.terms[id];
+                let (x, y) = ((fns.len(), !local), (old.fns.len(), !old.local));
+                if old.size != size || x > y {
+                    return;
+                }
+                let show = self.node(c, &c.name, self.arg_exprs(args, false), sp);
+                if x == y && !simpler(&show, &old.show) {
+                    return;
+                }
+                let run = self.node(c, &callee, self.arg_exprs(args, true), sp);
+                self.terms[id] = Term { show, run, ty, size, fns, obs: o.clone(), local, var };
+                return;
+            }
+        }
+        let show = self.node(c, &c.name, self.arg_exprs(args, false), sp);
+        let run = self.node(c, &callee, self.arg_exprs(args, true), sp);
+        self.add_with(Term { show, run, ty, size, fns, obs: Rc::new(vec![]), local, var }, obs.map(|o| (*o).clone()));
+    }
+
+    fn arg_exprs(&self, args: &[Arg], run: bool) -> Vec<Expr> {
+        args.iter()
+            .map(|a| match a {
+                Arg::Term(id) => {
+                    let t = &self.terms[*id];
+                    if run { t.run.clone() } else { t.show.clone() }
+                }
+                Arg::Lambda(t) => lambda(if run { &t.run } else { &t.show }, t.run.span),
+                Arg::FnValue(f) => mk(ExprKind::Name(f.clone()), Span::default()),
+            })
+            .collect()
+    }
+
+    fn node(&self, c: &Comp, callee: &str, mut args: Vec<Expr>, sp: Span) -> Expr {
+        let fresh = Span { start: sp.start, end: sp.end };
+        let kind = match &c.kind {
+            Kind::Call | Kind::Trait(_) => ExprKind::Call(Box::new(mk(ExprKind::Name(callee.to_string()), fresh)), args),
+            Kind::Method if c.params.len() == 1 => ExprKind::Field(Box::new(args.remove(0)), c.name.clone()),
+            Kind::Method => {
+                let recv = args.remove(0);
+                ExprKind::Method { recv: Box::new(recv), name: c.name.clone(), targs: vec![], args }
+            }
+            Kind::Field(f) => ExprKind::Field(Box::new(args.remove(0)), f.clone()),
+            Kind::Record(fields) => ExprKind::Record { ctor: Some(c.name.clone()), fields: fields.iter().cloned().zip(args).collect() },
+            Kind::Bin(op) => {
+                let r = args.pop().unwrap();
+                ExprKind::Binary(*op, Box::new(args.pop().unwrap()), Box::new(r))
+            }
+            Kind::Un(op) => ExprKind::Unary(*op, Box::new(args.remove(0))),
+        };
+        mk(kind, sp)
+    }
+
+    /// Terms that are certainly equal to a smaller one or a constant: a method of a literal,
+    /// `xs.reverse.sum`, `x.abs.abs`, `xs.map(f).len`, `1 + 1`.
+    fn redundant(&self, c: &Comp, args: &[Arg]) -> bool {
+        let term = |a: &Arg| match a {
+            Arg::Term(id) => Some(&self.terms[*id]),
+            _ => None,
+        };
+        let constant = |a: &Arg| term(a).is_some_and(|t| !t.local && !t.var);
+        match &c.kind {
+            Kind::Bin(_) => args.iter().all(constant),
+            Kind::Un(op) => constant(&args[0]) || term(&args[0]).is_some_and(|t| matches!(&t.show.kind, ExprKind::Unary(o, _) if o == op)),
+            Kind::Method | Kind::Field(_) => {
+                if constant(&args[0]) {
+                    return true;
+                }
+                let Some(r) = term(&args[0]) else { return false };
+                let inner = match &r.show.kind {
+                    ExprKind::Field(_, n) => n.as_str(),
+                    ExprKind::Method { name, .. } => name.as_str(),
+                    _ => return false,
+                };
+                let outer = c.name.as_str();
+                let idem = ["abs", "sort", "unique", "trim", "lower", "upper", "reverse"];
+                let blind = ["sum", "len", "min", "max", "contains", "any", "all", "is_empty", "sort", "unique"];
+                inner == outer && idem.contains(&outer) || blind.contains(&outer) && matches!(inner, "reverse" | "sort" | "sort_by") || outer == "len" && matches!(inner, "map" | "sort_by" | "reverse" | "sort")
+            }
+            _ => false,
+        }
     }
 
     /// Lambda bodies over `_: p`, enumerated against elements of the lists seen so far.
-    fn lambda_pool(&mut self, p: &Type, site: &HoleSite) -> Rc<Vec<Term>> {
+    fn lambda_pool(&mut self, p: &Type, site: &HoleSite) -> Pool {
         let key = p.to_string();
         if let Some((n, at, x)) = self.lambdas.get(&key)
             && (*n > 0 || *at == self.terms.len())
@@ -838,6 +962,7 @@ impl<'a> En<'a> {
             terms: vec![],
             by_size: vec![],
             by_ty: HashMap::new(),
+            by_head: HashMap::new(),
             seen: HashSet::new(),
             seen_obs: BTreeMap::new(),
             comps: self.comps.clone(),
@@ -853,17 +978,27 @@ impl<'a> En<'a> {
             target: None,
             max: self.lambda_size,
             memo: HashMap::new(),
+            scratch: vec![],
         };
+        sub.scratch = scratch(&sub.envs);
         let n = sub.envs.len();
         sub.seed(site, &[("_".into(), p.clone())]);
         sub.grow(if n == 0 { 1 } else { self.lambda_size }, site);
         self.explored += sub.explored;
-        let pool: Vec<Term> = sub.terms.into_iter().filter(|t| t.var && t.size > 0).collect();
+        let pool: Vec<Rc<Term>> = sub.terms.into_iter().filter(|t| t.var && t.size > 0).map(Rc::new).collect();
         let pool = Rc::new(pool);
         self.lambdas.insert(key, (n, self.terms.len(), pool.clone()));
         pool
     }
 }
+
+/// `_ => body` in the implicit form the parser gives `xs.map(_.f)`.
+fn lambda(body: &Expr, span: Span) -> Expr {
+    mk(ExprKind::Lambda { params: vec!["_".into()], body: Box::new(body.clone()), implicit: true }, span)
+}
+
+/// The names compositional evaluation binds the argument values to.
+const SLOTS: [&str; 6] = ["$0", "$1", "$2", "$3", "$4", "$5"];
 
 /// Of two equally big expressions, the shorter text, then the alphabetically first.
 fn simpler(a: &Expr, b: &Expr) -> bool {
@@ -921,8 +1056,11 @@ fn collect_shells(t: &Type, out: &mut BTreeMap<String, Type>) {
     }
 }
 
-fn contract_of(it: &Interp, f: &FnDef) -> bool {
-    !f.posts.is_empty() || f.ret.as_ref().is_some_and(|t| matches!(t, Ty::Named { name, .. } if it.alias_refines.contains_key(name)))
+fn contract_of(it: &Interp, f: &FnDef) -> Option<&'static str> {
+    if !f.posts.is_empty() {
+        return Some("post");
+    }
+    f.ret.as_ref().is_some_and(|t| matches!(t, Ty::Named { name, .. } if it.alias_refines.contains_key(name))).then_some("where")
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -955,10 +1093,18 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
     if let Some(f) = f.as_ref().filter(|f| it.skip_reason(f).is_none()) {
         let fo = fuzz::Options { cases: opts.fuzz, seed: opts.seed, edge: false };
         let mut rng = fuzz::Rng(opts.seed.max(1));
+        let parts: Vec<Vec<Value>> = f.params.iter().map(|p| it.small(&p.ty, 0)).collect();
+        let mut small = if parts.iter().all(|p| !p.is_empty()) { crate::suggest::product(&parts, opts.fuzz) } else { vec![] }.into_iter();
         let mut attempts = 0;
-        while inputs.len() < opts.fuzz && attempts < opts.fuzz * 8 && now_ms() < t0 + opts.budget_ms as f64 * 0.25 {
+        while inputs.len() < opts.fuzz * 2 && attempts < opts.fuzz * 10 && now_ms() < t0 + opts.budget_ms as f64 * 0.25 {
             attempts += 1;
-            let Some(args) = f.params.iter().map(|p| it.generate(&p.ty, &mut rng, &fo, 0)).collect::<Option<Vec<_>>>() else { continue };
+            let args = match small.next() {
+                Some(a) => a,
+                None => match f.params.iter().map(|p| it.generate(&p.ty, &mut rng, &fo, 0)).collect::<Option<Vec<_>>>() {
+                    Some(a) => a,
+                    None => continue,
+                },
+            };
             *it.output.borrow_mut() = Some(vec![]);
             it.fuel.set(fuzz::FUEL);
             it.depth.set(0);
@@ -1000,6 +1146,7 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
         terms: vec![],
         by_size: vec![],
         by_ty: HashMap::new(),
+        by_head: HashMap::new(),
         seen: HashSet::new(),
         seen_obs: BTreeMap::new(),
         comps,
@@ -1015,10 +1162,12 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
         target: Some(site.ty.clone()),
         max: opts.max_size,
         memo: HashMap::new(),
+        scratch: vec![],
     };
+    en.scratch = scratch(&en.envs);
     *it.hole.borrow_mut() = HoleMode::default();
     let no_evidence = reach.is_empty() && inputs.is_empty();
-    let contract = f.as_ref().is_some_and(|f| contract_of(it, f));
+    let contract = f.as_ref().and_then(|f| contract_of(it, f));
     let mut cands: Vec<Cand> = Vec::new();
     let mut ok = 0;
     let mut done = 0;
@@ -1057,12 +1206,13 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
     filled.timed_out = en.out_of_time && ok < opts.top;
     *it.hole.borrow_mut() = HoleMode::default();
     cands.sort_by(|a, b| rank(a, no_evidence).cmp(&rank(b, no_evidence)).then_with(|| a.text.cmp(&b.text)));
+    // The passing candidates, or else the one that comes closest.
     let any_ok = cands.iter().any(Cand::ok);
     for c in cands {
-        if filled.cands.len() >= opts.top {
+        if filled.cands.len() >= if any_ok { opts.top } else { 1 } {
             break;
         }
-        if (any_ok && !c.ok() || c.failed > 0) && c.passed == 0 {
+        if any_ok && !c.ok() || !any_ok && c.passed == 0 {
             continue;
         }
         if typechecks(m, site, &c.expr) {
@@ -1074,7 +1224,7 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
 }
 
 #[allow(clippy::too_many_arguments)]
-fn validate(it: &Interp, t: &Term, site: &HoleSite, prior: &[(Span, Rc<Expr>)], reach: &[(usize, usize)], inputs: &[(Vec<Value>, usize)], cases: &[(String, Expr)], f: Option<&FnDef>, contract: bool) -> Cand {
+fn validate(it: &Interp, t: &Term, site: &HoleSite, prior: &[(Span, Rc<Expr>)], reach: &[(usize, usize)], inputs: &[(Vec<Value>, usize)], cases: &[(String, Expr)], f: Option<&FnDef>, contract: Option<&'static str>) -> Cand {
     let mut c = Cand { text: printer::expr(&t.show, 0), expr: t.show.clone(), size: t.size, fns: t.fns.len(), passed: 0, failed: 0, inputs: inputs.len(), broke: 0, traps: 0, contract, proved: false, uses_input: t.local };
     let mut fills = prior.to_vec();
     fills.push((site.span, Rc::new(t.run.clone())));
@@ -1138,6 +1288,18 @@ pub fn substitute(m: &Module, span: Span, e: &Expr) -> Module {
         }
     }
     m
+}
+
+/// What to write in place of the hole at `span` in `src`: `text`, or `(text)` where the bare
+/// text would parse differently from the expression.
+pub fn fill_text(src: &str, span: Span, text: &str, expr: &Expr) -> String {
+    let (a, b) = (span.start as usize, (span.end as usize).min(src.len()));
+    let Ok(m) = parse(src) else { return text.to_string() };
+    let want = print_module(&substitute(&m, span, expr));
+    match parse(&format!("{}{text}{}", &src[..a], &src[b..])) {
+        Ok(m2) if print_module(&m2) == want => text.to_string(),
+        _ => format!("({text})"),
+    }
 }
 
 fn typechecks(m: &Module, site: &HoleSite, e: &Expr) -> bool {

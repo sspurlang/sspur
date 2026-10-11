@@ -410,7 +410,7 @@ fn program_cmd(cmd: &str, args: &Args) -> ExitCode {
     }
     if cmd == "check" {
         let mut diags = loaded.check.diags.clone();
-        fill::enrich(&loaded, &mut diags, args);
+        fill::enrich(&loaded, &mut diags, (!args.has("--no-fill")).then(|| args.num("--fill-ms", 200) as u64));
         report(&loaded.src, &label, &diags, json);
     } else {
         report(&loaded.src, &label, &loaded.check.diags, json);

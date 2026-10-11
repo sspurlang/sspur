@@ -67,7 +67,7 @@ fn ty_name(t: &Ty) -> Option<(&str, &[Ty])> {
 }
 
 /// Up to `max` combinations taking one value from each part.
-fn product(parts: &[Vec<Value>], max: usize) -> Vec<Vec<Value>> {
+pub(crate) fn product(parts: &[Vec<Value>], max: usize) -> Vec<Vec<Value>> {
     let mut out: Vec<Vec<Value>> = vec![vec![]];
     for p in parts {
         let mut next = Vec::new();
@@ -95,7 +95,7 @@ fn shift(e: &mut Expr, base: &mut u32) {
 
 impl Interp {
     /// A few small values of `t`, for exhaustive small-scope runs: `0`, `[]`, `[0]`, `""` and the like.
-    fn small(&self, t: &Ty, depth: u32) -> Vec<Value> {
+    pub(crate) fn small(&self, t: &Ty, depth: u32) -> Vec<Value> {
         let Some((n, args)) = ty_name(t) else {
             return match t {
                 Ty::Tuple(xs) if depth < 2 => {

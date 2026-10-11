@@ -177,7 +177,14 @@ fn fixes(src: &str, d: &Diag, module: Option<&Module>) -> Vec<Edit> {
             out.push(Edit { title: format!("Change to '{name}'"), from: b - k, to: b, insert: name.to_string() });
         }
     }
-    if d.code == "E_HOLE"
+    let fills: Vec<(&str, &str)> = d.fix.iter().filter(|o| o["op"] == "fill").filter_map(|o| Some((o["expr"].as_str()?, o["evidence"].as_str()?))).collect();
+    if d.code == "E_HOLE" && !fills.is_empty() {
+        for (text, why) in fills {
+            let Ok(e) = sspur_syntax::parse_expr(text) else { continue };
+            let span = sspur_syntax::Span { start: d.span[0], end: d.span[1] };
+            out.push(Edit { title: format!("Fill with {text} ({why})"), from: a, to: b, insert: sspur_eval::synth::fill_text(src, span, text, &e) });
+        }
+    } else if d.code == "E_HOLE"
         && let Some((_, names)) = hint.split_once(": ")
     {
         for n in names.split(", ") {

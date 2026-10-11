@@ -1,4 +1,4 @@
-use crate::{agent, default_interp, interp, AGENT_SPEC, AGENT_SPEC_MORE, REFERENCE};
+use crate::{agent, default_interp, fill, interp, AGENT_SPEC, AGENT_SPEC_MORE, REFERENCE};
 use serde_json::{json, Value as Json};
 use sspur_eval::fuzz::Options;
 use sspur_store::{query::Ctx, Store, Tx};
@@ -34,6 +34,8 @@ fn tools() -> Json {
         tool("check", "Typecheck", "Typecheck the codebase and list diagnostics with hints.", none.clone(), &[], true),
         tool("run", "Run main", "Run main() and return what it logged.", none.clone(), &[], true),
         tool("fuzz", "Property-test contracts", "Property-test every function from its pre, post and where clauses. Lists shrunk counterexamples.", json!({"cases": {"type": "integer"}}), &[], true),
+        tool("fill", "Fill typed holes", "Synthesize an expression for each typed hole (? or ?name) from the values in scope and the functions it may call, checked against the tests and contracts. Prints the best candidate per hole with what it passed; apply: true writes the passing ones; all: true lists up to 3 per hole.", json!({"hole": {"type": "string", "description": "?name, or a function name for all its holes; default every hole"}, "apply": {"type": "boolean"}, "all": {"type": "boolean"}}), &[], false),
+        tool("suggest", "Suggest contracts", "Run a function on test-derived and fuzzed inputs and propose pre/post clauses that held on every run (marked proved when z3 proves them), and a pre that rules out the inputs it traps on. apply: true adds them.", json!({"fn": {"type": "string", "description": "function name; default every function"}, "apply": {"type": "boolean"}}), &[], false),
         tool("apply", "Apply transaction ops", "Low-level: apply JSON ops (add, replace, rename, remove, refine, fill, attach) atomically. Prefer edit. Diagnostics include machine fix ops.", json!({"ops": {"type": "array", "items": {"type": "object"}}, "reason": {"type": "string"}, "agent": {"type": "string"}, "base": {"type": "string"}, "gate": {"type": "string", "enum": ["check", "tests"], "description": "'tests' rejects the transaction unless all tests pass"}, "test": {"type": "boolean", "description": "run all tests after applying"}, "json": {"type": "boolean"}}), &["ops"], false)
     ])
 }
@@ -120,7 +122,9 @@ fn call(srv: &mut Server, name: &str, a: &Json) -> (String, bool) {
             if flag("json") { (serde_json::to_string(&out).unwrap(), err) } else { (agent::query_text(q, &out, &loaded.src, a.get("target").and_then(Json::as_str).unwrap_or("")), err) }
         }
         "check" => {
-            let lines = agent::diag_lines(&loaded.src, &loaded.check.diags, None);
+            let mut diags = loaded.check.diags.clone();
+            fill::enrich(&loaded, &mut diags, Some(200));
+            let lines = agent::diag_lines(&loaded.src, &diags, None);
             let head = if loaded.check.has_errors() { "errors".to_string() } else { format!("ok {} definitions", loaded.module.defs.len()) };
             (std::iter::once(head).chain(lines).collect::<Vec<_>>().join("\n"), loaded.check.has_errors())
         }
@@ -154,7 +158,28 @@ fn call(srv: &mut Server, name: &str, a: &Json) -> (String, bool) {
             lines.push(format!("{} functions, {failed} with counterexamples", reports.len()));
             (lines.join("\n"), failed > 0)
         }
-        _ => (format!("unknown tool '{name}'; tools: start spec src query edit test check run fuzz apply"), true),
+        "fill" => {
+            let opts = sspur_eval::synth::Opts { budget_ms: 1000, ..Default::default() };
+            let (mut text, good, _, ops) = fill::fill_report(&loaded, &opts, a.get("hole").and_then(Json::as_str), flag("all"), false);
+            if flag("apply") && !ops.is_empty() {
+                let (t, ok) = agent::run_edit(store, ops, "mcp", None);
+                text = format!("{text}\n{t}");
+                return (text, !ok || !good);
+            }
+            (text, !good)
+        }
+        "suggest" => {
+            let only = a.get("fn").and_then(Json::as_str);
+            let (mut text, out) = fill::suggest_report(&loaded, only, 200, false);
+            let ops: Vec<Json> = out.iter().flat_map(|s| s.sugg.iter().map(|x| json!({"op": "refine", "target": s.name, "contract": {x.kind: x.text}}))).collect();
+            if flag("apply") && !ops.is_empty() {
+                let (t, ok) = agent::run_edit(store, ops, "mcp", None);
+                text = format!("{text}\n{t}");
+                return (text, !ok);
+            }
+            (text, only.is_some_and(|f| !out.iter().any(|s| s.name == f)))
+        }
+        _ => (format!("unknown tool '{name}'; tools: start spec src query edit test check run fuzz apply fill suggest"), true),
     }
 }
 
