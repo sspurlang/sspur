@@ -123,7 +123,7 @@ fn call(srv: &mut Server, name: &str, a: &Json) -> (String, bool) {
         }
         "check" => {
             let mut diags = loaded.check.diags.clone();
-            fill::enrich(&loaded, &mut diags, Some(200));
+            fill::enrich(&loaded, &mut diags, Some(fill::budget(200)));
             let lines = agent::diag_lines(&loaded.src, &diags, None);
             let head = if loaded.check.has_errors() { "errors".to_string() } else { format!("ok {} definitions", loaded.module.defs.len()) };
             (std::iter::once(head).chain(lines).collect::<Vec<_>>().join("\n"), loaded.check.has_errors())
@@ -159,7 +159,7 @@ fn call(srv: &mut Server, name: &str, a: &Json) -> (String, bool) {
             (lines.join("\n"), failed > 0)
         }
         "fill" => {
-            let opts = sspur_eval::synth::Opts { budget_ms: 1000, ..Default::default() };
+            let opts = sspur_eval::synth::Opts { budget_ms: crate::fill::budget(1000), ..Default::default() };
             let (mut text, good, _, ops) = fill::fill_report(&loaded, &opts, a.get("hole").and_then(Json::as_str), flag("all"), false);
             if flag("apply") && !ops.is_empty() {
                 let (t, ok) = agent::run_edit(store, ops, "mcp", None);

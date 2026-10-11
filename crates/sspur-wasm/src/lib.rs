@@ -193,6 +193,15 @@ fn prepare(src: &str) -> Result<(Interp, Vec<J>), Vec<J>> {
     Ok((interp(&m, &c), diags))
 }
 
+static FILL_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(150);
+
+/// The time hole filling may spend per hole, in ms (150 by default). Tests set it high so their
+/// results depend on the search, not on how fast the machine is.
+#[wasm_bindgen]
+pub fn set_fill_budget(ms: u32) {
+    FILL_MS.store(u64::from(ms), std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Ranked candidates for each typed hole, as the `fill` fixes `sspur check` gives, on a smaller budget.
 fn fill_holes(m: &Module, diags: &mut [Diag]) {
     if !diags.iter().any(|d| d.code == "E_HOLE") || diags.iter().any(Diag::is_error) {
@@ -203,7 +212,7 @@ fn fill_holes(m: &Module, diags: &mut [Diag]) {
     let Ok((xm, xc)) = executable(m.clone(), sspur_check::check(m)) else { return };
     let mut it = Interp::new(&xm, xc.record_types.clone(), xc.user_methods.clone(), xc.gen_loops.clone());
     it.set_check(&xc);
-    let opts = sspur_eval::synth::Opts { budget_ms: 150, fuzz: 12, envs: 8, ..Default::default() };
+    let opts = sspur_eval::synth::Opts { budget_ms: FILL_MS.load(std::sync::atomic::Ordering::Relaxed), fuzz: 12, envs: 8, ..Default::default() };
     for f in sspur_eval::synth::fill(m, &check, &ctx, &it, &opts, None) {
         if let Some(d) = diags.iter_mut().find(|d| d.code == "E_HOLE" && d.span == [f.site.span.start, f.site.span.end]) {
             d.fix = f.cands.iter().map(|c| json!({"op": "fill", "hole": f.site.label(), "expr": c.text, "evidence": c.evidence(), "ok": c.ok()})).collect();

@@ -63,6 +63,12 @@ fn fill_op(f: &synth::Filled, c: &synth::Cand, m: &Module) -> Json {
 }
 
 /// Adds the ranked candidates of each hole to its E_HOLE diagnostic as `fill` fixes.
+/// The per-hole budget: `SSPUR_FILL_MS` when set (CI sets it high so results don't depend on the
+/// machine's speed), or else `d`.
+pub fn budget(d: u64) -> u64 {
+    std::env::var("SSPUR_FILL_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(d)
+}
+
 pub fn enrich(l: &Loaded, diags: &mut [Diag], budget_ms: Option<u64>) {
     let Some(budget_ms) = budget_ms else { return };
     if !diags.iter().any(|d| d.code == "E_HOLE") || diags.iter().any(Diag::is_error) {
@@ -199,7 +205,7 @@ pub fn fill_cmd(args: &Args) -> ExitCode {
         };
         return crate::fail_diags(&src, &label, &l.check.diags, args.has("--json"));
     }
-    let opts = synth::Opts { budget_ms: args.num("--fill-ms", 1000) as u64, ..Default::default() };
+    let opts = synth::Opts { budget_ms: args.num("--fill-ms", budget(1000) as usize) as u64, ..Default::default() };
     let (text, good, edits, ops) = fill_report(&l, &opts, rest.first().map(String::as_str), args.has("--all"), args.has("--json"));
     println!("{text}");
     if !args.has("--apply") || edits.is_empty() {
