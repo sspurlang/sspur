@@ -45,7 +45,7 @@ The query API is how an agent reads a large codebase without printing all of it.
 
 | Command | Prints |
 |---|---|
-| `sspur fill [FILE] [?NAME\|FN]` | The best candidate for each hole (or the named one, or every hole in `FN`): `?total: items.map(_.qty * _.price).sum (passes 3 tests, post)`. `--all` shows up to 3, `--json` adds the search size and time. `--apply` writes the passing ones into the file, in parentheses where precedence needs them, or applies them to the codebase as `fill` ops. The budget is 1000 ms per hole |
+| `sspur fill [FILE] [?NAME\|FN]` | The best candidate for each hole (or the named one, or every hole in `FN`): `?total: items.map(_.qty * _.price).sum (passes 3 tests, post)`, with `2 others also fit` added when other candidates pass the same checks, so the tests don't decide between them. `--all` shows up to 3, `--json` adds the search size and time. `--apply` writes the passing ones into the file, in parentheses where precedence needs them, or applies them to the codebase as `fill` ops. The budget is 1000 ms per hole |
 | `sspur suggest [FILE] [FN]` | For each function, the `pre` and `post` lines that held on every run, ready to paste: `  post r.len <= xs.len  // proved`. `--json` gives `refine` fixes, `--apply` adds them, `--cases N` sets the number of fuzzed inputs (200) |
 
 The MCP server has both as the tools `fill` and `suggest` ([MCP](../agent/mcp.md)).

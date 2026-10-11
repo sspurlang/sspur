@@ -39,7 +39,7 @@ Block lines: `x = e`, `(a, b) = e`, `var x = e`, `x := e`, `for x in xs` or `whi
 - One impl per (trait, type), in the trait's or the type's package; `pub trait` and `pub impl` export them, and `use lib.{Sh}` brings its methods.
 
 ## Holes and contracts
-Leave `?name` where you don't know the expression yet: `./sspur check` lists up to 3 candidates under it, one per line, `?total: items.map(_.qty * _.price).sum (passes 3 tests, post)`, built from the values in scope and run against the tests and contracts. `./sspur fill --apply` writes the best one. `./sspur suggest f` proposes `pre`/`post` lines from runs of `f` (`proved` or `held on N runs`); `--apply` adds them.
+Leave `?name` where you don't know the expression yet: `./sspur check` lists up to 3 candidates under it, one per line, `?total: items.map(_.qty * _.price).sum (passes 3 tests, post)`, built from the values in scope and run against the tests and contracts. `N others also fit` means the tests don't pin it down: add a test before you keep it. `./sspur fill --apply` writes the best one. `./sspur suggest f` proposes `pre`/`post` lines from runs of `f` (`proved` or `held on N runs`); `--apply` adds them.
 
 ## Edit
 `./sspur edit --test change.ssp` is one atomic, typechecked transaction. Spellings from other languages that have one meaning (`&&`, `len(x)`, `None`, `s.slice(a, b)`, a missing effect) are stored in SSPUR form and listed after `stored as:`. A failing test prints the values it compared (`left 7, right 8`). An impl is the definition `impl Sh for P` (`remove impl Sh for P`).
