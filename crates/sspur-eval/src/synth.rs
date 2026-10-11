@@ -1063,7 +1063,8 @@ impl<'a> En<'a> {
 /// Constants for the search, with the size they count as: `2`, and the integers and strings the tests
 /// that reach the hole mention and the separators inside their strings (`","` of `"a,b"`), a few of
 /// each, first seen first. A candidate that only passes because of a constant such as `7 + xs.len` is
-/// usually fitting the tests rather than the intent, so a constant from a test counts as 3 nodes.
+/// usually fitting the tests rather than the intent, so a constant from a test counts as 3 nodes. A hole
+/// with nothing in scope gets none: there the test's expected value would be the whole answer.
 fn mined(cases: &[(String, Expr)], reach: &[(usize, usize)], def: &str) -> Vec<(ExprKind, Type, usize)> {
     let (mut ints, mut strs, mut seps) = (vec![2i64], vec![], vec![]);
     for &(case, _) in reach {
@@ -1291,7 +1292,7 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
         comps,
         lambda: false,
         lambda_size: opts.lambda_size,
-        consts: Rc::new(mined(&cases, &reach, &site.def)),
+        consts: Rc::new(if site.locals.is_empty() { vec![] } else { mined(&cases, &reach, &site.def) }),
         deadline: t0 + opts.budget_ms as f64 * 0.6,
         explored: 0,
         spans: spans.clone(),
@@ -1338,6 +1339,7 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
             .collect(),
         None => vec![],
     };
+    let collections = f.as_ref().is_some_and(|f| f.params.iter().any(|p| matches!(&p.ty, Ty::Named { name, .. } if matches!(name.as_str(), "List" | "Str" | "Map" | "Set" | "Opt"))));
     // The input where every parameter is empty or zero, when one reached the hole.
     let params: Vec<&str> = f.as_ref().map(|f| f.params.iter().map(|p| p.name.as_str()).collect()).unwrap_or_default();
     let zero = (!params.is_empty()).then(|| en.envs.iter().position(|e| params.iter().all(|p| e.get(p).is_some_and(|v| zero_like(&v))))).flatten();
@@ -1365,7 +1367,7 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
             let mut c = validate(it, t, site, &need, &mut memo, prior, &reach, &inputs, &cases, f.as_deref(), contract);
             // Most functions of collections and numbers give the empty value on empty inputs: a sum, a
             // count, a filter. One that doesn't is more often fitting a test than meaning it.
-            let odd = zero.and_then(|z| t.obs.get(z)).is_some_and(|o| matches!(o, Obs::V(v) if !matches!(v, Value::Bool(_)) && (natural_default(&site.ty).is_some() || head(&site.ty) == "Opt") && !zero_like(v)));
+            let odd = collections && zero.and_then(|z| t.obs.get(z)).is_some_and(|o| matches!(o, Obs::V(v) if !matches!(v, Value::Bool(_)) && (natural_default(&site.ty).is_some() || head(&site.ty) == "Opt") && !zero_like(v)));
             // A `pre` is there to keep something from going wrong: a candidate that runs fine without it
             // is less likely to be what the author had in mind than one that needs it.
             let needs_pre = pre_envs.is_empty()
@@ -1374,7 +1376,9 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
                     it.depth.set(0);
                     it.eval(&t.run, env).is_err()
                 });
-            c.score = cost(&t.show, t.size) + t.prior + if odd { 5 } else { 0 } + if needs_pre { 0 } else { 6 };
+            // A constant answer is more often a fit to the tests than the intent.
+            let constant = !t.local;
+            c.score = cost(&t.show, t.size) + t.prior + if odd { 5 } else { 0 } + if needs_pre { 0 } else { 6 } + if constant { 20 } else { 0 };
             cands.push(c);
         }
         // Terms found later are larger than `s`, so they can't outrank a passing one that costs `s` or less.
