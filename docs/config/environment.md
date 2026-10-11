@@ -13,7 +13,7 @@ None of these are needed for normal use. They exist for CI, for pinning toolchai
 | `SSPUR_OPT=0` | Turn off the proven-rewrite optimizer |
 | `SSPUR_SMT=off` | Don't use Z3 to remove runtime checks during native builds |
 | `SSPUR_SMT_TIMEOUT` | Z3 time limit per query in milliseconds (default 500) |
-| `SSPUR_FILL_MS` | Time hole filling may spend per hole in milliseconds, for `check`, `fill` and the MCP tools; `--fill-ms` still wins (defaults 200 for `check`, 1000 for `fill`) |
+| `SSPUR_FILL_MS` | Time hole filling may spend per hole in milliseconds, for `check`, `fill` and the MCP tools; `--fill-ms` still wins (defaults 400 for `check`, 600 in editors, 1000 for `fill`) |
 | `SSPUR_LTO` | Default for `--lto`: `off`, `thin` or `full` |
 | `CC` | The C compiler for native code and `export-c` (default `clang`) |
 | `SSPUR_PROFDATA` | The `llvm-profdata` to use for `--pgo` |

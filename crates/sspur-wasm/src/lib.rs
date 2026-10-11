@@ -203,9 +203,9 @@ fn prepare(src: &str) -> Result<(Interp, Vec<J>), Vec<J>> {
     Ok((interp(&m, &c), diags))
 }
 
-static FILL_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(150);
+static FILL_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(400);
 
-/// The time hole filling may spend per hole, in ms (150 by default). Tests set it high so their
+/// The time hole filling may spend per hole, in ms (400 by default). Tests set it high so their
 /// results depend on the search, not on how fast the machine is.
 #[wasm_bindgen]
 pub fn set_fill_budget(ms: u32) {

@@ -68,7 +68,7 @@ A `?` or `?name` in an expression is a typed hole. The checker reports its type,
 {{#include ../snippets/handbook/contracts.out:fill}}
 ```
 
-`sspur check` lists up to three passing candidates under each hole; when others pass the same checks, the evidence ends with `N others also fit`, which means a test that tells them apart is missing. `--json` gives each one as a `fill` op you can apply. `sspur fill --apply` writes the best one in. A candidate never uses an effect the function doesn't declare. The search is small and has a time budget (200 ms a hole in `check`), so a long expression won't be found; write the part you know and leave a smaller hole.
+`sspur check` lists up to three passing candidates under each hole; when others pass the same checks, the evidence ends with `N others also fit`, which means a test that tells them apart is missing. `--json` gives each one as a `fill` op you can apply. `sspur fill --apply` writes the best one in. A candidate never uses an effect the function doesn't declare. The search is small and has a time budget (400 ms a hole in `check`), so a long expression won't be found; write the part you know and leave a smaller hole.
 
 ## Suggested contracts
 

@@ -19,7 +19,7 @@ use std::time::{Duration, SystemTime};
 /// How long typing must pause before a check starts.
 const DEBOUNCE: Duration = Duration::from_millis(150);
 /// The default time hole filling may spend per hole; `SSPUR_FILL_MS` overrides it.
-const FILL_MS: u64 = 150;
+const FILL_MS: u64 = 600;
 /// The per-hole budget of the Fill holes command, as `sspur fill` has it.
 const COMMAND_FILL_MS: u64 = 200;
 const STACK: usize = 1 << 29;
@@ -119,7 +119,7 @@ fn capabilities() -> J {
         "documentHighlightProvider": true,
         "documentSymbolProvider": true,
         "renameProvider": { "prepareProvider": true },
-        "semanticTokensProvider": { "legend": { "tokenTypes": TOKEN_TYPES, "tokenModifiers": ["declaration"] }, "full": true },
+        "semanticTokensProvider": { "legend": { "tokenTypes": TOKEN_TYPES, "tokenModifiers": ["declaration", "readonly"] }, "full": true },
         "executeCommandProvider": { "commands": ["sspur.fill"] },
     })
 }
@@ -671,7 +671,10 @@ fn semantic_tokens(text: &str) -> Vec<u32> {
         let p = lines.pos(t.from);
         let (l, c) = (p["line"].as_u64().unwrap_or(0) as u32, p["character"].as_u64().unwrap_or(0) as u32);
         let len = text[t.from..t.to].encode_utf16().count() as u32;
-        out.extend([l - pl, if l == pl { c - pc } else { c }, len, ty, u32::from(t.class == Class::Def)]);
+        // Bindings and fields can't be reassigned (only `var` can), and editors such as IntelliJ
+        // underline a variable that isn't marked readonly as if it were.
+        let mods = u32::from(t.class == Class::Def) | if matches!(t.class, Class::Variable | Class::Property) { 2 } else { 0 };
+        out.extend([l - pl, if l == pl { c - pc } else { c }, len, ty, mods]);
         (pl, pc) = (l, c);
     }
     out

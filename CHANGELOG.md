@@ -11,6 +11,10 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ### Changed
 - The editor logic behind the playground moved from `crates/sspur-wasm` into a new crate, `sspur-ide`, which the language server uses too.
+- Hole filling has more time per hole: 400 ms in `sspur check` and the playground, 600 ms in editors, where it runs in the background. Since it began counting the other candidates that fit, a classic hole such as a sum of field products took about 270 ms and was missed at the old 150 to 200 ms.
+
+### Fixed
+- The language server marks bindings and fields as read-only semantic tokens, so IntelliJ (through LSP4IJ) no longer underlines them as reassigned variables.
 
 ## [0.6.0] - 2026-10-11
 

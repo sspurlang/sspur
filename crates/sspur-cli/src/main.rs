@@ -40,7 +40,7 @@ const USAGE: &str = "usage:
   sspur export-c file.ssp [-o libfoo] [--shared] [--prefix P]  build a C library and header from the C-compatible functions
   add --json for machine output (apply, edit, q, check)
   sspur check|run|test|fuzz|verify|hash|fmt|native [file.ssp] [--json] [--cases N] [--seed N] [--edge] [--write] [--full]
-  check also lists up to 3 candidates for each typed hole, run against the tests and contracts (--fill-ms N per hole, default 200; --no-fill skips them)
+  check also lists up to 3 candidates for each typed hole, run against the tests and contracts (--fill-ms N per hole, default 400; --no-fill skips them)
   sspur fill [file.ssp] [?hole|fn] [--apply] [--all] [--json] [--fill-ms N]  the best expression for each typed hole; --apply writes it in
   sspur suggest [file.ssp] [fn] [--apply] [--json] [--cases N]  pre and post clauses that held on every test-derived and fuzzed run; --apply adds them
   verify proves pre/post/where clauses with z3 and reports proved, counterexample, or unknown per clause
@@ -415,7 +415,7 @@ fn program_cmd(cmd: &str, args: &Args) -> ExitCode {
     }
     if cmd == "check" {
         let mut diags = loaded.check.diags.clone();
-        fill::enrich(&loaded, &mut diags, (!args.has("--no-fill")).then(|| args.num("--fill-ms", fill::budget(200) as usize) as u64));
+        fill::enrich(&loaded, &mut diags, (!args.has("--no-fill")).then(|| args.num("--fill-ms", fill::budget(400) as usize) as u64));
         report(&loaded.src, &label, &diags, json);
     } else {
         report(&loaded.src, &label, &loaded.check.diags, json);

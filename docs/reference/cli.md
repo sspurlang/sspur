@@ -42,7 +42,7 @@ The query API is how an agent reads a large codebase without printing all of it.
 
 ## Holes and suggested contracts
 
-`sspur check` lists up to three candidates under each typed hole when the program has no errors, and `--json` puts them in the hole's `fix` as `fill` ops with an `evidence` string and `ok`. The search has 200 ms per hole (`--fill-ms N` changes it, `--no-fill` turns it off); files without holes are checked exactly as before.
+`sspur check` lists up to three candidates under each typed hole when the program has no errors, and `--json` puts them in the hole's `fix` as `fill` ops with an `evidence` string and `ok`. The search has 400 ms per hole (`--fill-ms N` changes it, `--no-fill` turns it off); files without holes are checked exactly as before.
 
 | Command | Prints |
 |---|---|
@@ -53,4 +53,4 @@ The MCP server has both as the tools `fill` and `suggest` ([MCP](../agent/mcp.md
 
 ## The language server
 
-`sspur lsp` speaks the Language Server Protocol over stdin and stdout, for VS Code and any other editor with an LSP client ([Editor setup](../get-started/editors.md), [ADR 0031](../adr/0031-language-server.md)). It publishes diagnostics as you type, a short pause after the last edit, and then the candidates for each typed hole (150 ms a hole, or `SSPUR_FILL_MS`). It answers completion, hover, code actions (the compiler's fixes and the hole fills), formatting, definition, references, document highlights, rename, the outline and semantic tokens, all within one file, and the command `sspur.fill` fills every hole that has a passing candidate. A file under a directory with `sspur.toml` is checked with that package's dependencies. It takes no options, and ignores `--stdio`, which some clients add.
+`sspur lsp` speaks the Language Server Protocol over stdin and stdout, for VS Code and any other editor with an LSP client ([Editor setup](../get-started/editors.md), [ADR 0031](../adr/0031-language-server.md)). It publishes diagnostics as you type, a short pause after the last edit, and then the candidates for each typed hole (600 ms a hole, or `SSPUR_FILL_MS`). It answers completion, hover, code actions (the compiler's fixes and the hole fills), formatting, definition, references, document highlights, rename, the outline and semantic tokens, all within one file, and the command `sspur.fill` fills every hole that has a passing candidate. A file under a directory with `sspur.toml` is checked with that package's dependencies. It takes no options, and ignores `--stdio`, which some clients add.
