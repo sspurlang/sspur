@@ -101,6 +101,8 @@ pub struct Cand {
     unused: usize,
     /// Other candidates that pass the same checks but give different results on some input.
     pub also: usize,
+    /// The cost with the prior, in tenths of a node (see `cost`).
+    score: usize,
 }
 
 impl Cand {
@@ -208,6 +210,8 @@ struct Term {
     obs: Rc<Vec<Obs>>,
     local: bool,
     var: bool,
+    /// The part of the prior that depends on types (see `cost`), summed over the term.
+    prior: usize,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -534,14 +538,14 @@ impl<'a> En<'a> {
 
     fn atom_sized(&mut self, show: ExprKind, ty: Type, local: bool, size: usize) {
         let e = mk(show, self.span());
-        self.add(Term { run: e.clone(), show: e, ty, size, fns: vec![], obs: Rc::new(vec![]), local, var: false });
+        self.add(Term { run: e.clone(), show: e, ty, size, fns: vec![], obs: Rc::new(vec![]), local, var: false, prior: 0 });
     }
 
     fn seed(&mut self, site: &HoleSite, extra: &[(String, Type)]) {
         if self.lambda {
             let e = mk(ExprKind::Placeholder, self.span());
             let ty = extra[0].1.clone();
-            self.add(Term { run: e.clone(), show: e, ty, size: 0, fns: vec![], obs: Rc::new(vec![]), local: true, var: true });
+            self.add(Term { run: e.clone(), show: e, ty, size: 0, fns: vec![], obs: Rc::new(vec![]), local: true, var: true, prior: 0 });
         }
         for (n, t) in &site.locals {
             if !has_var(t) {
@@ -603,7 +607,7 @@ impl<'a> En<'a> {
             };
             let fns = if matches!(c.kind, Kind::Call) { vec![c.name.clone()] } else { vec![] };
             let local = matches!(c.kind, Kind::Call);
-            self.add(Term { run: show.clone(), show, ty, size: 1, fns, obs: Rc::new(vec![]), local, var: false });
+            self.add(Term { run: show.clone(), show, ty, size: 1, fns, obs: Rc::new(vec![]), local, var: false, prior: 0 });
         }
     }
 
@@ -684,7 +688,7 @@ impl<'a> En<'a> {
             for (i, t) in xs.iter().enumerate() {
                 let a = &self.terms[id];
                 let (show, run) = (mk(ExprKind::Field(Box::new(a.show.clone()), i.to_string()), self.span()), mk(ExprKind::Field(Box::new(a.run.clone()), i.to_string()), self.span()));
-                let t = Term { show, run, ty: t.clone(), size: s, fns: a.fns.clone(), obs: Rc::new(vec![]), local: a.local, var: a.var };
+                let t = Term { show, run, ty: t.clone(), size: s, fns: a.fns.clone(), obs: Rc::new(vec![]), local: a.local, var: a.var, prior: a.prior };
                 self.add(t);
             }
         }
@@ -814,10 +818,13 @@ impl<'a> En<'a> {
         let mut size = 1;
         let mut fns: Vec<String> = vec![];
         let (mut local, mut var) = (false, false);
+        // Ordering strings is rare where equality is meant.
+        let mut prior = if matches!(c.kind, Kind::Bin(BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge)) && c.params[0] == Type::str() { 4 } else { 0 };
         for (i, a) in args.iter().enumerate() {
             match a {
                 Arg::Term(id) => {
                     let t = &self.terms[*id];
+                    prior += t.prior;
                     quick.push(mk(ExprKind::Name(format!("${i}")), t.run.span));
                     size += t.size;
                     fns.extend(t.fns.iter().cloned());
@@ -825,6 +832,7 @@ impl<'a> En<'a> {
                     var |= t.var;
                 }
                 Arg::Lambda(t) => {
+                    prior += t.prior;
                     quick.push(lambda(&t.run, t.run.span));
                     size += t.size;
                     fns.extend(t.fns.iter().cloned());
@@ -904,13 +912,13 @@ impl<'a> En<'a> {
                     return;
                 }
                 let run = self.node(c, &callee, self.arg_exprs(args, true), sp, &ty);
-                self.terms[id] = Term { show, run, ty, size, fns, obs: o.clone(), local, var };
+                self.terms[id] = Term { show, run, ty, size, fns, obs: o.clone(), local, var, prior };
                 return;
             }
         }
         let show = self.node(c, &c.name, self.arg_exprs(args, false), sp, &ty);
         let run = self.node(c, &callee, self.arg_exprs(args, true), sp, &ty);
-        self.add_with(Term { show, run, ty, size, fns, obs: Rc::new(vec![]), local, var }, obs.map(|o| (*o).clone()));
+        self.add_with(Term { show, run, ty, size, fns, obs: Rc::new(vec![]), local, var, prior }, obs.map(|o| (*o).clone()));
     }
 
     fn arg_exprs(&self, args: &[Arg], run: bool) -> Vec<Expr> {
@@ -1056,7 +1064,7 @@ impl<'a> En<'a> {
 /// that reach the hole mention and the separators inside their strings (`","` of `"a,b"`), a few of
 /// each, first seen first. A candidate that only passes because of a constant such as `7 + xs.len` is
 /// usually fitting the tests rather than the intent, so a constant from a test counts as 3 nodes.
-fn mined(cases: &[(String, Expr)], reach: &[(usize, usize)]) -> Vec<(ExprKind, Type, usize)> {
+fn mined(cases: &[(String, Expr)], reach: &[(usize, usize)], def: &str) -> Vec<(ExprKind, Type, usize)> {
     let (mut ints, mut strs, mut seps) = (vec![2i64], vec![], vec![]);
     for &(case, _) in reach {
         visit::walk_expr(&cases[case].1, &mut |x| {
@@ -1084,8 +1092,25 @@ fn mined(cases: &[(String, Expr)], reach: &[(usize, usize)]) -> Vec<(ExprKind, T
     }
     let mut out: Vec<(ExprKind, Type, usize)> = ints.into_iter().map(|n| (ExprKind::Int(n), Type::int(), if n == 2 { 2 } else { 3 })).collect();
     out.extend(seps.into_iter().map(|s| (ExprKind::Str(vec![StrPart::Lit(s)]), Type::str(), 2)));
-    out.extend(strs.into_iter().map(|s| (ExprKind::Str(vec![StrPart::Lit(s)]), Type::str(), 3)));
+    // A string the function is named after (`"admin"` in `is_admin`) is the likely one.
+    let named = |s: &str| def.split('_').any(|w| w == s || w.strip_suffix('s') == Some(s));
+    out.extend(strs.into_iter().map(|s| {
+        let w = if named(&s) { 1 } else { 3 };
+        (ExprKind::Str(vec![StrPart::Lit(s)]), Type::str(), w)
+    }));
     out
+}
+
+fn zero_like(v: &Value) -> bool {
+    match v {
+        Value::Unit | Value::Bool(false) | Value::Int(0) | Value::Opt(None) => true,
+        Value::Float(x) => *x == 0.0,
+        Value::Str(s) => s.is_empty(),
+        Value::List(xs) => xs.is_empty(),
+        Value::Map(m) => m.is_empty(),
+        Value::Set(m) => m.is_empty(),
+        _ => false,
+    }
 }
 
 /// The value `.or(d)` falls back to for a result of type `t`, when it has an obvious one.
@@ -1198,6 +1223,8 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
     }
     let f = if site.in_test { None } else { it.fns.get(&site.def).cloned() };
     let mut inputs: Vec<(Vec<Value>, usize)> = Vec::new();
+    // Inputs the `pre` turns away, when the hole is the whole body.
+    let mut excluded: Vec<Vec<Value>> = Vec::new();
     if let Some(f) = f.as_ref().filter(|f| it.skip_reason(f).is_none()) {
         let fo = fuzz::Options { cases: opts.fuzz, seed: opts.seed, edge: false };
         let mut rng = fuzz::Rng(opts.seed.max(1));
@@ -1218,9 +1245,11 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
             *it.output.borrow_mut() = Some(vec![]);
             it.fuel.set(fuzz::FUEL);
             it.depth.set(0);
-            let _ = it.call_fn(f, args.clone());
+            let r = it.call_fn(f, args.clone());
             if hit() {
                 inputs.push((args, reach.len() + inputs.len()));
+            } else if matches!(&r, Err(Ctrl::Trap(m)) if m.starts_with("contract violated: pre ")) && matches!(f.body.kind, ExprKind::Hole(_)) && excluded.len() < 4 {
+                excluded.push(args);
             }
         }
     }
@@ -1262,7 +1291,7 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
         comps,
         lambda: false,
         lambda_size: opts.lambda_size,
-        consts: Rc::new(mined(&cases, &reach)),
+        consts: Rc::new(mined(&cases, &reach, &site.def)),
         deadline: t0 + opts.budget_ms as f64 * 0.6,
         explored: 0,
         spans: spans.clone(),
@@ -1296,6 +1325,22 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
     let mut cands: Vec<Cand> = Vec::new();
     let mut memo = BTreeMap::new();
     let mut done = 0;
+    let pre_envs: Vec<Rc<Env>> = match f.as_ref() {
+        Some(f) => excluded
+            .iter()
+            .map(|args| {
+                let env = Env::child(&it.globals);
+                for (p, v) in f.params.iter().zip(args) {
+                    env.define(&p.name, v.clone());
+                }
+                env
+            })
+            .collect(),
+        None => vec![],
+    };
+    // The input where every parameter is empty or zero, when one reached the hole.
+    let params: Vec<&str> = f.as_ref().map(|f| f.params.iter().map(|p| p.name.as_str()).collect()).unwrap_or_default();
+    let zero = (!params.is_empty()).then(|| en.envs.iter().position(|e| params.iter().all(|p| e.get(p).is_some_and(|v| zero_like(&v))))).flatten();
     en.deadline = t0 + opts.budget_ms as f64 * 0.9;
     // Grow one size at a time and validate the new terms of the hole's type before growing further:
     // once enough candidates pass, nothing larger can outrank them.
@@ -1316,10 +1361,24 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
                 en.out_of_time = true;
                 break;
             }
-            cands.push(validate(it, &en.terms[i], site, &need, &mut memo, prior, &reach, &inputs, &cases, f.as_deref(), contract));
+            let t = &en.terms[i];
+            let mut c = validate(it, t, site, &need, &mut memo, prior, &reach, &inputs, &cases, f.as_deref(), contract);
+            // Most functions of collections and numbers give the empty value on empty inputs: a sum, a
+            // count, a filter. One that doesn't is more often fitting a test than meaning it.
+            let odd = zero.and_then(|z| t.obs.get(z)).is_some_and(|o| matches!(o, Obs::V(v) if !matches!(v, Value::Bool(_)) && (natural_default(&site.ty).is_some() || head(&site.ty) == "Opt") && !zero_like(v)));
+            // A `pre` is there to keep something from going wrong: a candidate that runs fine without it
+            // is less likely to be what the author had in mind than one that needs it.
+            let needs_pre = pre_envs.is_empty()
+                || pre_envs.iter().any(|env| {
+                    it.fuel.set(EVAL_FUEL);
+                    it.depth.set(0);
+                    it.eval(&t.run, env).is_err()
+                });
+            c.score = cost(&t.show, t.size) + t.prior + if odd { 5 } else { 0 } + if needs_pre { 0 } else { 6 };
+            cands.push(c);
         }
         // Terms found later are larger than `s`, so they can't outrank a passing one that costs `s` or less.
-        let ok = cands.iter().filter(|c| c.ok() && (!no_evidence || c.uses_input) && c.unused == 0 && cost(&c.expr, c.size) <= 10 * s).count();
+        let ok = cands.iter().filter(|c| c.ok() && (!no_evidence || c.uses_input) && c.unused == 0 && c.score <= 10 * s).count();
         if ok >= opts.top || en.out_of_time {
             break;
         }
@@ -1361,7 +1420,7 @@ fn validate(it: &Interp, t: &Term, site: &HoleSite, need: &[String], memo: &mut 
         true
     });
     let unused = need.iter().filter(|n| !used.contains(*n)).count();
-    let mut c = Cand { text: printer::expr(&t.show, 0), expr: t.show.clone(), size: t.size, fns: t.fns.len(), passed: 0, failed: 0, inputs: inputs.len(), broke: 0, traps: 0, contract, proved: false, uses_input: t.local, unused, also: 0 };
+    let mut c = Cand { text: printer::expr(&t.show, 0), expr: t.show.clone(), size: t.size, fns: t.fns.len(), passed: 0, failed: 0, inputs: inputs.len(), broke: 0, traps: 0, contract, proved: false, uses_input: t.local, unused, also: 0, score: 0 };
     let mut fills = prior.to_vec();
     fills.push((site.span, Rc::new(t.run.clone())));
     *it.hole.borrow_mut() = HoleMode { fills, probe: None, uses: 0 };
@@ -1414,7 +1473,7 @@ fn validate(it: &Interp, t: &Term, site: &HoleSite, need: &[String], memo: &mut 
 }
 
 fn rank(c: &Cand, no_evidence: bool) -> (bool, usize, usize, bool, usize, usize, usize, bool) {
-    (!c.ok(), c.failed, c.broke + c.traps, no_evidence && !c.uses_input, c.unused, cost(&c.expr, c.size), c.fns, !c.uses_input)
+    (!c.ok(), c.failed, c.broke + c.traps, no_evidence && !c.uses_input, c.unused, c.score, c.fns, !c.uses_input)
 }
 
 /// In tenths of a node: 10 per node (a constant from the tests counts as several), plus the prior:
@@ -1428,13 +1487,14 @@ fn cost(e: &Expr, size: usize) -> usize {
                 extra += method_prior(name);
                 // `xs.drop(k).len` and `xs.take(k).len` are roundabout arithmetic.
                 if name == "len" && matches!(&r.kind, ExprKind::Method { name, .. } if name == "drop" || name == "take") {
-                    extra += 10;
+                    extra += 12;
                 }
                 // `xs.first.or(0)` is one step in the search, but a little less likely than one method.
                 if name == "or" && matches!(&x.kind, ExprKind::Method { args, .. } if args.len() == 1 && lit(&args[0])) {
                     extra += 2;
                 }
             }
+            ExprKind::Call(f, args) if matches!(&f.kind, ExprKind::Name(n) if n == "min" || n == "max" || n == "clamp") && args.iter().any(lit) => extra += 3,
             ExprKind::Binary(op, a, b) => {
                 if printer::expr(a, 0) == printer::expr(b, 0) {
                     extra += 10;
@@ -1447,9 +1507,15 @@ fn cost(e: &Expr, size: usize) -> usize {
                 if matches!(op, BinOp::Eq | BinOp::Ne) && (empty(a) || empty(b)) {
                     extra += 8;
                 }
-                // `1 + xs.len`: an offset that makes one test pass is more often a fit than the intent.
-                if matches!(op, BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem) && lit(a) != lit(b) {
-                    extra += 8;
+                // `1 % xs.len` is 1 or 0 whatever `xs` holds.
+                if matches!(op, BinOp::Div | BinOp::Rem) && lit(a) {
+                    extra += 10;
+                }
+                // `1 + xs.len`: an offset that makes one test pass is more often a fit than the intent
+                // (halving and doubling less so).
+                let two = |x: &Expr| matches!(x.kind, ExprKind::Int(2));
+                if lit(a) != lit(b) && matches!(op, BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem) {
+                    extra += if matches!(op, BinOp::Mul | BinOp::Div | BinOp::Rem) && (two(a) || two(b)) { 4 } else { 8 };
                 }
             }
             _ => {}

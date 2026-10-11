@@ -106,6 +106,7 @@ test t = sentence(["hi", "there"]) == "hi there"
 
 ## total_chars
 want: ws.map(_.len).sum
+want: ws.join("").len
 fn total_chars(ws: List[Str]) -> Int
 = ?
 test t = total_chars(["ab", "cde"]) == 5
