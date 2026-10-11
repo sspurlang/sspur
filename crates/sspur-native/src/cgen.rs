@@ -1414,11 +1414,26 @@ fn build_split(src: &str, opt: &str, plan: &Plan, lto: flags::Lto, names: &HashM
     let rsp = lib.with_extension(format!("{build}.rsp"));
     link.args(["-shared", "-o"]).arg(&tmp);
     flags::inputs(&mut link, &objs, &rsp)?;
-    let out = link.args(&links).args(flags::sys_libs()).output().map_err(|e| format!("cannot run {cc}: {e}"));
+    link.args(&links).args(flags::sys_libs());
+    // A file another build or a virus scanner holds open makes the Windows linker fail with
+    // LNK1104; that clears in a moment, so try again before giving up.
+    let mut tries = 0;
+    let out = loop {
+        let out = link.output().map_err(|e| format!("cannot run {cc}: {e}"));
+        match out {
+            Ok(o) if !o.status.success() && cfg!(windows) && tries < 4 && String::from_utf8_lossy(&o.stdout).contains("LNK1104") => {
+                tries += 1;
+                std::thread::sleep(std::time::Duration::from_millis(150 * tries));
+            }
+            o => break o,
+        }
+    };
     let _ = std::fs::remove_file(&rsp);
     let out = out?;
     if !out.status.success() {
-        return Err(format!("link failed: {}", String::from_utf8_lossy(&out.stderr).lines().find(|l| !l.trim().is_empty()).unwrap_or("").chars().take(240).collect::<String>()));
+        let text = format!("{}\n{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+        let line = text.lines().find(|l| l.contains("error")).or_else(|| text.lines().find(|l| !l.trim().is_empty())).unwrap_or("");
+        return Err(format!("link failed: {}", line.trim().chars().take(240).collect::<String>()));
     }
     if std::env::var_os("SSPUR_SPLIT_DEBUG").is_some() {
         eprintln!("split: linked, {:?}", t0.elapsed());

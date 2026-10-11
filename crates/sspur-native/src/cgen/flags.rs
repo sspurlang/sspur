@@ -227,6 +227,21 @@ pub fn inputs(cmd: &mut Command, files: &[PathBuf], rsp: &Path) -> Result<(), St
 
 /// Moves a finished build into the cache. A concurrent build of the same key may have won, and Windows cannot replace a loaded library or running program, so an existing destination counts as done.
 pub fn publish(tmp: &Path, dst: &Path) -> Result<(), String> {
+    // Windows can't open a file while a rename replaces it, so a concurrent build reading `dst`
+    // could fail. A hard link never replaces, and loses cleanly to whoever published first.
+    if cfg!(windows) {
+        match std::fs::hard_link(tmp, dst) {
+            Ok(()) => {
+                let _ = std::fs::remove_file(tmp);
+                return Ok(());
+            }
+            Err(_) if dst.exists() => {
+                let _ = std::fs::remove_file(tmp);
+                return Ok(());
+            }
+            Err(_) => {}
+        }
+    }
     match std::fs::rename(tmp, dst) {
         Ok(()) => Ok(()),
         Err(_) if dst.exists() => {
