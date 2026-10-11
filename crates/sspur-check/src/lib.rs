@@ -1886,7 +1886,12 @@ impl Checker {
             },
             ExprKind::Hole(name) => {
                 let t = exp.cloned().unwrap_or_else(|| self.fresh());
-                let locals: Vec<(String, Type)> = self.scopes.iter().flat_map(|s| s.iter().map(|(n, l)| (n.clone(), l.ty.clone()))).collect();
+                // Scopes are hash maps; sort each one so diagnostics and candidates come out the same every run.
+                let locals: Vec<(String, Type)> = self.scopes.iter().flat_map(|s| {
+                    let mut v: Vec<(String, Type)> = s.iter().map(|(n, l)| (n.clone(), l.ty.clone())).collect();
+                    v.sort_by(|a, b| a.0.cmp(&b.0));
+                    v
+                }).collect();
                 self.holes.push((e.span, name.clone(), t.clone(), locals));
                 t
             }
