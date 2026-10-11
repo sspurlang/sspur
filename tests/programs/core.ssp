@@ -550,3 +550,60 @@ test list_patterns = rpn([TLit{v: 2}, TLit{v: 3}, TAdd, TLit{v: 4}, TMul], []) =
 test nested_list_patterns = firsts([ok(1)]) == "small" and firsts([ok(500)]) == "big" and firsts([ok(7), err("x")]) == "then x" and firsts([err("e")]) == "alone" and firsts([err("e"), ok(2)]) == "other" and firsts([]) == "empty" and zip_sum([(1, 2), (3, 4)]) == 14
 test literal_list_patterns = route(["GET", "/a"]) == "read /a" and route(["HEAD", "/b"]) == "read /b" and route(["POST", "/c", "x", "y"]) == "write /c 2" and route(["PUT"]) == "unknown PUT" and route([]) == "empty" and nested(some(none)) == -1 and nested(some(some(4))) == 4
 test if_is = count_pos([some(2), none, some(-1), some(3)]) == 5 and parity(4) == "even" and parity(3) == "small odd" and parity(7) == "odd" and opt_or(none) == "-" and opt_or(some("a")) == "a"
+
+// pattern tests as Bool expressions, if chains, guard clauses, long lines (ADR 0032)
+fn some_count(xs: List[Opt[Int]]) -> Int
+= xs.filter(_ is some(_)).len
+
+fn any_pair(xss: List[List[Int]]) -> Bool
+= xss.any(x => x is [_, _, ..])
+
+fn big_some(o: Opt[Int]) -> Bool
+= o is some(v) and v > 10
+
+fn same_kind(a: Tok, b: Tok) -> Int
+= if a is TLit{v} and b is TLit{v: w} and v != w then v - w else if a is TNeg{v} and b is TClose then v else 0
+
+fn either_none(a: Opt[Int], b: Opt[Int]) -> Bool
+= a is none or b is none
+
+fn head_plus(xs: List[Int]) -> Int
+= do
+  [first, ..rest] = xs else -1
+  [second, ..] = rest else first
+  first + second
+
+fn opt_sum(xs: List[Opt[Int]]) -> Int
+= do
+  var t = 0
+  for x in xs
+    some(v) = x else ()
+    t := t + v
+  t
+
+fn digits(s: Str) -> Res[Int, Str]
+= do
+  some(n) = s.to_int else return err("not a number: {s}")
+  ok(n * 2)
+
+fn doubled(xs: List[Opt[Int]]) -> List[Int]
+= xs.map(x => do
+    some(v) = x else 0
+    v * 2)
+
+fn scale(p: Point, k: Int) -> Int
+= do
+  Point{x, y} = p
+  x * k +
+    y * k
+
+fn long_chain(xs: List[Int]) -> Int
+= xs
+  .filter(_ > 0)
+  .map(_ * 3)
+  .sum
+
+test is_expressions = some_count([some(1), none, some(2)]) == 2 and any_pair([[1], [2, 3]]) and not any_pair([[1]]) and big_some(some(11)) and not big_some(some(3)) and not big_some(none) and either_none(some(1), none) and not either_none(some(1), some(2))
+test if_chains = same_kind(TLit{v: 5}, TLit{v: 2}) == 3 and same_kind(TLit{v: 5}, TLit{v: 5}) == 0 and same_kind(TNeg{v: -4}, TClose) == -4 and same_kind(TClose, TClose) == 0
+test guards = head_plus([4, 5, 6]) == 9 and head_plus([4]) == 4 and head_plus([]) == -1 and opt_sum([some(2), none, some(5)]) == 7 and digits("21") == ok(42) and (digits("x") is err(_)) and doubled([some(1), none]) == [2, 0]
+test long_lines = scale(Point{x: 1, y: 2}, 3) == 9 and long_chain([-1, 2, 3]) == 15

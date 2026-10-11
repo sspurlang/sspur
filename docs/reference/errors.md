@@ -25,7 +25,8 @@ This page lists every code the compiler can emit, grouped by area. The test suit
 | `E_PARSE_HANDLER` | A `handle` arm that isn't an operation | `\| op(x) => ...` or `\| return(r) => ...` |
 | `E_PARSE_IMPL` | An impl method without a body | `fn m(x: Self) -> T = expr` |
 | `E_PARSE_INDENT` | Indentation that doesn't match any open block | Use 2 spaces per level |
-| `E_PARSE_IS` | `if a and b is p`: `is` would test the whole condition before it | Test the pattern first, `if e is p and cond then`, or parenthesize the value, `if (a and b) is true then` |
+| `E_PARSE_GUARD` | Swift's `guard let x = e` without `else` | Add what happens when it doesn't match: `some(x) = e else d` |
+| `E_PARSE_IS` | `a and b is p`: `is` would test the whole condition before it; or a test used as an operand, `e is p == x` | Test the pattern first, `b is p and a`, or parenthesize, `a and (b is p)`, `(e is p) == x` |
 | `E_PARSE_KERNEL` | A `kernel fn` without `@grid` | Add `@grid(threads, group)` after the signature |
 | `E_PARSE_PATTERN` | A pattern was expected, or a list pattern has two `..` | Use `_`, a name, a literal, a tuple, a list or a constructor; keep one `..` per list pattern |
 | `E_PARSE_PUB` | `pub` on something that can't be exported | Only `fn`, `type`, `effect`, `trait` and `impl` can be `pub` |
@@ -60,7 +61,7 @@ This page lists every code the compiler can emit, grouped by area. The test suit
 | `E_TUPLE_INDEX` | `t.N` beyond the tuple's length | Use an index from 0 to length - 1 |
 | `E_WITH_PATH` | A `with` update path that doesn't lead to a record field or list element | Update fields and list elements only |
 | `E_ASSIGN_IMMUTABLE` | `x := v` on a binding made with `=` | Declare it with `var` |
-| `E_REFUTABLE_LET` | A binding pattern that can fail to match | Use `match` |
+| `E_REFUTABLE_LET` | A binding pattern that can fail to match, without `else` | Add what the block gives when it doesn't match, `some(x) = e else d`, or use `match` |
 | `E_PLACEHOLDER` | `_` outside a call argument, list element or refinement | Write a lambda, `x => ...` |
 | `E_NOT_CALLABLE` | Calling a value that isn't a function of that many arguments | Check the value's type |
 | `E_ARITY` | A call with the wrong number of arguments | Pass the number the message says |
@@ -89,6 +90,7 @@ This page lists every code the compiler can emit, grouped by area. The test suit
 
 | Code | Meaning | Fix |
 |---|---|---|
+| `E_IS_BINDS` | An `e is p` test binds a name that nothing after it can use (`ok = r is ok(v)`, or a test under `or`) | Write `_` for it, use it in `and ...` after the test, or make the test an `if` condition |
 | `E_NONEXHAUSTIVE` | A `match` or `catch` that misses some cases | Add the arms the message lists, or `\| _ =>` |
 | `E_PATTERN_ARITY` | A pattern with the wrong number of arguments | Match the operation's or constructor's parameters |
 | `E_PATTERN_OR_BINDS` | The alternatives of an or-pattern bind different names, or one name at different types | Bind the same names in every alternative (`_` for the unneeded ones), or split the arm |
@@ -279,7 +281,8 @@ This page lists every code the compiler can emit, grouped by area. The test suit
 | Code | Meaning | Fix |
 |---|---|---|
 | `W_EFFECT_UNUSED` | A declared effect the body never performs | Remove it from the signature |
-| `W_ARM_UNREACHABLE` | A `match` or `catch` arm, or one alternative of an or-pattern, that the arms above already cover; or an `if e is p` whose pattern always matches | Remove it or move it up; for `if e is p`, bind with `p = e` |
+| `W_ARM_UNREACHABLE` | A `match` or `catch` arm, or one alternative of an or-pattern, that the arms above already cover; or an `e is p`, `if e is p` or `p = e else b` whose pattern always matches | Remove it or move it up; for `if e is p`, bind with `p = e`; drop the `else` of a guard that can't fail |
+| `W_NEVER_MATCHES` | An `e is p`, `if e is p` or `p = e else b` whose pattern can't match the value written there, `none is some(_)` | Test a pattern the value can have, or remove the test |
 | `W_CATCH_UNUSED` | A `catch` around code that never raises that error | Remove the `catch` |
 | `W_HANDLE_UNUSED` | A `handle` around code that never performs that effect | Remove the `handle` |
 | `W_UNSAFE_UNUSED` | An `unsafe` clause with no unsafe operation | Remove the clause |

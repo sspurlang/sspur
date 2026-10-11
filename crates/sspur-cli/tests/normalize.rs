@@ -49,6 +49,9 @@ const CASES: &[(&str, &str, &str)] = &[
     ("fn f(o: Opt[Int]) -> Int\n= if let some(x) = o then x else 0\n", "fn f(o: Opt[Int]) -> Int\n= if o is some(x) then x else 0", "if let p = e -> if e is p"),
     ("fn f(xs: List[Int]) -> Int\n= match xs\n  | [x, ...rest] => x + rest.len\n  | [] => 0\n", "fn f(xs: List[Int]) -> Int\n= match xs\n| [x, ..rest] => x + rest.len\n| [] => 0", "...rest -> ..rest"),
     ("fn f(xs: List[Int]) -> Int\n= match xs\n  | [x, *rest] => x + rest.len\n  | [] => 0\n", "fn f(xs: List[Int]) -> Int\n= match xs\n| [x, ..rest] => x + rest.len\n| [] => 0", "*rest -> ..rest"),
+    ("fn f(o: Opt[Int]) -> Int\n= do\n  let some(x) = o else { return 0 }\n  x + 1\n", "fn f(o: Opt[Int]) -> Int\n= do\n  some(x) = o else return 0\n  x + 1", "let p = e else -> p = e else"),
+    ("fn f(o: Opt[Int]) -> Int\n= do\n  guard let x = o else {\n    return 0\n  }\n  x\n", "fn f(o: Opt[Int]) -> Int\n= do\n  some(x) = o else return 0\n  x", "guard let x = e else -> some(x) = e else"),
+    ("fn f(o: Opt[Int], g: Bool) -> Bool\n= o is some(v) && v > 0 || g\n", "fn f(o: Opt[Int], g: Bool) -> Bool\n= o is some(v) and (v > 0 or g)", "&& -> and"),
 ];
 
 const FOREIGN: &[&str] = &["if let", "...", "*rest", "&&", "||", " !", "elif", "let ", "+=", "{_}", "None", "Some(", "True", ".length", ".slice(", ".size", ".to_string", ".unwrap", "print(", "len("];

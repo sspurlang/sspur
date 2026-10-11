@@ -707,6 +707,8 @@ pub const SNIPPETS: &[(&str, &str, &str)] = &[
     ("type sum", "type ${Name} = ${A} | ${B}{${x}: ${Int}}", "sum type"),
     ("match", "match ${e}\n  | ${pat} => ${}\n  | _ => ${}", "match arms"),
     ("if is", "if ${e} is ${some(v)} then ${v} else ${d}", "one-pattern test"),
+    ("is", "${e} is ${some(_)}", "pattern test, a Bool"),
+    ("guard", "${some(v)} = ${e} else ${d}", "bind a pattern, or end the block with d"),
     ("if then else", "if ${c} then ${a} else ${b}", "conditional"),
     ("test", "test ${name} = ${f(1) == 1}", "test"),
     ("for", "for ${x} in ${xs}\n  ${}", "loop"),

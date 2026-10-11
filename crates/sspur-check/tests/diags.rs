@@ -343,3 +343,44 @@ fn list_patterns_type_their_parts() {
     assert!(codes("fn f(xs: List[Str]) -> Int\n= match xs\n  | [x, ..rest] => x + rest.len\n  | [] => 0").iter().all(|c| c == "E_TYPE_MISMATCH"));
     assert!(codes("fn f(xs: List[Str]) -> Int\n= match xs\n  | [x, ..rest] => x.len + rest.len\n  | [] => 0").is_empty());
 }
+
+#[test]
+fn is_tests_bind_only_for_what_follows_them() {
+    assert!(codes("fn f(xs: List[Opt[Int]]) -> Int\n= xs.filter(_ is some(_)).len").is_empty());
+    assert!(codes("fn f(o: Opt[Int]) -> Bool\n= o is some(v) and v > 0").is_empty());
+    assert!(codes("type S = C{r: Int} | D\nfn f(a: S, b: S) -> Int\n= if a is C{r} and b is C{r: r2} then r + r2 else 0").is_empty());
+    assert!(codes("fn f(a: Opt[Int], b: Opt[Int]) -> Int\n= if a is some(x) and b is some(y) and x > y then x - y else 0").is_empty());
+    let d = diags("fn f(r: Res[Int, Str]) -> Bool\n= r is ok(v)");
+    assert_eq!(d[0].code, "E_IS_BINDS");
+    assert_eq!(d[0].msg, "'v' is bound by an 'is' test, but nothing after it uses it");
+    assert!(d[0].hint.as_deref().unwrap().starts_with("write 'ok(_)'"), "{:?}", d[0].hint);
+    assert_eq!(codes("fn f(o: Opt[Int], g: Bool) -> Int\n= if o is some(v) or g then 1 else 0"), ["E_IS_BINDS"]);
+    assert_eq!(codes("fn f(o: Opt[Int], g: Bool) -> Bool\n= o is some(v) and g"), ["E_IS_BINDS"]);
+    assert_eq!(codes("fn f(o: Opt[Int]) -> Int\n= if o is some(v) and v > 0 or v < -9 then v else 0"), Vec::<String>::new());
+}
+
+#[test]
+fn is_tests_that_always_or_never_match_warn() {
+    let warn = |src: &str| diags(src).into_iter().filter(|d| !d.is_error()).map(|d| (d.code, d.msg)).collect::<Vec<_>>();
+    assert_eq!(warn("fn f(p: (Int, Int)) -> Bool\n= p is (_, _)"), [("W_ARM_UNREACHABLE".to_string(), "the pattern always matches, so this test is always true".to_string())]);
+    assert_eq!(warn("fn f() -> Bool\n= none is some(_)"), [("W_NEVER_MATCHES".to_string(), "'some(_)' can never match 'none', so this test is always false".to_string())]);
+    assert_eq!(warn("fn f() -> Int\n= if [1, 2] is [x] then x else 0")[0].0, "W_NEVER_MATCHES");
+    assert_eq!(warn("type S = C{r: Int} | D\nfn f() -> Int\n= do\n  C{r} = D else 0\n  r")[0].1, "'C{r}' can never match 'D', so 'else' always runs");
+    assert!(warn("fn f(o: Opt[Int]) -> Bool\n= o is some(1 | 2)").is_empty());
+    assert!(warn("fn f(x: Int) -> Bool\n= some(x) is some(1)").is_empty());
+}
+
+#[test]
+fn guards_need_else_exactly_when_the_pattern_can_fail() {
+    assert!(codes("fn f(o: Opt[Int]) -> Int\n= do\n  some(v) = o else 0\n  v + 1").is_empty());
+    assert!(codes("type E = Bad\nfn f(o: Opt[Int]) -> Int ! fail[E]\n= do\n  some(v) = o else raise Bad\n  v").is_empty());
+    assert_eq!(codes("type E = Bad\nfn f(o: Opt[Int]) -> Int\n= do\n  some(v) = o else raise Bad\n  v"), ["E_EFFECT_MISSING"]);
+    assert!(codes("fn f(xs: List[Opt[Int]]) -> Int\n= do\n  var t = 0\n  for x in xs\n    some(v) = x else ()\n    t := t + v\n  t").is_empty());
+    assert_eq!(codes("fn f(o: Opt[Int]) -> Int\n= do\n  some(v) = o else \"none\"\n  v"), ["E_TYPE_MISMATCH"]);
+    let d = diags("fn f(o: Opt[Int]) -> Int\n= do\n  some(v) = o\n  v");
+    assert_eq!(d[0].code, "E_REFUTABLE_LET");
+    assert!(d[0].hint.as_deref().unwrap().contains("'some(v) = o else <value, raise or return>'"), "{:?}", d[0].hint);
+    let d = diags("fn f(p: (Int, Int)) -> Int\n= do\n  (a, b) = p else 0\n  a + b");
+    assert_eq!((d[0].code.as_str(), d[0].msg.as_str()), ("W_ARM_UNREACHABLE", "the pattern always matches, so 'else' never runs"));
+    assert!(codes("type P = {x: Int, y: Int}\nfn f(p: P) -> Int\n= do\n  P{x, y} = p\n  x + y").is_empty(), "a record pattern can't fail");
+}

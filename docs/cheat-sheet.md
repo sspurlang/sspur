@@ -65,6 +65,7 @@ The whole everyday language on one page. Every line below is from one file that 
 | `None`, `null`, `Some(x)` | `none`, `some(x)` |
 | `c ? a : b` | `if c then a else b` |
 | `if let some(x) = o` | `if o is some(x) then` |
+| `let some(x) = o else { return 0 }` | `some(x) = o else 0` |
 | `[x, ...rest]`, `[x, *rest]` | `[x, ..rest]` |
 | `x += 1` | `x := x + 1` on a `var` |
 | `{` in a string | `\{` |

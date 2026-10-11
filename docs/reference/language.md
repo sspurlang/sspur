@@ -135,7 +135,8 @@ test t = Circle{r: 1.0}.describe == "shape: 3.14" and Vec2{x: 1, y: 2} + Vec2{x:
 
 | Statement | Meaning |
 |---|---|
-| `x = e`, `(a, b) = e` | Immutable binding (irrefutable patterns only) |
+| `x = e`, `(a, b) = e`, `Point{x, y} = e` | Immutable binding, with a pattern that can't fail |
+| `p = e else b` | Guard: binds `p` for the rest of the block, or ends the block with the value `b` when `e` doesn't match: `some(u) = find(id) else raise NotFound{id}`, `[first, ..rest] = xs else 0`. A pattern that can fail without `else` is `E_REFUTABLE_LET`; one that can't fail with `else` warns `W_ARM_UNREACHABLE` |
 | `var x = e` | Mutable local |
 | `x := e` | Assign to a `var`. Also allowed directly as an `if` branch or match arm body |
 | `for p in list` + indented body | Loop over a `List`, a range `a..b` (which excludes `b`), or a generator (see Generators) |
@@ -148,9 +149,10 @@ test t = Circle{r: 1.0}.describe == "shape: 3.14" and Vec2{x: 1, y: 2} + Vec2{x:
 ## Expressions
 
 - Literals: `42`, `-3`, `0xff`, `1_000`, `3.14`, `true`, `"text {expr} more"`, `[1, 2]`, `(a, b)`, `()`, `none`, `some(x)`, `ok(x)`, `err(e)`. Interpolation: `{expr}` inside a string inserts the value. `\{` is a literal brace, and so is any `{...}` whose content is empty or is not a valid expression. For example, `"{a}"` interpolates `a`, while `"{}"` and `"([{"` are literal text.
-- Operators, from lowest to highest precedence: `or`, `and`, `not`, `== != < <= > >=`, `..`, `+ -`, `* / %`, `**`, unary `-`. `+` also concatenates `Str` and `List`. Integer overflow and division by zero trap.
+- Operators, from lowest to highest precedence: `or`, `and`, `not`, `== != < <= > >=`, `..`, `+ -`, `* / %`, `**`, unary `-`. A pattern test `e is p` takes the whole expression before it (see below). `+` also concatenates `Str` and `List`. Integer overflow and division by zero trap.
 - `if c then a else b`. `else` may be omitted only when `a` is `Unit`. Use `then do` or `else do` followed by an indented block for multiple statements.
-- `if e is p then a else b` matches one pattern: the names `p` binds are in scope in `a`, and `and cond` after the pattern is a guard that can use them: `if o is some(v) and v > 0 then v else 0`. `else` may be omitted when `a` is `Unit`, and it chains: `else if e2 is q then`. `is` takes the whole expression before it, so write `if (a and b) is true` (`E_PARSE_IS` otherwise). `if let p = e then` is accepted and stored as `if e is p then`.
+- `e is p` is a `Bool`: whether `e` matches the pattern `p`, as in `xs.filter(_ is some(_))`, `ok = r is ok(_)` or `test t = parse("x") is err(_)`. `is` takes the whole expression before it, so `a and b is p` is `E_PARSE_IS`: test first (`b is p and a`) or parenthesize (`a and (b is p)`, `(a and b) is true`). After the pattern, `and` and `or` take everything after them, `e is p and rest`, and the names `p` binds are in scope in `rest` only; a test that binds a name nothing after it can use is `E_IS_BINDS`. The test can't be an operand without parentheses: `(e is p) == x`. A pattern that always matches warns `W_ARM_UNREACHABLE`, and one that can't match the value written there (`none is some(_)`) warns `W_NEVER_MATCHES`.
+- `if e is p then a else b` matches one pattern: the names `p` binds are in scope in `a`, and `and cond` after the pattern is a guard that can use them: `if o is some(v) and v > 0 then v else 0`. Further tests join with `and`, and `a` sees the names of all of them: `if a is Circle{r} and b is Circle{r: r2} then r + r2 else 0.0`. `else` may be omitted when `a` is `Unit`, and it chains: `else if e2 is q then`. `if let p = e then` is accepted and stored as `if e is p then`.
 - Records: `Point{x: 1, y: 2}` or `{x: 1, y: 2}` (the type is inferred from context or the field set). Shorthand `{x, y}` uses variables named `x` and `y`. Variants with fields: `Rect{w: 1.0, h: 2.0}`. Variants without fields: `Dot`.
 - Field access `p.x`, tuple access `t.0`, list index `xs[i]` (traps when out of bounds).
 - Deep updates of immutable data: `u with age := u.age + 1, address.city := "Pune", tags[0] := "x"`. This returns a new value and re-checks refinements.
@@ -538,6 +540,7 @@ The parser accepts these common spellings and stores the canonical form:
 - `=` or `=>` at the end of a line, followed by an indented body
 - a block lambda's `)` on its own line, `x =>` and a block without `do`, and `x => {` + block + `}`
 - `'single quoted'` strings
+- `let p = e else { ... }` (Rust) and `guard let x = e else { ... }` / `guard case p = e else { ... }` (Swift), stored as `p = e else ...` (`some(x)` for `guard let`)
 - keyword expressions as operands, e.g. `total + catch f(x)` followed by its arms
 
 ## Decision tables

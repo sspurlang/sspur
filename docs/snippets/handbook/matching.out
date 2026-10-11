@@ -1,5 +1,5 @@
 $ sspur test matching.ssp
-7 passed, 0 failed
+9 passed, 0 failed
 // ANCHOR: missing
 $ sspur check missing.ssp
 missing.ssp:4:3 E_NONEXHAUSTIVE match does not cover: Dot

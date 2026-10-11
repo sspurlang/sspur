@@ -35,4 +35,4 @@ Every change that shapes the language, the compiler or the tools has an architec
 | [0029](0029-richer-patterns.md) | Or-patterns, list patterns and `if e is p` | Language |
 | [0030](0030-hole-filling-and-suggested-contracts.md) | Hole filling and suggested contracts | Agents |
 | [0031](0031-language-server.md) | The language server | Tooling |
-| [0032](0032-pattern-tests-guards-and-long-lines.md) | Long lines | Language |
+| [0032](0032-pattern-tests-guards-and-long-lines.md) | `e is p` anywhere, guard clauses and long lines | Language |

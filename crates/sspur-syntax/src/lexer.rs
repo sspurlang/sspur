@@ -74,7 +74,7 @@ pub fn lex(src: &str) -> Result<Vec<Token>, SyntaxError> {
                 }
                 let brace = matches!(out.last().map(|t: &Token| &t.tok), Some(Tok::Sym("{")))
                     && out.len() >= 2
-                    && out[out.len() - 2].tok == Tok::Sym("=>")
+                    && matches!(out[out.len() - 2].tok, Tok::Sym("=>") | Tok::Kw("else"))
                     && !record_line(&src[next..]);
                 let opens = brace || matches!(out.last().map(|t: &Token| &t.tok), Some(Tok::Kw("do" | "then" | "else")) | Some(Tok::Sym("=>" | "=")));
                 let active = layout.last().is_some_and(|(d, _)| *d == depth);

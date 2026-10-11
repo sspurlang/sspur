@@ -228,6 +228,8 @@ enum Kind {
     OrDefault,
     /// `r with f := v`.
     With(String),
+    /// `x is p`: one variant of a sum, `ok(_)` or `err(_)`.
+    Is(Pat),
 }
 
 #[derive(Clone, Debug)]
@@ -381,6 +383,21 @@ fn components(ctx: &HoleCtx, check: &CheckOutput, site: &HoleSite) -> Vec<Comp> 
             if fields.len() <= 4 {
                 out.push(Comp { name: v.clone(), kind: Kind::Record(fields.iter().map(|(f, _)| f.clone()).collect()), tparams: params.clone(), params: fields.iter().map(|(_, t)| t.clone()).collect(), ret: ty.clone(), effects: BTreeSet::new(), self_types: vec![], commutes: false });
             }
+        }
+    }
+    let mut tested: Vec<_> = check.sums.iter().filter(|(n, (_, vs))| vs.len() > 1 && !n.starts_with('#')).collect();
+    tested.sort_by_key(|(n, _)| *n);
+    for (name, (params, variants)) in tested {
+        let ty = Type::Con(name.clone(), params.iter().map(|p| Type::Param(p.clone())).collect());
+        for (v, _) in variants {
+            out.push(Comp { name: v.clone(), kind: Kind::Is(Pat::Ctor { name: v.clone(), args: CtorArgs::None }), tparams: params.clone(), params: vec![ty.clone()], ret: Type::bool(), effects: BTreeSet::new(), self_types: vec![], commutes: false });
+        }
+    }
+    if wraps("Res") {
+        let res = Type::Con("Res".into(), vec![Type::Param("A".into()), Type::Param("B".into())]);
+        for v in ["ok", "err"] {
+            let pat = Pat::Ctor { name: v.into(), args: CtorArgs::Positional(vec![Pat::Wild]) };
+            out.push(Comp { name: v.into(), kind: Kind::Is(pat), tparams: vec!["A".into(), "B".into()], params: vec![res.clone()], ret: Type::bool(), effects: BTreeSet::new(), self_types: vec![], commutes: false });
         }
     }
     let a = || vec!["A".to_string()];
@@ -969,6 +986,10 @@ impl<'a> En<'a> {
                 let v = args.pop().unwrap();
                 ExprKind::With(Box::new(args.pop().unwrap()), vec![(vec![PathSeg::Field(f.clone())], v)])
             }
+            Kind::Is(p) => {
+                let arms = vec![Arm { pat: p.clone(), guard: None, body: mk(ExprKind::Bool(true), sp) }, Arm { pat: Pat::Wild, guard: None, body: mk(ExprKind::Bool(false), sp) }];
+                ExprKind::Match(Box::new(args.remove(0)), arms, MatchForm::Is)
+            }
             Kind::OrDefault => {
                 let inner = Comp { kind: Kind::Method, ..c.clone() };
                 let d = natural_default(ty).unwrap_or(ExprKind::Unit);
@@ -989,6 +1010,7 @@ impl<'a> En<'a> {
         let constant = |a: &Arg| term(a).is_some_and(|t| !t.local && !t.var);
         match &c.kind {
             Kind::Bin(_) => args.iter().all(constant),
+            Kind::Is(_) => constant(&args[0]),
             Kind::Un(op) => constant(&args[0]) || term(&args[0]).is_some_and(|t| matches!(&t.show.kind, ExprKind::Unary(o, _) if o == op)),
             Kind::Method | Kind::Field(_) | Kind::OrDefault => {
                 if constant(&args[0]) {

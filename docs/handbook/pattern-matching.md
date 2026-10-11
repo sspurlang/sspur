@@ -50,6 +50,26 @@ When only one case matters, `if e is p then a else b` tests it without a full `m
 
 `else` can be left out when the `then` branch is `Unit`, and tests chain with `else if e2 is q then`. Code written as `if let some(p) = e then` is stored as `if e is some(p) then`.
 
+## `e is p` anywhere
+
+`e is p` is also a plain `Bool`, so it works wherever a condition does: in `filter` and `any`, in a test, on the right of `=`. Several tests join with `and`, and an `if` sees the names all of them bind:
+
+```sspur
+{{#include ../snippets/handbook/matching.ssp:tests}}
+```
+
+A name a test binds is only usable in the `and ...` after it, and in the `then` branch when the test is an `if` condition. `ok = r is ok(v)` leaves `v` with nothing to use it, so it's the error `E_IS_BINDS`, with the hint to write `ok(_)`. `is` takes everything before it as the value, so `a and b is p` is `E_PARSE_IS`: put the test first (`b is p and a`) or parenthesize it (`a and (b is p)`). A test that always matches gets the warning `W_ARM_UNREACHABLE`, and one that can't match the value written there, like `none is some(_)`, gets `W_NEVER_MATCHES`.
+
+## Guard clauses: `p = e else b`
+
+A binding can take a pattern that might not match, if it says what happens when it doesn't. The rest of the block runs with the names bound; when the pattern doesn't match, the block stops there and its value is `b`:
+
+```sspur
+{{#include ../snippets/handbook/matching.ssp:guard}}
+```
+
+In a function body `b` is what the function returns, so `else 0`, `else return err("bad")` and `else raise NotFound{id}` all work. In a loop body, `else ()` skips to the next element, and in a lambda's `do` block `b` is the lambda's value. A pattern that can't fail, like `(a, b)` or `Point{x, y}`, needs no `else`; one that can, without `else`, is `E_REFUTABLE_LET`. Rust's `let some(x) = e else { ... }` and Swift's `guard let x = e else { ... }` are stored as `some(x) = e else ...`.
+
 ## Exhaustiveness
 
 A `match` has to cover every case. If it doesn't, the program doesn't compile, and the error names the missing case:

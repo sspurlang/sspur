@@ -778,6 +778,9 @@ impl<'a> Hasher<'a> {
             ExprKind::Match(s, arms, _) | ExprKind::Catch(s, arms) | ExprKind::Handle(s, arms) => {
                 enc.tag(match e.kind {
                     ExprKind::Match(_, _, MatchForm::IfIs) => b'J',
+                    ExprKind::Match(_, _, MatchForm::Is) => b'A',
+                    ExprKind::Match(_, _, MatchForm::IfChain) => b'Z',
+                    ExprKind::Match(_, _, MatchForm::LetElse) => b'D',
                     ExprKind::Match(..) => b'M',
                     ExprKind::Catch(..) => b'K',
                     _ => b'H',

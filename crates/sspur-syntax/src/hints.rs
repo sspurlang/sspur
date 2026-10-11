@@ -37,14 +37,20 @@ pub fn syntax_hint(src: &str, e: &SyntaxError) -> Option<String> {
     if e.code == "E_LEX_STRING" && e.msg.contains('{') {
         return h("'{' starts an interpolation; a literal '{' is '\\{'");
     }
+    if e.code == "E_PARSE_IS" && e.msg.contains("ends at its pattern") {
+        return h("parenthesize the test to use it as an operand: '(e is p) == x', or join tests with 'and': 'e is p and f is q'");
+    }
     if e.code == "E_PARSE_IS" {
-        return h("put the pattern test first, 'if e is p and cond then', or parenthesize the value: 'if (a and b) is true then'");
+        return h("put the pattern test first, 'e is p and cond', or parenthesize the value: '(a and b) is true'");
+    }
+    if e.code == "E_PARSE_GUARD" {
+        return h("write what to do when it doesn't match: 'some(x) = e else <value, raise or return>'");
     }
     if e.code == "E_PARSE_PATTERN" && e.msg.contains("at most one '..'") {
         return h("keep one '..' per list pattern: '[first, ..rest]', '[..init, last]' or '[first, .., last]'");
     }
     if word == "is" {
-        return h("'is' tests a pattern right after 'if': 'if e is p then a else b'; elsewhere use 'match'");
+        return h("'is' tests a pattern: 'e is p' is a Bool, and 'if e is p then a else b' uses what it binds; in a rule row, parenthesize it: '(x is some(_))'");
     }
     let prev = src[..line_start].trim_end_matches('\n').rsplit('\n').next().unwrap_or("");
     if e.code == "E_PARSE_BLOCK" && prev.contains("=>") {

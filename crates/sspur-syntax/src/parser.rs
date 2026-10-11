@@ -45,7 +45,8 @@ pub fn parse_expr(src: &str) -> PResult<Expr> {
 
 enum IfCond {
     Plain(Expr),
-    Is(Expr, Pat, Option<Expr>),
+    /// The first test, its guard, and the span of the whole condition.
+    Is(Expr, Pat, Option<Expr>, Span),
 }
 
 struct Parser {
@@ -888,7 +889,7 @@ impl Parser {
         while self.eat_sym(";") {
             stmts.extend(self.stmt()?);
         }
-        Ok(Expr::new(ExprKind::Block(stmts), start.to(self.prev_span())))
+        Ok(Expr::new(ExprKind::Block(fold_guards(stmts)), start.to(self.prev_span())))
     }
 
     fn lambda_ahead(&self) -> bool {
@@ -992,7 +993,11 @@ impl Parser {
                 Ok(Expr::new(ExprKind::Return(Box::new(e)), start.to(self.prev_span())))
             }
             _ => {
+                let save = self.pos;
                 let base = self.binary(1)?;
+                if matches!(self.peek(), Tok::Ident(w) if w == "is") {
+                    return self.is_test(base, save, start);
+                }
                 if !self.is_kw("with") {
                     return Ok(base);
                 }
@@ -1025,7 +1030,7 @@ impl Parser {
         }
     }
 
-    /// The condition after `if`: an expression, or `e is p` / `e is p and guard` (and the
+    /// The condition after `if`: an expression, or `e is p` / `e is p and rest` (and the
     /// foreign `let p = e`).
     fn if_cond(&mut self) -> PResult<IfCond> {
         if matches!(self.peek(), Tok::Ident(w) if w == "let") && matches!(self.peek_at(1), Tok::Ident(_) | Tok::Int(_) | Tok::Str(_) | Tok::Kw("true" | "false") | Tok::Sym("(" | "[" | "_" | "-")) {
@@ -1034,14 +1039,23 @@ impl Parser {
             self.expect_sym("=")?;
             let scrut = self.expr()?;
             self.note("if let p = e -> if e is p");
-            return Ok(IfCond::Is(scrut, p, None));
+            return Ok(IfCond::Is(scrut, p, None, Span::default()));
         }
-        let save = self.pos;
         let c = self.expr()?;
-        if !matches!(self.peek(), Tok::Ident(w) if w == "is") {
-            return Ok(IfCond::Plain(c));
-        }
-        let loose = match &c.kind {
+        Ok(match c.kind {
+            ExprKind::Match(s, arms, MatchForm::Is) => {
+                let a = arms.into_iter().next().unwrap();
+                IfCond::Is(*s, a.pat, a.guard, c.span)
+            }
+            kind => IfCond::Plain(Expr::new(kind, c.span)),
+        })
+    }
+
+    /// `e is p`, after `e`: a `Bool`, with `and rest` a guard that sees the names `p` binds
+    /// and with `or rest` an `or`. `is` tests everything before it, so `a and b is p` is
+    /// `E_PARSE_IS` unless `a and b` is parenthesized.
+    fn is_test(&mut self, subject: Expr, save: usize, start: Span) -> PResult<Expr> {
+        let loose = match &subject.kind {
             ExprKind::Binary(op, ..) => op.prec() < 4,
             ExprKind::Unary(UnOp::Not, _) | ExprKind::If(..) | ExprKind::Match(..) | ExprKind::Catch(..) | ExprKind::Handle(..) | ExprKind::Lambda { implicit: false, .. } => true,
             _ => false,
@@ -1049,10 +1063,30 @@ impl Parser {
         if loose && !self.parenthesized(save, self.pos) {
             return self.err("E_PARSE_IS", "'is' would test the whole condition before it");
         }
-        self.bump();
-        let p = self.pat()?;
-        let guard = if self.eat_kw("and") { Some(self.expr()?) } else { None };
-        Ok(IfCond::Is(c, p, guard))
+        let at = self.bump().span;
+        let pat = self.pat()?;
+        let op = self.binop();
+        if matches!(self.peek(), Tok::Ident(w) if w == "is") || self.is_sym("..") || op.is_some_and(|o| !matches!(o, BinOp::And | BinOp::Or)) {
+            return self.err("E_PARSE_IS", "a pattern test ends at its pattern, so it can't be an operand here");
+        }
+        let flag = |b: bool| Expr::new(ExprKind::Bool(b), point(at.start));
+        let mut guard = None;
+        if let Some(o) = op {
+            if self.is_sym("&") || self.is_sym("|") {
+                self.bump();
+                self.note(if o == BinOp::And { "&& -> and" } else { "|| -> or" });
+            }
+            self.bump();
+            let rest = self.expr()?;
+            if o == BinOp::Or {
+                let test = Expr::new(ExprKind::Match(Box::new(subject), vec![Arm { pat, guard: None, body: flag(true) }, Arm { pat: Pat::Wild, guard: None, body: flag(false) }], MatchForm::Is), start.to(at));
+                let span = start.to(self.prev_span());
+                return Ok(Expr::new(ExprKind::Binary(BinOp::Or, Box::new(test), Box::new(rest)), span));
+            }
+            guard = Some(rest);
+        }
+        let arms = vec![Arm { pat, guard, body: flag(true) }, Arm { pat: Pat::Wild, guard: None, body: flag(false) }];
+        Ok(Expr::new(ExprKind::Match(Box::new(subject), arms, MatchForm::Is), start.to(self.prev_span())))
     }
 
     /// Whether the tokens `from..to` are one parenthesized group.
@@ -1100,10 +1134,9 @@ impl Parser {
         let span = start.to(self.prev_span());
         Ok(match c {
             IfCond::Plain(c) => Expr::new(ExprKind::If(Box::new(c), Box::new(t), e), span),
-            IfCond::Is(scrut, pat, guard) => {
+            IfCond::Is(scrut, pat, guard, cspan) => {
                 let other = e.map_or_else(|| Expr::new(ExprKind::Unit, span), |e| *e);
-                let arms = vec![Arm { pat, guard, body: t }, Arm { pat: Pat::Wild, guard: None, body: other }];
-                Expr::new(ExprKind::Match(Box::new(scrut), arms, MatchForm::IfIs), span)
+                if_is(scrut, pat, guard, cspan, t, other, span)
             }
         })
     }
@@ -1194,6 +1227,28 @@ impl Parser {
         let base = Expr::new(ExprKind::Name(name.clone()), span);
         let with = Expr::new(ExprKind::With(Box::new(base), vec![(path, value)]), full);
         Ok(Stmt::Assign(name, with, span))
+    }
+
+    /// `p = e else b`, at `else`: the match `| p => <the statements after it> | _ => b`, which
+    /// `fold_guards` completes. `else { ... }` (Rust, Swift) is accepted as `else b`.
+    fn guard_else(&mut self, p: Pat, value: Expr, start: Span) -> PResult<Stmt> {
+        self.expect_kw("else")?;
+        let other = if self.is_sym("{") && !(matches!(self.peek_at(1), Tok::Ident(_)) && matches!(self.peek_at(2), Tok::Sym(":" | "," | "}"))) {
+            self.bump();
+            let b = if matches!(self.peek(), Tok::Newline(_)) {
+                self.block()?
+            } else {
+                self.expr_seq()?
+            };
+            self.expect_sym("}")?;
+            self.note("p = e else { b } -> p = e else b");
+            b
+        } else {
+            self.branch()?
+        };
+        let span = start.to(self.prev_span());
+        let arms = vec![Arm { pat: p, guard: None, body: guard_pending() }, Arm { pat: Pat::Wild, guard: None, body: other }];
+        Ok(Stmt::Expr(Expr::new(ExprKind::Match(Box::new(value), arms, MatchForm::LetElse), span)))
     }
 
     fn assign_ahead(&self) -> bool {
@@ -1323,6 +1378,7 @@ impl Parser {
             stmts.extend(self.stmt()?);
         }
         self.line_indent = outer;
+        let mut stmts = fold_guards(stmts);
         if let [Stmt::Expr(_)] = stmts.as_slice() {
             let Some(Stmt::Expr(e)) = stmts.pop() else { unreachable!() };
             return Ok(e);
@@ -1348,9 +1404,31 @@ impl Parser {
             self.line_indent = indent;
             return Ok(vec![Stmt::Fn(Box::new(f))]);
         }
+        if let (Tok::Ident(g), Tok::Ident(w)) = (self.peek(), self.peek_at(1))
+            && g == "guard"
+            && matches!(w.as_str(), "let" | "case")
+        {
+            let case = w == "case";
+            let start = self.span();
+            self.bump();
+            self.bump();
+            let p = if case {
+                self.pat()?
+            } else {
+                let n = self.expect_ident()?;
+                Pat::Ctor { name: "some".into(), args: CtorArgs::Positional(vec![Pat::Bind(n)]) }
+            };
+            self.expect_sym("=")?;
+            let value = self.expr()?;
+            if !self.is_kw("else") {
+                return self.err("E_PARSE_GUARD", "a guard needs 'else' and what to do when the pattern doesn't match");
+            }
+            self.note(if case { "guard case p = e else -> p = e else" } else { "guard let x = e else -> some(x) = e else" });
+            return Ok(vec![self.guard_else(p, value, start)?]);
+        }
         if let Tok::Ident(w) = self.peek().clone()
             && matches!(w.as_str(), "let" | "const" | "val")
-            && matches!(self.peek_at(1), Tok::Ident(_) | Tok::Sym("("))
+            && matches!(self.peek_at(1), Tok::Ident(_) | Tok::Sym("(" | "["))
             && !matches!(self.peek_at(2), Tok::Sym(":=")) {
                 self.bump();
                 if matches!(self.peek(), Tok::Ident(m) if m == "mut") && matches!(self.peek_at(1), Tok::Ident(_)) {
@@ -1435,9 +1513,22 @@ impl Parser {
             return Ok(vec![self.place_assign()?]);
         }
         let saved = self.pos;
+        let start = self.span();
         if let Ok(p) = self.pat()
             && self.eat_sym("=") {
-                return Ok(vec![Stmt::Let(p, self.expr()?)]);
+                let value = self.expr()?;
+                let next_line_else = self.newline_then(|t| matches!(t, Tok::Kw("else"))).is_some_and(|c| c > self.line_indent);
+                if next_line_else {
+                    self.bump();
+                }
+                if self.is_kw("else") {
+                    if self.notes.last().is_some_and(|n| n == "let x = e -> x = e") {
+                        self.notes.pop();
+                        self.note("let p = e else -> p = e else");
+                    }
+                    return Ok(vec![self.guard_else(p, value, start)?]);
+                }
+                return Ok(vec![Stmt::Let(p, value)]);
             }
         self.pos = saved;
         Ok(vec![Stmt::Expr(self.expr()?)])
@@ -2020,4 +2111,101 @@ fn tail_return(e: &mut Expr) -> bool {
         ExprKind::Match(_, arms, _) | ExprKind::Catch(_, arms) => arms.iter_mut().fold(false, |h, a| tail_return(&mut a.body) | h),
         _ => false,
     }
+}
+
+/// `if e1 is p1 and ... then t else other`. One test, or later tests that bind nothing, is the
+/// two-arm `IfIs` match with the rest as its guard. When a later test binds names the then
+/// branch needs, the tests up to the last such one nest, and the innermost yields `some(t)`:
+/// `match (match e1 | p1 => (match e2 | p2 if g => some(t) | _ => none) | _ => none)`
+/// `| some(it) => it | _ => other`, so `other` is written once and sees none of the names.
+fn if_is(scrut: Expr, pat: Pat, guard: Option<Expr>, cspan: Span, t: Expr, other: Expr, span: Span) -> Expr {
+    let mut segs = vec![(scrut, pat, guard, cspan)];
+    loop {
+        let last = segs.last_mut().unwrap();
+        match last.2.take() {
+            Some(Expr { kind: ExprKind::Match(s, arms, MatchForm::Is), span }) => {
+                let a = arms.into_iter().next().unwrap();
+                segs.push((*s, a.pat, a.guard, span));
+            }
+            g => {
+                last.2 = g;
+                break;
+            }
+        }
+    }
+    let binds = |p: &Pat| {
+        let mut v = Vec::new();
+        p.binds(&mut v);
+        !v.is_empty()
+    };
+    let k = segs.iter().rposition(|(_, p, _, _)| binds(p)).unwrap_or(0);
+    while segs.len() > k + 1 {
+        let (s, p, g, sp) = segs.pop().unwrap();
+        let flag = |b: bool| Expr::new(ExprKind::Bool(b), point(s.span.end));
+        let arms = vec![Arm { pat: p, guard: g, body: flag(true) }, Arm { pat: Pat::Wild, guard: None, body: flag(false) }];
+        segs.last_mut().unwrap().2 = Some(Expr::new(ExprKind::Match(Box::new(s), arms, MatchForm::Is), sp));
+    }
+    if segs.len() == 1 {
+        let (s, p, g, _) = segs.pop().unwrap();
+        let arms = vec![Arm { pat: p, guard: g, body: t }, Arm { pat: Pat::Wild, guard: None, body: other }];
+        return Expr::new(ExprKind::Match(Box::new(s), arms, MatchForm::IfIs), span);
+    }
+    let at = point(span.start);
+    let callee = Expr::new(ExprKind::Name("some".into()), point(span.start + 1));
+    let mut acc = Expr::new(ExprKind::Call(Box::new(callee), vec![t]), at);
+    for (s, p, g, sp) in segs.into_iter().rev() {
+        let none = Expr::new(ExprKind::Name("none".into()), at);
+        let arms = vec![Arm { pat: p, guard: g, body: acc }, Arm { pat: Pat::Wild, guard: None, body: none }];
+        acc = Expr::new(ExprKind::Match(Box::new(s), arms, MatchForm::IfIs), sp);
+    }
+    let it = Pat::Ctor { name: "some".into(), args: CtorArgs::Positional(vec![Pat::Bind(CHAIN_VALUE.into())]) };
+    let arms = vec![Arm { pat: it, guard: None, body: Expr::new(ExprKind::Name(CHAIN_VALUE.into()), point(span.end)) }, Arm { pat: Pat::Wild, guard: None, body: other }];
+    Expr::new(ExprKind::Match(Box::new(acc), arms, MatchForm::IfChain), span)
+}
+
+/// The body of a `p = e else b` statement until the statements after it are folded in.
+fn guard_pending() -> Expr {
+    Expr::new(ExprKind::Hole(Some("\0guard".into())), Span::default())
+}
+
+/// Moves the statements after each `p = e else b` into its match: `| p => rest | _ => b`.
+fn fold_guards(mut stmts: Vec<Stmt>) -> Vec<Stmt> {
+    let mut i = stmts.len();
+    while i > 0 {
+        i -= 1;
+        let pending = matches!(&stmts[i], Stmt::Expr(Expr { kind: ExprKind::Match(_, arms, MatchForm::LetElse), .. }) if arms[0].body == guard_pending());
+        if !pending {
+            continue;
+        }
+        let rest = stmts.split_off(i + 1);
+        let body = match rest.as_slice() {
+            [] => Expr::new(ExprKind::Unit, Span::default()),
+            [Stmt::Expr(_)] => {
+                let Some(Stmt::Expr(e)) = rest.into_iter().next() else { unreachable!() };
+                e
+            }
+            _ => {
+                let span = rest.iter().map(stmt_span).reduce(|a, b| a.to(b)).unwrap_or_default();
+                Expr::new(ExprKind::Block(rest), span)
+            }
+        };
+        if let Stmt::Expr(Expr { kind: ExprKind::Match(_, arms, _), .. }) = &mut stmts[i] {
+            arms[0].body = body;
+        }
+    }
+    stmts
+}
+
+fn stmt_span(s: &Stmt) -> Span {
+    match s {
+        Stmt::Let(_, e) | Stmt::Var(_, e) | Stmt::Expr(e) | Stmt::While(e, _) => e.span,
+        Stmt::Assign(_, e, sp) => sp.to(e.span),
+        Stmt::For(_, a, b) => a.span.to(b.span),
+        Stmt::Fn(f) => f.span,
+    }
+}
+
+/// An empty span at `at`: where the parser's own nodes go, so no source expression shares it.
+fn point(at: u32) -> Span {
+    Span::new(at as usize, at as usize)
 }

@@ -495,13 +495,25 @@ impl Pat {
 }
 
 /// How a `match` was written: as arms, or as `if e is p then a else b` (two arms, the
-/// second `_`, whose body is `()` when there was no `else`).
+/// second `_`, whose body is `()` when there was no `else`), or as one of the forms below
+/// (ADR 0032). Only the printer, the content hash and the checker's messages look at it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum MatchForm {
     #[default]
     Arms,
     IfIs,
+    /// `e is p` or `e is p and rest`, a `Bool`: `| p if rest => true | _ => false`.
+    Is,
+    /// `if e1 is p1 and e2 is p2 ... then a else b` where a later test binds names:
+    /// `match (match e1 | p1 => (match e2 | p2 => some(a) | _ => none) | _ => none)`
+    /// `| some(it) => it | _ => b`, the inner matches written as `IfIs`.
+    IfChain,
+    /// `p = e else b` in a block, and the statements after it: `| p => rest | _ => b`.
+    LetElse,
 }
+
+/// The name an `IfChain` binds the then-branch's value to.
+pub const CHAIN_VALUE: &str = "it";
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum CtorArgs {

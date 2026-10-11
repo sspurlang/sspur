@@ -75,6 +75,8 @@ struct Cx {
     ret: Option<T>,
     no_risky: bool,
     marks: Vec<usize>,
+    /// The value type of each open block, `None` for `Unit`: what a guard's `else` gives.
+    rets: Vec<Option<T>>,
     moved: BTreeSet<String>,
     res_loop: HashMap<String, u32>,
     loops: u32,
@@ -631,6 +633,7 @@ impl Gen {
     fn block(&mut self, cx: &mut Cx, ind: usize, n: usize, ret: Option<T>, loop_depth: u32) {
         let mark = cx.vars.len();
         cx.marks.push(mark);
+        cx.rets.push(ret);
         let start = self.out.len();
         for _ in 0..n {
             self.stmt(cx, ind, loop_depth);
@@ -645,6 +648,29 @@ impl Gen {
         }
         cx.vars.truncate(mark);
         cx.marks.pop();
+        cx.rets.pop();
+    }
+
+    /// `p = e else b`: the rest of the block sees what `p` binds, and `b` is the block's
+    /// value (or a `return`) when `e` doesn't match.
+    fn guard(&mut self, cx: &mut Cx, ind: usize) {
+        let ret = cx.rets.last().copied().flatten();
+        let (x, r) = (self.fresh("g"), self.fresh("g"));
+        let c = self.c.clone();
+        let (pat, val, binds) = match self.r.below(3) {
+            0 => (format!("[{x}, ..{r}]"), self.list(cx, 2), vec![(x.clone(), T::Int), (r.clone(), T::List)]),
+            1 => (format!("some({x})"), format!("{}.first", self.list(cx, 2)), vec![(x.clone(), T::Int)]),
+            _ => (format!("{c}A{{x: {x}}} | {c}B{{x: {x}}}"), self.expr(cx, T::Sum, 2), vec![(x.clone(), T::Int)]),
+        };
+        let other = match (ret, cx.ret) {
+            (_, Some(t)) if !cx.lambda && self.r.chance(30) => format!("return {}", self.expr(cx, t, 1)),
+            (Some(t), _) => self.expr(cx, t, 1),
+            (None, _) => "()".into(),
+        };
+        self.line(ind, &format!("{pat} = {val} else {other}"));
+        for (n, t) in binds {
+            self.bind(cx, n, t, false);
+        }
     }
 
     fn bind(&mut self, cx: &mut Cx, name: String, ty: T, mutable: bool) {
@@ -654,7 +680,9 @@ impl Gen {
     fn stmt(&mut self, cx: &mut Cx, ind: usize, loop_depth: u32) {
         let k = self.r.below(100);
         let assignable: Vec<Var> = cx.vars.iter().filter(|v| v.assignable).cloned().collect();
-        if k < 14 {
+        if k < 3 {
+            self.guard(cx, ind);
+        } else if k < 14 {
             let t = self.any_ty();
             let e = self.expr(cx, t, 3);
             let shadow = cx.vars.iter().filter(|v| v.ty == t && !v.mutable).map(|v| v.name.clone()).collect::<Vec<_>>();
@@ -957,7 +985,16 @@ impl Gen {
                 let e2 = self.int(cx, 1);
                 let pat = if ty == "some" { format!("some({x})") } else { format!("{c}A{{x: {x}}} | {c}B{{x: {x}}}") };
                 let guard = if self.r.chance(50) { format!(" and {x} > {k}") } else { String::new() };
-                self.line(ind, &format!("{name} = if {head} is {pat}{guard} then {e1} else {e2}"));
+                if self.r.chance(40) {
+                    let (y, l2) = (self.fresh("q"), self.list(cx, 1));
+                    cx.vars.push(int_var(&x));
+                    cx.vars.push(int_var(&y));
+                    let e1 = self.int(cx, 2);
+                    cx.vars.truncate(cx.vars.len() - 2);
+                    self.line(ind, &format!("{name} = if {head} is {pat} and ({l2}) is [_, {y}, ..]{guard} then {e1} + {y} else {e2}"));
+                } else {
+                    self.line(ind, &format!("{name} = if {head} is {pat}{guard} then {e1} else {e2}"));
+                }
             }
             5 => {
                 let lg = self.fresh("lg");
@@ -1477,7 +1514,17 @@ impl Gen {
             return format!("({a} < {b})");
         }
         let d1 = d - 1;
-        match self.r.below(15) {
+        match self.r.below(16) {
+            15 => {
+                let (x, k) = (self.fresh("q"), self.r.range(-3, 4));
+                let c = self.c.clone();
+                match self.r.below(4) {
+                    0 => format!("(({}) is [_, ..])", self.list(cx, d1)),
+                    1 => format!("(({}) is [{x}, ..] and {x} > {k})", self.list(cx, d1)),
+                    2 => format!("(({}).first is some({x}) and {x} % 3 == {})", self.list(cx, d1), k.rem_euclid(3)),
+                    _ => format!("(({}) is {c}A{{x: _}} | {c}C)", self.expr(cx, T::Sum, d1)),
+                }
+            }
             12 | 13 => {
                 let op = ["<", "<=", ">", ">=", "==", "!="][self.r.below(6) as usize];
                 let (a, b) = (self.float(cx, d1), self.float(cx, d1));

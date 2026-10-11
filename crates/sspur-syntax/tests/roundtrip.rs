@@ -192,3 +192,47 @@ fn long_lines_continue() {
         assert!(printed.contains(want), "{src}\n---\n{printed}");
     }
 }
+
+#[test]
+fn is_tests_and_guards_print_canonically() {
+    let cases = [
+        ("fn f(xs: List[Opt[Int]]) -> Int\n= xs.filter(_ is some(_)).len", "= xs.filter(_ is some(_)).len"),
+        ("fn f(r: Res[Int, Str]) -> Bool\n= do\n  ok = r is ok(_)\n  ok", "  ok = r is ok(_)"),
+        ("fn f(o: Opt[Int]) -> Bool\n= o is some(v) && v > 0", "= o is some(v) and v > 0"),
+        ("fn f(o: Opt[Int], g: Bool) -> Bool\n= o is none or g", "= o is none or g"),
+        ("fn f(o: Opt[Int], g: Bool) -> Bool\n= g or (o is none)", "= g or (o is none)"),
+        ("fn f(o: Opt[Int], g: Bool) -> Bool\n= (o is none) and g", "= (o is none) and g"),
+        ("fn f(o: Opt[Int]) -> Bool\n= not (o is none)", "= not (o is none)"),
+        ("fn f(o: Opt[Int]) -> Bool\n= (o is none) == true", "= (o is none) == true"),
+        ("fn f(a: Int, b: Int) -> Bool\n= a + b is 3 | 4", "= a + b is 3 | 4"),
+        ("fn f(a: Opt[Int], b: Opt[Int]) -> Int\n= if a is some(x) and b is some(y) then x + y else 0", "= if a is some(x) and b is some(y) then x + y else 0"),
+        ("fn f(a: Opt[Int], b: Opt[Int], c: Bool) -> Int\n= if a is some(x) and b is some(y) and c and x > y then x else 0", "= if a is some(x) and b is some(y) and c and x > y then x else 0"),
+        ("fn f(a: Opt[Int], b: Opt[Int]) -> Int\n= if a is none and b is some(y) then y else 0", "= if a is none and b is some(y) then y else 0"),
+        ("fn f(a: Opt[Int], b: Opt[Int]) -> Int\n= if a is some(x) and b is none then x else 0", "= if a is some(x) and b is none then x else 0"),
+        ("fn f(a: Opt[Int], b: Opt[Int]) -> Unit ! log\n= if a is some(x) and b is some(y) then log(\"{x}{y}\")", "then log(\"{x}{y}\")"),
+        ("fn f(a: Opt[Int], b: Opt[Int]) -> Int\n= if a is some(x) and b is some(y) then x else if b is some(z) and a is none then z else 0", "else if b is some(z) and a is none then z else 0"),
+        ("fn f(o: Opt[Int]) -> Int\n= do\n  some(v) = o else 0\n  v + 1", "  some(v) = o else 0\n  v + 1"),
+        ("fn f(xs: List[Int]) -> Int\n= do\n  [a, ..rest] = xs else 0\n  [b, ..] = rest else a\n  a + b", "  [a, ..rest] = xs else 0\n  [b, ..] = rest else a\n  a + b"),
+        ("fn f(o: Opt[Int]) -> Int\n= do\n  some(v) = o\n    else 0\n  v", "  some(v) = o else 0\n  v"),
+        ("fn f(o: Opt[Int]) -> Unit ! log\n= do\n  log(\"a\")\n  some(v) = o else ()", "  log(\"a\")\n  some(v) = o else ()"),
+        ("fn f(o: Opt[Int]) -> Int\n= do\n  some(v) = o else do\n    w = 1\n    w + 1\n  v", "  some(v) = o else do\n    w = 1\n    w + 1\n  v"),
+        ("fn f(xs: List[Opt[Int]]) -> List[Int]\n= xs.map(x => do\n  some(v) = x else 0\n  v * 2)", "xs.map(x => do\n  some(v) = x else 0\n  v * 2)"),
+        ("fn f(xs: List[Opt[Int]]) -> Unit ! log\n= do\n  for x in xs\n    some(v) = x else ()\n    log(\"{v}\")\n  ()", "    some(v) = x else ()\n    log("),
+        ("fn f(o: Opt[Int]) -> Int\n= do\n  x = 1; some(v) = o else x; v", "  some(v) = o else x\n  v"),
+    ];
+    for (src, want) in cases {
+        roundtrip(src);
+        let printed = print_module(&parse(src).unwrap_or_else(|e| panic!("{src}\n{e:?}")));
+        assert!(printed.contains(want), "{src}\n---\n{printed}");
+    }
+    let (_, notes) = sspur_syntax::parse_noted("fn f(o: Opt[Int]) -> Int\n= do\n  let some(x) = o else { return 0 }\n  guard let y = o else { return 1 }\n  x + y").unwrap();
+    assert_eq!(notes, ["let p = e else -> p = e else", "p = e else { b } -> p = e else b", "guard let x = e else -> some(x) = e else"]);
+    for (src, code) in [
+        ("fn f(a: Bool, b: Opt[Int]) -> Bool\n= a and b is some(_)", "E_PARSE_IS"),
+        ("fn f(b: Opt[Int]) -> Bool\n= b is some(_) == true", "E_PARSE_IS"),
+        ("fn f(b: Opt[Int]) -> Bool\n= b is some(_) is true", "E_PARSE_IS"),
+        ("fn f(b: Opt[Int]) -> Int\n= do\n  guard let x = b\n  x", "E_PARSE_GUARD"),
+    ] {
+        assert_eq!(parse(src).unwrap_err().code, code, "{src}");
+    }
+}

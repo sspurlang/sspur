@@ -91,3 +91,17 @@ fn richer_patterns_hash_by_meaning() {
     assert_eq!(is, h("fn f(o: Opt[Int]) -> Int\n= if let some(w) = o then w else 0"));
     assert_ne!(is, h("fn f(o: Opt[Int]) -> Int\n= match o\n  | some(v) => v\n  | _ => 0"));
 }
+
+#[test]
+fn is_tests_and_guards_hash_as_written() {
+    let h = |s: &str| hashes(s)["f"].clone();
+    let test = h("fn f(o: Opt[Int]) -> Bool\n= o is some(_)");
+    assert_ne!(test, h("fn f(o: Opt[Int]) -> Bool\n= match o\n  | some(_) => true\n  | _ => false"), "the hash keeps how a test was written");
+    assert_eq!(h("fn f(o: Opt[Int]) -> Bool\n= o is some(v) and v > 0"), h("fn f(p: Opt[Int]) -> Bool\n= p is some(w) &&\n  w > 0"));
+    let chain = h("fn f(a: Opt[Int], b: Opt[Int]) -> Int\n= if a is some(x) and b is some(y) then x + y else 0");
+    assert_eq!(chain, h("fn f(p: Opt[Int], q: Opt[Int]) -> Int\n= if p is some(m) and q is some(n) then m + n else 0"));
+    assert_ne!(chain, h("fn f(a: Opt[Int], b: Opt[Int]) -> Int\n= if a is some(x) and b is some(y) then y + x else 0"));
+    let guard = h("fn f(o: Opt[Int]) -> Int\n= do\n  some(v) = o else 0\n  v + 1");
+    assert_eq!(guard, h("fn f(p: Opt[Int]) -> Int\n= do\n  let some(w) = p else { 0 }\n  w + 1"));
+    assert_ne!(guard, h("fn f(o: Opt[Int]) -> Int\n= match o\n  | some(v) => v + 1\n  | _ => 0"));
+}

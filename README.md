@@ -45,7 +45,7 @@ Most languages are designed around a human at a keyboard. SSPUR starts from a di
 ## Features
 
 **Language**
-- Records, sum types, generics, pattern matching (or-patterns, list patterns, `if e is p`) checked for exhaustiveness, decision tables, and refinement types
+- Records, sum types, generics, pattern matching (or-patterns, list patterns, `e is p` tests, `p = e else d` guards) checked for exhaustiveness, decision tables, and refinement types
 - Traits with default methods, bounds such as `[T: Ord + Show]`, operators as traits (`impl Add for Money`), and `derive Eq, Ord, Show, Hash, Json`, all resolved statically
 - Lambdas, `_` placeholders, and block lambdas (`xs.map(x => do` and an indented block)
 - Packages: `sspur.toml`, `pub` exports, `use lib.{f, T}`, and a lock that pins each dependency by the hash of its exports

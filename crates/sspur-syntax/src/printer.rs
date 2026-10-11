@@ -386,7 +386,7 @@ pub fn expr(e: &Expr, ind: usize) -> String {
         ExprKind::Lambda { params, body, .. } => {
             let ps = if params.len() == 1 { params[0].clone() } else { format!("({})", params.join(", ")) };
             let b = expr(body, ind);
-            if b.contains('\n') && !matches!(body.kind, ExprKind::Block(_)) {
+            if b.contains('\n') && !matches!(body.kind, ExprKind::Block(_) | ExprKind::Match(_, _, MatchForm::LetElse)) {
                 return format!("{ps} => do\n{}{}", pad(ind + 2), expr(body, ind + 2));
             }
             format!("{ps} => {b}")
@@ -394,7 +394,8 @@ pub fn expr(e: &Expr, ind: usize) -> String {
         ExprKind::Binary(op, l, r) => {
             let p = op.prec();
             let (lmin, rmin) = if *op == BinOp::Pow { (p + 1, p) } else { (p, p + 1) };
-            format!("{} {} {}", operand(l, lmin, ind), op.symbol(), operand(r, rmin, ind))
+            let ls = if *op == BinOp::Or && matches!(&l.kind, ExprKind::Match(_, arms, MatchForm::Is) if arms[0].guard.is_none()) { expr(l, ind) } else { operand(l, lmin, ind) };
+            format!("{ls} {} {}", op.symbol(), operand(r, rmin, ind))
         }
         ExprKind::Unary(UnOp::Neg, x) => format!("-{}", operand(x, 9, ind)),
         ExprKind::Unary(UnOp::Not, x) => format!("not {}", operand(x, 4, ind)),
@@ -403,20 +404,30 @@ pub fn expr(e: &Expr, ind: usize) -> String {
         ExprKind::Range(a, b) => format!("{}..{}", operand(a, 6, ind), operand(b, 6, ind)),
         ExprKind::If(c, t, f) => if_form(&expr(c, ind), t, f.as_deref(), ind),
         ExprKind::Match(s, arms, MatchForm::IfIs) if arms.len() == 2 && arms[1].pat == Pat::Wild && arms[1].guard.is_none() => {
-            let mut c = format!("{} is {}", operand(s, 4, ind), pat(&arms[0].pat));
-            if let Some(g) = &arms[0].guard {
-                c.push_str(&format!(" and {}", operand(g, 2, ind)));
-            }
+            let c = is_test(s, &arms[0], ind);
             let f = (arms[1].body.kind != ExprKind::Unit).then_some(&arms[1].body);
             if_form(&c, &arms[0].body, f, ind)
+        }
+        ExprKind::Match(s, arms, MatchForm::Is) if arms.len() == 2 => is_test(s, &arms[0], ind),
+        ExprKind::Match(inner, arms, MatchForm::IfChain) if arms.len() == 2 && chain_parts(inner, ind).is_some() => {
+            let (tests, t) = chain_parts(inner, ind).unwrap();
+            let f = (arms[1].body.kind != ExprKind::Unit).then_some(&arms[1].body);
+            if_form(&tests.join(" and "), t, f, ind)
+        }
+        ExprKind::Match(_, _, MatchForm::LetElse) => {
+            let mut s = String::from("do");
+            for l in guard_lines(e, ind + 2) {
+                s.push_str(&format!("\n{}{l}", pad(ind + 2)));
+            }
+            s
         }
         ExprKind::Match(s, arms, _) => format!("match {}{}", arms_head(s, ind), print_arms(arms, ind)),
         ExprKind::Catch(s, arms) => format!("catch {}{}", arms_head(s, ind), print_arms(arms, ind)),
         ExprKind::Handle(s, arms) => format!("handle {}{}", arms_head(s, ind), print_arms(arms, ind)),
         ExprKind::Block(stmts) => {
             let mut s = String::from("do");
-            for st in stmts {
-                s.push_str(&format!("\n{}{}", pad(ind + 2), stmt(st, ind + 2)));
+            for l in stmt_lines(stmts, ind + 2) {
+                s.push_str(&format!("\n{}{l}", pad(ind + 2)));
             }
             s
         }
@@ -437,10 +448,62 @@ pub fn expr(e: &Expr, ind: usize) -> String {
     }
 }
 
+/// `e is p`, and ` and guard` when the arm has one.
+fn is_test(s: &Expr, a: &Arm, ind: usize) -> String {
+    let mut c = format!("{} is {}", operand(s, 4, ind), pat(&a.pat));
+    if let Some(g) = &a.guard {
+        let gs = if matches!(g.kind, ExprKind::Match(_, _, MatchForm::Is)) { expr(g, ind) } else { operand(g, 2, ind) };
+        c.push_str(&format!(" and {gs}"));
+    }
+    c
+}
+
+/// The tests of an `IfChain`'s nested matches, and the then branch inside its `some(..)`.
+fn chain_parts(mut e: &Expr, ind: usize) -> Option<(Vec<String>, &Expr)> {
+    let mut tests = Vec::new();
+    loop {
+        let ExprKind::Match(s, arms, MatchForm::IfIs) = &e.kind else { return None };
+        if arms.len() != 2 || !matches!(&arms[1].body.kind, ExprKind::Name(n) if n == "none") {
+            return None;
+        }
+        tests.push(is_test(s, &arms[0], ind));
+        match &arms[0].body.kind {
+            ExprKind::Call(f, args) if matches!(&f.kind, ExprKind::Name(n) if n == "some") && args.len() == 1 => return Some((tests, &args[0])),
+            _ if arms[0].guard.is_some() => return None,
+            _ => e = &arms[0].body,
+        }
+    }
+}
+
+/// A block's statements, one per line; a trailing `p = e else b` brings the statements after it.
+fn stmt_lines(stmts: &[Stmt], ind: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    for (i, st) in stmts.iter().enumerate() {
+        match st {
+            Stmt::Expr(e @ Expr { kind: ExprKind::Match(_, _, MatchForm::LetElse), .. }) if i + 1 == stmts.len() => out.extend(guard_lines(e, ind)),
+            _ => out.push(stmt(st, ind)),
+        }
+    }
+    out
+}
+
+/// `p = e else b` and the lines after it, from `match e | p => rest | _ => b`.
+fn guard_lines(e: &Expr, ind: usize) -> Vec<String> {
+    let ExprKind::Match(s, arms, MatchForm::LetElse) = &e.kind else { return vec![expr(e, ind)] };
+    let mut out = vec![format!("{} = {} else {}", pat(&arms[0].pat), expr(s, ind), branch(&arms[1].body, ind))];
+    match &arms[0].body.kind {
+        ExprKind::Unit => {}
+        ExprKind::Block(stmts) => out.extend(stmt_lines(stmts, ind)),
+        ExprKind::Match(_, _, MatchForm::LetElse) => out.extend(guard_lines(&arms[0].body, ind)),
+        _ => out.push(stmt(&Stmt::Expr(arms[0].body.clone()), ind)),
+    }
+    out
+}
+
 fn if_form(c: &str, t: &Expr, f: Option<&Expr>, ind: usize) -> String {
-    let nested = matches!(t.kind, ExprKind::If(..) | ExprKind::Match(_, _, MatchForm::IfIs) | ExprKind::Lambda { .. });
+    let nested = matches!(t.kind, ExprKind::If(..) | ExprKind::Match(_, _, MatchForm::IfIs | MatchForm::IfChain) | ExprKind::Lambda { .. });
     match f {
-        Some(f) if matches!(&t.kind, ExprKind::Block(st) if !matches!(st.as_slice(), [Stmt::Assign(..)])) => {
+        Some(f) if matches!(&t.kind, ExprKind::Match(_, _, MatchForm::LetElse)) || matches!(&t.kind, ExprKind::Block(st) if !matches!(st.as_slice(), [Stmt::Assign(..)])) => {
             format!("if {c} then {}\n{}else {}", branch(t, ind + 2), pad(ind + 2), branch(f, ind + 2))
         }
         Some(f) if nested && !expr(t, ind + 4).contains('\n') => format!("if {c} then ({}) else {}", expr(t, ind + 4), branch(f, ind)),
@@ -454,7 +517,7 @@ fn if_form(c: &str, t: &Expr, f: Option<&Expr>, ind: usize) -> String {
 
 fn iter_expr(e: &Expr, ind: usize) -> String {
     match e.kind {
-        ExprKind::Block(_) => expr(e, ind + 2),
+        ExprKind::Block(_) | ExprKind::Match(_, _, MatchForm::LetElse) => expr(e, ind + 2),
         _ => expr(e, ind),
     }
 }
@@ -522,8 +585,15 @@ fn stmt(s: &Stmt, ind: usize) -> String {
         Stmt::For(p, it, body) => match &body.kind {
             ExprKind::Block(stmts) => {
                 let mut s = format!("for {} in {}", pat(p), iter_expr(it, ind));
-                for st in stmts {
-                    s.push_str(&format!("\n{}{}", pad(ind + 2), stmt(st, ind + 2)));
+                for l in stmt_lines(stmts, ind + 2) {
+                    s.push_str(&format!("\n{}{l}", pad(ind + 2)));
+                }
+                s
+            }
+            ExprKind::Match(_, _, MatchForm::LetElse) => {
+                let mut s = format!("for {} in {}", pat(p), iter_expr(it, ind));
+                for l in guard_lines(body, ind + 2) {
+                    s.push_str(&format!("\n{}{l}", pad(ind + 2)));
                 }
                 s
             }
@@ -532,8 +602,15 @@ fn stmt(s: &Stmt, ind: usize) -> String {
         Stmt::While(c, body) => match &body.kind {
             ExprKind::Block(stmts) => {
                 let mut s = format!("while {}", expr(c, ind));
-                for st in stmts {
-                    s.push_str(&format!("\n{}{}", pad(ind + 2), stmt(st, ind + 2)));
+                for l in stmt_lines(stmts, ind + 2) {
+                    s.push_str(&format!("\n{}{l}", pad(ind + 2)));
+                }
+                s
+            }
+            ExprKind::Match(_, _, MatchForm::LetElse) => {
+                let mut s = format!("while {}", expr(c, ind));
+                for l in guard_lines(body, ind + 2) {
+                    s.push_str(&format!("\n{}{l}", pad(ind + 2)));
                 }
                 s
             }

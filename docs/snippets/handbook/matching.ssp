@@ -64,6 +64,32 @@ fn radius(s: Shape) -> F64
 = if s is Circle{r} then r else 0.0
 // ANCHOR_END: is
 
+// ANCHOR: tests
+fn circles(shapes: List[Shape]) -> Int
+= shapes.filter(_ is Circle).len
+
+fn has_pair(xs: List[Int]) -> Bool
+= xs is [_, _, ..]
+
+fn both_round(a: Shape, b: Shape) -> F64
+= if a is Circle{r} and b is Circle{r: r2} then r + r2 else 0.0
+// ANCHOR_END: tests
+
+// ANCHOR: guard
+type ArgErr = Missing{name: Str}
+
+fn first_port(args: List[Str]) -> Int
+= do
+  [first, ..] = args else 80
+  some(p) = first.to_int else 80
+  p
+
+fn need(opts: Map[Str, Str], name: Str) -> Str ! fail[ArgErr]
+= do
+  some(v) = opts.get(name) else raise Missing{name}
+  v.trim
+// ANCHOR_END: guard
+
 // ANCHOR: rule
 type Zone = Local | Remote
 
@@ -81,3 +107,5 @@ test fees = fee(1, Remote, true) == 0 and fee(3, Local, false) == 5 and fee(9, L
 test or_patterns = corners(Dot) == 0 and corners(Rect{w: 1.0, h: 2.0}) == 4 and weekend("Sun") and not weekend("mon")
 test lists = total([1, 2, 3]) == 6 and describe(["a", "b", "c"]) == "a to c" and describe(["x"]) == "x" and route(["users", "7"]) == "user 7" and route(["users", "7", "posts", "1", "2"]) == "2 posts of 7" and route([]) == "not found"
 test is_tests = port_or("8080", 80) == 8080 and port_or("-1", 80) == 80 and radius(Circle{r: 2.0}) == 2.0 and radius(Dot) == 0.0
+test is_exprs = circles([Circle{r: 1.0}, Dot, Circle{r: 2.0}]) == 2 and has_pair([1, 2]) and not has_pair([1]) and both_round(Circle{r: 1.0}, Circle{r: 2.0}) == 3.0 and both_round(Dot, Circle{r: 2.0}) == 0.0
+test guards = first_port(["8080", "x"]) == 8080 and first_port([]) == 80 and first_port(["x"]) == 80 and need(empty_map().put("port", " 80 "), "port") == "80"

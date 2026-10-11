@@ -50,5 +50,5 @@ fn name_or(u: Opt[User], d: Str) -> Str
 ## Not done
 
 - `while e is p` loops. SSPUR has no `break`, so it would need a hidden flag variable, and `while` already carries the `div` effect; a `match` inside the loop body does the job.
-- `e is p` as a Bool expression outside `if` (`xs.count(_ is some(_))`). Its bindings would have no scope; write `match` or a helper.
-- `let ... else` and rest sub-patterns (`[x, ..[a, b]]`).
+- `e is p` as a Bool expression outside `if` (`xs.count(_ is some(_))`). Its bindings would have no scope; write `match` or a helper. Done in ADR 0032, where the bindings are in scope in the `and ...` after the test, and `if` conditions take several tests.
+- `let ... else` (done in ADR 0032 as `p = e else b`) and rest sub-patterns (`[x, ..[a, b]]`).

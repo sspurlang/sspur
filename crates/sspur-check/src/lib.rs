@@ -579,6 +579,40 @@ fn method_alias(name: &str) -> Option<&'static str> {
     })
 }
 
+/// A pattern that can't match the value an expression builds: `none is some(_)`, `[] is [_]`,
+/// `Dot is Circle{..}`, `(1, x) is (2, _)`.
+fn never_matches(e: &Expr, p: &Pat) -> bool {
+    let ctor = |n: &str| n.starts_with(|c: char| c.is_ascii_uppercase()) || matches!(n, "none" | "some" | "ok" | "err");
+    match (&e.kind, p) {
+        (_, Pat::Wild | Pat::Bind(_)) => false,
+        (_, Pat::Or(alts)) => alts.iter().all(|a| never_matches(e, a)),
+        (ExprKind::Int(a), Pat::Int(b)) => a != b,
+        (ExprKind::Bool(a), Pat::Bool(b)) => a != b,
+        (ExprKind::Str(parts), Pat::Str(b)) => match parts.as_slice() {
+            [] => !b.is_empty(),
+            [StrPart::Lit(a)] => a != b,
+            _ => false,
+        },
+        (ExprKind::Name(n), Pat::Ctor { name, .. }) if ctor(n) && !n.contains('.') => n != name,
+        (ExprKind::Call(f, args), Pat::Ctor { name, args: pa }) => match &f.kind {
+            ExprKind::Name(n) if matches!(n.as_str(), "some" | "ok" | "err") => {
+                n != name || matches!((args.as_slice(), pa), ([x], CtorArgs::Positional(ps)) if ps.len() == 1 && never_matches(x, &ps[0]))
+            }
+            _ => false,
+        },
+        (ExprKind::Record { ctor: Some(c), .. }, Pat::Ctor { name, .. }) => c != name,
+        (ExprKind::Tuple(xs), Pat::Tuple(ps)) => xs.len() == ps.len() && xs.iter().zip(ps).any(|(x, q)| never_matches(x, q)),
+        (ExprKind::List(xs), Pat::List { head, rest, tail }) => {
+            let fixed = head.len() + tail.len();
+            if if rest.is_some() { xs.len() < fixed } else { xs.len() != fixed } {
+                return true;
+            }
+            head.iter().zip(xs).any(|(q, x)| never_matches(x, q)) || tail.iter().rev().zip(xs.iter().rev()).any(|(q, x)| never_matches(x, q))
+        }
+        _ => false,
+    }
+}
+
 fn irrefutable(p: &Pat) -> bool {
     match p {
         Pat::Wild | Pat::Bind(_) => true,
@@ -2149,6 +2183,7 @@ impl Checker {
                 }
                 if !arm_errors {
                     self.report_unreachable(&st, arms, *form);
+                    self.report_test(s, arms, *form, e.span);
                 }
                 self.resolve(&out)
             }
@@ -3124,6 +3159,8 @@ impl Checker {
             let a = &arms[u.arm];
             let (msg, hint) = match (u.alt, form) {
                 (None, MatchForm::IfIs) => ("the pattern always matches, so the else branch never runs".to_string(), "bind it directly: 'p = e', then use the names".to_string()),
+                (None, MatchForm::Is) => ("the pattern always matches, so this test is always true".to_string(), "write 'true', or test a narrower pattern".to_string()),
+                (None, MatchForm::LetElse) => ("the pattern always matches, so 'else' never runs".to_string(), "drop the else: 'p = e'".to_string()),
                 (None, _) => (format!("arm {} '| {}' can never match: the arms above cover it", u.arm + 1, printer::pat(&a.pat)), "remove it, or move it above the arm that covers it".to_string()),
                 (Some(j), _) => {
                     let Pat::Or(alts) = &a.pat else { continue };
@@ -3131,6 +3168,48 @@ impl Checker {
                 }
             };
             self.push_diag("W_ARM_UNREACHABLE", "warning", a.body.span, msg, Some(hint), vec![]);
+        }
+    }
+
+    /// For `e is p`, `if e is p` and `p = e else b`: a pattern that can't match the value
+    /// written there (`W_NEVER_MATCHES`), and names an `is` test binds that nothing after it
+    /// can use (`E_IS_BINDS`).
+    fn report_test(&mut self, s: &Expr, arms: &[Arm], form: MatchForm, span: Span) {
+        if !matches!(form, MatchForm::Is | MatchForm::IfIs | MatchForm::LetElse) || arms.len() != 2 {
+            return;
+        }
+        if never_matches(s, &arms[0].pat) {
+            let what = match form {
+                MatchForm::Is => "so this test is always false",
+                MatchForm::IfIs => "so the then branch never runs",
+                _ => "so 'else' always runs",
+            };
+            self.push_diag("W_NEVER_MATCHES", "warning", span, format!("'{}' can never match '{}', {what}", printer::pat(&arms[0].pat), printer::expr(s, 0)), Some("test a pattern the value can have, or remove the test".into()), vec![]);
+        }
+        if form != MatchForm::Is {
+            return;
+        }
+        let mut names = Vec::new();
+        arms[0].pat.binds(&mut names);
+        let mut used = HashSet::new();
+        if let Some(g) = &arms[0].guard {
+            visit::walk_expr(g, &mut |x| {
+                if let ExprKind::Name(n) = &x.kind {
+                    used.insert(n.clone());
+                }
+                true
+            });
+        }
+        if let Some(n) = names.iter().find(|n| !used.contains(*n)) {
+            let mut w = arms[0].pat.clone();
+            w.walk_mut(&mut |q| match q {
+                Pat::Bind(_) => *q = Pat::Wild,
+                Pat::List { rest: Some(r), .. } => *r = None,
+                _ => {}
+            });
+            let msg = format!("'{n}' is bound by an 'is' test, but nothing after it uses it");
+            let hint = format!("write '{}', or use the name in 'and ...' after the test or in 'if {} is {} then ...'", printer::pat(&w), printer::expr(s, 0), printer::pat(&arms[0].pat));
+            self.push_diag("E_IS_BINDS", "error", span, msg, Some(hint), vec![]);
         }
     }
 
@@ -3146,8 +3225,9 @@ impl Checker {
             Stmt::Expr(e) => self.infer(e, exp),
             Stmt::Let(p, e) => {
                 let t = self.infer(e, None);
-                if !irrefutable(p) && !(self.sys && self.record_pattern(p)) {
-                    self.err("E_REFUTABLE_LET", e.span, "this pattern can fail to match; use 'match' instead".into());
+                if !irrefutable(p) && !self.record_pattern(p) {
+                    let hint = format!("say what happens when it doesn't match: '{} = {} else <value, raise or return>', or use 'match'", printer::pat(p), printer::expr(e, 0));
+                    self.push_diag("E_REFUTABLE_LET", "error", e.span, "this pattern can fail to match".into(), Some(hint), vec![]);
                 }
                 self.check_pat(p, &t);
                 Type::unit()
