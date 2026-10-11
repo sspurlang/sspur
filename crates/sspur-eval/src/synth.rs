@@ -13,6 +13,8 @@ use std::rc::Rc;
 pub(crate) const SPAN_BASE: u32 = 0xF000_0000;
 const MAX_TERMS: usize = 30_000;
 const MAX_TUPLES: usize = 4_000;
+/// Candidates validated per hole; most are settled by the value they give where a test reaches the hole.
+const MAX_CANDS: usize = 4_000;
 const EVAL_FUEL: u64 = 20_000;
 const RUN_FUEL: u64 = 2_000_000;
 
@@ -20,6 +22,8 @@ const RUN_FUEL: u64 = 2_000_000;
 pub(crate) struct HoleMode {
     fills: Vec<(Span, Rc<Expr>)>,
     probe: Option<Probe>,
+    /// How many times the last fill (the candidate) was evaluated.
+    uses: usize,
 }
 
 struct Probe {
@@ -27,20 +31,28 @@ struct Probe {
     max: usize,
     names: Vec<String>,
     seen: Vec<Vec<(String, Value)>>,
-    hit: bool,
+    /// Times the hole was reached in the current run.
+    hits: usize,
 }
 
 impl Interp {
     pub(crate) fn on_hole(&self, e: &Expr, env: &Rc<Env>) -> R {
-        let fill = self.hole.borrow().fills.iter().find(|(s, _)| *s == e.span).map(|(_, x)| x.clone());
+        let fill = {
+            let mut h = self.hole.borrow_mut();
+            let at = h.fills.iter().position(|(s, _)| *s == e.span);
+            if at.is_some_and(|i| i + 1 == h.fills.len()) {
+                h.uses += 1;
+            }
+            at.map(|i| h.fills[i].1.clone())
+        };
         if let Some(x) = fill {
             return self.eval(&x, env);
         }
         if let Some(p) = self.hole.borrow_mut().probe.as_mut().filter(|p| p.span == e.span) {
-            if !p.hit && p.seen.len() < p.max {
+            if p.hits == 0 && p.seen.len() < p.max {
                 p.seen.push(p.names.iter().filter_map(|n| env.get(n).map(|v| (n.clone(), v))).collect());
             }
-            p.hit = true;
+            p.hits += 1;
         }
         crate::trap("reached a typed hole")
     }
@@ -85,6 +97,10 @@ pub struct Cand {
     /// Set by a caller that proved the contracts with Z3.
     pub proved: bool,
     uses_input: bool,
+    /// Parameters of the enclosing function used nowhere else and not by this candidate either.
+    unused: usize,
+    /// Other candidates that pass the same checks but give different results on some input.
+    pub also: usize,
 }
 
 impl Cand {
@@ -111,6 +127,9 @@ impl Cand {
         }
         if self.traps > 0 {
             parts.push(format!("traps on {} input{}", self.traps, if self.traps == 1 { "" } else { "s" }));
+        }
+        if self.also > 0 && self.ok() {
+            parts.push(format!("{} other{} also fit{}", self.also, if self.also == 1 { "" } else { "s" }, if self.also == 1 { "s" } else { "" }));
         }
         parts.join(", ")
     }
@@ -200,6 +219,11 @@ enum Kind {
     Field(String),
     Bin(BinOp),
     Un(UnOp),
+    /// A method returning `Opt[T]` and then `.or(d)` with the natural default of `T` (`0`, `""`, `[]`, ...),
+    /// one step: `xs.max.or(0)`.
+    OrDefault,
+    /// `r with f := v`.
+    With(String),
 }
 
 #[derive(Clone, Debug)]
@@ -325,6 +349,9 @@ fn components(ctx: &HoleCtx, check: &CheckOutput, site: &HoleSite) -> Vec<Comp> 
             SigKind::Method(_) => Kind::Method,
             SigKind::Trait => Kind::Trait(s.owner.clone()),
         };
+        if let (Kind::Method, Some(("Opt", [inner])), false) = (&kind, con(&s.ret), s.name == "index_of") {
+            out.push(Comp { name: s.name.clone(), kind: Kind::OrDefault, tparams: s.tparams.clone(), params: s.params.clone(), ret: inner.clone(), effects: s.effects.clone(), self_types: vec![], commutes: false });
+        }
         out.push(Comp { name: s.name.clone(), kind, tparams: s.tparams.clone(), params: s.params.clone(), ret: s.ret.clone(), effects: s.effects.clone(), self_types: s.self_types.clone(), commutes: matches!(s.name.as_str(), "min" | "max" | "gcd" | "lcm") });
     }
     let mut records: Vec<_> = check.records.iter().filter(|(n, _)| !n.starts_with('#')).collect();
@@ -333,6 +360,9 @@ fn components(ctx: &HoleCtx, check: &CheckOutput, site: &HoleSite) -> Vec<Comp> 
         let ty = Type::Con(name.clone(), params.iter().map(|p| Type::Param(p.clone())).collect());
         for (f, ft) in fields {
             out.push(Comp { name: f.clone(), kind: Kind::Field(f.clone()), tparams: params.clone(), params: vec![ty.clone()], ret: ft.clone(), effects: BTreeSet::new(), self_types: vec![], commutes: false });
+        }
+        for (f, ft) in fields {
+            out.push(Comp { name: f.clone(), kind: Kind::With(f.clone()), tparams: params.clone(), params: vec![ty.clone(), ft.clone()], ret: ty.clone(), effects: BTreeSet::new(), self_types: vec![], commutes: false });
         }
         if !fields.is_empty() && fields.len() <= 4 {
             out.push(Comp { name: name.clone(), kind: Kind::Record(fields.iter().map(|(f, _)| f.clone()).collect()), tparams: params.clone(), params: fields.iter().map(|(_, t)| t.clone()).collect(), ret: ty.clone(), effects: BTreeSet::new(), self_types: vec![], commutes: false });
@@ -406,6 +436,8 @@ struct En<'a> {
     memo: HashMap<(String, usize), bool>,
     /// One child of each input's environment with the argument slots, reused for every evaluation.
     scratch: Vec<Rc<Env>>,
+    /// Literals from the tests that reach the hole, offered as constants.
+    consts: Rc<Vec<(ExprKind, Type, usize)>>,
 }
 
 fn scratch(envs: &[Rc<Env>]) -> Vec<Rc<Env>> {
@@ -497,8 +529,12 @@ impl<'a> En<'a> {
     }
 
     fn atom(&mut self, show: ExprKind, ty: Type, local: bool) {
+        self.atom_sized(show, ty, local, 1);
+    }
+
+    fn atom_sized(&mut self, show: ExprKind, ty: Type, local: bool, size: usize) {
         let e = mk(show, self.span());
-        self.add(Term { run: e.clone(), show: e, ty, size: 1, fns: vec![], obs: Rc::new(vec![]), local, var: false });
+        self.add(Term { run: e.clone(), show: e, ty, size, fns: vec![], obs: Rc::new(vec![]), local, var: false });
     }
 
     fn seed(&mut self, site: &HoleSite, extra: &[(String, Type)]) {
@@ -523,6 +559,11 @@ impl<'a> En<'a> {
         let text: String = types.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(" ");
         self.atom(ExprKind::Int(0), Type::int(), false);
         self.atom(ExprKind::Int(1), Type::int(), false);
+        for (k, t, w) in self.consts.clone().iter() {
+            if *t != Type::str() || text.contains("Str") {
+                self.atom_sized(k.clone(), t.clone(), false, *w);
+            }
+        }
         if text.contains("F64") {
             self.atom(ExprKind::Float(0.0), Type::con("F64"), false);
             self.atom(ExprKind::Float(1.0), Type::con("F64"), false);
@@ -578,7 +619,7 @@ impl<'a> En<'a> {
         }
         let comps = self.comps.clone();
         for c in comps.iter().filter(|c| !c.params.is_empty()) {
-            if self.lambda && (matches!(c.kind, Kind::Trait(_) | Kind::Record(_)) || c.params.iter().any(|p| matches!(p, Type::Fn(..)))) {
+            if self.lambda && (matches!(c.kind, Kind::Trait(_) | Kind::Record(_) | Kind::With(_)) || c.params.iter().any(|p| matches!(p, Type::Fn(..)))) {
                 continue;
             }
             let mut found = Vec::new();
@@ -750,6 +791,9 @@ impl<'a> En<'a> {
         if matches!(c.kind, Kind::Bin(BinOp::Eq | BinOp::Ne)) && args.iter().any(|a| matches!(a, Arg::Term(id) if matches!(self.terms[*id].show.kind, ExprKind::Bool(_)))) {
             return;
         }
+        if c.kind == Kind::OrDefault && natural_default(&ty).is_none() {
+            return;
+        }
         if self.redundant(c, args) {
             return;
         }
@@ -806,7 +850,7 @@ impl<'a> En<'a> {
             }
             _ => None,
         };
-        if !matches!(c.kind, Kind::Field(_) | Kind::Record(_) | Kind::Bin(_) | Kind::Un(_)) {
+        if !matches!(c.kind, Kind::Field(_) | Kind::Record(_) | Kind::Bin(_) | Kind::Un(_) | Kind::With(_)) {
             fns.push(c.name.clone());
         }
         fns.sort();
@@ -818,7 +862,7 @@ impl<'a> En<'a> {
         let callee = unit.as_deref().unwrap_or(&c.name).to_string();
         // The node over the values its arguments already have, so each step evaluates one node.
         let obs = (!self.envs.is_empty() && !matches!(ty, Type::Fn(..))).then(|| {
-            let top = self.node(c, &callee, quick, sp);
+            let top = self.node(c, &callee, quick, sp, &ty);
             let vals: Vec<Option<&Rc<Vec<Obs>>>> = args.iter().map(|a| if let Arg::Term(id) = a { Some(&self.terms[*id].obs) } else { None }).collect();
             let out: Vec<Obs> = (0..self.envs.len())
                 .map(|e| {
@@ -855,17 +899,17 @@ impl<'a> En<'a> {
                 if old.size != size || x > y {
                     return;
                 }
-                let show = self.node(c, &c.name, self.arg_exprs(args, false), sp);
+                let show = self.node(c, &c.name, self.arg_exprs(args, false), sp, &ty);
                 if x == y && !simpler(&show, &old.show) {
                     return;
                 }
-                let run = self.node(c, &callee, self.arg_exprs(args, true), sp);
+                let run = self.node(c, &callee, self.arg_exprs(args, true), sp, &ty);
                 self.terms[id] = Term { show, run, ty, size, fns, obs: o.clone(), local, var };
                 return;
             }
         }
-        let show = self.node(c, &c.name, self.arg_exprs(args, false), sp);
-        let run = self.node(c, &callee, self.arg_exprs(args, true), sp);
+        let show = self.node(c, &c.name, self.arg_exprs(args, false), sp, &ty);
+        let run = self.node(c, &callee, self.arg_exprs(args, true), sp, &ty);
         self.add_with(Term { show, run, ty, size, fns, obs: Rc::new(vec![]), local, var }, obs.map(|o| (*o).clone()));
     }
 
@@ -882,7 +926,7 @@ impl<'a> En<'a> {
             .collect()
     }
 
-    fn node(&self, c: &Comp, callee: &str, mut args: Vec<Expr>, sp: Span) -> Expr {
+    fn node(&self, c: &Comp, callee: &str, mut args: Vec<Expr>, sp: Span, ty: &Type) -> Expr {
         let fresh = Span { start: sp.start, end: sp.end };
         let kind = match &c.kind {
             Kind::Call | Kind::Trait(_) => ExprKind::Call(Box::new(mk(ExprKind::Name(callee.to_string()), fresh)), args),
@@ -898,6 +942,16 @@ impl<'a> En<'a> {
                 ExprKind::Binary(*op, Box::new(args.pop().unwrap()), Box::new(r))
             }
             Kind::Un(op) => ExprKind::Unary(*op, Box::new(args.remove(0))),
+            Kind::With(f) => {
+                let v = args.pop().unwrap();
+                ExprKind::With(Box::new(args.pop().unwrap()), vec![(vec![PathSeg::Field(f.clone())], v)])
+            }
+            Kind::OrDefault => {
+                let inner = Comp { kind: Kind::Method, ..c.clone() };
+                let d = natural_default(ty).unwrap_or(ExprKind::Unit);
+                let recv = self.node(&inner, callee, args, self.span(), ty);
+                ExprKind::Method { recv: Box::new(recv), name: "or".into(), targs: vec![], args: vec![mk(d, sp)] }
+            }
         };
         mk(kind, sp)
     }
@@ -913,7 +967,7 @@ impl<'a> En<'a> {
         match &c.kind {
             Kind::Bin(_) => args.iter().all(constant),
             Kind::Un(op) => constant(&args[0]) || term(&args[0]).is_some_and(|t| matches!(&t.show.kind, ExprKind::Unary(o, _) if o == op)),
-            Kind::Method | Kind::Field(_) => {
+            Kind::Method | Kind::Field(_) | Kind::OrDefault => {
                 if constant(&args[0]) {
                     return true;
                 }
@@ -973,6 +1027,7 @@ impl<'a> En<'a> {
             comps: self.comps.clone(),
             lambda: true,
             lambda_size: self.lambda_size,
+            consts: self.consts.clone(),
             deadline: self.deadline,
             explored: 0,
             spans: self.spans.clone(),
@@ -994,6 +1049,54 @@ impl<'a> En<'a> {
         let pool = Rc::new(pool);
         self.lambdas.insert(key, (n, self.terms.len(), pool.clone()));
         pool
+    }
+}
+
+/// Constants for the search, with the size they count as: `2`, and the integers and strings the tests
+/// that reach the hole mention and the separators inside their strings (`","` of `"a,b"`), a few of
+/// each, first seen first. A candidate that only passes because of a constant such as `7 + xs.len` is
+/// usually fitting the tests rather than the intent, so a constant from a test counts as 3 nodes.
+fn mined(cases: &[(String, Expr)], reach: &[(usize, usize)]) -> Vec<(ExprKind, Type, usize)> {
+    let (mut ints, mut strs, mut seps) = (vec![2i64], vec![], vec![]);
+    for &(case, _) in reach {
+        visit::walk_expr(&cases[case].1, &mut |x| {
+            match &x.kind {
+                ExprKind::Int(n) if n.abs() > 1 && !ints.contains(n) && ints.len() < 4 => ints.push(*n),
+                ExprKind::Str(parts) => {
+                    for p in parts {
+                        if let StrPart::Lit(l) = p {
+                            if !l.is_empty() && !strs.contains(l) && strs.len() < 3 {
+                                strs.push(l.clone());
+                            }
+                            for ch in l.chars().filter(|c| !c.is_alphanumeric()) {
+                                let c = ch.to_string();
+                                if !seps.contains(&c) && !strs.contains(&c) && seps.len() < 2 {
+                                    seps.push(c);
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+            true
+        });
+    }
+    let mut out: Vec<(ExprKind, Type, usize)> = ints.into_iter().map(|n| (ExprKind::Int(n), Type::int(), if n == 2 { 2 } else { 3 })).collect();
+    out.extend(seps.into_iter().map(|s| (ExprKind::Str(vec![StrPart::Lit(s)]), Type::str(), 2)));
+    out.extend(strs.into_iter().map(|s| (ExprKind::Str(vec![StrPart::Lit(s)]), Type::str(), 3)));
+    out
+}
+
+/// The value `.or(d)` falls back to for a result of type `t`, when it has an obvious one.
+fn natural_default(t: &Type) -> Option<ExprKind> {
+    match con(t)? {
+        ("Int", []) => Some(ExprKind::Int(0)),
+        ("F64", []) => Some(ExprKind::Float(0.0)),
+        ("Str", []) => Some(ExprKind::Str(vec![])),
+        ("Bool", []) => Some(ExprKind::Bool(false)),
+        ("List", [_]) => Some(ExprKind::List(vec![])),
+        _ => None,
     }
 }
 
@@ -1077,11 +1180,11 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
     }
     // Observe: the values in scope each time a test, an example or a fuzzed call reaches the hole.
     let names: Vec<String> = site.locals.iter().map(|(n, _)| n.clone()).collect();
-    *it.hole.borrow_mut() = HoleMode { fills: prior.to_vec(), probe: Some(Probe { span: site.span, max: opts.envs, names, seen: vec![], hit: false }) };
+    *it.hole.borrow_mut() = HoleMode { uses: 0, fills: prior.to_vec(), probe: Some(Probe { span: site.span, max: opts.envs, names, seen: vec![], hits: 0 }) };
     let hit = || {
         let mut h = it.hole.borrow_mut();
         let p = h.probe.as_mut().unwrap();
-        std::mem::replace(&mut p.hit, false)
+        std::mem::replace(&mut p.hits, 0) > 0
     };
     let cases = it.test_cases();
     let mut reach: Vec<(usize, usize)> = Vec::new();
@@ -1159,6 +1262,7 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
         comps,
         lambda: false,
         lambda_size: opts.lambda_size,
+        consts: Rc::new(mined(&cases, &reach)),
         deadline: t0 + opts.budget_ms as f64 * 0.6,
         explored: 0,
         spans: spans.clone(),
@@ -1174,8 +1278,23 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
     en.scratch = scratch(&en.envs);
     *it.hole.borrow_mut() = HoleMode::default();
     let no_evidence = reach.is_empty() && inputs.is_empty();
+    // Parameters the body uses nowhere: a candidate that leaves one unused is probably fitting the tests.
+    let need: Vec<String> = f
+        .as_ref()
+        .map(|f| {
+            let mut used = HashSet::new();
+            visit::walk_expr(&f.body, &mut |x| {
+                if let ExprKind::Name(n) = &x.kind {
+                    used.insert(n.clone());
+                }
+                true
+            });
+            f.params.iter().map(|p| p.name.clone()).filter(|n| !used.contains(n) && !n.starts_with('_')).collect()
+        })
+        .unwrap_or_default();
     let contract = f.as_ref().and_then(|f| contract_of(it, f));
     let mut cands: Vec<Cand> = Vec::new();
+    let mut memo = BTreeMap::new();
     let mut done = 0;
     en.deadline = t0 + opts.budget_ms as f64 * 0.9;
     // Grow one size at a time and validate the new terms of the hole's type before growing further:
@@ -1191,16 +1310,16 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
         }
         let mut level: Vec<usize> = (done..en.terms.len()).filter(|&i| en.terms[i].ty == site.ty && !en.terms[i].var).collect();
         done = en.terms.len();
-        level.sort_by_key(|&i| (no_evidence && !en.terms[i].local, en.terms[i].size, en.terms[i].fns.len()));
+        level.sort_by_cached_key(|&i| (no_evidence && !en.terms[i].local, cost(&en.terms[i].show, en.terms[i].size), en.terms[i].fns.len()));
         for i in level {
-            if cands.len() >= 400 || now_ms() > en.deadline {
+            if cands.len() >= MAX_CANDS || now_ms() > en.deadline {
                 en.out_of_time = true;
                 break;
             }
-            cands.push(validate(it, &en.terms[i], site, prior, &reach, &inputs, &cases, f.as_deref(), contract));
+            cands.push(validate(it, &en.terms[i], site, &need, &mut memo, prior, &reach, &inputs, &cases, f.as_deref(), contract));
         }
         // Terms found later are larger than `s`, so they can't outrank a passing one that costs `s` or less.
-        let ok = cands.iter().filter(|c| c.ok() && (!no_evidence || c.uses_input) && cost(&c.expr, c.size) <= s).count();
+        let ok = cands.iter().filter(|c| c.ok() && (!no_evidence || c.uses_input) && c.unused == 0 && cost(&c.expr, c.size) <= 10 * s).count();
         if ok >= opts.top || en.out_of_time {
             break;
         }
@@ -1212,6 +1331,7 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
     cands.sort_by(|a, b| rank(a, no_evidence).cmp(&rank(b, no_evidence)).then_with(|| a.text.cmp(&b.text)));
     // The passing candidates, or else the one that comes closest.
     let any_ok = cands.iter().any(Cand::ok);
+    let n_ok = cands.iter().filter(|c| c.ok()).count();
     for c in cands {
         if filled.cands.len() >= if any_ok { opts.top } else { 1 } {
             break;
@@ -1224,7 +1344,7 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
             continue;
         }
         if typechecks(m, site, &c.expr) {
-            filled.cands.push(c);
+            filled.cands.push(Cand { also: if c.ok() { n_ok - 1 } else { 0 }, ..c });
         }
     }
     filled.ms = now_ms() - t0;
@@ -1232,21 +1352,43 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
 }
 
 #[allow(clippy::too_many_arguments)]
-fn validate(it: &Interp, t: &Term, site: &HoleSite, prior: &[(Span, Rc<Expr>)], reach: &[(usize, usize)], inputs: &[(Vec<Value>, usize)], cases: &[(String, Expr)], f: Option<&FnDef>, contract: Option<&'static str>) -> Cand {
-    let mut c = Cand { text: printer::expr(&t.show, 0), expr: t.show.clone(), size: t.size, fns: t.fns.len(), passed: 0, failed: 0, inputs: inputs.len(), broke: 0, traps: 0, contract, proved: false, uses_input: t.local };
+fn validate(it: &Interp, t: &Term, site: &HoleSite, need: &[String], memo: &mut BTreeMap<(usize, Obs), bool>, prior: &[(Span, Rc<Expr>)], reach: &[(usize, usize)], inputs: &[(Vec<Value>, usize)], cases: &[(String, Expr)], f: Option<&FnDef>, contract: Option<&'static str>) -> Cand {
+    let mut used = HashSet::new();
+    visit::walk_expr(&t.show, &mut |x| {
+        if let ExprKind::Name(n) = &x.kind {
+            used.insert(n.clone());
+        }
+        true
+    });
+    let unused = need.iter().filter(|n| !used.contains(*n)).count();
+    let mut c = Cand { text: printer::expr(&t.show, 0), expr: t.show.clone(), size: t.size, fns: t.fns.len(), passed: 0, failed: 0, inputs: inputs.len(), broke: 0, traps: 0, contract, proved: false, uses_input: t.local, unused, also: 0 };
     let mut fills = prior.to_vec();
     fills.push((site.span, Rc::new(t.run.clone())));
-    *it.hole.borrow_mut() = HoleMode { fills, probe: None };
+    *it.hole.borrow_mut() = HoleMode { fills, probe: None, uses: 0 };
     for &(case, env) in reach {
-        if t.obs.get(env) == Some(&Obs::Trap) {
+        let at = t.obs.get(env);
+        if at == Some(&Obs::Trap) {
             c.failed += 1;
             continue;
         }
-        it.fuel.set(RUN_FUEL);
-        it.depth.set(0);
-        match it.run_case(&cases[case].1) {
-            Ok(()) => c.passed += 1,
-            Err(_) => c.failed += 1,
+        // A test that reached the hole once passes or fails by the value there alone, so other
+        // candidates with the same value there needn't run it.
+        let key = at.map(|o| (case, o.clone()));
+        let known = key.as_ref().and_then(|k| memo.get(k).copied());
+        let pass = known.unwrap_or_else(|| {
+            it.fuel.set(RUN_FUEL);
+            it.depth.set(0);
+            it.hole.borrow_mut().uses = 0;
+            let pass = it.run_case(&cases[case].1).is_ok();
+            if let Some(k) = key.filter(|_| it.hole.borrow().uses == 1) {
+                memo.insert(k, pass);
+            }
+            pass
+        });
+        if pass {
+            c.passed += 1;
+        } else {
+            c.failed += 1;
         }
     }
     if let Some(f) = f.filter(|_| c.failed == 0) {
@@ -1271,21 +1413,59 @@ fn validate(it: &Interp, t: &Term, site: &HoleSite, prior: &[(Span, Rc<Expr>)], 
     c
 }
 
-fn rank(c: &Cand, no_evidence: bool) -> (bool, usize, usize, bool, usize, usize, bool) {
-    (!c.ok(), c.failed, c.broke + c.traps, no_evidence && !c.uses_input, cost(&c.expr, c.size), c.fns, !c.uses_input)
+fn rank(c: &Cand, no_evidence: bool) -> (bool, usize, usize, bool, usize, usize, usize, bool) {
+    (!c.ok(), c.failed, c.broke + c.traps, no_evidence && !c.uses_input, c.unused, cost(&c.expr, c.size), c.fns, !c.uses_input)
 }
 
-/// Size, plus 2 for each constant other than 0, 1 and -1 and each non-empty string: a candidate that only
-/// passes because of a constant such as `7 + xs.len` is usually fitting the tests rather than the intent.
+/// In tenths of a node: 10 per node (a constant from the tests counts as several), plus the prior:
+/// what agents and programs rarely write costs more.
 fn cost(e: &Expr, size: usize) -> usize {
-    let mut magic = 0;
+    let mut extra = 0;
+    let lit = |x: &Expr| matches!(x.kind, ExprKind::Int(_) | ExprKind::Float(_) | ExprKind::Str(_) | ExprKind::Bool(_) | ExprKind::List(_));
     visit::walk_expr(e, &mut |x| {
-        if matches!(x.kind, ExprKind::Int(n) if n.abs() > 1) || matches!(x.kind, ExprKind::Float(v) if v != 0.0 && v.abs() != 1.0) || matches!(&x.kind, ExprKind::Str(p) if !p.is_empty()) {
-            magic += 1;
+        match &x.kind {
+            ExprKind::Field(r, name) | ExprKind::Method { recv: r, name, .. } => {
+                extra += method_prior(name);
+                // `xs.drop(k).len` and `xs.take(k).len` are roundabout arithmetic.
+                if name == "len" && matches!(&r.kind, ExprKind::Method { name, .. } if name == "drop" || name == "take") {
+                    extra += 10;
+                }
+                // `xs.first.or(0)` is one step in the search, but a little less likely than one method.
+                if name == "or" && matches!(&x.kind, ExprKind::Method { args, .. } if args.len() == 1 && lit(&args[0])) {
+                    extra += 2;
+                }
+            }
+            ExprKind::Binary(op, a, b) => {
+                if printer::expr(a, 0) == printer::expr(b, 0) {
+                    extra += 10;
+                }
+                let one = |x: &Expr| matches!(x.kind, ExprKind::Int(1) | ExprKind::Float(1.0));
+                let empty = |x: &Expr| matches!(&x.kind, ExprKind::List(v) if v.is_empty()) || matches!(&x.kind, ExprKind::Str(p) if p.is_empty());
+                if matches!(op, BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge) && (one(a) || one(b)) {
+                    extra += 3;
+                }
+                if matches!(op, BinOp::Eq | BinOp::Ne) && (empty(a) || empty(b)) {
+                    extra += 8;
+                }
+                // `1 + xs.len`: an offset that makes one test pass is more often a fit than the intent.
+                if matches!(op, BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem) && lit(a) != lit(b) {
+                    extra += 8;
+                }
+            }
+            _ => {}
         }
         true
     });
-    size + 2 * magic
+    10 * size + extra
+}
+
+/// How unusual a method is in a filled hole, in tenths of a node.
+fn method_prior(name: &str) -> usize {
+    match name {
+        "unique" | "push" | "flat_map" | "replace" | "items" => 6,
+        "sort" | "reverse" | "take" | "drop" | "split" | "trim" | "lower" | "upper" | "to_int" | "to_f64" | "abs" | "sort_by" | "is_some" | "is_none" | "keys" | "values" | "has" | "index_of" | "starts_with" | "ends_with" | "round" | "floor" | "sqrt" | "words" | "chars" => 3,
+        _ => 0,
+    }
 }
 
 /// The module with the hole at `span` replaced by `e`.
