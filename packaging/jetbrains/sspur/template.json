@@ -1,0 +1,19 @@
+{
+  "id": "sspur",
+  "name": "SSPUR",
+  "programArgs": {
+    "windows": "sspur.exe lsp",
+    "default": "sspur lsp"
+  },
+  "fileTypeMappings": [
+    {
+      "fileType": {
+        "name": "SSPUR",
+        "patterns": [
+          "*.ssp"
+        ]
+      },
+      "languageId": "sspur"
+    }
+  ]
+}

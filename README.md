@@ -122,7 +122,7 @@ Or unpack `sspur-vX.Y.Z-x86_64-pc-windows-msvc.zip` from a release. Native compi
 
 ### Prebuilt binaries
 
-Each [release](https://github.com/utkarshavardhana/sspur/releases) has tarballs for `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`, plus a `SHA256SUMS` file:
+Each [release](https://github.com/utkarshavardhana/sspur/releases) has tarballs for `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`, zips for `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc`, the editor files below, and a `SHA256SUMS` file:
 
 ```
 shasum -a 256 -c SHA256SUMS --ignore-missing
@@ -157,6 +157,15 @@ export PATH="$PWD/target/release:$PATH"
 | Homebrew `llvm` | `sspur gpu --emit spirv` and `--emit ptx` (Apple's clang has neither backend) |
 
 On macOS: `brew install z3 qemu llvm lld`. On Ubuntu: `sudo apt install z3 qemu-system-misc qemu-system-arm lld llvm`. GPU kernels run on Metal on macOS and on the C fallback elsewhere.
+
+### Editors
+
+`sspur lsp` is a language server: errors as you type, quick fixes, hole filling, completion, hover, formatting, go to definition and rename. Each release has the files for the two most common editors, and neither needs an account or a marketplace:
+
+- **VS Code**, and Cursor, Windsurf and VSCodium: download `sspur-vX.Y.Z.vsix` and run `code --install-extension sspur-vX.Y.Z.vsix` (or *Extensions: Install from VSIX...*).
+- **JetBrains IDEs** (IntelliJ IDEA, PyCharm, GoLand, RustRover, WebStorm, CLion): install the free LSP4IJ plugin, download and unzip `sspur-lsp4ij-vX.Y.Z.zip`, then in *Settings > Languages & Frameworks > Language Servers* click **+**, **Import template...** and pick the `sspur` folder.
+
+[Editor setup](https://utkarshavardhana.github.io/sspur/get-started/editors.html) has these in detail, plus Neovim, Vim, Helix, Emacs, Sublime Text and Eclipse.
 
 ## Getting started
 
@@ -276,7 +285,7 @@ See the [roadmap](docs/design/roadmap.md) for details and exit criteria.
 | `examples/` | Small complete programs: hello, a CRUD service, C interop, packages |
 | `tests/` | Suite programs, the ownership soundness suite, bare-metal, GPU and fuzz regression tests |
 | `bench/` | Benchmarks: `native/` against C++, `agent/` and `eval/` for agents, `incremental/`, `llvm/`, and `tokens/`, the Phase 1 token count |
-| `packaging/` | The Homebrew formula and Scoop manifest templates, the Claude Code plugin (`packaging/claude-code/`) and the VS Code extension (`packaging/vscode/`) |
+| `packaging/` | The Homebrew formula and Scoop manifest templates, the Claude Code plugin (`packaging/claude-code/`), the VS Code extension (`packaging/vscode/`) and the LSP4IJ template for JetBrains IDEs (`packaging/jetbrains/`) |
 | `tools/` | The corpus differential check, the site link check, and the playground build and its smoke test, all run by CI |
 
 ## Contributing

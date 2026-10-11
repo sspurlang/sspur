@@ -6,20 +6,19 @@ Install `sspur` first ([Installation](installation.md)) and check that `sspur --
 
 ## VS Code
 
-The extension in [`packaging/vscode/`](https://github.com/utkarshavardhana/sspur/tree/main/packaging/vscode) adds highlighting, the language server, and the commands *SSPUR: Run File*, *SSPUR: Test File* and *SSPUR: Fill Holes*. Until it is on the Marketplace, build it and install the `.vsix`:
+The extension in [`packaging/vscode/`](https://github.com/utkarshavardhana/sspur/tree/main/packaging/vscode) adds highlighting, the language server, and the commands *SSPUR: Run File*, *SSPUR: Test File* and *SSPUR: Fill Holes*. Each [release](https://github.com/utkarshavardhana/sspur/releases/latest) has it as `sspur-vX.Y.Z.vsix`, with its checksum in `SHA256SUMS`. Download it and install it, with no account or marketplace:
 
 ```sh
-cd packaging/vscode
-npm install
-npx @vscode/vsce package
-code --install-extension sspur-0.6.0.vsix
+code --install-extension sspur-v0.7.0.vsix
 ```
+
+or use *Extensions: Install from VSIX...* in the command palette. To update, install the file from a newer release. It needs `sspur` 0.7 or later.
 
 `sspur.path` in the settings points it at a binary that isn't on `PATH`.
 
 ## Cursor, Windsurf, VSCodium and other VS Code forks
 
-The same `.vsix` works: run the fork's command line with `--install-extension` (`cursor --install-extension sspur-0.6.0.vsix`, `codium --install-extension ...`), or use *Extensions: Install from VSIX...* in the command palette. These editors search [Open VSX](https://open-vsx.org) rather than the Microsoft Marketplace, which is where the extension will be listed for them.
+The same `.vsix` works: run the fork's command line with `--install-extension` (`cursor --install-extension sspur-v0.7.0.vsix`, `codium --install-extension ...`), or use *Extensions: Install from VSIX...* in the command palette.
 
 ## Neovim
 
@@ -145,12 +144,12 @@ python3 -c 'import json, plistlib, sys; plistlib.dump(json.load(open(sys.argv[1]
 
 IntelliJ IDEA, PyCharm, GoLand, RustRover, WebStorm, CLion and the rest, Community editions included, through the free [LSP4IJ](https://plugins.jetbrains.com/plugin/23257-lsp4ij) plugin:
 
-1. Install LSP4IJ from *Settings > Plugins*.
-2. In *Settings > Languages & Frameworks > Language Servers*, add a server named `SSPUR` with the command `sspur lsp`.
-3. On its *Mappings* tab, add the file name pattern `*.ssp` with the language id `sspur`.
-4. For highlighting, add the extension folder as a TextMate bundle in *Settings > Editor > TextMate Bundles* (`+`, then pick `packaging/vscode`). JetBrains reads the grammar from its `package.json`.
+1. Install LSP4IJ from *Settings > Plugins > Marketplace*. It needs no account.
+2. Download `sspur-lsp4ij-vX.Y.Z.zip` from the [latest release](https://github.com/utkarshavardhana/sspur/releases/latest) and unzip it. It holds a folder, `sspur`, with the server definition.
+3. In *Settings > Languages & Frameworks > Language Servers*, click **+**, then **Import template...**, and choose that `sspur` folder.
+4. Click **OK**. Opening a `.ssp` file starts `sspur lsp`: highlighting, errors, completion, hover, quick fixes and hole filling all come from it.
 
-A plugin for the JetBrains Marketplace that does this in one step is planned.
+If `sspur` isn't on the `PATH` that the IDE sees, edit the server's *Command* to the full path, for example `/opt/homebrew/bin/sspur lsp`. The template is the same as setting it up by hand: a server running `sspur lsp`, mapped to `*.ssp` with the language id `sspur`.
 
 ## Kate
 

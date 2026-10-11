@@ -3,7 +3,7 @@
   "displayName": "SSPUR",
   "description": "SSPUR language support: diagnostics with quick fixes, typed-hole filling, completion, hover, formatting, navigation and highlighting, through sspur lsp",
   "version": "0.6.0",
-  "publisher": "your-publisher-id",
+  "publisher": "utkarshavardhana",
   "author": "Utkarsha Vardhana",
   "license": "MIT OR Apache-2.0",
   "homepage": "https://github.com/utkarshavardhana/sspur",

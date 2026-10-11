@@ -13,9 +13,9 @@ Files inside a directory with an `sspur.toml` are checked with that package's de
 
 ## Install
 
-You need `sspur` 0.6 or later: `brew install utkarshavardhana/sspur/sspur`, the install script, or a release binary (see [Installation](https://utkarshavardhana.github.io/sspur/get-started/installation.html)). Check that `sspur --version` works.
+You need `sspur` 0.7 or later, which has `sspur lsp`: `brew install utkarshavardhana/sspur/sspur`, the install script, or a release binary (see [Installation](https://utkarshavardhana.github.io/sspur/get-started/installation.html)). Check that `sspur --version` works.
 
-Then install the extension from the Marketplace, or from a `.vsix`: *Extensions: Install from VSIX...* in the command palette, or `code --install-extension sspur-0.6.0.vsix`. Cursor, Windsurf, VSCodium and other VS Code forks take the same `.vsix`, and find the extension on [Open VSX](https://open-vsx.org).
+Then download `sspur-vX.Y.Z.vsix` from the [latest release](https://github.com/utkarshavardhana/sspur/releases/latest) and install it with *Extensions: Install from VSIX...* in the command palette, or `code --install-extension sspur-vX.Y.Z.vsix`. Cursor, Windsurf, VSCodium and other VS Code forks take the same file (`cursor --install-extension ...`, `codium --install-extension ...`). No account or marketplace is needed. To update, install the file from a newer release.
 
 ## Settings
 
@@ -34,13 +34,15 @@ For maintainers. From this directory, with Node 18 or later:
 
 ```console
 npm install
-npx @vscode/vsce package          # writes sspur-0.6.0.vsix
-code --install-extension sspur-0.6.0.vsix
+npx @vscode/vsce package          # writes sspur-<version>.vsix
+code --install-extension sspur-<version>.vsix
 ```
 
-Before publishing, set `version` in `package.json` to the release, and replace the placeholder `"publisher": "your-publisher-id"` with the real publisher id. To publish:
+The release workflow does this for every tag: it sets `version` to the release, builds `sspur-vX.Y.Z.vsix`, adds it to `SHA256SUMS` and attaches it to the GitHub release.
+
+Listing it on a marketplace as well is optional and only adds automatic updates. To do it:
 
 1. VS Code Marketplace: create the publisher at <https://marketplace.visualstudio.com/manage> (it needs a Microsoft account and an Azure DevOps personal access token with the *Marketplace: Manage* scope), then `npx @vscode/vsce login <publisher-id>` and `npx @vscode/vsce publish`, or upload the `.vsix` on the manage page.
-2. Open VSX, for Cursor, Windsurf and VSCodium: sign in at <https://open-vsx.org> with GitHub, create an access token and the namespace (`npx ovsx create-namespace <publisher-id> -p <token>`), then `npx ovsx publish sspur-0.6.0.vsix -p <token>`.
+2. Open VSX, for Cursor, Windsurf and VSCodium: sign in at <https://open-vsx.org> with GitHub, create an access token and the namespace (`npx ovsx create-namespace <publisher-id> -p <token>`), then `npx ovsx publish sspur-vX.Y.Z.vsix -p <token>`.
 
 The `.vsix` and `node_modules/` are not committed.
