@@ -48,6 +48,9 @@ pub struct CheckOutput {
     pub user_methods: HashSet<(u32, u32)>,
     pub sigs: BTreeMap<String, String>,
     pub expr_types: HashMap<ExprKey, Type>,
+    /// The type of each name a pattern binds, by where the binding's value starts (a `let`'s
+    /// value, a `for` loop's iterable, a match arm's body) and the name, for inlay hints.
+    pub bind_types: HashMap<(u32, String), Type>,
     pub fn_types: HashMap<String, (Vec<Type>, Type)>,
     pub records: RecordTable,
     pub sums: SumTable,
@@ -186,6 +189,9 @@ struct Checker {
     fail_types: HashMap<String, Type>,
     cur_params: Vec<(String, Type)>,
     pending_types: Vec<(ExprKey, Type)>,
+    pending_binds: Vec<(u32, String, Type)>,
+    bind_at: u32,
+    bind_types: HashMap<(u32, String), Type>,
     expr_types: HashMap<ExprKey, Type>,
     local_fn_types: HashMap<(u32, u32), (Vec<Type>, Type)>,
     effects: HashMap<String, EffInfo>,
@@ -311,6 +317,9 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
         fail_types: HashMap::new(),
         cur_params: vec![],
         pending_types: vec![],
+        pending_binds: vec![],
+        bind_at: 0,
+        bind_types: HashMap::new(),
         expr_types: HashMap::new(),
         local_fn_types: HashMap::new(),
         effects: HashMap::new(),
@@ -413,6 +422,10 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
             let r = c.resolve(&t);
             c.expr_types.insert(k, r);
         }
+        for (at, n, t) in std::mem::take(&mut c.pending_binds) {
+            let r = c.resolve(&t);
+            c.bind_types.insert((at, n), r);
+        }
     }
     let fn_types = c.fns.iter().map(|(n, s)| (n.clone(), (s.params.clone(), s.ret.clone()))).collect();
     let mut records = HashMap::new();
@@ -481,7 +494,7 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
     let hole_ctx = c.hole_ctx.take().map(|h| HoleCtx { sigs: c.hole_sigs(m), ..h });
     let mut traits_out = std::mem::take(&mut c.tout);
     traits_out.active = !traits_out.sites.is_empty() || !traits_out.insts.is_empty() || !traits_out.units.is_empty() || !traits_out.impls.is_empty() || !traits_out.bounded.is_empty() || m.defs.iter().any(|d| matches!(d, Def::Trait(_) | Def::Impl(_)));
-    (CheckOutput { traits: traits_out, diags: c.diags, record_types: c.record_types, user_methods: c.user_methods, sigs, expr_types: c.expr_types, fn_types, records, sums, newtypes, local_fn_types: c.local_fn_types, gen_loops: c.gen_loops, clause_effects: c.clause_effects, own: own.info, stores: c.stores, json_types, kernels: c.kernels, body_diags }, hole_ctx)
+    (CheckOutput { traits: traits_out, diags: c.diags, record_types: c.record_types, user_methods: c.user_methods, sigs, expr_types: c.expr_types, bind_types: c.bind_types, fn_types, records, sums, newtypes, local_fn_types: c.local_fn_types, gen_loops: c.gen_loops, clause_effects: c.clause_effects, own: own.info, stores: c.stores, json_types, kernels: c.kernels, body_diags }, hole_ctx)
 }
 
 fn edit_distance(a: &str, b: &str) -> usize {
@@ -2859,6 +2872,7 @@ impl Checker {
         for a in arms {
             self.scopes.push(HashMap::new());
             self.pat_span = a.body.span;
+            self.bind_at = a.body.span.start;
             self.check_pat(&a.pat, st);
             self.pat_span = Span::default();
             if let Some(g) = &a.guard {
@@ -3012,6 +3026,7 @@ impl Checker {
             Pat::Wild => {}
             Pat::Bind(n) => {
                 let t = self.resolve(ty);
+                self.pending_binds.push((self.bind_at, n.clone(), t.clone()));
                 self.bind(n, t, false);
             }
             Pat::Int(_) => self.expect(ty, &Type::int(), Span::default()),
@@ -3229,6 +3244,7 @@ impl Checker {
                     let hint = format!("say what happens when it doesn't match: '{} = {} else <value, raise or return>', or use 'match'", printer::pat(p), printer::expr(e, 0));
                     self.push_diag("E_REFUTABLE_LET", "error", e.span, "this pattern can fail to match".into(), Some(hint), vec![]);
                 }
+                self.bind_at = e.span.start;
                 self.check_pat(p, &t);
                 Type::unit()
             }
@@ -3281,6 +3297,7 @@ impl Checker {
                 self.task(body.span, |c| {
                     c.scopes.push(HashMap::new());
                     let et = c.resolve(&elem);
+                    c.bind_at = it.span.start;
                     c.check_pat(p, &et);
                     let bt = c.infer(body, Some(&Type::unit()));
                     c.expect(&Type::unit(), &bt, body.span);
@@ -3325,6 +3342,7 @@ impl Checker {
                 }
                 self.scopes.push(HashMap::new());
                 let et = self.resolve(&elem);
+                self.bind_at = it.span.start;
                 self.check_pat(p, &et);
                 self.frames.push(Frame::new());
                 let bt = self.infer(body, Some(&Type::unit()));

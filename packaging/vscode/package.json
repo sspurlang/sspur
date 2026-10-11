@@ -1,7 +1,7 @@
 {
   "name": "sspur",
   "displayName": "SSPUR",
-  "description": "SSPUR language support: diagnostics with quick fixes, typed-hole filling, completion, hover, formatting, navigation and highlighting, through sspur lsp",
+  "description": "SSPUR language support: diagnostics with quick fixes, typed-hole filling, completion, hover, signature help, inlay hints, formatting, navigation and highlighting, through sspur lsp",
   "version": "0.6.0",
   "publisher": "utkarshavardhana",
   "author": "Utkarsha Vardhana",
@@ -148,6 +148,21 @@
           "default": "",
           "markdownDescription": "Path to the `sspur` binary. Empty means `sspur` on your `PATH`.",
           "scope": "machine-overridable"
+        },
+        "sspur.inlayHints.types": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show the inferred type after a binding whose type isn't written: `total = xs.sum` shows `total: Int`, and so do guard bindings, `for` variables and `var`. VS Code's `editor.inlayHints.enabled` turns all inlay hints on or off."
+        },
+        "sspur.inlayHints.lambdas": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show the inferred type of a lambda's parameters: `x => x * 2` shows `x: Int`."
+        },
+        "sspur.inlayHints.params": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show the parameter name before a literal argument in a call of two or more arguments: `scale(3, true)` shows `n: 3, strict: true`."
         },
         "sspur.trace.server": {
           "type": "string",

@@ -17,6 +17,8 @@ async function start() {
       { scheme: "file", language: "sspur" },
       { scheme: "untitled", language: "sspur" },
     ],
+    initializationOptions: { inlayHints: vscode.workspace.getConfiguration("sspur").get("inlayHints") },
+    synchronize: { configurationSection: "sspur" },
   });
   try {
     await client.start();

@@ -1,7 +1,7 @@
 // The playground editor: CodeMirror 6 with an SSPUR mode. tools/build_playground.sh bundles this
 // file with its imports into editor.bundle.js.
-import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, dropCursor, highlightSpecialChars, hoverTooltip } from "@codemirror/view";
-import { EditorState, Compartment } from "@codemirror/state";
+import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, dropCursor, highlightSpecialChars, hoverTooltip, showTooltip, Decoration, WidgetType } from "@codemirror/view";
+import { EditorState, Compartment, StateField, StateEffect } from "@codemirror/state";
 import { StreamLanguage, syntaxHighlighting, HighlightStyle, bracketMatching, indentService, indentUnit, foldGutter, foldService, foldKeymap } from "@codemirror/language";
 import { defaultKeymap, history, historyKeymap, indentWithTab, toggleComment } from "@codemirror/commands";
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap, snippetCompletion, startCompletion } from "@codemirror/autocomplete";
@@ -253,6 +253,10 @@ function theme(dark) {
       ".cm-completionInfo": { maxWidth: "28em", fontFamily: "var(--sans)", fontSize: "13px", padding: "6px 9px" },
       ".cm-sspur-hover": { fontFamily: "var(--mono)", fontSize: "13px", padding: "5px 9px", maxWidth: "40em", whiteSpace: "pre-wrap" },
       ".cm-sspur-hover .doc": { fontFamily: "var(--sans)", marginTop: "4px", opacity: 0.85 },
+      ".cm-sspur-sig": { fontFamily: "var(--mono)", fontSize: "13px", padding: "4px 9px", maxWidth: "44em", whiteSpace: "pre-wrap" },
+      ".cm-sspur-sig .active": { fontWeight: "bold", textDecoration: "underline", textUnderlineOffset: "3px" },
+      ".cm-sspur-sig .doc": { fontFamily: "var(--sans)", marginTop: "3px", opacity: 0.85 },
+      ".cm-sspur-hint": { color: "var(--muted)", fontSize: "0.9em", opacity: 0.85 },
       ".cm-diagnostic": { fontFamily: "var(--sans)", fontSize: "13px" },
       ".cm-diagnosticAction": { backgroundColor: "var(--accent)", borderRadius: "4px" },
       ".cm-matchingBracket": { backgroundColor: "var(--match)", outline: "none" },
@@ -335,6 +339,102 @@ function hoverSource(api) {
   }, { hoverTime: 350 });
 }
 
+// Signature help: typing `(` or `,` asks for the signature of the call at the cursor; the tooltip
+// follows the cursor while it is open and closes outside a call, on `)` after the last argument,
+// or on Escape.
+const setSignature = StateEffect.define();
+const signatureField = StateField.define({
+  create: () => null,
+  update(v, tr) {
+    for (const e of tr.effects) if (e.is(setSignature)) return e.value;
+    if (v && tr.docChanged) return { ...v, pos: tr.changes.mapPos(v.pos) };
+    return v;
+  },
+  provide: (f) =>
+    showTooltip.from(f, (v) =>
+      v
+        ? {
+            pos: v.pos,
+            above: true,
+            create() {
+              const dom = document.createElement("div");
+              dom.className = "cm-sspur-sig";
+              const label = v.sig.label;
+              const r = v.sig.ranges[v.sig.active];
+              if (r) {
+                dom.append(label.slice(0, r[0]));
+                const a = document.createElement("span");
+                a.className = "active";
+                a.textContent = label.slice(r[0], r[1]);
+                dom.append(a, label.slice(r[1]));
+              } else dom.textContent = label;
+              if (v.sig.doc) {
+                const d = document.createElement("div");
+                d.className = "doc";
+                d.textContent = v.sig.doc;
+                dom.appendChild(d);
+              }
+              return { dom };
+            },
+          }
+        : null,
+    ),
+});
+
+function signatureHelp(api) {
+  let asked = 0;
+  const ask = async (view) => {
+    const mine = ++asked;
+    const text = view.state.doc.toString();
+    const head = view.state.selection.main.head;
+    const sig = api.signature ? await api.signature(text, head) : null;
+    if (mine !== asked || view.state.doc.toString() !== text) return;
+    view.dispatch({ effects: setSignature.of(sig ? { pos: head, sig } : null) });
+  };
+  return [
+    signatureField,
+    EditorView.updateListener.of((u) => {
+      const open = u.state.field(signatureField) !== null;
+      let typed = false;
+      for (const tr of u.transactions) {
+        if (!tr.isUserEvent("input.type")) continue;
+        tr.changes.iterChanges((_a, _b, _c, _d, ins) => {
+          if (/[(,)]$/.test(ins.toString())) typed = true;
+        });
+      }
+      if (typed || (open && (u.docChanged || u.selectionSet))) ask(u.view);
+    }),
+    keymap.of([{ key: "Escape", run: (v) => (v.state.field(signatureField) ? (v.dispatch({ effects: setSignature.of(null) }), true) : false) }]),
+  ];
+}
+
+// Inlay hints, when the page turns them on: the types of bindings and the names of literal
+// arguments, as widgets from the last check.
+class HintWidget extends WidgetType {
+  constructor(label) {
+    super();
+    this.label = label;
+  }
+  eq(o) {
+    return o.label === this.label;
+  }
+  toDOM() {
+    const s = document.createElement("span");
+    s.className = "cm-sspur-hint";
+    s.textContent = this.label;
+    return s;
+  }
+}
+const setHints = StateEffect.define();
+const hintsField = StateField.define({
+  create: () => Decoration.none,
+  update(v, tr) {
+    for (const e of tr.effects) if (e.is(setHints)) return e.value;
+    return tr.docChanged ? v.map(tr.changes) : v;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+
 const SEVERITY = { error: "error", warning: "warning", hole: "info" };
 
 export function createEditor({ parent, doc, dark, api, onChange, commands }) {
@@ -365,6 +465,8 @@ export function createEditor({ parent, doc, dark, api, onChange, commands }) {
         highlightActiveLine(),
         highlightSelectionMatches(),
         hoverSource(api),
+        signatureHelp(api),
+        hintsField,
         lintGutter(),
         themeConf.of(styled(dark)),
         keymap.of([
@@ -402,6 +504,15 @@ export function createEditor({ parent, doc, dark, api, onChange, commands }) {
     goto(pos) {
       view.dispatch({ selection: { anchor: pos }, scrollIntoView: true });
       view.focus();
+    },
+    // Inlay hints from a check of `text`, as `[{at, label, kind}]`; an empty list clears them.
+    setHints(text, hints) {
+      if (view.state.doc.toString() !== text) return;
+      const len = view.state.doc.length;
+      const marks = hints
+        .filter((h) => h.at <= len)
+        .map((h) => Decoration.widget({ widget: new HintWidget(h.kind === "param" ? h.label + " " : h.label), side: h.kind === "param" ? -1 : 1 }).range(h.at));
+      view.dispatch({ effects: setHints.of(Decoration.set(marks, true)) });
     },
     // Diagnostics from a check of `text`; a fix is applied only while the text is unchanged.
     setDiagnostics(text, diags) {

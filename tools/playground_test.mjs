@@ -166,6 +166,30 @@ wasm.set_fill_budget(5000);
 const holes = call("check", holeSrc).diags.filter((d) => d.code === "E_HOLE");
 same("fix: hole candidates checked against the tests", holes.map((d) => d.fixes[0] && d.fixes[0].title), ["Fill with items.map(_.qty * _.price).sum (passes 1 test, 2 others also fit)", "Fill with x + 1 (passes 1 test, 2 others also fit)"]);
 same("fix: a hole fill keeps precedence", fixWith(holeSrc.replace("= ?total", "= 0"), "E_HOLE"), holeSrc.replace("= ?total", "= 0").replace("2 * ?t", "2 * (x + 1)"));
+
+// Signature help, on complete and on half-typed code, and inlay hints.
+const sigSrc = '// Scales n by k.\nfn scale(n: Int, k: Int) -> Int\n= n * k\n\nfn main() -> Unit ! log\n= do\n  xs = [1, 2, 3]\n  log("{scale(1, 2)}")\n';
+call("check", sigSrc);
+const sig = (src, needle, off) => call("signature", src, at(src, needle, off));
+const s1 = sig(sigSrc, "scale(1, 2)", 9);
+same("signature: a user function at its second argument", s1 && [s1.label, s1.active, s1.doc], ["scale(n: Int, k: Int) -> Int", 1, "Scales n by k."]);
+same("signature: the active parameter's range", s1 && s1.label.slice(...s1.ranges[1]), "k: Int");
+const typing = sigSrc.replace('  log("{scale(1, 2)}")\n', "  y = scale(1, min(3, \n");
+const s2 = sig(typing, "min(3, ", 7);
+same("signature: a builtin nested in a call being typed", s2 && [s2.label, s2.active], ["min(a: A, b: A) -> A", 1]);
+const s3 = sig(typing, "scale(1, ", 6);
+same("signature: the outer call being typed", s3 && [s3.name, s3.active], ["scale", 0]);
+const methodTyping = sigSrc.replace('  log("{scale(1, 2)}")\n', "  ys = xs.map(\n");
+const s4 = sig(methodTyping, "xs.map(", 7);
+same("signature: a method on a typed receiver", s4 && s4.label, "List.map(f: A -> B ! e) -> List[B] ! e");
+same("signature: none outside a call", sig(sigSrc, "xs = [1", 6), null);
+const hintSrc = 'fn scale(n: Int, by: Int, strict: Bool) -> Int\n= if strict then n * by else n\n\nfn f(xs: List[Int]) -> Int\n= do\n  n = 0\n  total = xs.map(x => x * 2).sum\n  some(first) = xs.first else 0\n  for v in xs\n    log("{v}")\n  scale(3, total, true) + first\n';
+const hintsOf = (opts) => JSON.parse(wasm.inlay_hints(hintSrc.replace("-> Int\n= do", "-> Int ! log\n= do"), JSON.stringify(opts))).map((h) => h.label);
+same("hints: types, lambda parameters and literal arguments", hintsOf({}), [": Int", ": Int", ": Int", ": Int", "n:", "strict:"]);
+same("hints: kinds switch off", hintsOf({ params: false, lambdas: false }), [": Int", ": Int", ": Int"]);
+const hintAt = JSON.parse(wasm.inlay_hints(hintSrc.replace("-> Int\n= do", "-> Int ! log\n= do"), "{}"));
+const hs = hintSrc.replace("-> Int\n= do", "-> Int ! log\n= do");
+same("hints: placed after the name", hintAt.slice(0, 4).map((h, i) => hs.slice(h.at - [5, 2, 5, 5][i], h.at)), ["total", "(x", "first", "for v"]);
 const builtins = call("builtins");
 expect(builtins.globals.length > 50 && builtins.methods.length > 100 && builtins.keywords.includes("match"), "builtins: lists from the checker");
 

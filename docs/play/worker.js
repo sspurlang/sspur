@@ -15,6 +15,8 @@ const ops = {
   fmt: (m) => sspur.fmt(m.src),
   complete: (m) => sspur.complete(m.src, m.pos),
   hover: (m) => sspur.hover(m.src, m.pos),
+  signature: (m) => sspur.signature(m.src, m.pos),
+  hints: (m) => sspur.inlay_hints(m.src, JSON.stringify(m.opts || {})),
   builtins: () => sspur.builtins(),
   tokens: (m) => String(sspur.tokens(m.src)),
 };

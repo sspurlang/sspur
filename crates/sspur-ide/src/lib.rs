@@ -1,5 +1,6 @@
 //! Editor support shared by the language server (`sspur lsp`) and the playground: diagnostics
-//! with quick fixes, completions, hover, navigation and highlighting, from the checker's output.
+//! with quick fixes, completions, hover, signature help, inlay hints, navigation and highlighting,
+//! from the checker's output.
 //! Offsets in and out are UTF-16 code units, as editors count them.
 use serde_json::{json, Value as J};
 use sspur_check::{CheckOutput, Diag, Type};
@@ -8,8 +9,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, OnceLock};
 
 pub mod highlight;
+pub mod hints;
 pub mod indent;
 pub mod nav;
+pub mod sig;
 
 /// A source that parsed, with its check. `src` is the text as the editor has it; a package's
 /// dependencies come after it in the module, so their spans lie past its end.
@@ -1041,10 +1044,15 @@ pub fn hover(cx: &Ctx, src: &str, pos16: usize) -> J {
 mod tests {
     use super::*;
 
-    fn load(src: &str) -> Result<(Module, CheckOutput), Vec<Diag>> {
+    pub(crate) fn load(src: &str) -> Result<(Module, CheckOutput), Vec<Diag>> {
         let m = sspur_syntax::parse(src).map_err(|e| vec![sspur_check::syntax_diag(&e)])?;
         let c = sspur_check::check(&m);
         Ok((m, c))
+    }
+
+    pub(crate) fn analysis(src: &str) -> Arc<Analysis> {
+        let (module, check) = load(src).expect("parses");
+        Arc::new(Analysis { src: src.to_string(), module, check })
     }
 
     const SRC: &str = "type P = {x: Int, y: Int}\n\nfn norm(p: P) -> Int\n= p.x * p.x + p.y * p.y\n";

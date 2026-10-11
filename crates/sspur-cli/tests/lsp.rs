@@ -1,5 +1,6 @@
 //! Drives `sspur lsp` over stdio the way an editor does: open a file with an error, fix it into one
-//! with a typed hole, and use completion, hover, quick fixes, formatting and navigation on it.
+//! with a typed hole, and use completion, hover, quick fixes, formatting and navigation on it, then
+//! inlay hints and signature help while typing.
 #![cfg(feature = "lsp")]
 
 use serde_json::{json, Value};
@@ -121,7 +122,7 @@ fn lsp_session() {
     let init = c.request("initialize", json!({"processId": null, "rootUri": null, "capabilities": {}}));
     let caps = &init["capabilities"];
     assert_eq!(init["serverInfo"]["name"], "sspur");
-    for cap in ["hoverProvider", "completionProvider", "codeActionProvider", "documentFormattingProvider", "documentOnTypeFormattingProvider", "definitionProvider", "referencesProvider", "documentSymbolProvider", "renameProvider", "semanticTokensProvider"] {
+    for cap in ["hoverProvider", "completionProvider", "codeActionProvider", "documentFormattingProvider", "documentOnTypeFormattingProvider", "definitionProvider", "referencesProvider", "documentSymbolProvider", "renameProvider", "semanticTokensProvider", "signatureHelpProvider", "inlayHintProvider"] {
         assert!(!caps[cap].is_null(), "missing {cap}: {caps}");
     }
     c.notify("initialized", json!({}));
@@ -203,6 +204,95 @@ fn lsp_session() {
     c.notify("exit", Value::Null);
     let status = c.child.wait().unwrap();
     assert!(status.success(), "{status}");
+}
+
+const USERS: &str = "type User = {id: Int, name: Str}
+
+// The user with this id.
+fn find(users: List[User], id: Int) -> Opt[User]
+= users.find(u => u.id == id)
+
+fn scale(n: Int, by: Int, strict: Bool) -> Int
+= if strict then n * by else n
+
+fn label(users: List[User]) -> Str ! log
+= do
+  n = 0
+  total = users.map(_.id).sum
+  some(user) = find(users, total) else \"none\"
+  for u in users
+    log(u.name)
+  k = scale(3, total, true)
+  user.name
+";
+
+/// The position just after the `nth` occurrence of `needle`, or at its start with `before`.
+fn at_text(text: &str, needle: &str, nth: usize, before: bool) -> Value {
+    let i = text.match_indices(needle).nth(nth).unwrap_or_else(|| panic!("no {needle}")).0 + if before { 0 } else { needle.len() };
+    let line = text[..i].matches('\n').count() as u32;
+    let col = (i - text[..i].rfind('\n').map_or(0, |k| k + 1)) as u32;
+    pos(line, col)
+}
+
+#[test]
+fn lsp_hints_and_signatures() {
+    let mut c = Client::start(&[]);
+    let caps = json!({"workspace": {"inlayHint": {"refreshSupport": true}}});
+    c.request("initialize", json!({"processId": null, "rootUri": null, "capabilities": caps, "initializationOptions": {"inlayHints": {"lambdas": true}}}));
+    c.notify("initialized", json!({}));
+    let uri = "file:///tmp/sspur-lsp-test/users.ssp";
+    let d = json!({"uri": uri});
+    c.notify("textDocument/didOpen", json!({"textDocument": {"uri": uri, "languageId": "sspur", "version": 1, "text": USERS}}));
+    c.diagnostics(|_| true);
+    let all = json!({"start": pos(0, 0), "end": pos(40, 0)});
+    let hints = c.request("textDocument/inlayHint", json!({"textDocument": d, "range": all}));
+    let got: Vec<(Value, String, u64)> = hints.as_array().unwrap().iter().map(|h| (h["position"].clone(), h["label"].as_str().unwrap().to_string(), h["kind"].as_u64().unwrap())).collect();
+    let want = [
+        (at_text(USERS, "users.find(u", 0, false), ": User", 1),
+        (at_text(USERS, "total", 0, false), ": Int", 1),
+        (at_text(USERS, "some(user", 0, false), ": User", 1),
+        (at_text(USERS, "for u", 0, false), ": User", 1),
+    ];
+    for (p, label, kind) in &want {
+        assert!(got.iter().any(|(q, l, k)| q == p && l == label && k == kind), "{label} at {p} in {got:?}");
+    }
+    let n = at_text(USERS, "3, total", 0, true);
+    let strict = at_text(USERS, "true)", 0, true);
+    assert!(got.iter().any(|(q, l, k)| *q == n && l == "n:" && *k == 2), "{got:?}");
+    assert!(got.iter().any(|(q, l, k)| *q == strict && l == "strict:" && *k == 2), "{got:?}");
+    assert!(!got.iter().any(|(q, _, _)| *q == at_text(USERS, "  n", 0, false)), "no hint on n = 0: {got:?}");
+    assert_eq!(got.len(), 7, "{got:?}");
+    let line = json!({"start": at_text(USERS, "  total", 0, true), "end": at_text(USERS, "  some", 0, true)});
+    assert_eq!(c.request("textDocument/inlayHint", json!({"textDocument": d, "range": line})).as_array().unwrap().len(), 1, "only the hints in the range");
+
+    c.notify("workspace/didChangeConfiguration", json!({"settings": {"sspur": {"inlayHints": {"params": false, "lambdas": false}}}}));
+    c.wait("refresh", |m| m["method"] == "workspace/inlayHint/refresh");
+    let hints = c.request("textDocument/inlayHint", json!({"textDocument": d, "range": all}));
+    assert_eq!(hints.as_array().unwrap().len(), 4, "{hints}");
+
+    let help = |c: &mut Client, p: Value| c.request("textDocument/signatureHelp", json!({"textDocument": {"uri": uri}, "position": p}));
+    let h = help(&mut c, at_text(USERS, "scale(3, ", 0, false));
+    let sig = &h["signatures"][0];
+    assert_eq!(sig["label"], "scale(n: Int, by: Int, strict: Bool) -> Int", "{h}");
+    assert_eq!(h["activeParameter"], 1);
+    assert_eq!(sig["parameters"][1]["label"], json!([14, 21]));
+    assert!(help(&mut c, at_text(USERS, "  user.name", 0, false)).is_null());
+
+    let typing = USERS.replace("  k = scale(3, total, true)\n", "  k = scale(3, find(users, \n");
+    c.notify("textDocument/didChange", json!({"textDocument": {"uri": uri, "version": 2}, "contentChanges": [{"text": typing}]}));
+    let h = help(&mut c, at_text(&typing, "find(users, ", 1, false));
+    assert_eq!(h["signatures"][0]["label"], "find(users: List[User], id: Int) -> Opt[User]", "{h}");
+    assert_eq!(h["signatures"][0]["documentation"]["value"], "The user with this id.");
+    assert_eq!(h["activeParameter"], 1);
+    let h = help(&mut c, at_text(&typing, "scale(", 1, false));
+    assert_eq!((h["signatures"][0]["label"].as_str(), h["activeParameter"].as_u64()), (Some("scale(n: Int, by: Int, strict: Bool) -> Int"), Some(0)), "{h}");
+
+    let typing = USERS.replace("  k = scale(3, total, true)\n", "  k = users.map(\n");
+    c.notify("textDocument/didChange", json!({"textDocument": {"uri": uri, "version": 3}, "contentChanges": [{"text": typing}]}));
+    let h = help(&mut c, at_text(&typing, "users.map(", 1, false));
+    assert_eq!(h["signatures"][0]["label"], "List.map(f: A -> B ! e) -> List[B] ! e", "{h}");
+    let h = help(&mut c, at_text(&typing, "log(", 0, false));
+    assert_eq!(h["signatures"][0]["label"], "log(msg: Str) -> Unit ! log", "{h}");
 }
 
 /// A file in a package is checked with the package's dependencies, and their names show as

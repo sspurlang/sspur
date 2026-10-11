@@ -6,6 +6,7 @@ const $ = (id) => document.getElementById(id);
 const STORE = "sspur-play-source";
 const STDIN = "sspur-play-input";
 const THEME = "sspur-play-theme";
+const HINTS = "sspur-play-hints";
 
 // Storage can be off (private windows, strict settings); the page works without it.
 const store = {
@@ -116,10 +117,12 @@ async function main() {
   showPicked(examples.findIndex((ex) => ex.source === initial));
 
   let seq = 0;
+  let hintsOn = store.get(HINTS) === "on";
   let timer = 0;
   const api = {
     complete: (src, pos) => ide.call("complete", { src, pos }).catch(() => null),
     hover: (src, pos) => ide.call("hover", { src, pos }).catch(() => null),
+    signature: (src, pos) => ide.call("signature", { src, pos }).catch(() => null),
     keywords: () => builtins.keywords,
   };
   const editor = createEditor({
@@ -153,6 +156,7 @@ async function main() {
       const r = await ide.call("check", { src: text });
       if (mine !== seq) return;
       editor.setDiagnostics(text, r.diags);
+      editor.setHints(text, hintsOn ? await ide.call("hints", { src: text }) : []);
       problems(r.diags);
       const n = await ide.call("tokens", { src: text });
       $("tokens").textContent = `~${n} tokens`;
@@ -346,6 +350,19 @@ async function main() {
     split.onpointerup = () => { split.classList.remove("drag"); split.onpointermove = split.onpointerup = null; };
   };
 
+  const showHints = () => {
+    $("hints").setAttribute("aria-pressed", String(hintsOn));
+    $("hints-item").textContent = hintsOn ? "Hide inlay hints" : "Show inlay hints";
+  };
+  const toggleHints = () => {
+    hintsOn = !hintsOn;
+    store.set(HINTS, hintsOn ? "on" : "off");
+    showHints();
+    check(editor.text());
+  };
+  $("hints").onclick = toggleHints;
+  showHints();
+
   const sheet = $("sheet"), scrim = $("scrim"), menu = $("menu");
   const openMenu = (on) => {
     sheet.hidden = scrim.hidden = !on;
@@ -355,7 +372,7 @@ async function main() {
   menu.onclick = () => openMenu(true);
   $("close").onclick = scrim.onclick = () => openMenu(false);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !sheet.hidden) openMenu(false); });
-  const acts = { format, theme: toggleTheme, about: () => tab("about") };
+  const acts = { format, theme: toggleTheme, hints: toggleHints, about: () => tab("about") };
   for (const b of sheet.querySelectorAll("[data-act]")) b.onclick = () => { openMenu(false); acts[b.dataset.act](); };
   window.addEventListener("hashchange", async () => {
     const src = await fromHash(location.hash).catch(() => null);

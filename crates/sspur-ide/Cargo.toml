@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Editor support for SSPUR: diagnostics with fixes, completion, hover, navigation and highlighting, shared by the language server and the playground"
+description = "Editor support for SSPUR: diagnostics with fixes, completion, hover, signature help, inlay hints, navigation and highlighting, shared by the language server and the playground"
 
 [dependencies]
 sspur-syntax.workspace = true

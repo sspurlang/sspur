@@ -102,6 +102,7 @@ button.primary {
 button.primary:hover { box-shadow: 0 6px 20px color-mix(in srgb, #6366f1 55%, transparent); }
 button.danger { color: var(--err); border-color: var(--err); }
 button.icon { width: 34px; padding: 0; display: inline-grid; place-items: center; }
+button.icon[aria-pressed="true"] { color: var(--accent); }
 kbd { font: 600 11px var(--sans); margin-left: 9px; padding: 1px 6px; border-radius: 5px; background: rgba(255, 255, 255, 0.22); color: #fff; }
 
 .link { color: var(--muted); text-decoration: none; padding: 6px 8px; font-weight: 550; border-radius: 8px; }

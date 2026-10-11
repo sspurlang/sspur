@@ -68,7 +68,7 @@ Most languages are designed around a human at a keyboard. SSPUR starts from a di
 - `sspur verify` for SMT-checked contracts
 - Typed holes that fill themselves: `sspur check` lists the small expressions that fit a `?hole` and pass the tests and contracts, and `sspur suggest` proposes `pre` and `post` clauses from runs of a function
 - An MCP server and a compact query API so agents can pull exactly the context they need
-- `sspur lsp`, a language server with diagnostics, quick fixes, hole filling, completion, hover, formatting, navigation and rename, and a VS Code extension; Neovim, Vim, Helix, Emacs, Sublime Text, JetBrains IDEs and Eclipse work through their LSP clients ([Editor setup](docs/get-started/editors.md))
+- `sspur lsp`, a language server with diagnostics, quick fixes, hole filling, completion, hover, signature help, inlay hints, formatting, navigation and rename, and a VS Code extension; Neovim, Vim, Helix, Emacs, Sublime Text, JetBrains IDEs and Eclipse work through their LSP clients ([Editor setup](docs/get-started/editors.md))
 - C interop in both directions: `extern fn`, `sspur bind` for C headers, and `sspur export-c` to ship SSPUR as a C library
 - `kernel fn` GPU kernels: Metal with exact `F32` and identical traps, queued launches, shared memory and barriers, deterministic atomics, 2D grids and inlined helper fns, plus OpenCL C, SPIR-V and PTX through `sspur gpu`
 - `sspur deploy` to generate infrastructure and least-privilege IAM policies from a service's effects, run the service locally, migrate data, hot swap versions, and replay recorded traffic
@@ -160,7 +160,7 @@ On macOS: `brew install z3 qemu llvm lld`. On Ubuntu: `sudo apt install z3 qemu-
 
 ### Editors
 
-`sspur lsp` is a language server: errors as you type, quick fixes, hole filling, completion, hover, formatting, go to definition and rename. Each release has the files for the two most common editors, and neither needs an account or a marketplace:
+`sspur lsp` is a language server: errors as you type, quick fixes, hole filling, completion, hover, signature help, inlay hints, formatting, go to definition and rename. Each release has the files for the two most common editors, and neither needs an account or a marketplace:
 
 - **VS Code**, and Cursor, Windsurf and VSCodium: download `sspur-vX.Y.Z.vsix` and run `code --install-extension sspur-vX.Y.Z.vsix` (or *Extensions: Install from VSIX...*).
 - **JetBrains IDEs** (IntelliJ IDEA, PyCharm, GoLand, RustRover, WebStorm, CLion): install the free LSP4IJ plugin, download and unzip `sspur-lsp4ij-vX.Y.Z.zip`, then in *Settings > Languages & Frameworks > Language Servers* click **+**, **Import template...** and pick the `sspur` folder.
@@ -279,7 +279,7 @@ See the [roadmap](docs/design/roadmap.md) for details and exit criteria.
 | `crates/sspur-cli` | The `sspur` command, MCP server, language server, deployer |
 | `crates/sspur-deploy` | The deployer: CloudFormation and IAM from effects, migrations, the local Lambda and DynamoDB emulator, replay |
 | `crates/sspur-hash` | Name resolution and content hashing of definitions |
-| `crates/sspur-ide` | Editor support shared by the language server and the playground: diagnostics with fixes, completion, hover, navigation, highlighting |
+| `crates/sspur-ide` | Editor support shared by the language server and the playground: diagnostics with fixes, completion, hover, signature help, inlay hints, navigation, highlighting |
 | `crates/sspur-wasm` | The checker, formatter and interpreter compiled to WebAssembly for the playground |
 | `docs/` | The documentation site (mdBook, `docs/book.toml`): handbook, reference, tutorials, design docs and ADRs, the agent spec that `sspur spec` embeds, the JSON schemas, and `docs/snippets/`, the checked code every page includes |
 | `examples/` | Small complete programs: hello, a CRUD service, C interop, packages |

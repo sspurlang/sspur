@@ -40,6 +40,7 @@
       <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3L5 13.5h6L10 21l8-10.5h-6z" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linejoin="round"/></symbol>
       <symbol id="i-down" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></g></symbol>
       <symbol id="i-gh" viewBox="0 0 16 16"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></symbol>
+      <symbol id="i-hint" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="3"/><path d="M8 10.5v.01M8 13.5v.01M11.5 10h5M14 10v5"/></g></symbol>
     </defs>
   </svg>
   <header class="bar">
@@ -62,6 +63,7 @@
     <a class="link wide-only" href="../get-started/five-minutes.html"><svg class="i" aria-hidden="true"><use href="#i-docs"/></svg>Docs</a>
     <a class="link wide-only" href="../reference/language.html"><svg class="i" aria-hidden="true"><use href="#i-code"/></svg>Reference</a>
     <a class="gh wide-only" href="https://github.com/utkarshavardhana/sspur" title="SSPUR on GitHub" aria-label="SSPUR on GitHub"><svg class="i" aria-hidden="true"><use href="#i-gh"/></svg></a>
+    <button id="hints" class="icon wide-only" title="Inlay hints: types of bindings and names of literal arguments" aria-label="Toggle inlay hints" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="#i-hint"/></svg></button>
     <button id="theme" class="icon wide-only" title="Light or dark" aria-label="Toggle dark mode"><svg class="i" aria-hidden="true"><use href="#i-moon"/></svg></button>
     <button id="menu" class="icon narrow-only" aria-label="Menu" aria-expanded="false" aria-controls="sheet"><span class="burger" aria-hidden="true"></span></button>
   </header>
@@ -73,6 +75,7 @@
     </div>
     <button class="item" data-act="format"><svg class="i" aria-hidden="true"><use href="#i-format"/></svg><span>Format code</span></button>
     <button class="item" data-act="theme"><svg class="i" aria-hidden="true"><use href="#i-moon"/></svg><span id="theme-item">Dark mode</span></button>
+    <button class="item" data-act="hints"><svg class="i" aria-hidden="true"><use href="#i-hint"/></svg><span id="hints-item">Show inlay hints</span></button>
     <button class="item" data-act="about"><svg class="i" aria-hidden="true"><use href="#i-info"/></svg><span>About the playground</span></button>
     <a class="item" href="../get-started/five-minutes.html"><svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg><span>SSPUR in 5 minutes</span></a>
     <a class="item" href="../index.html"><svg class="i" aria-hidden="true"><use href="#i-docs"/></svg><span>Documentation</span></a>

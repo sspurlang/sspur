@@ -1,6 +1,6 @@
 # Editor setup
 
-`sspur lsp` is a language server: any editor that speaks the Language Server Protocol gets the compiler's diagnostics and quick fixes, typed-hole candidates, completion with signatures and docs, hover types, formatting, go to definition, references, rename, the outline and semantic highlighting. It talks over stdin and stdout, so the setup is always the same: run `sspur lsp` for `*.ssp` files. A file inside a directory with an `sspur.toml` is checked with that package's dependencies, as `sspur check` does.
+`sspur lsp` is a language server: any editor that speaks the Language Server Protocol gets the compiler's diagnostics and quick fixes, typed-hole candidates, completion with signatures and docs, hover types, signature help while typing a call, inlay hints with inferred types and parameter names, formatting, go to definition, references, rename, the outline and semantic highlighting. It talks over stdin and stdout, so the setup is always the same: run `sspur lsp` for `*.ssp` files. A file inside a directory with an `sspur.toml` is checked with that package's dependencies, as `sspur check` does.
 
 Install `sspur` first ([Installation](installation.md)) and check that `sspur --version` works in the shell your editor starts. If the editor can't find it, give the full path instead of `sspur`.
 
@@ -14,7 +14,7 @@ code --install-extension sspur-v0.7.0.vsix
 
 or use *Extensions: Install from VSIX...* in the command palette. To update, install the file from a newer release. It needs `sspur` 0.7 or later.
 
-`sspur.path` in the settings points it at a binary that isn't on `PATH`.
+`sspur.path` in the settings points it at a binary that isn't on `PATH`. `sspur.inlayHints.types`, `sspur.inlayHints.lambdas` and `sspur.inlayHints.params` turn each kind of inlay hint off, and VS Code's `editor.inlayHints.enabled` turns them all off or shows them only while you hold Ctrl+Alt.
 
 ## Cursor, Windsurf, VSCodium and other VS Code forks
 
@@ -52,7 +52,7 @@ end
 require("lspconfig").sspur.setup({})
 ```
 
-Highlighting comes from the server's semantic tokens, since there is no Tree-sitter grammar for SSPUR yet.
+Highlighting comes from the server's semantic tokens, since there is no Tree-sitter grammar for SSPUR yet. Neovim leaves inlay hints off; `vim.lsp.inlay_hint.enable(true)` turns them on.
 
 ## Vim
 

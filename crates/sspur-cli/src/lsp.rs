@@ -45,6 +45,9 @@ struct State {
     /// The last analysis of each document that parsed, for completion while the text doesn't.
     good: Mutex<HashMap<String, Arc<Analysis>>>,
     envs: Mutex<HashMap<PathBuf, (Stamp, EnvResult)>>,
+    /// Which inlay hints to show, from `initializationOptions.inlayHints` or the `sspur.inlayHints`
+    /// setting.
+    hints: Mutex<ide::hints::Opts>,
 }
 
 type Stamp = (Option<SystemTime>, Option<SystemTime>);
@@ -112,6 +115,8 @@ fn capabilities() -> J {
         "textDocumentSync": { "openClose": true, "change": 2, "save": { "includeText": false } },
         "completionProvider": { "triggerCharacters": [".", "!"] },
         "hoverProvider": true,
+        "signatureHelpProvider": { "triggerCharacters": ["(", ","], "retriggerCharacters": [")"] },
+        "inlayHintProvider": true,
         "codeActionProvider": { "codeActionKinds": ["quickfix"] },
         "documentFormattingProvider": true,
         "documentOnTypeFormattingProvider": { "firstTriggerCharacter": "\n" },
@@ -127,10 +132,12 @@ fn capabilities() -> J {
 
 /// Runs until `exit`; true when `shutdown` came first.
 fn run(conn: &Connection) -> Result<bool, String> {
-    let (id, _params) = conn.initialize_start().map_err(|e| e.to_string())?;
+    let (id, params) = conn.initialize_start().map_err(|e| e.to_string())?;
     let init = json!({ "capabilities": capabilities(), "serverInfo": { "name": "sspur", "version": env!("CARGO_PKG_VERSION") } });
     conn.initialize_finish(id, init).map_err(|e| e.to_string())?;
     let state = Arc::new(State::default());
+    *lock(&state.hints) = ide::hints::Opts::from_json(&params["initializationOptions"]["inlayHints"]);
+    let refresh = params["capabilities"]["workspace"]["inlayHint"]["refreshSupport"].as_bool().unwrap_or(false);
     let (check_tx, check_rx) = mpsc::channel::<String>();
     let (req_tx, req_rx) = mpsc::channel::<Request>();
     {
@@ -140,6 +147,7 @@ fn run(conn: &Connection) -> Result<bool, String> {
         std::thread::Builder::new().name("sspur-requests".into()).stack_size(STACK).spawn(move || request_loop(&st, &out, &req_rx)).map_err(|e| e.to_string())?;
     }
     let mut shut = false;
+    let mut refreshes = 0;
     for msg in &conn.receiver {
         match msg {
             Message::Request(r) if r.method == "shutdown" => {
@@ -153,6 +161,16 @@ fn run(conn: &Connection) -> Result<bool, String> {
                 let _ = req_tx.send(r);
             }
             Message::Notification(n) if n.method == "exit" => return Ok(shut),
+            Message::Notification(n) if n.method == "workspace/didChangeConfiguration" => {
+                let opts = &n.params["settings"]["sspur"]["inlayHints"];
+                if opts.is_object() {
+                    *lock(&state.hints) = ide::hints::Opts::from_json(opts);
+                    if refresh {
+                        refreshes += 1;
+                        let _ = conn.sender.send(Request::new(RequestId::from(format!("inlay-refresh-{refreshes}")), "workspace/inlayHint/refresh".into(), J::Null).into());
+                    }
+                }
+            }
             Message::Notification(n) => {
                 if let Some(uri) = notified(&state, &conn.sender, &n) {
                     let _ = check_tx.send(uri);
@@ -414,6 +432,31 @@ fn handle(state: &State, out: &crossbeam_channel::Sender<Message>, r: &Request) 
             let range = json!({ "start": lines.pos16(h["from"].as_u64().unwrap_or(0) as usize), "end": lines.pos16(h["to"].as_u64().unwrap_or(0) as usize) });
             Ok(json!({ "contents": { "kind": "markdown", "value": md }, "range": range }))
         }
+        "textDocument/signatureHelp" => {
+            let (text, _, path) = doc()?;
+            let env = state.env(path.as_deref()).unwrap_or_default();
+            let load = |s: &str| load_with(&env, s);
+            let cx = ide::Ctx { load: &load, last: lock(&state.good).get(&uri).cloned(), exports: exports(&env) };
+            let at = Lines::new(&text).byte(&p["position"]);
+            Ok(signature_help(&shown(&env, ide::sig::signature_help(&cx, &text, ide::u16_of(&text, at)))))
+        }
+        "textDocument/inlayHint" => {
+            let (text, a) = analysis(state, &uri)?;
+            let Some(a) = a else { return Ok(json!([])) };
+            let lines = Lines::new(&text);
+            let (from, to) = (lines.byte(&p["range"]["start"]), lines.byte(&p["range"]["end"]));
+            let opts = *lock(&state.hints);
+            let env = env_of(state, &uri);
+            let hints: Vec<J> = ide::hints::hints(&a, &opts)
+                .into_iter()
+                .filter(|h| h.at >= from && h.at <= to)
+                .map(|h| {
+                    let param = h.kind == ide::hints::Kind::Param;
+                    json!({ "position": lines.pos(h.at), "label": shown(&env, J::String(h.label)), "kind": if param { 2 } else { 1 }, "paddingRight": param })
+                })
+                .collect();
+            Ok(J::Array(hints))
+        }
         "textDocument/codeAction" => {
             let (text, _, _) = doc()?;
             Ok(code_actions(state, &uri, &text, &p["range"]))
@@ -515,6 +558,26 @@ fn analysis(state: &State, uri: &str) -> Result<(String, Option<Arc<Analysis>>),
         }
     };
     Ok((text, a))
+}
+
+fn env_of(state: &State, uri: &str) -> pkg::Env {
+    let path = lock(&state.docs).get(uri).and_then(|d| d.path.clone());
+    state.env(path.as_deref()).unwrap_or_default()
+}
+
+/// sspur-ide's signature as an LSP `SignatureHelp`, its label composed again after `shown`.
+fn signature_help(h: &J) -> J {
+    if h.is_null() {
+        return J::Null;
+    }
+    let params: Vec<String> = h["params"].as_array().into_iter().flatten().filter_map(|p| p.as_str().map(String::from)).collect();
+    let (label, ranges) = ide::sig::compose(h["name"].as_str().unwrap_or(""), &params, h["ret"].as_str().unwrap_or(""));
+    let active = h["active"].as_u64().unwrap_or(0);
+    let mut sig = json!({ "label": label, "parameters": ranges.iter().map(|r| json!({ "label": r })).collect::<Vec<_>>(), "activeParameter": active });
+    if let Some(d) = h["doc"].as_str() {
+        sig["documentation"] = json!({ "kind": "markdown", "value": d });
+    }
+    json!({ "signatures": [sig], "activeSignature": 0, "activeParameter": active })
 }
 
 /// Dependency names as `pkg.name`, the way `sspur check` prints them.

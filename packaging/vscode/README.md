@@ -5,6 +5,8 @@ Language support for [SSPUR](https://github.com/utkarshavardhana/sspur), the sta
 - Diagnostics as you type, with the compiler's quick fixes: canonical spellings, missing effects, missing match arms, unreachable arms and did-you-mean names.
 - Typed holes: a `?hole` lists the expressions that fit it and pass your tests and contracts, and the quick fix fills it in. *SSPUR: Fill Holes* fills every hole that has a passing candidate.
 - Completion of locals, functions, constructors, fields, methods after `.`, effects after `!`, keywords and templates, with signatures and the standard library's docs.
+- Signature help while you type a call: after `(` or `,` the signature shows with the current argument highlighted and the function's doc, for your functions, effect operations, builtins and methods on a typed receiver.
+- Inlay hints: the inferred type after a binding whose type isn't written (`total = xs.sum` shows `total: Int`, and guard bindings, `for` variables and lambda parameters get one too), and the parameter name before a literal argument (`scale(3, true)` shows `n: 3, strict: true`).
 - Hover types and signatures, go to definition, find references, rename, the outline, and formatting (*Format Document* runs `sspur fmt`).
 - Highlighting from a TextMate grammar, refined by the server's semantic tokens, in the same colors as the [playground](https://utkarshavardhana.github.io/sspur/play/).
 - *SSPUR: Run File* and *SSPUR: Test File* (also the run button in the editor title) save the file and run `sspur run` or `sspur test` on it.
@@ -22,7 +24,12 @@ Then download `sspur-vX.Y.Z.vsix` from the [latest release](https://github.com/u
 | Setting | Default | |
 |---|---|---|
 | `sspur.path` | empty | The `sspur` binary. Empty means `sspur` on your `PATH`. |
+| `sspur.inlayHints.types` | `true` | The type after `let`, guard, `for` and `var` bindings. |
+| `sspur.inlayHints.lambdas` | `true` | The types of lambda parameters. |
+| `sspur.inlayHints.params` | `true` | Parameter names before literal arguments, in calls of two or more arguments. |
 | `sspur.trace.server` | `off` | `messages` or `verbose` logs the protocol in the *SSPUR* output channel. |
+
+VS Code's own `editor.inlayHints.enabled` turns every inlay hint on, off, or on only while you hold Ctrl+Alt (Ctrl+Option on a Mac).
 
 *SSPUR: Restart Language Server* restarts it, for example after you upgrade `sspur`.
 

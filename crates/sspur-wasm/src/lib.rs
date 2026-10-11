@@ -134,6 +134,24 @@ pub fn hover(src: &str, pos: u32) -> String {
     ide::hover(&ctx(), src, pos as usize).to_string()
 }
 
+/// The signature of the call at `pos`, with the argument the cursor is at, or null.
+#[wasm_bindgen]
+pub fn signature(src: &str, pos: u32) -> String {
+    ide::sig::signature_help(&ctx(), src, pos as usize).to_string()
+}
+
+/// Inlay hints for `src`: `[{at, label, kind}]` with `kind` "type" or "param". `opts` is JSON like
+/// `{"types": true, "lambdas": true, "params": false}`; a missing key is on.
+#[wasm_bindgen]
+pub fn inlay_hints(src: &str, opts: &str) -> String {
+    let opts = ide::hints::Opts::from_json(&serde_json::from_str(opts).unwrap_or(J::Null));
+    let cx = ctx();
+    match cx.last.clone().filter(|a| a.src == src).or_else(|| cx.analyze(src)) {
+        Some(a) => ide::hints::hints_json(&a, &opts).to_string(),
+        None => "[]".into(),
+    }
+}
+
 /// Builtin functions, methods, types, keywords and effects with signatures and short docs.
 #[wasm_bindgen]
 pub fn builtins() -> String {
