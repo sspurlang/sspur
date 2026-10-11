@@ -4,6 +4,8 @@ mod builtins;
 mod ffi;
 pub mod fuzz;
 pub mod progen;
+pub mod suggest;
+pub mod synth;
 pub mod kernel;
 mod sched;
 mod stdlib;
@@ -129,6 +131,13 @@ pub struct Interp {
     static_vals: RefCell<HashMap<String, Value>>,
     /// Functions from dependencies: their examples are the dependency's tests, not ours.
     pub foreign: HashSet<String>,
+    /// What reaching a typed hole does: trap, record the values in scope, or evaluate a candidate.
+    hole: RefCell<synth::HoleMode>,
+    /// Synthesized `sum` calls over `F64` lists, which give `0.0` when empty.
+    synth_float: RefCell<HashSet<(u32, u32)>>,
+    /// Arguments of every call to the named function, for `sspur suggest`.
+    recording: Cell<bool>,
+    record: RefCell<(String, Vec<Vec<Value>>)>,
 }
 
 const MAX_DEPTH: u32 = 20_000;
@@ -215,6 +224,10 @@ impl Interp {
             statics: HashMap::new(),
             static_vals: RefCell::new(HashMap::new()),
             foreign: HashSet::new(),
+            hole: RefCell::new(synth::HoleMode::default()),
+            synth_float: RefCell::new(HashSet::new()),
+            recording: Cell::new(false),
+            record: RefCell::new((String::new(), vec![])),
         };
         for d in &m.defs {
             match d {
@@ -295,7 +308,11 @@ impl Interp {
     }
 
     pub fn run_tests(&self) -> Vec<(String, Result<(), String>)> {
-        let mut out = Vec::new();
+        self.test_cases().iter().map(|(name, body)| (name.clone(), self.run_case(body))).collect()
+    }
+
+    /// The examples of the program's own functions, then its tests, with their names.
+    pub fn test_cases(&self) -> Vec<(String, Expr)> {
         let mut cases: Vec<(String, Expr)> = Vec::new();
         let mut names: Vec<&String> = self.fns.keys().collect();
         names.sort();
@@ -305,20 +322,21 @@ impl Interp {
             }
         }
         cases.extend(self.tests.iter().map(|t| (t.name.clone(), t.body.clone())));
-        for (name, body) in &cases {
-            let t = TestDef { name: name.clone(), body: body.clone(), span: Span::default() };
-            self.static_vals.borrow_mut().clear();
-            *self.output.borrow_mut() = Some(vec![]);
-            let r = match self.eval(&t.body, &Env::child(&self.globals)).and_then(|v| kernel::sync().map(|_| v)) {
-                Ok(Value::Bool(true)) => Ok(()),
-                Ok(Value::Bool(false)) => Err(self.explain(&t.body, &Env::child(&self.globals)).unwrap_or_else(|| "evaluated to false".to_string())),
-                Ok(v) => Err(format!("expected Bool, got {v}")),
-                Err(c) => Err(describe(c)),
-            };
-            *self.output.borrow_mut() = None;
-            out.push((t.name.clone(), r));
-        }
-        out
+        cases
+    }
+
+    /// Runs one test or example body with fresh statics and captured output.
+    pub fn run_case(&self, body: &Expr) -> Result<(), String> {
+        self.static_vals.borrow_mut().clear();
+        *self.output.borrow_mut() = Some(vec![]);
+        let r = match self.eval(body, &Env::child(&self.globals)).and_then(|v| kernel::sync().map(|_| v)) {
+            Ok(Value::Bool(true)) => Ok(()),
+            Ok(Value::Bool(false)) => Err(self.explain(body, &Env::child(&self.globals)).unwrap_or_else(|| "evaluated to false".to_string())),
+            Ok(v) => Err(format!("expected Bool, got {v}")),
+            Err(c) => Err(describe(c)),
+        };
+        *self.output.borrow_mut() = None;
+        r
     }
 
     /// Why a test body that evaluated to false is false: the values of the comparison that failed.
@@ -717,6 +735,12 @@ impl Interp {
         if let Some(c) = self.calls.borrow_mut().as_mut() {
             *c.entry(f.name.clone()).or_insert(0) += 1;
         }
+        if self.recording.get() {
+            let mut r = self.record.borrow_mut();
+            if r.0 == f.name && r.1.len() < 400 {
+                r.1.push(args.clone());
+            }
+        }
         self.depth.set(d);
         let r = self.call_fn_inner(f, args, parent);
         self.depth.set(d - 1);
@@ -1017,7 +1041,7 @@ impl Interp {
     }
 
     fn method(&self, span: Span, name: &str, recv: Value, args: Vec<Value>) -> R {
-        if name == "sum" && self.float_sums.contains(&(span.start, span.end)) && matches!(&recv, Value::List(xs) if xs.is_empty()) {
+        if name == "sum" && (self.float_sums.contains(&(span.start, span.end)) || span.start >= synth::SPAN_BASE && self.synth_float.borrow().contains(&(span.start, span.end))) && matches!(&recv, Value::List(xs) if xs.is_empty()) {
             return Ok(Value::Float(0.0));
         }
         if self.user_methods.contains(&(span.start, span.end))
@@ -1116,7 +1140,7 @@ impl Interp {
                 Ok(Value::str(&s))
             }
             ExprKind::Placeholder => env.get("_").map_or_else(|| trap("unbound '_'"), Ok),
-            ExprKind::Hole(_) => trap("reached a typed hole"),
+            ExprKind::Hole(_) => self.on_hole(e, env),
             ExprKind::Name(n) if self.moves.contains(&(e.span.start, e.span.end)) => match env.cell(n) {
                 Some(c) => Ok(std::mem::replace(&mut *c.borrow_mut(), Value::Unit)),
                 None => self.eval_name(n, env),

@@ -18,17 +18,17 @@ pub struct Report {
     pub failure: Option<(Vec<String>, String)>,
 }
 
-struct Rng(u64);
+pub(crate) struct Rng(pub(crate) u64);
 
 impl Rng {
-    fn next(&mut self) -> u64 {
+    pub(crate) fn next(&mut self) -> u64 {
         self.0 ^= self.0 << 13;
         self.0 ^= self.0 >> 7;
         self.0 ^= self.0 << 17;
         self.0
     }
 
-    fn below(&mut self, n: u64) -> u64 {
+    pub(crate) fn below(&mut self, n: u64) -> u64 {
         if n == 0 { 0 } else { self.next() % n }
     }
 
@@ -43,9 +43,9 @@ impl Rng {
 
 const ALLOWED_EFFECTS: &[&str] = &["fail", "log", "div"];
 const MAX_DEPTH: u32 = 4;
-const FUEL: u64 = 200_000;
+pub(crate) const FUEL: u64 = 200_000;
 
-fn is_input_error(msg: &str) -> bool {
+pub(crate) fn is_input_error(msg: &str) -> bool {
     msg.starts_with("contract violated: pre ") || msg.starts_with("contract violated: parameter ")
 }
 
@@ -114,7 +114,7 @@ impl Interp {
         out
     }
 
-    fn skip_reason(&self, f: &FnDef) -> Option<String> {
+    pub(crate) fn skip_reason(&self, f: &FnDef) -> Option<String> {
         if f.params.is_empty() {
             return Some("no parameters".into());
         }
@@ -215,7 +215,7 @@ impl Interp {
             .collect()
     }
 
-    fn generate(&self, t: &Ty, rng: &mut Rng, opts: &Options, depth: u32) -> Option<Value> {
+    pub(crate) fn generate(&self, t: &Ty, rng: &mut Rng, opts: &Options, depth: u32) -> Option<Value> {
         let Ty::Named { name, args, .. } = t else {
             return match t {
                 Ty::Tuple(xs) => Some(Value::Tuple(Rc::new(xs.iter().map(|x| self.generate(x, rng, opts, depth + 1)).collect::<Option<_>>()?))),

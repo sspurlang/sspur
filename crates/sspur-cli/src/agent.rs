@@ -35,6 +35,7 @@ pub fn diag_lines(src: &str, diags: &[Diag], only: Option<&BTreeSet<String>>) ->
         if let Some(h) = &d.hint {
             out.push(format!("  hint: {h}"));
         }
+        out.extend(crate::fill::fix_lines(d));
     }
     out
 }

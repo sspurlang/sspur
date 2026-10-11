@@ -1,6 +1,7 @@
 mod agent;
 mod bind;
 mod deploy;
+mod fill;
 mod genfuzz;
 mod mcp;
 mod pkgcmd;
@@ -36,6 +37,9 @@ const USAGE: &str = "usage:
   sspur export-c file.ssp [-o libfoo] [--shared] [--prefix P]  build a C library and header from the C-compatible functions
   add --json for machine output (apply, edit, q, check)
   sspur check|run|test|fuzz|verify|hash|fmt|native [file.ssp] [--json] [--cases N] [--seed N] [--edge] [--write] [--full]
+  check lists up to 3 candidates per typed hole, checked against the tests and contracts (--fill-ms N per hole, default 200; --no-fill skips)
+  sspur fill [file.ssp] [?hole|fn] [--apply] [--all] [--json] [--fill-ms N]   synthesize the best expression for each hole; --apply writes it
+  sspur suggest [file.ssp] [fn] [--apply] [--json] [--cases N]   propose pre/post clauses that held on every test-derived and fuzzed run
   verify proves pre/post/where clauses with z3 and reports proved, counterexample, or unknown per clause
   run/test compile to native code by default (cached); --interp forces the interpreter, --native uses the Cranelift JIT,
   --O3 raises the optimization level; fuzz --differential compares native against the interpreter
@@ -79,7 +83,7 @@ fn parse_args() -> Args {
     let mut it = std::env::args().skip(1).peekable();
     while let Some(a) = it.next() {
         if a.starts_with("--") || a == "-e" || a == "-o" {
-            let takes = matches!(a.as_str(), "--budget" | "--cases" | "--seed" | "-e" | "-o" | "--lib" | "--prefix" | "--out" | "--port" | "--target" | "--record" | "--weight" | "--store" | "--emit" | "--max" | "--agent" | "--backend" | "--lto" | "--gen" | "--group" | "--keep" | "--modes" | "--reduce" | "--want-skip" | "--want-build" | "--want-hang" | "--from" | "--pkg" | "--dir");
+            let takes = matches!(a.as_str(), "--budget" | "--cases" | "--seed" | "-e" | "-o" | "--lib" | "--prefix" | "--out" | "--port" | "--target" | "--record" | "--weight" | "--store" | "--emit" | "--max" | "--agent" | "--backend" | "--lto" | "--gen" | "--group" | "--keep" | "--modes" | "--reduce" | "--want-skip" | "--want-build" | "--want-hang" | "--from" | "--pkg" | "--dir" | "--fill-ms");
             flags.push(a);
             if takes
                 && let Some(v) = it.next() {
@@ -190,6 +194,8 @@ fn real_main() -> ExitCode {
                 }
             }
         }
+        "fill" => fill::fill_cmd(&args),
+        "suggest" => fill::suggest_cmd(&args),
         "deploy" => deploy::run(&args.pos[1..], &args.flags),
         "sync" => sync::run(&args.pos[1..], args.val("--port").map(String::as_str), args.val("--max").and_then(|m| m.parse().ok()), args.val("--agent").map_or("sync", String::as_str), args.has("--json")),
         "fuzz" if args.val("--gen").is_some() => gen_fuzz(&args),
@@ -402,7 +408,13 @@ fn program_cmd(cmd: &str, args: &Args) -> ExitCode {
         }
         return ExitCode::SUCCESS;
     }
-    report(&loaded.src, &label, &loaded.check.diags, json);
+    if cmd == "check" {
+        let mut diags = loaded.check.diags.clone();
+        fill::enrich(&loaded, &mut diags, args);
+        report(&loaded.src, &label, &diags, json);
+    } else {
+        report(&loaded.src, &label, &loaded.check.diags, json);
+    }
     if loaded.check.has_errors() {
         return ExitCode::FAILURE;
     }
@@ -848,6 +860,9 @@ fn report(src: &str, path: &str, diags: &[Diag], json: bool) {
         eprintln!("{path}:{line}:{col} {sev}{} {}", d.code, d.msg);
         if let Some(h) = &d.hint {
             eprintln!("  hint: {h}");
+        }
+        for l in fill::fix_lines(d) {
+            eprintln!("{l}");
         }
     }
 }
