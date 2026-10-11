@@ -1,5 +1,6 @@
 mod bare;
 mod builtins;
+mod holes;
 pub mod own;
 mod deploy;
 mod json;
@@ -17,6 +18,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 pub use deploy::{db_op, HTTP_METHODS};
 pub use types::{Row, Type};
 pub use traits::{ImplOut, TraitOut};
+pub use holes::{HoleCtx, HoleSite, Sig, SigKind};
 pub use builtins::{BARE_NAMES, GLOBALS, METHODS, STD_GLOBALS, STD_GLOBAL_NAMES, STD_METHODS, STD_TYPES};
 
 #[derive(Clone, Debug, Serialize)]
@@ -218,6 +220,7 @@ struct Checker {
     own_site: bool,
     res_types: HashSet<String>,
     impl_self: HashMap<String, Type>,
+    hole_ctx: Option<HoleCtx>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -273,6 +276,16 @@ pub fn check(m: &Module) -> CheckOutput {
 
 /// Skips the bodies of the fns and tests in `skip`: the output only serves validation.
 pub fn check_skipping(m: &Module, skip: &HashSet<String>) -> CheckOutput {
+    check_inner(m, skip, false).0
+}
+
+/// A check that also returns what the hole filler needs: each hole's context and every signature in scope.
+pub fn check_holes(m: &Module) -> (CheckOutput, HoleCtx) {
+    let (out, ctx) = check_inner(m, &HashSet::new(), true);
+    (out, ctx.unwrap_or_default())
+}
+
+fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutput, Option<HoleCtx>) {
     let mut c = Checker {
         fn_defs: HashMap::new(),
         device_fns: m.defs.iter().filter_map(|d| if let Def::Fn(f) = d { kernel::is_device_fn(f).then(|| f.name.clone()) } else { None }).collect(),
@@ -332,6 +345,7 @@ pub fn check_skipping(m: &Module, skip: &HashSet<String>) -> CheckOutput {
         own_site: true,
         res_types: HashSet::new(),
         impl_self: HashMap::new(),
+        hole_ctx: capture.then(HoleCtx::default),
     };
     c.load_builtins();
     if c.sys {
@@ -464,9 +478,10 @@ pub fn check_skipping(m: &Module, skip: &HashSet<String>) -> CheckOutput {
         let found = bare::check(m, &tables);
         c.diags.extend(found);
     }
+    let hole_ctx = c.hole_ctx.take().map(|h| HoleCtx { sigs: c.hole_sigs(m), ..h });
     let mut traits_out = std::mem::take(&mut c.tout);
     traits_out.active = !traits_out.sites.is_empty() || !traits_out.insts.is_empty() || !traits_out.units.is_empty() || !traits_out.impls.is_empty() || !traits_out.bounded.is_empty() || m.defs.iter().any(|d| matches!(d, Def::Trait(_) | Def::Impl(_)));
-    CheckOutput { traits: traits_out, diags: c.diags, record_types: c.record_types, user_methods: c.user_methods, sigs, expr_types: c.expr_types, fn_types, records, sums, newtypes, local_fn_types: c.local_fn_types, gen_loops: c.gen_loops, clause_effects: c.clause_effects, own: own.info, stores: c.stores, json_types, kernels: c.kernels, body_diags }
+    (CheckOutput { traits: traits_out, diags: c.diags, record_types: c.record_types, user_methods: c.user_methods, sigs, expr_types: c.expr_types, fn_types, records, sums, newtypes, local_fn_types: c.local_fn_types, gen_loops: c.gen_loops, clause_effects: c.clause_effects, own: own.info, stores: c.stores, json_types, kernels: c.kernels, body_diags }, hole_ctx)
 }
 
 fn edit_distance(a: &str, b: &str) -> usize {
@@ -1237,6 +1252,7 @@ impl Checker {
 
     fn report_holes(&mut self) {
         for (span, name, ty, locals) in std::mem::take(&mut self.holes) {
+            self.capture_hole(span, name.clone(), &ty, &locals);
             let ty = self.resolve(&ty);
             let fits: Vec<String> = locals.iter().filter(|(_, t)| self.resolve(t) == ty).map(|(n, _)| n.clone()).collect();
             let label = name.map_or("?".to_string(), |n| format!("?{n}"));
