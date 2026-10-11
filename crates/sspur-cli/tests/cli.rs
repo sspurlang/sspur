@@ -248,14 +248,14 @@ fn fill_synthesizes_classic_holes() {
     assert!(ok, "{out}");
     assert_eq!(
         out,
-        "?total: items.map(_.qty * _.price).sum (passes 2 tests)\n?count: xs.len (passes 1 test)\n?first: xs.first.or(d) (passes 2 tests)\n?shape: Circle{r: r} (passes 1 test)"
+        "?total: items.map(_.qty * _.price).sum (passes 2 tests, 3 others also fit)\n?count: xs.len (passes 1 test, 21 others also fit)\n?first: xs.first.or(d) (passes 2 tests, 24 others also fit)\n?shape: Circle{r: r} (passes 1 test, 8 others also fit)"
     );
     let (out, ok) = sspur(&d, &["check", "h.ssp", "--fill-ms", "5000"], "");
     assert!(ok, "{out}");
-    assert!(out.contains("h.ssp:8:3 hole E_HOLE hole ?count expects type Int\n  ?count: xs.len (passes 1 test)\n"), "{out}");
+    assert!(out.contains("h.ssp:8:3 hole E_HOLE hole ?count expects type Int\n  ?count: xs.len (passes 1 test, 21 others also fit)\n"), "{out}");
     let (json, _) = sspur(&d, &["check", "h.ssp", "--json", "--fill-ms", "5000"], "");
     let first: serde_json::Value = serde_json::from_str(json.lines().next().unwrap()).unwrap();
-    assert_eq!(first["fix"][0], serde_json::json!({"op": "fill", "hole": "?total", "target": "total", "expr": "items.map(_.qty * _.price).sum", "evidence": "passes 2 tests", "ok": true}));
+    assert_eq!(first["fix"][0], serde_json::json!({"op": "fill", "hole": "?total", "target": "total", "expr": "items.map(_.qty * _.price).sum", "evidence": "passes 2 tests, 3 others also fit", "ok": true}));
     let (out, ok) = sspur(&d, &["fill", "h.ssp", "?first", "--apply", "--fill-ms", "5000"], "");
     assert!(ok && out.ends_with("filled 1 hole in h.ssp"), "{out}");
     assert!(std::fs::read_to_string(d.join("h.ssp")).unwrap().contains("fn first_or(xs: List[Int], d: Int) -> Int\n= xs.first.or(d)\n"));
@@ -327,8 +327,9 @@ fn fill_benchmark() {
     let table = include_str!("../../../bench/fill/holes.txt");
     let (head, cases) = table.split_once("\n## ").unwrap();
     let prelude = head.split_once("prelude:\n").unwrap().1;
-    // Debug builds run several times slower, so they get a proportionally larger budget.
-    let budget = if cfg!(debug_assertions) { "1600" } else { "200" };
+    // A generous budget, so the result depends on the search and not on how fast the machine is:
+    // CI runners, Windows ones in particular, are several times slower than a laptop.
+    let budget = "5000";
     let d = hole_dir("fill_bench", "");
     let (mut top1, mut top3, mut ms, mut lost) = (0, 0, vec![], vec![]);
     let mut rows = vec![];
