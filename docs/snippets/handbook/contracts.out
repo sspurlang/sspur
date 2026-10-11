@@ -18,3 +18,14 @@ fn average
   post r * n <= total                          counterexample: average(total = -1, n = 2): contract violated: post r * n <= total in average (r = 0)
 2 proved, 1 counterexample, 0 unknown; 8 of 8 runtime checks proved safe
 // ANCHOR_END: verify
+// ANCHOR: fill
+$ sspur fill holes.ssp
+?subtotal: lines.map(_.qty * _.price).sum (passes 2 tests, post)
+// ANCHOR_END: fill
+// ANCHOR: suggest
+$ sspur suggest holes.ssp
+keep
+  post r.len <= xs.len  // proved
+mean
+  pre xs.len > 0  // traps on 1 of 175 inputs without it
+// ANCHOR_END: suggest

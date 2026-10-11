@@ -12,6 +12,7 @@ Everything SSPUR does goes through one binary, `sspur`. This is its usage text, 
 |---|---|
 | Run and test a file | `sspur run FILE`, `sspur test FILE`, `sspur check FILE [--json]`, `sspur fmt FILE [--write]` |
 | Find bugs and prove properties | `sspur fuzz FILE` (contracts as property tests), `sspur fuzz --differential FILE` (native against the interpreter), `sspur verify FILE` (Z3) |
+| Write code and contracts from tests | `sspur fill [FILE] [?HOLE] [--apply]` (typed holes), `sspur suggest [FILE] [FN] [--apply]` (`pre` and `post` from runs) |
 | Work on a codebase | `sspur init [FILE]`, `sspur start [NAME...]`, `sspur q QUERY TARGET`, `sspur edit --test -e SRC`, `sspur log`, `sspur src` |
 | Agents and MCP | `sspur spec [--more|--full]`, `sspur start`, `sspur mcp [--dir PATH]` |
 | Packages | `sspur init --pkg NAME`, `sspur add PATH-OR-URL[@REV]`, `sspur deps fetch`, `sspur deps update [--force]`, `sspur deps tree` |
@@ -37,3 +38,14 @@ The query API is how an agent reads a large codebase without printing all of it.
 | `q callers NAME`, `q callees NAME` | the call graph around one definition |
 | `q effects NAME` | the effect row, with the call that introduced each effect |
 | `q diag`, `q log` | every diagnostic, and the history of edits |
+
+## Holes and suggested contracts
+
+`sspur check` lists up to three candidates under each typed hole when the program has no errors, and `--json` puts them in the hole's `fix` as `fill` ops with an `evidence` string and `ok`. The search has 200 ms per hole (`--fill-ms N` changes it, `--no-fill` turns it off); files without holes are checked exactly as before.
+
+| Command | Prints |
+|---|---|
+| `sspur fill [FILE] [?NAME\|FN]` | The best candidate for each hole (or the named one, or every hole in `FN`): `?total: items.map(_.qty * _.price).sum (passes 3 tests, post)`. `--all` shows up to 3, `--json` adds the search size and time. `--apply` writes the passing ones into the file, in parentheses where precedence needs them, or applies them to the codebase as `fill` ops. The budget is 1000 ms per hole |
+| `sspur suggest [FILE] [FN]` | For each function, the `pre` and `post` lines that held on every run, ready to paste: `  post r.len <= xs.len  // proved`. `--json` gives `refine` fixes, `--apply` adds them, `--cases N` sets the number of fuzzed inputs (200) |
+
+The MCP server has both as the tools `fill` and `suggest` ([MCP](../agent/mcp.md)).

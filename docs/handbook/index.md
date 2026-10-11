@@ -8,7 +8,7 @@ The handbook teaches the language from the start. Read it in order: each page us
 4. [Records and Sum Types](records-and-sums.md): your own data, immutable updates and generic types.
 5. [Pattern Matching](pattern-matching.md): `match`, guards, exhaustiveness and decision tables.
 6. [Effects and Errors](effects-and-errors.md): effect rows, `raise` and `catch`, your own effects and handlers.
-7. [Contracts and Tests](contracts-and-tests.md): `pre`, `post`, `where`, tests, examples, `fuzz` and `verify`.
+7. [Contracts and Tests](contracts-and-tests.md): `pre`, `post`, `where`, tests, examples, `fuzz`, `verify`, filling holes and suggested contracts.
 8. [Generics and Traits](generics-and-traits.md): type parameters, traits, bounds, operators and `derive`.
 9. [Collections and Pipelines](collections.md): list methods, maps and sets, loops and ranges.
 10. [Concurrency](concurrency.md): `par`, atomics and channels, and the race checks.

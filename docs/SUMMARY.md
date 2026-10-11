@@ -106,6 +106,7 @@
   - [ADR 0027: Traits, bounds, operator traits and derive](adr/0027-traits.md)
   - [ADR 0028: Block lambdas and trait methods as values](adr/0028-block-lambdas.md)
   - [ADR 0029: Or-patterns, list patterns and if e is p](adr/0029-richer-patterns.md)
+  - [ADR 0030: Hole filling and suggested contracts](adr/0030-hole-filling-and-suggested-contracts.md)
 - [Native performance versus C++](design/native-benchmarks.md)
 - [Agent benchmarks](design/agent-benchmarks.md)
 

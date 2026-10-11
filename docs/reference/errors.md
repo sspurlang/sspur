@@ -272,7 +272,7 @@ This page lists every code the compiler can emit, grouped by area. The test suit
 | Code | Meaning | Fix |
 |---|---|---|
 | `E_TEST_FAILED` | A test was false or trapped during `edit --test` | Fix the code or the test; the message shows the compared values |
-| `E_HOLE` | A typed hole `?` or `?name` | Fill it; the message gives its type and the values in scope that fit |
+| `E_HOLE` | A typed hole `?` or `?name` | Fill it; the message gives its type and the values in scope that fit, and `fix` lists up to 3 checked candidates as `fill` ops (`sspur fill --apply` writes the best) |
 
 ## Warnings
 

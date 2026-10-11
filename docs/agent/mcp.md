@@ -62,9 +62,11 @@ Every tool returns compact text, the same as the CLI (`json: true` on `query` an
 | `query` | `sspur q QUERY TARGET` | `list`, `find 'a\|b*'`, `grep TEXT`, `body A,B`, `sig`, `callers`, `callees`, `effects`, `impact`, `pack A,B`, `why`, `holes`, `diag`, `log` |
 | `edit` | `sspur edit --test -e SRC` | Add or replace definitions by name (plus `rename A B`, `remove A` lines), atomically; `test: true` runs every test after it |
 | `test` | `sspur test` | Run the tests: failures and a count |
-| `check` | `sspur check` | Typecheck and list diagnostics |
+| `check` | `sspur check` | Typecheck and list diagnostics, with up to 3 checked candidates under each typed hole |
 | `run` | `sspur run` | Run `main` and return what it logged |
 | `fuzz` | `sspur fuzz` | Property-test functions from their contracts |
+| `fill` | `sspur fill [?hole] [--apply]` | The best expression for each typed hole, run against the tests and contracts; `apply: true` writes the passing ones, `all: true` lists up to 3 |
+| `suggest` | `sspur suggest [fn] [--apply]` | `pre` and `post` clauses that held on every run of a function, marked `proved` when Z3 proves them; `apply: true` adds them |
 | `apply` | `sspur apply` | Low-level JSON transaction ops; prefer `edit` |
 
 The older tool names (`sspur_edit`, `sspur_query`, `sspur_export`, ...) still work.

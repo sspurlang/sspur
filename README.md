@@ -66,6 +66,7 @@ Most languages are designed around a human at a keyboard. SSPUR starts from a di
 - An interpreter, a Cranelift JIT, and an optimizing native compiler (via C and clang) that is the default for `run` and `test`
 - Differential fuzzing of native code against the interpreter, and contract-driven property testing
 - `sspur verify` for SMT-checked contracts
+- Typed holes that fill themselves: `sspur check` lists the small expressions that fit a `?hole` and pass the tests and contracts, and `sspur suggest` proposes `pre` and `post` clauses from runs of a function
 - An MCP server and a compact query API so agents can pull exactly the context they need
 - C interop in both directions: `extern fn`, `sspur bind` for C headers, and `sspur export-c` to ship SSPUR as a C library
 - `kernel fn` GPU kernels: Metal with exact `F32` and identical traps, queued launches, shared memory and barriers, deterministic atomics, 2D grids and inlined helper fns, plus OpenCL C, SPIR-V and PTX through `sspur gpu`

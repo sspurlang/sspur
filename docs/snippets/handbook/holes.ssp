@@ -1,0 +1,18 @@
+// ANCHOR: hole
+type Line = {sku: Str, qty: Int where _ > 0, price: Int where _ >= 0}
+
+fn subtotal(lines: List[Line]) -> Int
+  post r >= 0
+= ?subtotal
+
+test none = subtotal([]) == 0
+test two = subtotal([Line{sku: "a", qty: 2, price: 5}, Line{sku: "b", qty: 3, price: 4}]) == 22
+// ANCHOR_END: hole
+
+// ANCHOR: suggest
+fn mean(xs: List[Int]) -> Int
+= xs.sum / xs.len
+
+fn keep(xs: List[Int], n: Int) -> List[Int]
+= xs.take(n)
+// ANCHOR_END: suggest

@@ -145,7 +145,7 @@ test t = Circle{r: 1.0}.describe == "shape: 3.14" and Vec2{x: 1, y: 2} + Vec2{x:
 - List patterns: `[]`, `[x]`, `[x, y]`, `[x, ..rest]`, `[..init, last]`, `[first, .., last]`, `[_, ..]`. Elements are patterns (`[ok(x), ..]`, `[(a, b), ..rest]`, `["GET", path]`), and there is at most one `..`, which matches any number of elements and, when named, binds them as a `List` (a view of the list in native code, no copy). `[]` and `[x, ..rest]` together are exhaustive. `[x, ...rest]` and `[x, *rest]` are accepted and stored as `[x, ..rest]`.
 - `return e` exits the function early (not allowed inside lambdas, except as a lambda's last line, where it means `e`).
 - `par(a, b, ...)` runs each argument as a concurrent task and returns the tuple of results (see Concurrency).
-- `?` or `?name` is a typed hole. The compiler reports its expected type and the in-scope values that fit.
+- `?` or `?name` is a typed hole. The compiler reports its expected type and the in-scope values that fit. When the program has no errors, `sspur check` also lists up to three complete expressions for it, each with what it passed: `?total: items.map(_.qty * _.price).sum (passes 3 tests, post)`. They are found by a bounded search over the values in scope, literals (`0`, `1`, `""`, `[]`, `none`, `true`, `false`), fields, record and variant constructors, the program's functions and trait methods, operators, and the common methods of lists, strings, options, numbers, maps and sets, with lambdas such as `map(_.f * _.g)` and `filter(_.f > 0)` (up to 7 nodes, a lambda body up to 3). A candidate may only perform effects the enclosing function declares. Each one is run against the tests and examples that reach the hole and against fuzzed and small inputs of the function, which check its `post` and a refined result type; candidates that agree on every observed input count once, so the shortest stands for them. They are ranked by whether they pass everything, then size, then the number of distinct functions they use. `--json` gives each as a `fill` fix with `evidence` and `ok`. `sspur fill [file] [?name|fn]` prints the best candidate per hole and `--apply` writes it (ADR 0030).
 
 ## Effects
 
@@ -654,6 +654,8 @@ In a codebase, `edit` accepts `use` lines (stored as the definition `use lib`; r
 
 `sspur fuzz` turns contracts into property tests. It generates inputs that satisfy `pre` and `where`, then reports shrunk counterexamples for any `post` violation or trap.
 
+`sspur suggest [file] [fn]` runs each function on the arguments its tests and examples pass, on small inputs (`0`, `[]`, `[0]`, `""`, ...) and on fuzzed ones, and proposes contracts: the `post` clauses from a fixed set (`r >= 0`, `r > 0`, `r.len <= xs.len`, `r == x`, `r == r.sort`, comparisons of the result, its length or fields with each parameter) that held on every run, minus the ones another kept clause implies, and the simplest `pre` (or pair) that is true on every input that ran and false on every one that trapped, such as `pre xs.len > 0`. Each line says `proved` when Z3 proves it, or `held on N runs`; a `pre` says how many inputs trap without it. `--json` gives them as `refine` fixes; nothing is applied without `--apply`.
+
 The codebase is edited only through transactions, using `sspur apply` or the MCP tool `sspur_apply`:
 
 ```json
@@ -670,7 +672,7 @@ The codebase is edited only through transactions, using `sspur apply` or the MCP
 | `rename` | `from`, `to` | Scope-aware. Also renames constructors. Never changes any hash |
 | `remove` | `path` | |
 | `refine` | `target`, `contract: {pre?, post?, effects?: ["+log", "-log"]}` | |
-| `fill` | `hole` (`"?name"` or `"?"`), `expr`, optional `target` | |
+| `fill` | `hole` (`"?name"` or `"?"`), `expr`, optional `target` | The `fill` fixes on `E_HOLE` also carry `evidence` and `ok`, which the op ignores |
 | `attach` | `target`, `kind: "test"` or `"req"`, `value` | |
 | `resolve` | `path`, `pick: "ours"` or `"theirs"` | Only in a `"merge": true` transaction while a sync pull is pending |
 

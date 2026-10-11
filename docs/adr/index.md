@@ -33,3 +33,4 @@ Every change that shapes the language, the compiler or the tools has an architec
 | [0027](0027-traits.md) | Traits, bounds, operator traits and derive | Language |
 | [0028](0028-block-lambdas.md) | Block lambdas and trait methods as values | Language |
 | [0029](0029-richer-patterns.md) | Or-patterns, list patterns and `if e is p` | Language |
+| [0030](0030-hole-filling-and-suggested-contracts.md) | Hole filling and suggested contracts | Agents |
