@@ -54,7 +54,7 @@ const sspur = StreamLanguage.define({
   languageData: {
     commentTokens: { line: "//" },
     closeBrackets: { brackets: ["(", "[", "{", '"'] },
-    indentOnInput: /^\s*[|=]$/,
+    indentOnInput: /^\s*[|=.]$/,
   },
   tokenTable: { effect: effectTag, contract: contractTag, hole: holeTag, interp: t.special(t.string), def: t.definition(t.variableName), ctor: t.className, call: t.function(t.variableName), method: t.function(t.propertyName), placeholder: t.special(t.variableName), pipe: t.separator, bang: effectTag },
 });
@@ -137,6 +137,8 @@ function tokenIn(stream, state, top) {
   return null;
 }
 
+// indent rules: begin (tools/playground_test.mjs runs these; crates/sspur-ide/src/indent.rs is
+// the same for the language server)
 // A new line goes one level deeper after a line that opens a block: `= do`, `then do`, a
 // `match` scrutinee, an arm ending in `=>`, a trait or impl header, a bare signature.
 function indentFor(text) {
@@ -150,15 +152,47 @@ function indentFor(text) {
   return base;
 }
 
+// A line ending in a binary operator continues on the next line, one level deeper; so does a
+// line starting with `.name` or an operator, which keeps its own indent for the next one.
+const codeOf = (s) => s.replace(/\/\/.*$/, "").trimEnd();
+const indentOf = (s) => s.length - s.trimStart().length;
+const endsOp = (s) => !/=>$/.test(codeOf(s)) && /(\*\*|==|!=|<=|>=|:=|&&|\|\||->|[-+*/%<>,]|(^|[^\w])(and|or|is|with))$/.test(codeOf(s));
+const startsOp = (s) => /^(\.[A-Za-z_]|(and|or|is)(?!\w)|[-+*/%<>]|==|!=|&&)/.test(codeOf(s).trimStart());
+
+// The indent of a new line typed after lines[i], skipping blank lines above.
+function enterIndent(lines, i) {
+  const nonblank = (j) => { while (j >= 0 && codeOf(lines[j]).trim() === "") j--; return j; };
+  i = nonblank(i);
+  if (i < 0) return 0;
+  const line = lines[i], base = indentOf(line), prev = nonblank(i - 1);
+  if (/[([{]$/.test(codeOf(line))) return base + 2;
+  if (endsOp(line)) return startsOp(line) || (prev >= 0 && endsOp(lines[prev])) ? base : base + 2;
+  const o = indentFor(line);
+  if (o !== base || startsOp(line)) return o;
+  if (prev < 0 || !endsOp(lines[prev])) return base;
+  let j = prev;
+  for (let k = nonblank(j - 1); k >= 0 && endsOp(lines[k]); k = nonblank(k - 1)) j = k;
+  return indentOf(lines[j]);
+}
+// indent rules: end
+
+// The line being indented is the one at pos, or the part after a simulated break when Enter is
+// pressed; the rules look at up to 40 lines above it.
 const sspurIndent = indentService.of((cx, pos) => {
-  let line = cx.lineAt(pos, -1);
-  while (line.from > 0 && line.text.trim() === "") line = cx.lineAt(line.from - 1, -1);
-  if (line.text.trim() === "") return 0;
-  const after = cx.state.doc.lineAt(pos).text.trim();
-  const n = indentFor(line.text);
-  if (n === null) return 0;
-  if (after.startsWith("=") && /^(pub\s+)?(fn|test)\b/.test(line.text)) return 0;
-  return n;
+  const cur = cx.lineAt(pos, 1);
+  const after = cur.text.slice(pos - cur.from).trim();
+  const lines = [];
+  let l = cx.lineAt(pos, -1);
+  if (l.from === cur.from) l = l.from > 0 ? cx.lineAt(l.from - 1, -1) : null;
+  for (let n = 0; l && n < 40; n++) {
+    lines.unshift(l.text);
+    l = l.from > 0 ? cx.lineAt(l.from - 1, -1) : null;
+  }
+  const last = lines.findLastIndex((t) => t.trim() !== "");
+  if (last < 0) return 0;
+  if (after.startsWith("=") && /^(pub\s+)?(fn|test)\b/.test(lines[last])) return 0;
+  if (/^\.[A-Za-z_]/.test(after)) return indentOf(lines[last]) + (/^\s*\./.test(lines[last]) ? 0 : 2);
+  return enterIndent(lines, last);
 });
 
 const foldByIndent = foldService.of((state, from, to) => {

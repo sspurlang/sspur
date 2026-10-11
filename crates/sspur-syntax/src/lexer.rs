@@ -42,6 +42,8 @@ pub fn lex(src: &str) -> Result<Vec<Token>, SyntaxError> {
     let mut depth: i32 = 0;
     let mut at_line_start = true;
     let mut layout: Vec<(i32, u32)> = Vec::new();
+    // The indent of the line each bracket depth's current statement started on.
+    let mut stmt_ind: Vec<(i32, u32)> = Vec::new();
 
     while i < bytes.len() {
         if at_line_start {
@@ -57,8 +59,15 @@ pub fn lex(src: &str) -> Result<Vec<Token>, SyntaxError> {
                 i = next + bytes[next..].iter().position(|&b| b == b'\n').unwrap_or(bytes.len() - next);
                 continue;
             }
-            if depth == 0 && !out.is_empty() {
+            let base = stmt_ind.iter().rev().find(|(d, _)| *d == depth).map(|x| x.1);
+            let cont = continues(&out, &src[next..], base.is_some_and(|b| indent > b));
+            if base.is_none() {
+                stmt_ind.push((depth, indent));
+            }
+            if cont {
+            } else if depth == 0 && !out.is_empty() {
                 out.push(Token { tok: Tok::Newline(indent), span: Span::new(next, next) });
+                set_ind(&mut stmt_ind, depth, indent);
             } else if depth > 0 {
                 while layout.last().is_some_and(|(d, ind)| *d == depth && indent < *ind) {
                     layout.pop();
@@ -74,6 +83,7 @@ pub fn lex(src: &str) -> Result<Vec<Token>, SyntaxError> {
                 }
                 if layout.last().is_some_and(|(d, _)| *d == depth) {
                     out.push(Token { tok: Tok::Newline(indent), span: Span::new(next, next) });
+                    set_ind(&mut stmt_ind, depth, indent);
                 }
             }
             i = next;
@@ -147,6 +157,9 @@ pub fn lex(src: &str) -> Result<Vec<Token>, SyntaxError> {
                         while layout.last().is_some_and(|(d, _)| *d == depth) {
                             layout.pop();
                         }
+                        while stmt_ind.last().is_some_and(|(d, _)| *d == depth) {
+                            stmt_ind.pop();
+                        }
                         depth -= 1
                     }
                     _ => {}
@@ -158,6 +171,50 @@ pub fn lex(src: &str) -> Result<Vec<Token>, SyntaxError> {
     }
     out.push(Token { tok: Tok::Eof, span: Span::new(src.len(), src.len()) });
     Ok(out)
+}
+
+fn set_ind(stmt_ind: &mut Vec<(i32, u32)>, depth: i32, indent: u32) {
+    match stmt_ind.last_mut() {
+        Some((d, i)) if *d == depth => *i = indent,
+        _ => stmt_ind.push((depth, indent)),
+    }
+}
+
+fn ends_operand(t: &Tok) -> bool {
+    matches!(t, Tok::Ident(_) | Tok::Int(_) | Tok::Float(_) | Tok::Str(_) | Tok::Hash(_) | Tok::Kw("true" | "false") | Tok::Sym(")" | "]" | "}" | "_" | "?"))
+}
+
+/// Whether the line starting at `rest` continues the line before it instead of starting a
+/// new statement: the line before ends in a binary operator (`and`, `+`, `==`, `,`, ...), or
+/// it ends a value and this line, indented deeper than its statement, starts with `.name` or
+/// a binary operator.
+fn continues(out: &[Token], rest: &str, deeper: bool) -> bool {
+    let n = out.len();
+    let Some(last) = out.last().map(|t| &t.tok) else { return false };
+    let doubled = |s: &str| n >= 2 && matches!(&out[n - 2].tok, Tok::Sym(x) if *x == s) && out[n - 2].span.end == out[n - 1].span.start;
+    let trailing = match last {
+        Tok::Sym("+" | "-" | "*" | "/" | "%" | "**" | "==" | "!=" | "<" | "<=" | ">" | ">=" | "," | ":=" | "->") => true,
+        Tok::Sym("&") => doubled("&"),
+        Tok::Sym("|") => doubled("|"),
+        Tok::Kw("and" | "or" | "with") => true,
+        Tok::Ident(w) if w == "is" => n >= 2 && ends_operand(&out[n - 2].tok),
+        _ => false,
+    };
+    if trailing {
+        return true;
+    }
+    if !deeper || !ends_operand(last) {
+        return false;
+    }
+    let b = rest.as_bytes();
+    let word = |w: &str| rest.starts_with(w) && !b.get(w.len()).is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_');
+    match b.first() {
+        Some(b'.') => b.get(1).is_some_and(|c| c.is_ascii_alphabetic() || *c == b'_'),
+        Some(b'+' | b'-' | b'*' | b'/' | b'%' | b'<' | b'>') => true,
+        Some(b'=' | b'!') => b.get(1) == Some(&b'='),
+        Some(b'&') => b.get(1) == Some(&b'&'),
+        _ => word("and") || word("or") || word("is"),
+    }
 }
 
 /// Whether a line after `=> {` continues a record literal (`a: 1,`, `a,`, `a}`) rather than a block.

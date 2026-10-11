@@ -169,5 +169,29 @@ same("fix: a hole fill keeps precedence", fixWith(holeSrc.replace("= ?total", "=
 const builtins = call("builtins");
 expect(builtins.globals.length > 50 && builtins.methods.length > 100 && builtins.keywords.includes("match"), "builtins: lists from the checker");
 
+// Enter: the playground's indent rules and the VS Code onEnterRules agree on where a new line
+// starts, including line continuations (the language server's are tested in sspur-ide).
+const editorSrc = readFileSync(new URL("../docs/play/editor.js", import.meta.url), "utf8");
+const rules = editorSrc.match(/\/\/ indent rules: begin[\s\S]*?\/\/ indent rules: end/);
+expect(rules, "indent: editor.js has the indent rules block");
+const { enterIndent } = new Function(`${rules[0]}\nreturn { enterIndent };`)();
+const vsc = JSON.parse(readFileSync(new URL("../packaging/vscode/language-configuration.json", import.meta.url), "utf8"));
+function vscodeIndent(ls) {
+  const before = ls.at(-1), prev = ls.length > 1 ? ls.at(-2) : "";
+  const base = before.length - before.trimStart().length;
+  const rule = vsc.onEnterRules.find((r) => new RegExp(r.beforeText).test(before) && (!r.previousLineText || new RegExp(r.previousLineText).test(prev)));
+  const action = rule ? rule.action.indent : new RegExp(vsc.indentationRules.increaseIndentPattern).test(before) ? "indent" : "none";
+  return base + (action === "indent" ? 2 : action === "outdent" ? -2 : 0);
+}
+for (const [src, want] of [
+  ["= a > 0 and", 2], ["= a > 0 and\n  b > 0 and", 2], ["= a > 0 and\n  b > 0", 0], ["= a +", 2], ["  total = a +\n    b", 2],
+  ["= xs\n  .map(_ * 2)", 2], ["  x = f(1,", 4], ["  x = f(", 4], ["  ys = xs.map(x =>", 4], ["= do", 2], ["  if ok then", 4],
+  ["  | some(v) =>", 4], ["= match o", 2], ["  x = 1", 2], ["  ok = r is", 4], ["  | A => 1", 2], ["= xs\n  .filter(x =>", 4],
+]) {
+  const ls = src.split("\n");
+  same(`indent: playground after ${JSON.stringify(src)}`, enterIndent(ls, ls.length - 1), want);
+  same(`indent: VS Code after ${JSON.stringify(src)}`, vscodeIndent(ls), want);
+}
+
 console.log(`${checks - failures}/${checks} playground checks passed${bin ? " (compared with " + bin + ")" : ""}`);
 process.exit(failures ? 1 : 0);

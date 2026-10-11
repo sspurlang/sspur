@@ -10,6 +10,9 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 - A template for LSP4IJ in `packaging/jetbrains/`, attached to every release as `sspur-lsp4ij-vX.Y.Z.zip`: in a JetBrains IDE with LSP4IJ, *Import template...* sets up the server in one step, with no account.
 - [Editor setup](https://utkarshavardhana.github.io/sspur/get-started/editors.html): VS Code and its forks, Neovim, Vim, Helix, Emacs, Sublime Text, JetBrains IDEs through LSP4IJ, Kate and Eclipse, and what Zed, Visual Studio and Xcode lack.
 
+- Long lines (ADR 0032): a line that ends in a binary operator (`and`, `+`, `==`, `,`, ...) continues on the next line, and so does a deeper-indented line that starts with `.name` or an operator, so `= xs` then `.map(_ * 2)` and `.sum` on their own lines is one expression. `sspur fmt` joins them back into one line.
+- Pressing Enter after a line that ends in an operator, an open bracket, `=>`, `=` or `do` indents the next line one level, in the playground, in VS Code (`onEnterRules`) and through the language server (`textDocument/onTypeFormatting`, which LSP4IJ uses in JetBrains IDEs). A `.method` chain stays aligned, and the line after a continued one goes back to where its statement started.
+
 ### Changed
 - The editor logic behind the playground moved from `crates/sspur-wasm` into a new crate, `sspur-ide`, which the language server uses too.
 - Hole filling has more time per hole: 400 ms in `sspur check` and the playground, 600 ms in editors, where it runs in the background. Since it began counting the other candidates that fit, a classic hole such as a sum of field products took about 270 ms and was missed at the old 150 to 200 ms.

@@ -121,7 +121,7 @@ fn lsp_session() {
     let init = c.request("initialize", json!({"processId": null, "rootUri": null, "capabilities": {}}));
     let caps = &init["capabilities"];
     assert_eq!(init["serverInfo"]["name"], "sspur");
-    for cap in ["hoverProvider", "completionProvider", "codeActionProvider", "documentFormattingProvider", "definitionProvider", "referencesProvider", "documentSymbolProvider", "renameProvider", "semanticTokensProvider"] {
+    for cap in ["hoverProvider", "completionProvider", "codeActionProvider", "documentFormattingProvider", "documentOnTypeFormattingProvider", "definitionProvider", "referencesProvider", "documentSymbolProvider", "renameProvider", "semanticTokensProvider"] {
         assert!(!caps[cap].is_null(), "missing {cap}: {caps}");
     }
     c.notify("initialized", json!({}));
@@ -192,6 +192,12 @@ fn lsp_session() {
     c.notify("textDocument/didChange", json!({"textDocument": {"uri": URI, "version": 3}, "contentChanges": [{"range": {"start": pos(6, 10), "end": pos(6, 16)}, "text": "dubble"}]}));
     let diags = c.diagnostics(|d| d.iter().any(|x| x["severity"] == 1));
     assert!(diags.iter().any(|d| d["message"].as_str().unwrap().contains("dubble")), "incremental change not applied: {diags:?}");
+
+    c.notify("textDocument/didChange", json!({"textDocument": {"uri": URI, "version": 4}, "contentChanges": [{"text": "fn pos(a: Int, b: Int) -> Bool\n= a > 0 and\n\n"}]}));
+    let opts = json!({"tabSize": 2, "insertSpaces": true});
+    let edits = c.request("textDocument/onTypeFormatting", json!({"textDocument": doc(), "position": pos(2, 0), "ch": "\n", "options": opts}));
+    assert_eq!(edits[0]["newText"], "  ", "a line ending in 'and' continues one level deeper: {edits}");
+    assert_eq!(c.request("textDocument/onTypeFormatting", json!({"textDocument": doc(), "position": pos(1, 0), "ch": "\n", "options": opts})), json!([]));
 
     assert_eq!(c.request("shutdown", Value::Null), Value::Null);
     c.notify("exit", Value::Null);

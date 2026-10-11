@@ -114,6 +114,7 @@ fn capabilities() -> J {
         "hoverProvider": true,
         "codeActionProvider": { "codeActionKinds": ["quickfix"] },
         "documentFormattingProvider": true,
+        "documentOnTypeFormattingProvider": { "firstTriggerCharacter": "\n" },
         "definitionProvider": true,
         "referencesProvider": true,
         "documentHighlightProvider": true,
@@ -425,6 +426,19 @@ fn handle(state: &State, out: &crossbeam_channel::Sender<Message>, r: &Request) 
                 return Ok(json!([]));
             }
             Ok(json!([{ "range": Lines::new(&text).range(0, text.len()), "newText": new }]))
+        }
+        "textDocument/onTypeFormatting" => {
+            let (text, _, _) = doc()?;
+            let line = p["position"]["line"].as_u64().unwrap_or(0) as usize;
+            let lines: Vec<&str> = text.split('\n').collect();
+            let (Some(i), Some(cur)) = (line.checked_sub(1), lines.get(line)) else { return Ok(json!([])) };
+            let want = ide::indent::enter_indent(&lines, i);
+            let have = cur.len() - cur.trim_start_matches([' ', '\t']).len();
+            if cur[..have] == " ".repeat(want) {
+                return Ok(json!([]));
+            }
+            let range = json!({ "start": { "line": line, "character": 0 }, "end": { "line": line, "character": have } });
+            Ok(json!([{ "range": range, "newText": " ".repeat(want) }]))
         }
         "textDocument/definition" => {
             let (text, a) = analysis(state, &uri)?;

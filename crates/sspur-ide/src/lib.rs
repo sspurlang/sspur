@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, OnceLock};
 
 pub mod highlight;
+pub mod indent;
 pub mod nav;
 
 /// A source that parsed, with its check. `src` is the text as the editor has it; a package's

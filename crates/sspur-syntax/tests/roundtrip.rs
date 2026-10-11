@@ -170,3 +170,25 @@ fn richer_patterns_print_canonically() {
         assert_eq!(parse(src).unwrap_err().code, code, "{src}");
     }
 }
+
+#[test]
+fn long_lines_continue() {
+    let cases = [
+        ("fn f(a: Int, b: Int) -> Bool\n= a > 0 and\n  b > 0", "= a > 0 and b > 0"),
+        ("fn f(a: Int, b: Int) -> Int\n= a +\n  b", "= a + b"),
+        ("fn f(xs: List[Int]) -> Int\n= xs\n  .map(_ * 2)\n  .sum", "= xs.map(_ * 2).sum"),
+        ("fn f(a: Int, b: Int) -> Bool\n= a > 0\n  and b > 0\n  or a == b", "= a > 0 and b > 0 or a == b"),
+        ("fn f(a: Int) -> Int\n= a\n  - 1", "= a - 1"),
+        ("fn f(xs: List[Int]) -> Int\n= do\n  y = xs.map(x => do\n      z = x\n      z + 1)\n    .sum\n  y\n    * 2", "  y * 2"),
+        ("fn f(a: Int) -> Int\n= do\n  var x = a\n  x :=\n    x + 1\n  x", "  x := x + 1"),
+        ("fn f(o: Opt[Int]) -> Int\n= match o\n  | some(v) => v +\n    1\n  | none => 0", "| some(v) => v + 1\n| none => 0"),
+        ("fn f(a: Int) -> Int\n= do\n  b = a\n  -b", "  b = a\n  -b"),
+        ("fn f(a: Int) -> Int\n= do\n  -a", "= -a"),
+        ("fn f(r: R) -> R\n= r with a := 1,\n  b := 2", "= r with a := 1, b := 2"),
+    ];
+    for (src, want) in cases {
+        roundtrip(src);
+        let printed = print_module(&parse(src).unwrap_or_else(|e| panic!("{src}\n{e:?}")));
+        assert!(printed.contains(want), "{src}\n---\n{printed}");
+    }
+}

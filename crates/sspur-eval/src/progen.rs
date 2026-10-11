@@ -115,6 +115,37 @@ pub fn program(seed: u64, id: usize) -> String {
     g.out
 }
 
+/// Where to break a generated line in two, so the fuzzer covers continued lines (ADR 0032):
+/// after the first ` and `, ` or `, ` + `, ` * ` or ` == `, or before a `.method`, outside strings.
+fn break_at(s: &str) -> Option<usize> {
+    if s.contains('\n') || s.contains("{\"") || s.contains('\\') || s.trim_start().starts_with('|') {
+        return None;
+    }
+    let b = s.as_bytes();
+    let mut in_str = false;
+    for i in 1..b.len() {
+        match b[i] {
+            b'"' => in_str = !in_str,
+            _ if in_str => {}
+            b'.' if (b[i - 1].is_ascii_alphanumeric() || matches!(b[i - 1], b')' | b']' | b'_')) && b.get(i + 1).is_some_and(u8::is_ascii_lowercase) && b[i - 1] != b'.' => {
+                let start = s[..i].rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).map_or(0, |j| j + 1);
+                if !s[start..i].starts_with(|c: char| c.is_ascii_digit()) {
+                    return Some(i);
+                }
+            }
+            b' ' => {
+                for op in [" and ", " or ", " + ", " * ", " == "] {
+                    if s[i..].starts_with(op) {
+                        return Some(i + op.len() - 1);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 fn ty_name(c: &str, t: T) -> String {
     match t {
         T::Int => "Int".into(),
@@ -143,7 +174,14 @@ impl Gen {
         for _ in 0..ind {
             self.out.push_str("  ");
         }
-        self.out.push_str(s);
+        match self.r.chance(12).then(|| break_at(s)).flatten() {
+            Some(k) => {
+                let (a, b) = s.split_at(k);
+                let pad = "  ".repeat(ind + 1 + self.r.below(2) as usize);
+                self.out.push_str(&format!("{}\n{pad}{}", a.trim_end(), b.trim_start()));
+            }
+            None => self.out.push_str(s),
+        }
         self.out.push('\n');
     }
 

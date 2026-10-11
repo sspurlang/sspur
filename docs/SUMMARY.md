@@ -109,6 +109,7 @@
   - [ADR 0029: Or-patterns, list patterns and if e is p](adr/0029-richer-patterns.md)
   - [ADR 0030: Hole filling and suggested contracts](adr/0030-hole-filling-and-suggested-contracts.md)
   - [ADR 0031: The language server](adr/0031-language-server.md)
+  - [ADR 0032: Long lines](adr/0032-pattern-tests-guards-and-long-lines.md)
 - [Native performance versus C++](design/native-benchmarks.md)
 - [Agent benchmarks](design/agent-benchmarks.md)
 

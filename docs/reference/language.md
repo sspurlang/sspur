@@ -20,6 +20,28 @@ fn total(items: List[Item]) -> Int
 test total_empty = total([]) == 0
 ```
 
+### Long lines
+
+A statement can go on over several lines:
+
+- A line that ends in a binary operator (`and`, `or`, `+`, `-`, `*`, `/`, `%`, `**`, a comparison, `,`, `:=`, `->`, `with` or `is`) continues on the next line.
+- A line that starts with `.name` or a binary operator (`and`, `or`, `+`, `-`, `==`, `is`, ...) continues the line before it, when it's indented deeper than the line its statement starts on and the line before ends in a value (a name, a literal or a closing bracket).
+- Inside `(`, `[` and `{` lines join as they always have.
+
+```
+fn ready(u: User) -> Bool
+= u.active and
+  u.email != ""
+
+fn total(items: List[Item]) -> Int
+= items
+  .filter(_.qty > 0)
+  .map(_.price * _.qty)
+  .sum
+```
+
+A `|` at the start of a line still begins a match arm, a variant or a rule row, and `=`, `=>`, `do`, `then` and `else` at the end of a line still open an indented block. `sspur fmt` joins a continued statement back into one line: the canonical text keeps no breaks inside an expression, so it doesn't depend on where the input was broken (ADR 0032).
+
 ## Types
 
 | Kind | Syntax |
