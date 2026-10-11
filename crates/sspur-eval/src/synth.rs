@@ -1176,7 +1176,6 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
     let no_evidence = reach.is_empty() && inputs.is_empty();
     let contract = f.as_ref().and_then(|f| contract_of(it, f));
     let mut cands: Vec<Cand> = Vec::new();
-    let mut ok = 0;
     let mut done = 0;
     en.deadline = t0 + opts.budget_ms as f64 * 0.9;
     // Grow one size at a time and validate the new terms of the hole's type before growing further:
@@ -1198,19 +1197,17 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
                 en.out_of_time = true;
                 break;
             }
-            let c = validate(it, &en.terms[i], site, prior, &reach, &inputs, &cases, f.as_deref(), contract);
-            if c.ok() && (!no_evidence || c.uses_input) {
-                ok += 1;
-            }
-            cands.push(c);
+            cands.push(validate(it, &en.terms[i], site, prior, &reach, &inputs, &cases, f.as_deref(), contract));
         }
+        // Terms found later are larger than `s`, so they can't outrank a passing one that costs `s` or less.
+        let ok = cands.iter().filter(|c| c.ok() && (!no_evidence || c.uses_input) && cost(&c.expr, c.size) <= s).count();
         if ok >= opts.top || en.out_of_time {
             break;
         }
     }
     filled.explored = en.explored;
     filled.classes = en.terms.len();
-    filled.timed_out = en.out_of_time && ok < opts.top;
+    filled.timed_out = en.out_of_time && cands.iter().filter(|c| c.ok()).count() < opts.top;
     *it.hole.borrow_mut() = HoleMode::default();
     cands.sort_by(|a, b| rank(a, no_evidence).cmp(&rank(b, no_evidence)).then_with(|| a.text.cmp(&b.text)));
     // The passing candidates, or else the one that comes closest.
@@ -1220,6 +1217,10 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
             break;
         }
         if any_ok && !c.ok() || !any_ok && c.passed == 0 {
+            continue;
+        }
+        // `x.abs` or `x.sort` after `x` itself says nothing new.
+        if filled.cands.iter().any(|p: &Cand| c.text.starts_with(&format!("{}.", p.text))) {
             continue;
         }
         if typechecks(m, site, &c.expr) {
@@ -1271,7 +1272,20 @@ fn validate(it: &Interp, t: &Term, site: &HoleSite, prior: &[(Span, Rc<Expr>)], 
 }
 
 fn rank(c: &Cand, no_evidence: bool) -> (bool, usize, usize, bool, usize, usize, bool) {
-    (!c.ok(), c.failed, c.broke + c.traps, no_evidence && !c.uses_input, c.size, c.fns, !c.uses_input)
+    (!c.ok(), c.failed, c.broke + c.traps, no_evidence && !c.uses_input, cost(&c.expr, c.size), c.fns, !c.uses_input)
+}
+
+/// Size, plus 2 for each constant other than 0, 1 and -1 and each non-empty string: a candidate that only
+/// passes because of a constant such as `7 + xs.len` is usually fitting the tests rather than the intent.
+fn cost(e: &Expr, size: usize) -> usize {
+    let mut magic = 0;
+    visit::walk_expr(e, &mut |x| {
+        if matches!(x.kind, ExprKind::Int(n) if n.abs() > 1) || matches!(x.kind, ExprKind::Float(v) if v != 0.0 && v.abs() != 1.0) || matches!(&x.kind, ExprKind::Str(p) if !p.is_empty()) {
+            magic += 1;
+        }
+        true
+    });
+    size + 2 * magic
 }
 
 /// The module with the hole at `span` replaced by `e`.
