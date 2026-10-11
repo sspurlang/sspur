@@ -388,7 +388,9 @@ function signatureHelp(api) {
     const text = view.state.doc.toString();
     const head = view.state.selection.main.head;
     const sig = api.signature ? await api.signature(text, head) : null;
-    if (mine !== asked || view.state.doc.toString() !== text) return;
+    if (mine !== asked) return;
+    // Typing went on while we waited (a fast typist, or a paste): ask again for where the cursor is now.
+    if (view.state.doc.toString() !== text || view.state.selection.main.head !== head) return ask(view);
     view.dispatch({ effects: setSignature.of(sig ? { pos: head, sig } : null) });
   };
   return [
