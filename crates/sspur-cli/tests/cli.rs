@@ -319,6 +319,49 @@ fn fill_honors_its_budget() {
     let _ = std::fs::remove_dir_all(&d);
 }
 
+/// The hole-filling benchmark, bench/fill/holes.txt: the share of holes whose top candidate is the
+/// intended one. `cargo test --release fill_benchmark -- --nocapture` prints the table.
+#[test]
+fn fill_benchmark() {
+    const MIN_TOP1: usize = 25;
+    let table = include_str!("../../../bench/fill/holes.txt");
+    let (head, cases) = table.split_once("\n## ").unwrap();
+    let prelude = head.split_once("prelude:\n").unwrap().1;
+    // Debug builds run several times slower, so they get a proportionally larger budget.
+    let budget = if cfg!(debug_assertions) { "1600" } else { "200" };
+    let d = hole_dir("fill_bench", "");
+    let (mut top1, mut top3, mut ms, mut lost) = (0, 0, vec![], vec![]);
+    let mut rows = vec![];
+    let n = cases.split("\n## ").count();
+    for case in cases.split("\n## ") {
+        let (title, rest) = case.split_once('\n').unwrap();
+        let (name, guard) = (title.trim_end_matches(" *"), title.ends_with(" *"));
+        let wants: Vec<&str> = rest.lines().filter_map(|l| l.strip_prefix("want: ")).collect();
+        let prog: String = rest.lines().filter(|l| !l.starts_with("want: ")).map(|l| format!("{l}\n")).collect();
+        std::fs::write(d.join("h.ssp"), format!("{prelude}\n{prog}")).unwrap();
+        let (out, _) = sspur(&d, &["fill", "h.ssp", "--all", "--json", "--fill-ms", budget], "");
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap_or_else(|_| panic!("{name}: {out}"));
+        let hole = &v["holes"][0];
+        let got: Vec<String> = hole["candidates"].as_array().map(|a| a.iter().map(|c| c["expr"].as_str().unwrap().to_string()).collect()).unwrap_or_default();
+        let hit = |c: &String| wants.contains(&c.as_str());
+        let (h1, h3) = (got.first().is_some_and(hit), got.iter().take(3).any(hit));
+        top1 += h1 as usize;
+        top3 += h3 as usize;
+        if guard && !h1 {
+            lost.push(name.to_string());
+        }
+        ms.push(hole["ms"].as_f64().unwrap_or(0.0));
+        let ev = hole["candidates"][0]["evidence"].as_str().unwrap_or("").to_string();
+        rows.push(format!("{:<24} {:<4} {:>6.0} ms  {} ({ev})", name, if h1 { "top1" } else if h3 { "top3" } else { "miss" }, ms.last().unwrap(), got.join(" | ")));
+    }
+    ms.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    println!("{}", rows.join("\n"));
+    println!("top-1 {top1}/{n}, top-3 {top3}/{n}, median {:.0} ms, max {:.0} ms", ms[ms.len() / 2], ms[ms.len() - 1]);
+    let _ = std::fs::remove_dir_all(&d);
+    assert!(lost.is_empty(), "no longer the top candidate: {lost:?}");
+    assert!(top1 >= MIN_TOP1, "top-1 {top1}/{n}, expected at least {MIN_TOP1}");
+}
+
 #[test]
 fn fill_applies_to_a_codebase() {
     let d = fresh("fill_store");

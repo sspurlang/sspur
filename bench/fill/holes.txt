@@ -1,0 +1,349 @@
+# Hole-filling benchmark (ADR 0030). Each case is a small program with one hole and the one or two
+# tests an agent would write first. `want:` lines are the intended answer and its equivalent
+# spellings; the top candidate of `sspur fill` must be one of them. `## name *` marks a case
+# that must keep hitting (the regression guard in crates/sspur-cli/tests/cli.rs). The prelude
+# is prepended to every case. Frozen before tuning: change the cases only to fix a mistake.
+
+prelude:
+type Item = {sku: Str, qty: Int, price: Int}
+type Person = {name: Str, age: Int}
+type Point = {x: Int, y: Int}
+type Shape = Circle{r: Int} | Square{side: Int}
+
+## sum_of_field *
+want: items.map(_.qty).sum
+fn total_qty(items: List[Item]) -> Int
+= ?
+test t = total_qty([Item{sku: "a", qty: 2, price: 3}, Item{sku: "b", qty: 5, price: 1}]) == 7
+
+## sum_of_product *
+want: items.map(_.qty * _.price).sum
+want: items.map(_.price * _.qty).sum
+fn revenue(items: List[Item]) -> Int
+= ?
+test t = revenue([Item{sku: "a", qty: 2, price: 3}, Item{sku: "b", qty: 1, price: 4}]) == 10
+
+## total_age *
+want: ps.map(_.age).sum
+fn total_age(ps: List[Person]) -> Int
+= ?
+test t = total_age([Person{name: "a", age: 30}, Person{name: "b", age: 12}]) == 42
+
+## count_positive
+want: xs.filter(_ > 0).len
+want: xs.filter(0 < _).len
+fn positives(xs: List[Int]) -> Int
+= ?
+test t = positives([3, -1, 0, 5]) == 2
+
+## count_longer_than
+want: ws.filter(_.len > n).len
+want: ws.filter(n < _.len).len
+fn longer_than(ws: List[Str], n: Int) -> Int
+= ?
+test t = longer_than(["a", "abcd", "abc"], 2) == 2
+
+## count_equal
+want: xs.filter(_ == w).len
+want: xs.filter(w == _).len
+fn count_of(xs: List[Str], w: Str) -> Int
+= ?
+test t = count_of(["a", "b", "a"], "a") == 2
+
+## count_adults
+want: ps.filter(_.age >= 18).len
+fn adults(ps: List[Person]) -> Int
+= ?
+test t = adults([Person{name: "a", age: 30}, Person{name: "b", age: 12}, Person{name: "c", age: 18}]) == 2
+
+## longest_string
+want: xs.map(_.len).max.or(0)
+fn longest(xs: List[Str]) -> Int
+= ?
+test t = longest(["ab", "abcd", "x"]) == 4
+
+## max_or_zero *
+want: xs.max.or(0)
+fn biggest(xs: List[Int]) -> Int
+= ?
+test t = biggest([3, 9, 2]) == 9
+
+## cheapest_price
+want: items.map(_.price).min.or(0)
+fn cheapest(items: List[Item]) -> Int
+= ?
+test t = cheapest([Item{sku: "a", qty: 1, price: 5}, Item{sku: "b", qty: 3, price: 2}]) == 2
+
+## first_or_default
+want: xs.first.or(d)
+fn head_or(xs: List[Int], d: Int) -> Int
+= ?
+test t = head_or([4, 5], 0) == 4
+
+## last_or_empty *
+want: names.last.or("")
+fn last_name(names: List[Str]) -> Str
+= ?
+test t = last_name(["ann", "bob"]) == "bob"
+
+## oldest_age *
+want: ps.map(_.age).max.or(0)
+fn oldest(ps: List[Person]) -> Int
+= ?
+test t = oldest([Person{name: "a", age: 30}, Person{name: "b", age: 41}, Person{name: "c", age: 7}]) == 41
+
+## join_comma
+want: cols.join(",")
+fn csv(cols: List[Str]) -> Str
+= ?
+test t = csv(["a", "b", "c"]) == "a,b,c"
+
+## join_space
+want: ws.join(" ")
+fn sentence(ws: List[Str]) -> Str
+= ?
+test t = sentence(["hi", "there"]) == "hi there"
+
+## total_chars
+want: ws.map(_.len).sum
+fn total_chars(ws: List[Str]) -> Int
+= ?
+test t = total_chars(["ab", "cde"]) == 5
+
+## name_length *
+want: p.name.len
+fn name_len(p: Person) -> Int
+= ?
+test t = name_len(Person{name: "alice", age: 9}) == 5
+
+## word_count *
+want: s.words.len
+fn word_count(s: Str) -> Int
+= ?
+test t = word_count("the quick fox") == 3
+
+## contains_param
+want: xs.contains(x)
+fn member(xs: List[Int], x: Int) -> Bool
+= ?
+test t = member([1, 2, 3], 2)
+
+## contains_literal
+want: roles.contains("admin")
+fn is_admin(roles: List[Str]) -> Bool
+= ?
+test t = is_admin(["user", "admin"])
+test f = not is_admin(["user"])
+
+## any_negative
+want: xs.any(_ < 0)
+want: xs.any(0 > _)
+fn has_negative(xs: List[Int]) -> Bool
+= ?
+test t = has_negative([4, -2, 7])
+
+## all_older *
+want: ps.all(_.age >= min)
+fn all_at_least(ps: List[Person], min: Int) -> Bool
+= ?
+test t = all_at_least([Person{name: "a", age: 30}, Person{name: "b", age: 18}], 18)
+test f = not all_at_least([Person{name: "a", age: 30}, Person{name: "b", age: 12}], 18)
+
+## option_default_literal
+want: cfg.or(80)
+fn port(cfg: Opt[Int]) -> Int
+= ?
+test t = port(some(8080)) == 8080
+test d = port(none) == 80
+
+## option_default_param
+want: nick.or(name)
+fn display(nick: Opt[Str], name: Str) -> Str
+= ?
+test t = display(none, "Ann") == "Ann"
+
+## record_constructor
+want: Point{x: x, y: y}
+fn point(x: Int, y: Int) -> Point
+= ?
+test t = point(1, 2) == Point{x: 1, y: 2}
+
+## variant_constructor *
+want: Square{side: s}
+fn square(s: Int) -> Shape
+= ?
+test t = square(3) == Square{side: 3}
+
+## field_update
+want: it with qty := it.qty + n
+want: it with qty := n + it.qty
+want: Item{sku: it.sku, qty: it.qty + n, price: it.price}
+fn restock(it: Item, n: Int) -> Item
+= ?
+test t = restock(Item{sku: "a", qty: 1, price: 2}, 5) == Item{sku: "a", qty: 6, price: 2}
+
+## field_set *
+want: p with name := n
+want: Person{name: n, age: p.age}
+fn rename(p: Person, n: Str) -> Person
+= ?
+test t = rename(Person{name: "a", age: 3}, "b") == Person{name: "b", age: 3}
+
+## last_index *
+want: xs.len - 1
+fn last_index(xs: List[Int]) -> Int
+= ?
+test t = last_index([7, 8, 9]) == 2
+
+## middle_index
+want: xs.len / 2
+fn middle(xs: List[Int]) -> Int
+  pre xs.len > 0
+= xs[?]
+test t = middle([1, 2, 3]) == 2
+
+## wrap_index *
+want: (i + 1) % n
+fn next_slot(i: Int, n: Int) -> Int
+  pre n > 0
+= ?
+test t = next_slot(4, 5) == 0
+test u = next_slot(1, 5) == 2
+
+## reverse *
+want: xs.reverse
+fn backwards(xs: List[Int]) -> List[Int]
+= ?
+test t = backwards([1, 2, 3]) == [3, 2, 1]
+
+## sort *
+want: xs.sort
+fn ranked(xs: List[Int]) -> List[Int]
+= ?
+test t = ranked([3, 1, 2]) == [1, 2, 3]
+
+## take *
+want: xs.take(n)
+fn top(xs: List[Int], n: Int) -> List[Int]
+= ?
+test t = top([5, 4, 3], 2) == [5, 4]
+
+## drop_header *
+want: lines.drop(1)
+fn body(lines: List[Str]) -> List[Str]
+= ?
+test t = body(["h", "a", "b"]) == ["a", "b"]
+
+## smallest_n
+want: xs.sort.take(n)
+fn smallest(xs: List[Int], n: Int) -> List[Int]
+= ?
+test t = smallest([5, 1, 3], 2) == [1, 3]
+
+## average_pre
+want: xs.sum / xs.len
+fn avg(xs: List[Int]) -> Int
+  pre xs.len > 0
+= ?
+test t = avg([2, 4, 6]) == 4
+
+## average_guarded
+want: xs.sum / max(xs.len, 1)
+want: xs.sum / max(1, xs.len)
+fn mean_or_zero(xs: List[Int]) -> Int
+= ?
+test e = mean_or_zero([]) == 0
+test t = mean_or_zero([3, 5]) == 4
+
+## clamp_post
+want: max(x, 0)
+want: max(0, x)
+fn non_negative(x: Int) -> Int
+  post r >= 0
+= ?
+test t = non_negative(5) == 5
+
+## max_of_two_post *
+want: max(a, b)
+want: max(b, a)
+fn bigger(a: Int, b: Int) -> Int
+  post r >= a and r >= b
+= ?
+test t = bigger(2, 7) == 7
+
+## distance_post *
+want: (a - b).abs
+want: (b - a).abs
+fn dist(a: Int, b: Int) -> Int
+  post r >= 0
+= ?
+test t = dist(3, 8) == 5
+
+## refined_result *
+want: xs.len + 1
+want: 1 + xs.len
+type Pos = Int where _ > 0
+fn slots(xs: List[Str]) -> Pos
+= ?
+test t = slots(["a", "b"]) == 3
+
+## area *
+want: p.x * p.y
+want: p.y * p.x
+fn area(p: Point) -> Int
+= ?
+test t = area(Point{x: 3, y: 4}) == 12
+
+## shout *
+want: s.upper
+fn shout(s: Str) -> Str
+= ?
+test t = shout("hi") == "HI"
+
+## normalize *
+want: s.trim.lower
+want: s.lower.trim
+fn norm(s: Str) -> Str
+= ?
+test t = norm("  Hi ") == "hi"
+
+## in_range
+want: x >= lo and x <= hi
+want: lo <= x and x <= hi
+want: x <= hi and x >= lo
+want: x <= hi and lo <= x
+fn in_range(x: Int, lo: Int, hi: Int) -> Bool
+= ?
+test t = in_range(5, 1, 10)
+test f = not in_range(11, 1, 10)
+
+## find_by_id
+want: ps.find(_.name == n)
+want: ps.find(n == _.name)
+fn by_name(ps: List[Person], n: Str) -> Opt[Person]
+= ?
+test t = by_name([Person{name: "a", age: 1}, Person{name: "b", age: 2}], "b") == some(Person{name: "b", age: 2})
+
+## names *
+want: ps.map(_.name)
+fn names(ps: List[Person]) -> List[Str]
+= ?
+test t = names([Person{name: "a", age: 1}, Person{name: "b", age: 2}]) == ["a", "b"]
+
+## map_lookup
+want: m.get(k).or(0)
+fn stock(m: Map[Str, Int], k: Str) -> Int
+= ?
+test t = stock(empty_map().put("a", 3), "a") == 3
+
+## option_map *
+want: o.map(_.len)
+fn len_of(o: Opt[Str]) -> Opt[Int]
+= ?
+test t = len_of(some("abc")) == some(3)
+
+## evens
+want: xs.filter(_ % 2 == 0)
+fn evens(xs: List[Int]) -> List[Int]
+= ?
+test t = evens([1, 2, 3, 4]) == [2, 4]
