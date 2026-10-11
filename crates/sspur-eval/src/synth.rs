@@ -440,12 +440,15 @@ struct En<'a> {
     max: usize,
     memo: HashMap<(String, usize), bool>,
     /// One child of each input's environment with the argument slots, reused for every evaluation.
-    scratch: Vec<(Rc<Env>, Vec<Rc<RefCell<Value>>>)>,
+    scratch: Vec<Scratch>,
     /// Literals from the tests that reach the hole, offered as constants.
     consts: Rc<Vec<(ExprKind, Type, usize)>>,
 }
 
-fn scratch(envs: &[Rc<Env>]) -> Vec<(Rc<Env>, Vec<Rc<RefCell<Value>>>)> {
+/// A child of an input's environment with the argument slots, and the slots' cells.
+type Scratch = (Rc<Env>, Vec<Rc<RefCell<Value>>>);
+
+fn scratch(envs: &[Rc<Env>]) -> Vec<Scratch> {
     envs.iter()
         .map(|e| {
             let env = Env::child(e);
