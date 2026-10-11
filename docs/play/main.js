@@ -102,10 +102,14 @@ async function main() {
   const initial = shared ?? store.get(STORE) ?? examples[0].source;
   const stdin = $("stdin");
   const setInput = (text) => {
-    stdin.value = text;
+    if (stdin.value !== text) stdin.value = text;
     $("hasin").hidden = text === "";
+    const n = text === "" ? 0 : text.replace(/\n$/, "").split("\n").length;
+    $("incount").textContent = n === 0 ? "empty" : n === 1 ? "1 line" : `${n} lines`;
+    $("inclear").hidden = text === "";
     store.set(STDIN, text);
   };
+  $("inclear").onclick = () => { setInput(""); stdin.focus(); };
   const sharedIn = await inputFromHash(location.hash).catch(() => null);
   setInput(shared !== null ? sharedIn ?? "" : store.get(STDIN) ?? "");
   stdin.addEventListener("input", () => setInput(stdin.value));

@@ -95,16 +95,22 @@
     <div id="split" class="split" role="separator" aria-orientation="vertical" aria-label="Resize panels"></div>
     <section class="pane side">
       <nav class="tabs">
-        <button data-tab="output" class="on">Output</button>
         <button data-tab="input">Input <span id="hasin" class="dot" hidden></span></button>
+        <button data-tab="output" class="on">Output</button>
         <button data-tab="problems">Problems <span id="nprob" class="badge"></span></button>
         <button data-tab="about">About</button>
         <button id="collapse" class="collapse narrow-only" aria-label="Hide output" aria-expanded="true"><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg></button>
       </nav>
       <div id="output" class="panel"><div class="line quiet">Press Run, or Ctrl+Enter (Cmd+Enter on a Mac).</div></div>
       <div id="input" class="panel inbox" hidden>
-        <textarea id="stdin" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Program input" placeholder="Type the text your program reads on stdin"></textarea>
-        <div class="line quiet">Run passes this to your program, which reads it with <code>read_line()</code> or <code>read_lines()</code>.</div>
+        <div class="inbar">
+          <span class="inlabel"><svg class="i" aria-hidden="true"><use href="#i-docs"/></svg>stdin</span>
+          <span id="incount" class="inmeta">empty</span>
+          <span class="spacer"></span>
+          <button id="inclear" class="ghost" title="Clear the input">Clear</button>
+        </div>
+        <textarea id="stdin" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Program input" placeholder="Text your program reads with read_line() or read_lines()"></textarea>
+        <div class="inhint">Run passes this to <code>main</code> as stdin. Share links include it.</div>
       </div>
       <div id="problems" class="panel" hidden></div>
       <div id="about" class="panel prose" hidden>
