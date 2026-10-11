@@ -76,6 +76,23 @@ fn holes_report_expected_type_and_candidates() {
 }
 
 #[test]
+fn check_holes_gives_the_filler_its_context() {
+    let src = "type E = Bad\nfn helper(x: Int) -> Int ! log\n= x\nfn f(a: Int, b: Str) -> Int ! fail[E]\n= do\n  c = a + 1\n  ?x\ntest t = ?";
+    let (out, ctx) = sspur_check::check_holes(&parse(src).unwrap());
+    assert_eq!(out.diags.iter().filter(|d| d.code == "E_HOLE").count(), 2);
+    let h = &ctx.holes[0];
+    assert_eq!((h.label().as_str(), h.def.as_str(), h.ty.to_string().as_str(), h.in_test), ("?x", "f", "Int", false));
+    let locals: Vec<String> = h.locals.iter().map(|(n, t)| format!("{n}: {t}")).collect();
+    assert_eq!(locals, ["a: Int", "b: Str", "c: Int"]);
+    assert_eq!(h.effects.iter().cloned().collect::<Vec<_>>(), ["fail[E]"]);
+    assert!(ctx.holes[1].in_test && ctx.holes[1].effects.is_empty());
+    let helper = ctx.sigs.iter().find(|s| s.name == "helper").unwrap();
+    assert_eq!((helper.kind.clone(), helper.effects.iter().cloned().collect::<Vec<_>>()), (sspur_check::SigKind::Fn, vec!["log".to_string()]));
+    assert!(ctx.sigs.iter().any(|s| s.name == "len" && s.kind == sspur_check::SigKind::Method("List".into())));
+    assert!(sspur_check::check_holes(&parse("fn g() -> Int\n= 1").unwrap()).1.holes.is_empty());
+}
+
+#[test]
 fn unknown_name_suggests() {
     let d = diags("fn total(x: Int) -> Int\n= x\nfn g() -> Int\n= totl(1)");
     assert_eq!(d[0].code, "E_UNKNOWN_NAME");

@@ -209,3 +209,158 @@ fn failed_native_builds_warn_fall_back_and_fail_under_strict() {
     assert_eq!(err.trim(), "error: native build failed in fn victim: error: injected failure");
     let _ = std::fs::remove_dir_all(&d);
 }
+
+const SHOP: &str = "type Item = {sku: Str, qty: Int, price: Int}
+type Shape = Circle{r: Int} | Square{side: Int}
+
+fn total(items: List[Item]) -> Int
+= ?total
+
+fn count(xs: List[Str]) -> Int
+= ?count
+
+fn first_or(xs: List[Int], d: Int) -> Int
+= ?first
+
+fn circle(r: Int) -> Shape
+= ?shape
+
+test t1 = total([]) == 0
+test t2 = total([Item{sku: \"a\", qty: 2, price: 3}, Item{sku: \"b\", qty: 1, price: 4}]) == 10
+test c1 = count([\"a\", \"b\", \"a\"]) == 3
+test f1 = first_or([5, 6], 0) == 5
+test f2 = first_or([], 7) == 7
+test s1 = circle(2) == Circle{r: 2}
+";
+
+fn hole_dir(name: &str, src: &str) -> std::path::PathBuf {
+    let d = std::env::temp_dir().join(format!("sspur-cli-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).unwrap();
+    std::fs::write(d.join("h.ssp"), src).unwrap();
+    d
+}
+
+#[test]
+fn fill_synthesizes_classic_holes() {
+    let d = hole_dir("fill", SHOP);
+    let (out, ok) = sspur(&d, &["fill", "h.ssp", "--fill-ms", "5000"], "");
+    assert!(ok, "{out}");
+    assert_eq!(
+        out,
+        "?total: items.map(_.qty * _.price).sum (passes 2 tests)\n?count: xs.len (passes 1 test)\n?first: xs.first.or(d) (passes 2 tests)\n?shape: Circle{r: r} (passes 1 test)"
+    );
+    let (out, ok) = sspur(&d, &["check", "h.ssp", "--fill-ms", "5000"], "");
+    assert!(ok, "{out}");
+    assert!(out.contains("h.ssp:8:3 hole E_HOLE hole ?count expects type Int\n  ?count: xs.len (passes 1 test)\n"), "{out}");
+    let (json, _) = sspur(&d, &["check", "h.ssp", "--json", "--fill-ms", "5000"], "");
+    let first: serde_json::Value = serde_json::from_str(json.lines().next().unwrap()).unwrap();
+    assert_eq!(first["fix"][0], serde_json::json!({"op": "fill", "hole": "?total", "target": "total", "expr": "items.map(_.qty * _.price).sum", "evidence": "passes 2 tests", "ok": true}));
+    let (out, ok) = sspur(&d, &["fill", "h.ssp", "?first", "--apply", "--fill-ms", "5000"], "");
+    assert!(ok && out.ends_with("filled 1 hole in h.ssp"), "{out}");
+    assert!(std::fs::read_to_string(d.join("h.ssp")).unwrap().contains("fn first_or(xs: List[Int], d: Int) -> Int\n= xs.first.or(d)\n"));
+    let (out, ok) = sspur(&d, &["fill", "h.ssp", "?nope"], "");
+    assert!(!ok && out == "no hole ?nope", "{out}");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+#[test]
+fn fill_respects_effects_and_contracts() {
+    let src = "fn noisy(x: Int) -> Int ! log
+= do
+  log(\"x\")
+  x + 1
+
+fn pure_bump(x: Int) -> Int
+= ?a
+
+fn logged_bump(x: Int) -> Int ! log
+= ?b
+
+fn grow(x: Int) -> Int
+  post r > x
+= ?c
+
+fn twice(x: Int) -> Int
+= 2 * ?d
+
+test a1 = pure_bump(1) == 2
+test b1 = logged_bump(1) == 2
+test d1 = twice(3) == 8
+";
+    let d = hole_dir("fill_eff", src);
+    let (out, ok) = sspur(&d, &["fill", "h.ssp", "--all", "--json", "--fill-ms", "5000"], "");
+    assert!(ok, "{out}");
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let exprs = |i: usize| -> Vec<String> { v["holes"][i]["candidates"].as_array().unwrap().iter().map(|c| c["expr"].as_str().unwrap().to_string()).collect() };
+    assert!(!exprs(0).iter().any(|e| e.contains("noisy")), "a pure function can't call noisy: {:?}", exprs(0));
+    assert_eq!(exprs(0)[0], "x + 1");
+    assert_eq!(exprs(1)[0], "noisy(x)", "a function that declares log may");
+    assert!(!exprs(2).contains(&"x".to_string()) && exprs(2)[0] == "x + 1", "x breaks the post: {:?}", exprs(2));
+    assert!(v["holes"][2]["candidates"][0]["evidence"].as_str().unwrap().starts_with("no tests, post"));
+    let (out, ok) = sspur(&d, &["fill", "h.ssp", "?d", "--apply", "--fill-ms", "5000"], "");
+    assert!(ok, "{out}");
+    assert!(std::fs::read_to_string(d.join("h.ssp")).unwrap().contains("= 2 * (x + 1)\n"), "parenthesized where the bare text would bind differently");
+    assert!(sspur(&d, &["test", "--interp", "h.ssp"], "").0.contains("1 passed, 2 failed"));
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+#[test]
+fn fill_honors_its_budget() {
+    let d = hole_dir("fill_budget", SHOP);
+    let t0 = std::time::Instant::now();
+    let (out, _) = sspur(&d, &["fill", "h.ssp", "?total", "--json", "--fill-ms", "20"], "");
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let ms = v["holes"][0]["ms"].as_f64().unwrap();
+    assert!(ms < 60.0, "a 20 ms budget took {ms} ms");
+    assert!(t0.elapsed().as_secs_f64() < 5.0);
+    let (out, ok) = sspur(&d, &["check", "h.ssp", "--no-fill"], "");
+    assert!(ok && !out.contains("  ?total:"), "{out}");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+#[test]
+fn fill_applies_to_a_codebase() {
+    let d = fresh("fill_store");
+    let (out, ok) = sspur(&d, &["edit", "-e", "fn three() -> Int\n= ?\n\ntest three_t = three() == 3"], "");
+    assert!(ok, "{out}");
+    let (out, ok) = sspur(&d, &["fill", "--apply", "--fill-ms", "5000"], "");
+    assert!(ok, "{out}");
+    assert_eq!(out, "?: 1 + two() (passes 1 test)\nok ~three");
+    assert_eq!(sspur(&d, &["q", "body", "three"], "").0, "fn three() -> Int\n= 1 + two()");
+}
+
+#[test]
+fn suggest_proposes_contracts_from_runs() {
+    let src = "fn avg(xs: List[Int]) -> Int
+= xs.sum / xs.len
+
+fn clip(xs: List[Int], n: Int) -> List[Int]
+= xs.take(n)
+
+fn at(xs: List[Int], i: Int) -> Int
+= xs[i]
+
+test a1 = avg([2, 4]) == 3
+";
+    let d = hole_dir("suggest", src);
+    let (out, ok) = sspur(&d, &["suggest", "h.ssp"], "");
+    assert!(ok, "{out}");
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines[0], "at");
+    assert!(lines[1].starts_with("  pre i >= 0  // traps on ") && lines[2].starts_with("  pre i < xs.len  // traps on "), "{out}");
+    assert_eq!(lines[3], "avg");
+    assert!(lines[4].starts_with("  pre xs.len > 0  // traps on "), "a trap on [] gives the precondition: {out}");
+    assert_eq!(lines[5], "clip");
+    assert!(lines[6] == "  post r.len <= xs.len  // proved" || lines[6].starts_with("  post r.len <= xs.len  // held on "), "{out}");
+    let (json, ok) = sspur(&d, &["suggest", "h.ssp", "avg", "--json"], "");
+    assert!(ok);
+    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(v["fns"][0]["fix"][0]["contract"], serde_json::json!({"pre": "xs.len > 0"}));
+    let (out, ok) = sspur(&d, &["suggest", "h.ssp", "avg", "--apply"], "");
+    assert!(ok && out.ends_with("added 1 clause to h.ssp"), "{out}");
+    assert!(std::fs::read_to_string(d.join("h.ssp")).unwrap().starts_with("fn avg(xs: List[Int]) -> Int\n  pre xs.len > 0\n= xs.sum / xs.len\n"));
+    let (out, ok) = sspur(&d, &["suggest", "h.ssp", "nope"], "");
+    assert!(!ok && out == "no function nope", "{out}");
+    let _ = std::fs::remove_dir_all(&d);
+}

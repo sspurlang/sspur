@@ -65,7 +65,7 @@ fn edit_and_test_cycle_over_stdio() {
     c.notify("notifications/initialized");
     let tools = c.request("tools/list", json!({}));
     let names: Vec<&str> = tools["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(names, ["start", "spec", "src", "query", "edit", "test", "check", "run", "fuzz", "apply"]);
+    assert_eq!(names, ["start", "spec", "src", "query", "edit", "test", "check", "run", "fuzz", "fill", "suggest", "apply"]);
     assert_eq!(c.request("prompts/list", json!({}))["result"]["prompts"], json!([]));
 
     let ins = init["result"]["instructions"].as_str().unwrap();
@@ -123,4 +123,23 @@ fn dir_flag_points_at_a_codebase() {
     let (out, err) = c.tool("edit", json!({"src": "fn one() -> Int\n= 1"}));
     assert!(!err, "{out}");
     assert!(d.join(".sspur").is_dir() && !other.join(".sspur").exists());
+}
+
+#[test]
+fn fill_and_suggest_tools() {
+    let d = fresh("fill");
+    let mut c = Client::start(&d, &[]);
+    let (out, err) = c.tool("edit", json!({"src": "fn count(xs: List[Str]) -> Int\n= ?n\n\nfn avg(xs: List[Int]) -> Int\n= xs.sum / xs.len\n\ntest c = count([\"a\", \"b\"]) == 2"}));
+    assert!(!err, "{out}");
+    let (out, err) = c.tool("check", json!({}));
+    assert!(!err && out.contains("hole count:2:3 E_HOLE hole ?n expects type Int\n  ?n: xs.len (passes 1 test)"), "{out}");
+    let (out, err) = c.tool("fill", json!({"hole": "?n", "apply": true}));
+    assert!(!err, "{out}");
+    assert_eq!(out, "?n: xs.len (passes 1 test)\nok ~count");
+    let (out, err) = c.tool("suggest", json!({"fn": "avg"}));
+    assert!(!err && out.starts_with("avg\n  pre xs.len > 0  // traps on "), "{out}");
+    let (out, err) = c.tool("suggest", json!({"fn": "avg", "apply": true}));
+    assert!(!err && out.ends_with("ok ~avg"), "{out}");
+    let (out, _) = c.tool("query", json!({"query": "body", "target": "avg"}));
+    assert_eq!(out, "fn avg(xs: List[Int]) -> Int\n  pre xs.len > 0\n= xs.sum / xs.len");
 }

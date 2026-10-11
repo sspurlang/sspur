@@ -160,6 +160,10 @@ const fixWith = (src, code) => {
 same("fix: canonical spelling keeps the layout", fixWith('fn g(o: Opt[Int]) -> Int\n= match o\n  | None => 0\n  | some(x) => x\n', "N_FOREIGN"), 'fn g(o: Opt[Int]) -> Int\n= match o\n  | none => 0\n  | some(x) => x\n');
 same("fix: unused effect", fixWith('fn f(x: Int) -> Int ! log, fs\n= x\n', "W_EFFECT_UNUSED"), 'fn f(x: Int) -> Int ! log\n= x\n');
 same("fix: did you mean", fixWith('fn f(x: Int) -> Int\n= lenn(x)\n\nfn len2(x: Int) -> Int\n= x\n', "E_UNKNOWN_NAME"), 'fn f(x: Int) -> Int\n= len2(x)\n\nfn len2(x: Int) -> Int\n= x\n');
+const holeSrc = 'type Item = {sku: Str, qty: Int, price: Int}\n\nfn total(items: List[Item]) -> Int\n= ?total\n\nfn twice(x: Int) -> Int\n= 2 * ?t\n\ntest t1 = total([Item{sku: "a", qty: 2, price: 3}, Item{sku: "b", qty: 1, price: 4}]) == 10\ntest t2 = twice(3) == 8\n';
+const holes = call("check", holeSrc).diags.filter((d) => d.code === "E_HOLE");
+same("fix: hole candidates checked against the tests", holes.map((d) => d.fixes[0] && d.fixes[0].title), ["Fill with items.map(_.qty * _.price).sum (passes 1 test)", "Fill with x + 1 (passes 1 test)"]);
+same("fix: a hole fill keeps precedence", fixWith(holeSrc.replace("= ?total", "= 0"), "E_HOLE"), holeSrc.replace("= ?total", "= 0").replace("2 * ?t", "2 * (x + 1)"));
 const builtins = call("builtins");
 expect(builtins.globals.length > 50 && builtins.methods.length > 100 && builtins.keywords.includes("match"), "builtins: lists from the checker");
 

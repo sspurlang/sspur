@@ -203,7 +203,7 @@ fn fill_holes(m: &Module, diags: &mut [Diag]) {
     let Ok((xm, xc)) = executable(m.clone(), sspur_check::check(m)) else { return };
     let mut it = Interp::new(&xm, xc.record_types.clone(), xc.user_methods.clone(), xc.gen_loops.clone());
     it.set_check(&xc);
-    let opts = sspur_eval::synth::Opts { budget_ms: 150, fuzz: 12, ..Default::default() };
+    let opts = sspur_eval::synth::Opts { budget_ms: 150, fuzz: 12, envs: 8, ..Default::default() };
     for f in sspur_eval::synth::fill(m, &check, &ctx, &it, &opts, None) {
         if let Some(d) = diags.iter_mut().find(|d| d.code == "E_HOLE" && d.span == [f.site.span.start, f.site.span.end]) {
             d.fix = f.cands.iter().map(|c| json!({"op": "fill", "hole": f.site.label(), "expr": c.text, "evidence": c.evidence(), "ok": c.ok()})).collect();

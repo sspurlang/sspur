@@ -11,7 +11,6 @@ use std::rc::Rc;
 
 /// Spans of synthesized nodes start here, past any source position.
 pub(crate) const SPAN_BASE: u32 = 0xF000_0000;
-const MAX_ENVS: usize = 16;
 const MAX_TERMS: usize = 30_000;
 const MAX_TUPLES: usize = 4_000;
 const EVAL_FUEL: u64 = 20_000;
@@ -25,6 +24,7 @@ pub(crate) struct HoleMode {
 
 struct Probe {
     span: Span,
+    max: usize,
     names: Vec<String>,
     seen: Vec<Vec<(String, Value)>>,
     hit: bool,
@@ -37,7 +37,7 @@ impl Interp {
             return self.eval(&x, env);
         }
         if let Some(p) = self.hole.borrow_mut().probe.as_mut().filter(|p| p.span == e.span) {
-            if !p.hit && p.seen.len() < MAX_ENVS {
+            if !p.hit && p.seen.len() < p.max {
                 p.seen.push(p.names.iter().filter_map(|n| env.get(n).map(|v| (n.clone(), v))).collect());
             }
             p.hit = true;
@@ -56,12 +56,14 @@ pub struct Opts {
     pub top: usize,
     /// Fuzzed inputs of the enclosing function, from its `pre` and `where` clauses.
     pub fuzz: usize,
+    /// Inputs whose values decide which expressions are the same.
+    pub envs: usize,
     pub seed: u64,
 }
 
 impl Default for Opts {
     fn default() -> Self {
-        Opts { budget_ms: 200, max_size: 7, lambda_size: 3, top: 3, fuzz: 24, seed: 7 }
+        Opts { budget_ms: 200, max_size: 7, lambda_size: 3, top: 3, fuzz: 24, envs: 16, seed: 7 }
     }
 }
 
@@ -557,7 +559,8 @@ impl<'a> En<'a> {
                 _ => mk(ExprKind::Call(Box::new(mk(ExprKind::Name(c.name.clone()), self.span())), vec![]), self.span()),
             };
             let fns = if matches!(c.kind, Kind::Call) { vec![c.name.clone()] } else { vec![] };
-            self.add(Term { run: show.clone(), show, ty, size: 1, fns, obs: Rc::new(vec![]), local: false, var: false });
+            let local = matches!(c.kind, Kind::Call);
+            self.add(Term { run: show.clone(), show, ty, size: 1, fns, obs: Rc::new(vec![]), local, var: false });
         }
     }
 
@@ -949,7 +952,7 @@ impl<'a> En<'a> {
                     let env = Env::child(&self.envs[i]);
                     env.define("_", v);
                     samples.push(env);
-                    if samples.len() >= MAX_ENVS {
+                    if samples.len() >= self.envs.len().max(8) {
                         break 'outer;
                     }
                 }
@@ -1072,7 +1075,7 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
     }
     // Observe: the values in scope each time a test, an example or a fuzzed call reaches the hole.
     let names: Vec<String> = site.locals.iter().map(|(n, _)| n.clone()).collect();
-    *it.hole.borrow_mut() = HoleMode { fills: prior.to_vec(), probe: Some(Probe { span: site.span, names, seen: vec![], hit: false }) };
+    *it.hole.borrow_mut() = HoleMode { fills: prior.to_vec(), probe: Some(Probe { span: site.span, max: opts.envs, names, seen: vec![], hit: false }) };
     let hit = || {
         let mut h = it.hole.borrow_mut();
         let p = h.probe.as_mut().unwrap();
@@ -1098,7 +1101,9 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
         let mut attempts = 0;
         while inputs.len() < opts.fuzz * 2 && attempts < opts.fuzz * 10 && now_ms() < t0 + opts.budget_ms as f64 * 0.25 {
             attempts += 1;
-            let args = match small.next() {
+            // Small inputs alternate with random ones, so the first few already disagree where programs differ.
+            let next = if attempts % 2 == 1 { small.next() } else { None };
+            let args = match next {
                 Some(a) => a,
                 None => match f.params.iter().map(|p| it.generate(&p.ty, &mut rng, &fo, 0)).collect::<Option<Vec<_>>>() {
                     Some(a) => a,
