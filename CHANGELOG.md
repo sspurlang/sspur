@@ -4,7 +4,14 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-12
+
 ### Added
+- `e is p` is a `Bool` expression anywhere (ADR 0032): `xs.filter(_ is some(_))`, `ok = r is ok(_)`, `test t = parse("x") is err(_)`, `o is some(v) and v > 0`. The names a test binds are in scope in the `and ...` after it, and an `if` condition can join several tests, `if a is Circle{r} and b is Circle{r: r2} then r + r2 else 0.0`, with the names of all of them in the `then` branch. A test that binds a name nothing can use is `E_IS_BINDS`, and one whose pattern can't match the value written there (`none is some(_)`) warns `W_NEVER_MATCHES`. `is` keeps the precedence it had after `if`: it takes everything before it, so `a and b is p` is still `E_PARSE_IS`, and so is a test used as an operand without parentheses, `e is p == x`.
+- Guard clauses (ADR 0032): `some(user) = find(id) else raise NotFound{id}` in a block binds the pattern for the rest of the block, or ends the block with the `else` value when it doesn't match, so `else 0` returns 0 from a function body, `else ()` skips to the next element in a loop, and `else return err("bad")` works too. Rust's `let p = e else { ... }` and Swift's `guard let x = e else { ... }` are stored in this form. Record destructuring, `Point{x, y} = p`, now works outside `profile sys` as well, and `E_REFUTABLE_LET` suggests adding `else`.
+- Hole filling proposes `s is Circle` (a variant of a sum) and `r is ok(_)` for `Bool` holes; the benchmark stays at 41 of 51.
+- Long lines (ADR 0032): a line that ends in a binary operator (`and`, `+`, `==`, `,`, ...) continues on the next line, and so does a deeper-indented line that starts with `.name` or an operator, so `= xs` then `.map(_ * 2)` and `.sum` on their own lines is one expression. `sspur fmt` joins them back into one line.
+- Pressing Enter after a line that ends in an operator, an open bracket, `=>`, `=` or `do` indents the next line one level, in the playground, in VS Code (`onEnterRules`) and through the language server (`textDocument/onTypeFormatting`, which LSP4IJ uses in JetBrains IDEs). A `.method` chain stays aligned, and the line after a continued one goes back to where its statement started.
 - `sspur lsp`, a language server over stdio (ADR 0031). It publishes the checker's diagnostics as you type (checked off the main loop, a short pause after the last edit), then the candidates for each typed hole, and answers completion with signatures and the standard library's docs, hover, code actions with the compiler's fixes and the hole fills, formatting, go to definition, references, document highlights, rename, the outline and semantic tokens in the playground's classes. The command `sspur.fill` fills every hole that has a passing candidate. A file in a package is checked with its dependencies, and their names show as `pkg.name`; `pkg.` completes their public definitions.
 - Signature help in the language server and the playground: after `(` or `,` the signature of the call shows with the argument being typed highlighted and its one-line doc, for the file's functions (the comment above one is its doc), effect operations, builtins, methods on a typed receiver and `pkg.f`, also while the call is half-typed and the file doesn't parse.
 - Inlay hints in the language server, and in the playground behind a toggle: the inferred type after `let`, guard, `for` and `var` bindings whose type isn't written (`total = items.map(_.price * _.qty).sum` shows `total: Int`, `some(user) = find(id) else ...` shows `user: User`) and after lambda parameters, and the parameter name before a literal argument (`scale(3, total, true)` shows `n: 3, strict: true`). Literals and records built by name get none. `initializationOptions.inlayHints` or the `sspur.inlayHints` setting turn each kind off, and the VS Code extension has a setting for each.
@@ -12,13 +19,8 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 - A template for LSP4IJ in `packaging/jetbrains/`, attached to every release as `sspur-lsp4ij-vX.Y.Z.zip`: in a JetBrains IDE with LSP4IJ, *Import template...* sets up the server in one step, with no account.
 - [Editor setup](https://utkarshavardhana.github.io/sspur/get-started/editors.html): VS Code and its forks, Neovim, Vim, Helix, Emacs, Sublime Text, JetBrains IDEs through LSP4IJ, Kate and Eclipse, and what Zed, Visual Studio and Xcode lack.
 
-- `e is p` is a `Bool` expression anywhere (ADR 0032): `xs.filter(_ is some(_))`, `ok = r is ok(_)`, `test t = parse("x") is err(_)`, `o is some(v) and v > 0`. The names a test binds are in scope in the `and ...` after it, and an `if` condition can join several tests, `if a is Circle{r} and b is Circle{r: r2} then r + r2 else 0.0`, with the names of all of them in the `then` branch. A test that binds a name nothing can use is `E_IS_BINDS`, and one whose pattern can't match the value written there (`none is some(_)`) warns `W_NEVER_MATCHES`. `is` keeps the precedence it had after `if`: it takes everything before it, so `a and b is p` is still `E_PARSE_IS`, and so is a test used as an operand without parentheses, `e is p == x`.
-- Guard clauses (ADR 0032): `some(user) = find(id) else raise NotFound{id}` in a block binds the pattern for the rest of the block, or ends the block with the `else` value when it doesn't match, so `else 0` returns 0 from a function body, `else ()` skips to the next element in a loop, and `else return err("bad")` works too. Rust's `let p = e else { ... }` and Swift's `guard let x = e else { ... }` are stored in this form. Record destructuring, `Point{x, y} = p`, now works outside `profile sys` as well, and `E_REFUTABLE_LET` suggests adding `else`.
-- Hole filling proposes `s is Circle` (a variant of a sum) and `r is ok(_)` for `Bool` holes; the benchmark stays at 41 of 51.
-- Long lines (ADR 0032): a line that ends in a binary operator (`and`, `+`, `==`, `,`, ...) continues on the next line, and so does a deeper-indented line that starts with `.name` or an operator, so `= xs` then `.map(_ * 2)` and `.sum` on their own lines is one expression. `sspur fmt` joins them back into one line.
-- Pressing Enter after a line that ends in an operator, an open bracket, `=>`, `=` or `do` indents the next line one level, in the playground, in VS Code (`onEnterRules`) and through the language server (`textDocument/onTypeFormatting`, which LSP4IJ uses in JetBrains IDEs). A `.method` chain stays aligned, and the line after a continued one goes back to where its statement started.
-
 ### Changed
+- Record destructuring, `Point{x, y} = p`, works in every profile, not only `profile sys`.
 - The editor logic behind the playground moved from `crates/sspur-wasm` into a new crate, `sspur-ide`, which the language server uses too.
 - Hole filling has more time per hole: 400 ms in `sspur check` and the playground, 600 ms in editors, where it runs in the background. Since it began counting the other candidates that fit, a classic hole such as a sum of field products took about 270 ms and was missed at the old 150 to 200 ms.
 
@@ -250,7 +252,8 @@ This release covers Phases 3 to 7 of the roadmap and ADRs 0003 to 0024. SSPUR no
 - Language design spec, JSON schemas and the token benchmark.
 - Compiler core: parser, checker, content hashing, interpreter and the `sspur` CLI, with an 11-program suite.
 
-[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/utkarshavardhana/sspur/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/utkarshavardhana/sspur/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/utkarshavardhana/sspur/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/utkarshavardhana/sspur/compare/v0.4.0...v0.4.1
