@@ -83,12 +83,23 @@ async function main() {
   $("engine").textContent = "Ready";
   $("engine").classList.add("ready");
 
-  const pick = $("examples");
-  examples.forEach((ex, i) => pick.appendChild(new Option(ex.name, String(i))));
+  const pick = $("pick"), list = $("pick-list");
+  examples.forEach((ex, i) => {
+    const li = el("li", "opt", ex.name);
+    li.setAttribute("role", "option");
+    li.dataset.i = String(i);
+    li.id = "ex-" + i;
+    list.appendChild(li);
+  });
+  let picked = -1;
+  const showPicked = (i) => {
+    picked = i;
+    $("pick-label").textContent = i >= 0 ? examples[i].name : "Examples";
+    for (const li of list.children) li.setAttribute("aria-selected", String(Number(li.dataset.i) === i));
+  };
   const shared = await fromHash(location.hash).catch(() => null);
   const initial = shared ?? store.get(STORE) ?? examples[0].source;
-  const known = examples.findIndex((ex) => ex.source === initial);
-  if (known >= 0) pick.value = String(known);
+  showPicked(examples.findIndex((ex) => ex.source === initial));
 
   let seq = 0;
   let timer = 0;
@@ -130,7 +141,7 @@ async function main() {
       editor.setDiagnostics(text, r.diags);
       problems(r.diags);
       const n = await ide.call("tokens", { src: text });
-      $("tokens").textContent = `about ${n} tokens`;
+      $("tokens").textContent = `~${n} tokens`;
     } catch (e) {
       $("engine").textContent = "Checker restarted: " + e.message;
     } finally {
@@ -177,6 +188,7 @@ async function main() {
     box.replaceChildren(el("div", "line quiet", op === "run" ? "Running..." : "Testing..."));
     $("stop").hidden = false;
     $("run").disabled = $("test").disabled = true;
+    expand(true);
     const t0 = performance.now();
     try {
       const r = await runner.call(op, { src: editor.text() });
@@ -227,28 +239,76 @@ async function main() {
     const url = await link;
     history.replaceState(null, "", url);
     const field = $("link");
-    field.value = url;
-    field.hidden = false;
-    field.select();
     try {
       await copied;
-      $("engine").textContent = "Link copied";
+      field.hidden = true;
+      toast();
     } catch {
-      $("engine").textContent = "Copy the link below";
+      field.value = url;
+      field.hidden = false;
+      field.select();
+      $("engine").textContent = "Copy the link above";
     }
   }
+
+  let toastTimer = 0;
+  function toast() {
+    const t = $("toast");
+    t.hidden = false;
+    t.classList.remove("out");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.classList.add("out"); toastTimer = setTimeout(() => { t.hidden = true; }, 250); }, 1800);
+  }
+
+  const side = document.querySelector(".side"), fold = $("collapse");
+  function expand(on) {
+    side.classList.toggle("collapsed", !on);
+    fold.setAttribute("aria-expanded", String(on));
+    fold.setAttribute("aria-label", on ? "Hide output" : "Show output");
+  }
+  fold.onclick = (e) => { e.stopPropagation(); expand(side.classList.contains("collapsed")); };
+  for (const b of document.querySelectorAll(".tabs button[data-tab]")) b.addEventListener("click", () => expand(true));
+
+  document.addEventListener("contextmenu", (e) => {
+    if (!e.target.closest(".cm-content, input, textarea")) e.preventDefault();
+  });
 
   $("run").onclick = () => go("run");
   $("test").onclick = () => go("test");
   $("stop").onclick = () => runner.stop();
   $("format").onclick = format;
   $("share").onclick = share;
-  pick.onchange = () => {
-    if (pick.value === "") return;
-    editor.setText(examples[Number(pick.value)].source);
-    pick.blur();
-    tab("output");
+  let hot = 0;
+  const highlight = (i) => {
+    hot = (i + examples.length) % examples.length;
+    for (const li of list.children) li.classList.toggle("hot", Number(li.dataset.i) === hot);
+    list.setAttribute("aria-activedescendant", "ex-" + hot);
+    list.children[hot].scrollIntoView({ block: "nearest" });
   };
+  const openList = (on) => {
+    list.hidden = !on;
+    pick.setAttribute("aria-expanded", String(on));
+    if (on) { highlight(picked >= 0 ? picked : 0); list.focus(); }
+  };
+  const choose = (i) => {
+    openList(false);
+    editor.setText(examples[i].source);
+    showPicked(i);
+    tab("output");
+    pick.focus();
+  };
+  pick.onclick = () => openList(list.hidden);
+  list.onclick = (e) => { const li = e.target.closest("li"); if (li) choose(Number(li.dataset.i)); };
+  list.onmousemove = (e) => { const li = e.target.closest("li"); if (li && Number(li.dataset.i) !== hot) highlight(Number(li.dataset.i)); };
+  list.onkeydown = (e) => {
+    if (e.key === "ArrowDown") highlight(hot + 1);
+    else if (e.key === "ArrowUp") highlight(hot - 1);
+    else if (e.key === "Enter" || e.key === " ") choose(hot);
+    else if (e.key === "Escape" || e.key === "Tab") { openList(false); pick.focus(); }
+    else return;
+    e.preventDefault();
+  };
+  document.addEventListener("pointerdown", (e) => { if (!list.hidden && !$("picker").contains(e.target)) openList(false); });
   const toggleTheme = () => {
     dark = !dark;
     store.set(THEME, dark ? "dark" : "light");

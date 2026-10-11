@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0d1117" media="(prefers-color-scheme: dark)">
   <title>SSPUR Playground</title>
@@ -23,22 +23,46 @@
   </script>
 </head>
 <body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" fill="currentColor"/></symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor"/></symbol>
+      <symbol id="i-test" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M8.2 12.4l2.6 2.6 5-5.4"/></g></symbol>
+      <symbol id="i-format" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 6h16M4 12h10M4 18h13"/></g></symbol>
+      <symbol id="i-share" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1.1 1.1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1.1-1.1"/></g></symbol>
+      <symbol id="i-book" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5.5A2.5 2.5 0 0 1 7.5 3H19v15H7.5A2.5 2.5 0 0 0 5 20.5z"/><path d="M5 20.5A2.5 2.5 0 0 1 7.5 18H19v3H7.5"/></g></symbol>
+      <symbol id="i-chev" viewBox="0 0 24 24"><path d="M6.5 9.5l5.5 5.5 5.5-5.5" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.6A8 8 0 1 1 9.4 4a6.4 6.4 0 0 0 10.6 10.6z" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linejoin="round"/></symbol>
+      <symbol id="i-info" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.2M12 7.8v.1"/></g></symbol>
+      <symbol id="i-docs" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.1" stroke-linejoin="round" stroke-linecap="round"><path d="M7 3h7l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></g></symbol>
+      <symbol id="i-code" viewBox="0 0 24 24"><path d="M9 7.5L4.5 12 9 16.5M15 7.5l4.5 4.5-4.5 4.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3L5 13.5h6L10 21l8-10.5h-6z" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linejoin="round"/></symbol>
+      <symbol id="i-down" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></g></symbol>
+      <symbol id="i-gh" viewBox="0 0 16 16"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></symbol>
+    </defs>
+  </svg>
   <header class="bar">
     <a class="brand" href="../index.html"><img src="../assets/logo/sspur.svg" width="24" height="24" alt="">SSPUR</a>
     <span class="name">Playground</span>
     <div class="tools">
-      <select id="examples" aria-label="Examples"><option value="">Examples</option></select>
-      <button id="run" class="primary" title="Run main (Ctrl or Cmd + Enter)"><span aria-hidden="true" class="ico">&#9654;</span>Run<kbd class="wide-only">&#8984;&#8629;</kbd></button>
-      <button id="stop" class="danger" hidden title="Stop the running program">Stop</button>
-      <button id="test" title="Run the tests and examples (Ctrl or Cmd + Shift + Enter)">Test</button>
-      <button id="format" class="wide-only" title="Format (Shift + Alt + F)">Format</button>
-      <button id="share" title="Put the program in the link (Ctrl or Cmd + S)">Share</button>
+      <div class="picker" id="picker">
+        <button id="pick" class="pick" aria-haspopup="listbox" aria-expanded="false" aria-controls="pick-list" title="Examples"><svg class="i" aria-hidden="true"><use href="#i-book"/></svg><span id="pick-label">Examples</span><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg></button>
+        <ul id="pick-list" class="pick-list" role="listbox" aria-label="Examples" tabindex="-1" hidden></ul>
+      </div>
+      <div class="runwrap">
+        <button id="run" class="primary" title="Run main (Ctrl or Cmd + Enter)"><svg class="i" aria-hidden="true"><use href="#i-play"/></svg><span>Run</span><kbd class="wide-only">&#8984;&#8629;</kbd></button>
+        <button id="stop" class="danger" hidden title="Stop the running program"><svg class="i" aria-hidden="true"><use href="#i-stop"/></svg><span>Stop</span></button>
+      </div>
+      <button id="test" title="Run the tests and examples (Ctrl or Cmd + Shift + Enter)"><svg class="i" aria-hidden="true"><use href="#i-test"/></svg><span>Test</span></button>
+      <button id="format" class="wide-only" title="Format (Shift + Alt + F)"><svg class="i" aria-hidden="true"><use href="#i-format"/></svg><span>Format</span></button>
+      <button id="share" title="Copy a link to this program (Ctrl or Cmd + S)"><svg class="i" aria-hidden="true"><use href="#i-share"/></svg><span>Share</span></button>
     </div>
     <span class="spacer"></span>
-    <a class="link wide-only" href="../get-started/five-minutes.html">Docs</a>
-    <a class="link wide-only" href="../reference/language.html">Reference</a>
-    <a class="gh wide-only" href="https://github.com/utkarshavardhana/sspur" title="SSPUR on GitHub" aria-label="SSPUR on GitHub"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
-    <button id="theme" class="icon wide-only" title="Light or dark" aria-label="Toggle dark mode">&#9680;</button>
+    <a class="link wide-only" href="../get-started/five-minutes.html"><svg class="i" aria-hidden="true"><use href="#i-docs"/></svg>Docs</a>
+    <a class="link wide-only" href="../reference/language.html"><svg class="i" aria-hidden="true"><use href="#i-code"/></svg>Reference</a>
+    <a class="gh wide-only" href="https://github.com/utkarshavardhana/sspur" title="SSPUR on GitHub" aria-label="SSPUR on GitHub"><svg class="i" aria-hidden="true"><use href="#i-gh"/></svg></a>
+    <button id="theme" class="icon wide-only" title="Light or dark" aria-label="Toggle dark mode"><svg class="i" aria-hidden="true"><use href="#i-moon"/></svg></button>
     <button id="menu" class="icon narrow-only" aria-label="Menu" aria-expanded="false" aria-controls="sheet"><span class="burger" aria-hidden="true"></span></button>
   </header>
   <div id="scrim" class="scrim" hidden></div>
@@ -47,14 +71,14 @@
       <span class="brand"><img src="../assets/logo/sspur.svg" width="28" height="28" alt="">SSPUR</span>
       <button id="close" class="icon" aria-label="Close menu">&#10005;</button>
     </div>
-    <button class="item" data-act="format">Format code</button>
-    <button class="item" data-act="theme" id="theme-item">Dark mode</button>
-    <button class="item" data-act="about">About the playground</button>
-    <a class="item" href="../get-started/five-minutes.html">SSPUR in 5 minutes</a>
-    <a class="item" href="../index.html">Documentation</a>
-    <a class="item" href="../reference/language.html">Language reference</a>
-    <a class="item" href="../get-started/installation.html">Install SSPUR</a>
-    <a class="item" href="https://github.com/utkarshavardhana/sspur">Source on GitHub</a>
+    <button class="item" data-act="format"><svg class="i" aria-hidden="true"><use href="#i-format"/></svg><span>Format code</span></button>
+    <button class="item" data-act="theme"><svg class="i" aria-hidden="true"><use href="#i-moon"/></svg><span id="theme-item">Dark mode</span></button>
+    <button class="item" data-act="about"><svg class="i" aria-hidden="true"><use href="#i-info"/></svg><span>About the playground</span></button>
+    <a class="item" href="../get-started/five-minutes.html"><svg class="i" aria-hidden="true"><use href="#i-bolt"/></svg><span>SSPUR in 5 minutes</span></a>
+    <a class="item" href="../index.html"><svg class="i" aria-hidden="true"><use href="#i-docs"/></svg><span>Documentation</span></a>
+    <a class="item" href="../reference/language.html"><svg class="i" aria-hidden="true"><use href="#i-code"/></svg><span>Language reference</span></a>
+    <a class="item" href="../get-started/installation.html"><svg class="i" aria-hidden="true"><use href="#i-down"/></svg><span>Install SSPUR</span></a>
+    <a class="item" href="https://github.com/utkarshavardhana/sspur"><svg class="i" aria-hidden="true"><use href="#i-gh"/></svg><span>Source on GitHub</span></a>
     <div class="credit-card">
       <span class="avatar" aria-hidden="true">UV</span>
       <div>
@@ -65,6 +89,7 @@
     </div>
   </nav>
   <input id="link" class="share-link" readonly hidden aria-label="Share link">
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden><svg class="i" aria-hidden="true"><use href="#i-check"/></svg><span>Link copied</span></div>
   <main>
     <section id="editor" class="pane"></section>
     <div id="split" class="split" role="separator" aria-orientation="vertical" aria-label="Resize panels"></div>
@@ -73,6 +98,7 @@
         <button data-tab="output" class="on">Output</button>
         <button data-tab="problems">Problems <span id="nprob" class="badge"></span></button>
         <button data-tab="about">About</button>
+        <button id="collapse" class="collapse narrow-only" aria-label="Hide output" aria-expanded="true"><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg></button>
       </nav>
       <div id="output" class="panel"><div class="line quiet">Press Run, or Ctrl+Enter (Cmd+Enter on a Mac).</div></div>
       <div id="problems" class="panel" hidden></div>
@@ -98,7 +124,7 @@
     <span id="cursor" class="wide-only"></span>
     <span class="wide-xl">Your code stays in this tab</span>
     <span class="spacer"></span>
-    <span class="credit"><span class="by">Created by </span><a href="https://utkarshavardhana.github.io/" target="_blank" rel="noopener">Utkarsha Vardhana</a></span>
+    <span class="credit">Created by <a href="https://utkarshavardhana.github.io/" target="_blank" rel="noopener">Utkarsha Vardhana</a></span>
   </footer>
   <script type="module" src="main.js"></script>
 </body>
