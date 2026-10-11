@@ -27,3 +27,8 @@ export async function fromHash(hash) {
   const m = /(?:^#|&)code=([A-Za-z0-9_-]+)/.exec(hash);
   return m ? decode(m[1]) : null;
 }
+
+export async function inputFromHash(hash) {
+  const m = /(?:^#|&)in=([A-Za-z0-9_-]+)/.exec(hash);
+  return m ? decode(m[1]) : null;
+}

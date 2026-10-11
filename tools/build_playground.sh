@@ -25,7 +25,7 @@ examples=(
   handbook/errors
   handbook/traits
   handbook/concurrency
-  get-started/from-python
+  get-started/from-python=get-started/words.txt
   handbook/missing
 )
 
@@ -86,11 +86,17 @@ done
 python3 - "$out/examples.json" "${examples[@]}" <<'EOF'
 import json, os, sys
 items = []
-for name in sys.argv[2:]:
+for entry in sys.argv[2:]:
+    # An entry is a snippet, optionally `=` a file to put in the Input box.
+    name, _, given = entry.partition("=")
     path = os.path.join("docs", "snippets", name + ".ssp")
     with open(path, encoding="utf-8") as f:
         lines = [l for l in f.read().split("\n") if not l.lstrip().startswith(("// ANCHOR:", "// ANCHOR_END:"))]
-        items.append({"name": name.split("/")[-1].replace("-", " "), "file": path, "source": "\n".join(lines)})
+    item = {"name": name.split("/")[-1].replace("-", " "), "file": path, "source": "\n".join(lines)}
+    if given:
+        with open(os.path.join("docs", "snippets", given), encoding="utf-8") as g:
+            item["input"] = g.read()
+    items.append(item)
 with open(sys.argv[1], "w", encoding="utf-8") as f:
     json.dump(items, f)
 EOF

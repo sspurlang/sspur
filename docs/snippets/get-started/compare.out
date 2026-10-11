@@ -3,9 +3,14 @@ $ sspur test from-typescript.ssp
 2 passed, 0 failed
 // ANCHOR_END: ts
 // ANCHOR: py
-$ sspur run from-python.ssp
-the 3
+$ cat words.txt
+The cat and the hat
+and the bat sat on the mat
+the end
+$ sspur run from-python.ssp < words.txt
+the 5
 and 2
+bat 1
 error: missing.txt: not found
 $ sspur test from-python.ssp
 1 passed, 0 failed

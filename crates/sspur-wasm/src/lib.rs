@@ -46,10 +46,14 @@ pub fn check(src: &str) -> String {
     json!({ "diags": diags }).to_string()
 }
 
-/// Runs `main` in the interpreter: its output, then how it ended.
+/// Runs `main` in the interpreter with `stdin` as its input: its output, then how it ended.
 #[wasm_bindgen]
-pub fn run(src: &str) -> String {
+pub fn run(src: &str, stdin: &str) -> String {
     start();
+    #[cfg(target_family = "wasm")]
+    sspur_eval::web::set_stdin(stdin);
+    #[cfg(not(target_family = "wasm"))]
+    let _ = stdin;
     let (it, diags) = match prepare(src) {
         Ok(x) => x,
         Err(d) => return json!({ "status": "error", "diags": d, "output": [] }).to_string(),

@@ -20,9 +20,10 @@ fn first_line(path: Str) -> Str ! fs
   | err(e) => "error: {e}"
 // ANCHOR_END: io
 
-fn main() -> Unit ! log, fs
+fn main() -> Unit ! log, fs, io
 = do
-  for (w, c) in top_words("the cat and the hat and the bat", 2)
+  text = read_lines().join(" ")
+  for (w, c) in top_words(text, 3)
     log("{w} {c}")
   log(first_line("missing.txt"))
 

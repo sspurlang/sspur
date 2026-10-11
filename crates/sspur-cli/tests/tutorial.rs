@@ -215,11 +215,16 @@ fn run_transcript(file: &Path) {
             }
             "sspur" => {
                 let port = server.as_ref().map(|s| s.1.to_string());
+                let (args, input) = match args.iter().position(|a| a == "<") {
+                    Some(i) => (&args[..i], Some(cwd.join(&args[i + 1]))),
+                    None => (&args[..], None),
+                };
                 let a: Vec<&str> = args[1..].iter().map(|a| match &port {
                     Some(p) if a == PORT => p.as_str(),
                     _ => a.as_str(),
                 }).collect();
-                let r = Command::new(env!("CARGO_BIN_EXE_sspur")).args(&a).current_dir(&cwd).output().unwrap();
+                let stdin = input.map_or_else(Stdio::null, |f| Stdio::from(std::fs::File::open(&f).unwrap_or_else(|e| panic!("{rel}: {}: {e}", f.display()))));
+                let r = Command::new(env!("CARGO_BIN_EXE_sspur")).args(&a).current_dir(&cwd).stdin(stdin).output().unwrap();
                 let out = format!("{}{}", String::from_utf8_lossy(&r.stdout), String::from_utf8_lossy(&r.stderr));
                 match &port {
                     Some(p) => out.replace(p.as_str(), PORT),

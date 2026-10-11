@@ -53,6 +53,12 @@ thread_local! {
     static FS: RefCell<Fs> = RefCell::new(Fs::default());
     static CLOCK: RefCell<Option<Clock>> = const { RefCell::new(None) };
     static SLEPT: std::cell::Cell<i64> = const { std::cell::Cell::new(0) };
+    static STDIN: RefCell<(Vec<u8>, usize)> = const { RefCell::new((Vec::new(), 0)) };
+}
+
+/// The text a run reads from stdin (the playground's input box).
+pub fn set_stdin(text: &str) {
+    STDIN.with(|s| *s.borrow_mut() = (text.as_bytes().to_vec(), 0));
 }
 
 /// Install the clock: wall time in ms since the epoch and a monotonic time in ms.
@@ -80,6 +86,7 @@ pub fn sleep_ms(ms: i64) {
 /// Start a run: an empty file system with `/` and `/tmp`, no open files, a fresh clock offset.
 pub fn reset() {
     SLEPT.with(|s| s.set(0));
+    STDIN.with(|s| *s.borrow_mut() = (Vec::new(), 0));
     FS.with(|f| {
         let mut fs = Fs::default();
         let now = wall_ms();
@@ -295,6 +302,15 @@ pub unsafe fn fd_pread(fd: i32, buf: *mut c_void, n: usize, off: i64) -> isize {
 /// # Safety
 /// `buf` must be valid for `n` bytes.
 pub unsafe fn fd_read(fd: i32, buf: *mut c_void, n: usize) -> isize {
+    if fd == 0 && with(|fs| !fs.fds.contains_key(&0)) {
+        return STDIN.with(|s| {
+            let (data, pos) = &mut *s.borrow_mut();
+            let k = n.min(data.len() - *pos);
+            unsafe { std::ptr::copy_nonoverlapping(data.as_ptr().add(*pos), buf.cast::<u8>(), k) };
+            *pos += k;
+            k as isize
+        });
+    }
     let Some(pos) = with(|fs| fs.fds.get(&fd).map(|f| f.pos)) else {
         with(|fs| fs.errno = EBADF);
         return -1;

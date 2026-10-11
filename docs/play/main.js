@@ -1,9 +1,10 @@
 // The playground page: an editor, a checker that runs as you type, and Run, Test, Format and
 // Share. All of SSPUR runs in Web Workers from the WebAssembly build; nothing leaves the page.
-import { encode, fromHash } from "./share.js";
+import { encode, fromHash, inputFromHash } from "./share.js";
 
 const $ = (id) => document.getElementById(id);
 const STORE = "sspur-play-source";
+const STDIN = "sspur-play-input";
 const THEME = "sspur-play-theme";
 
 // Storage can be off (private windows, strict settings); the page works without it.
@@ -99,6 +100,15 @@ async function main() {
   };
   const shared = await fromHash(location.hash).catch(() => null);
   const initial = shared ?? store.get(STORE) ?? examples[0].source;
+  const stdin = $("stdin");
+  const setInput = (text) => {
+    stdin.value = text;
+    $("hasin").hidden = text === "";
+    store.set(STDIN, text);
+  };
+  const sharedIn = await inputFromHash(location.hash).catch(() => null);
+  setInput(shared !== null ? sharedIn ?? "" : store.get(STDIN) ?? "");
+  stdin.addEventListener("input", () => setInput(stdin.value));
   showPicked(examples.findIndex((ex) => ex.source === initial));
 
   let seq = 0;
@@ -191,7 +201,7 @@ async function main() {
     expand(true);
     const t0 = performance.now();
     try {
-      const r = await runner.call(op, { src: editor.text() });
+      const r = await runner.call(op, { src: editor.text(), stdin: stdin.value });
       const ms = Math.round(performance.now() - t0);
       box.replaceChildren();
       if (r.status === "error") {
@@ -230,7 +240,7 @@ async function main() {
   }
 
   async function share() {
-    const link = encode(editor.text()).then((c) => location.origin + location.pathname + "#code=" + c);
+    const link = Promise.all([encode(editor.text()), stdin.value ? encode(stdin.value) : null]).then(([c, i]) => location.origin + location.pathname + "#code=" + c + (i ? "&in=" + i : ""));
     // Safari only allows a clipboard write started inside the click, so hand it the pending link.
     const copied = typeof ClipboardItem !== "undefined" && navigator.clipboard && navigator.clipboard.write
       ? navigator.clipboard.write([new ClipboardItem({ "text/plain": link.then((u) => new Blob([u], { type: "text/plain" })) })])
@@ -293,6 +303,7 @@ async function main() {
   const choose = (i) => {
     openList(false);
     editor.setText(examples[i].source);
+    setInput(examples[i].input || "");
     showPicked(i);
     tab("output");
     pick.focus();
@@ -345,6 +356,7 @@ async function main() {
   window.addEventListener("hashchange", async () => {
     const src = await fromHash(location.hash).catch(() => null);
     if (src !== null && src !== editor.text()) editor.setText(src);
+    if (src !== null) setInput((await inputFromHash(location.hash).catch(() => null)) ?? "");
   });
   check(editor.text());
   cursor();

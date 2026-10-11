@@ -4,6 +4,12 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+### Added
+- The playground has an Input tab: Run passes its text to the program as stdin, for `read_line` and `read_lines`, and share links carry it. The From Python example reads its words from there.
+
+### Fixed
+- Concurrent native builds on Windows could fail to link (LNK1104) while another build published the same object file; outputs are now published without replacing a file that may be open.
+
 ## [0.5.0] - 2026-10-11
 
 ### Added

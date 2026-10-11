@@ -10,7 +10,7 @@ globalThis.sspurPanic = (msg) => {
 
 const ops = {
   check: (m) => sspur.check(m.src),
-  run: (m) => sspur.run(m.src),
+  run: (m) => sspur.run(m.src, m.stdin || ""),
   test: (m) => sspur.test(m.src),
   fmt: (m) => sspur.fmt(m.src),
   complete: (m) => sspur.complete(m.src, m.pos),

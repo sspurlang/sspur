@@ -14,7 +14,7 @@ wasm.initSync({ module: readFileSync(join(dir, "pkg/sspur_wasm_bg.wasm")) });
 const { encode, decode, fromHash } = await import(pathToFileURL(join(dir, "share.js")));
 const examples = JSON.parse(readFileSync(join(dir, "examples.json"), "utf8"));
 const bin = process.env.SSPUR_BIN;
-const call = (f, ...a) => JSON.parse(wasm[f](...a));
+const call = (f, ...a) => JSON.parse(f === "run" && a.length === 1 ? wasm.run(a[0], "") : wasm[f](...a));
 
 let failures = 0;
 let checks = 0;
@@ -27,8 +27,8 @@ function expect(ok, what, got, want) {
 }
 const same = (what, got, want) => expect(JSON.stringify(got) === JSON.stringify(want), what, got, want);
 
-function cli(args) {
-  const r = spawnSync(bin, args, { encoding: "utf8", env: { ...process.env, SSPUR_STRICT_NATIVE: "" } });
+function cli(args, input = "") {
+  const r = spawnSync(bin, args, { encoding: "utf8", input, env: { ...process.env, SSPUR_STRICT_NATIVE: "" } });
   return { out: r.stdout, err: r.stderr, code: r.status };
 }
 
@@ -36,17 +36,17 @@ const lines = (s) => s.split("\n").filter((l) => l !== "");
 const stdoutOf = (r) => r.output.filter((l) => l.stream === "out").map((l) => l.text);
 const errorLines = (file, diags) => diags.filter((d) => d.severity === "error").map((d) => `${file}:${d.line}:${d.col} ${d.code} ${d.message}`);
 
-function compare(name, file, src, original) {
-  const run = call("run", src);
+function compare(name, file, src, original, input = "") {
+  const run = call("run", src, input);
   const test = call("test", src);
   const fmt = call("fmt", src);
   const check = call("check", src);
   expect(["ok", "trap", "exit", "error"].includes(run.status), `${name}: run status ${run.status}`);
   expect(fmt.ok, `${name}: fmt`);
   if (!bin) return;
-  const r = cli(["run", "--interp", file]);
+  const r = cli(["run", "--interp", file], input);
   same(`${name}: run output`, stdoutOf(run), lines(r.out));
-  same(`${name}: run output of ${original}`, stdoutOf(run), lines(cli(["run", "--interp", original]).out));
+  same(`${name}: run output of ${original}`, stdoutOf(run), lines(cli(["run", "--interp", original], input).out));
   if (run.status === "trap") same(`${name}: runtime error`, run.message, lines(r.err).at(-1));
   if (run.status === "error") same(`${name}: run diagnostics`, errorLines(file, run.diags), lines(r.err).filter((l) => !l.startsWith("  hint:") && !/:\d+:\d+ (warning|hole) /.test(l)));
   if (test.status !== "error") same(`${name}: test text`, test.text, cli(["test", "--interp", file]).out.trimEnd());
@@ -59,9 +59,21 @@ const scratch = mkdtempSync(join(tmpdir(), "sspur-play-"));
 for (const ex of examples) {
   const file = join(scratch, ex.file.split("/").pop());
   writeFileSync(file, ex.source);
-  compare(ex.name, file, ex.source, ex.file);
+  compare(ex.name, file, ex.source, ex.file, ex.input || "");
 }
 rmSync(scratch, { recursive: true, force: true });
+
+// Input: what the page's Input box holds reaches read_line and read_lines like stdin does.
+const reader = 'fn main() -> Unit ! log, io\n= do\n  first = read_line()\n  log("{first}")\n  log("{read_lines()}")\n  log("{read_line()}")\n';
+const fed = call("run", reader, "one\ntwo\r\nthree");
+same("input: read_line and read_lines", stdoutOf(fed), ['some("one")', '["two", "three"]', "none"]);
+same("input: empty", stdoutOf(call("run", reader, "")), ["none", "[]", "none"]);
+if (bin) {
+  const rf = join(tmpdir(), `sspur-play-in-${process.pid}.ssp`);
+  writeFileSync(rf, reader);
+  same("input: matches sspur run --interp", stdoutOf(fed), lines(cli(["run", "--interp", rf], "one\ntwo\r\nthree").out));
+  rmSync(rf, { force: true });
+}
 
 // The browser host: files in memory, an empty environment, the clock, and the effects a page
 // can't perform. With SSPUR_BIN the file results must match the real file system.
