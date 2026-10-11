@@ -20,7 +20,7 @@ fn average
 // ANCHOR_END: verify
 // ANCHOR: fill
 $ sspur fill holes.ssp
-?subtotal: lines.map(_.qty * _.price).sum (passes 2 tests, post, 1 other also fits)
+?subtotal: lines.map(_.qty * _.price).sum (passes 2 tests, post)
 // ANCHOR_END: fill
 // ANCHOR: suggest
 $ sspur suggest holes.ssp

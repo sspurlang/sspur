@@ -634,8 +634,12 @@ impl<'a> En<'a> {
             if self.lambda && (matches!(c.kind, Kind::Trait(_) | Kind::Record(_) | Kind::With(_)) || c.params.iter().any(|p| matches!(p, Type::Fn(..)))) {
                 continue;
             }
+            let w = weight(c);
+            if s < w {
+                continue;
+            }
             let mut found = Vec::new();
-            self.args(c, 0, s - 1, &mut Vec::new(), &mut Binds::new(), site, &mut found);
+            self.args(c, 0, s - w, &mut Vec::new(), &mut Binds::new(), site, &mut found);
             for (ids, b) in found {
                 if self.time_up() {
                     return;
@@ -809,7 +813,7 @@ impl<'a> En<'a> {
         if self.redundant(c, args) {
             return;
         }
-        let size: usize = 1 + args.iter().map(|a| self.arg_size(a)).sum::<usize>();
+        let size: usize = weight(c) + args.iter().map(|a| self.arg_size(a)).sum::<usize>();
         if size > self.max.max(self.lambda_size) || !self.lambda && !self.useful(&ty, self.max.saturating_sub(size)) {
             return;
         }
@@ -823,7 +827,7 @@ impl<'a> En<'a> {
             }
         }
         let mut quick = Vec::new();
-        let mut size = 1;
+        let mut size = weight(c);
         let mut fns: Vec<String> = vec![];
         let (mut local, mut var) = (false, false);
         // Ordering strings is rare where equality is meant.
@@ -1588,10 +1592,16 @@ fn cost(e: &Expr, size: usize) -> usize {
     10 * size + extra
 }
 
+/// The size a component adds: methods that are rarely what a hole needs count as two nodes, so the
+/// search reaches them later.
+fn weight(c: &Comp) -> usize {
+    if matches!(c.kind, Kind::Method | Kind::OrDefault) && matches!(c.name.as_str(), "unique" | "push" | "flat_map" | "replace" | "items") { 2 } else { 1 }
+}
+
 /// How unusual a method is in a filled hole, in tenths of a node.
 fn method_prior(name: &str) -> usize {
     match name {
-        "unique" | "push" | "flat_map" | "replace" | "items" => 6,
+        "unique" | "push" | "flat_map" | "replace" | "items" => 0,
         "sort" | "reverse" | "take" | "drop" | "split" | "trim" | "lower" | "upper" | "to_int" | "to_f64" | "abs" | "sort_by" | "is_some" | "is_none" | "keys" | "values" | "has" | "index_of" | "starts_with" | "ends_with" | "round" | "floor" | "sqrt" | "words" | "chars" => 3,
         _ => 0,
     }
