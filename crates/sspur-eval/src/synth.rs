@@ -5,7 +5,7 @@ use crate::value::{Env, Value};
 use crate::{fuzz, Ctrl, Interp, R};
 use sspur_check::{CheckOutput, HoleCtx, HoleSite, Sig, SigKind, Type};
 use sspur_syntax::*;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::rc::Rc;
 
@@ -422,7 +422,8 @@ struct En<'a> {
     by_ty: HashMap<(usize, String), Vec<usize>>,
     by_head: HashMap<(usize, String), Vec<usize>>,
     seen: HashSet<String>,
-    seen_obs: BTreeMap<(String, Rc<Vec<Obs>>), usize>,
+    /// Terms by a hash of their type and values, to find the class of a new one.
+    seen_obs: HashMap<u64, Vec<usize>>,
     comps: Rc<Vec<Comp>>,
     lambda: bool,
     lambda_size: usize,
@@ -439,19 +440,20 @@ struct En<'a> {
     max: usize,
     memo: HashMap<(String, usize), bool>,
     /// One child of each input's environment with the argument slots, reused for every evaluation.
-    scratch: Vec<Rc<Env>>,
+    scratch: Vec<(Rc<Env>, Vec<Rc<RefCell<Value>>>)>,
     /// Literals from the tests that reach the hole, offered as constants.
     consts: Rc<Vec<(ExprKind, Type, usize)>>,
 }
 
-fn scratch(envs: &[Rc<Env>]) -> Vec<Rc<Env>> {
+fn scratch(envs: &[Rc<Env>]) -> Vec<(Rc<Env>, Vec<Rc<RefCell<Value>>>)> {
     envs.iter()
         .map(|e| {
             let env = Env::child(e);
             for s in SLOTS {
                 env.define(s, Value::Unit);
             }
-            env
+            let cells = SLOTS.iter().map(|s| env.cell(s).unwrap()).collect();
+            (env, cells)
         })
         .collect()
 }
@@ -508,7 +510,8 @@ impl<'a> En<'a> {
                 return None;
             }
             let obs = Rc::new(obs);
-            if let Some(&id) = self.seen_obs.get(&(key.clone(), obs.clone())) {
+            let h = obs_hash(&key, &obs);
+            if let Some(id) = self.class_of(h, &t.ty, &obs) {
                 // Same values as a term found before: keep the simpler of two of the same size.
                 let old = &self.terms[id];
                 let (a, b) = ((t.fns.len(), !t.local), (old.fns.len(), !old.local));
@@ -518,7 +521,7 @@ impl<'a> En<'a> {
                 }
                 return None;
             }
-            self.seen_obs.insert((key.clone(), obs.clone()), self.terms.len());
+            self.seen_obs.entry(h).or_default().push(self.terms.len());
             t.obs = obs;
         }
         let id = self.terms.len();
@@ -530,6 +533,11 @@ impl<'a> En<'a> {
         self.by_head.entry((t.size, head(&t.ty))).or_default().push(id);
         self.terms.push(t);
         Some(id)
+    }
+
+    /// The term already found with type `ty` and values `obs`.
+    fn class_of(&self, h: u64, ty: &Type, obs: &[Obs]) -> Option<usize> {
+        self.seen_obs.get(&h)?.iter().copied().find(|&id| self.terms[id].ty == *ty && *self.terms[id].obs == *obs)
     }
 
     fn atom(&mut self, show: ExprKind, ty: Type, local: bool) {
@@ -874,10 +882,10 @@ impl<'a> En<'a> {
             let vals: Vec<Option<&Rc<Vec<Obs>>>> = args.iter().map(|a| if let Arg::Term(id) = a { Some(&self.terms[*id].obs) } else { None }).collect();
             let out: Vec<Obs> = (0..self.envs.len())
                 .map(|e| {
-                    let env = &self.scratch[e];
+                    let (env, cells) = &self.scratch[e];
                     for (i, v) in vals.iter().enumerate() {
                         match v.map(|o| &o[e]) {
-                            Some(Obs::V(x)) => *env.cell(SLOTS[i]).unwrap().borrow_mut() = x.clone(),
+                            Some(Obs::V(x)) => *cells[i].borrow_mut() = x.clone(),
                             Some(other) => return other.clone(),
                             None => {}
                         }
@@ -899,7 +907,7 @@ impl<'a> En<'a> {
                 self.explored += 1;
                 return;
             }
-            if let Some(&id) = self.seen_obs.get(&(key.clone(), o.clone())) {
+            if let Some(id) = self.class_of(obs_hash(&key, o), &ty, o) {
                 // Same values as a term found before: keep the simpler of two of the same size.
                 self.explored += 1;
                 let old = &self.terms[id];
@@ -1031,7 +1039,7 @@ impl<'a> En<'a> {
             by_ty: HashMap::new(),
             by_head: HashMap::new(),
             seen: HashSet::new(),
-            seen_obs: BTreeMap::new(),
+            seen_obs: HashMap::new(),
             comps: self.comps.clone(),
             lambda: true,
             lambda_size: self.lambda_size,
@@ -1123,6 +1131,55 @@ fn natural_default(t: &Type) -> Option<ExprKind> {
         ("Bool", []) => Some(ExprKind::Bool(false)),
         ("List", [_]) => Some(ExprKind::List(vec![])),
         _ => None,
+    }
+}
+
+fn obs_hash(ty: &str, obs: &[Obs]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    ty.hash(&mut h);
+    for o in obs {
+        match o {
+            Obs::V(v) => hash_value(v, &mut h, 0),
+            Obs::Raise(v) => {
+                9u8.hash(&mut h);
+                hash_value(v, &mut h, 0);
+            }
+            Obs::Trap => 10u8.hash(&mut h),
+        }
+    }
+    h.finish()
+}
+
+/// A hash that agrees with `Value`'s equality: equal values hash the same, and values it doesn't look
+/// into all hash alike (the class lookup compares them).
+fn hash_value(v: &Value, h: &mut impl std::hash::Hasher, depth: u32) {
+    use std::hash::Hash;
+    let deep = depth < 3;
+    match v {
+        Value::Int(n) => (1u8, n).hash(h),
+        Value::Bool(b) => (2u8, b).hash(h),
+        Value::Str(s) => (3u8, &**s).hash(h),
+        Value::List(xs) | Value::Tuple(xs) => {
+            (5u8, xs.len()).hash(h);
+            for x in xs.iter().take(if deep { 8 } else { 0 }) {
+                hash_value(x, h, depth + 1);
+            }
+        }
+        Value::Opt(o) => {
+            (6u8, o.is_some()).hash(h);
+            if let Some(x) = o.as_ref().filter(|_| deep) {
+                hash_value(x, h, depth + 1);
+            }
+        }
+        Value::Record(n, fs) if &**n != "#Ratio" => {
+            (7u8, &**n).hash(h);
+            for (_, x) in fs.iter().filter(|_| deep) {
+                hash_value(x, h, depth + 1);
+            }
+        }
+        Value::Variant(n, _) => (8u8, &**n).hash(h),
+        _ => 0u8.hash(h),
     }
 }
 
@@ -1288,7 +1345,7 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
         by_ty: HashMap::new(),
         by_head: HashMap::new(),
         seen: HashSet::new(),
-        seen_obs: BTreeMap::new(),
+        seen_obs: HashMap::new(),
         comps,
         lambda: false,
         lambda_size: opts.lambda_size,
