@@ -325,7 +325,7 @@ fn fill_honors_its_budget() {
 /// asserting anything.
 #[test]
 fn fill_benchmark() {
-    const MIN_TOP1: usize = 25;
+    const MIN_TOP1: usize = 41;
     let table = include_str!("../../../bench/fill/holes.txt");
     let (head, cases) = table.split_once("\n## ").unwrap();
     let prelude = head.split_once("prelude:\n").unwrap().1;

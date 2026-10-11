@@ -29,7 +29,7 @@ fn total_age(ps: List[Person]) -> Int
 = ?
 test t = total_age([Person{name: "a", age: 30}, Person{name: "b", age: 12}]) == 42
 
-## count_positive
+## count_positive *
 want: xs.filter(_ > 0).len
 want: xs.filter(0 < _).len
 fn positives(xs: List[Int]) -> Int
@@ -56,7 +56,7 @@ fn adults(ps: List[Person]) -> Int
 = ?
 test t = adults([Person{name: "a", age: 30}, Person{name: "b", age: 12}, Person{name: "c", age: 18}]) == 2
 
-## longest_string
+## longest_string *
 want: xs.map(_.len).max.or(0)
 fn longest(xs: List[Str]) -> Int
 = ?
@@ -74,7 +74,7 @@ fn cheapest(items: List[Item]) -> Int
 = ?
 test t = cheapest([Item{sku: "a", qty: 1, price: 5}, Item{sku: "b", qty: 3, price: 2}]) == 2
 
-## first_or_default
+## first_or_default *
 want: xs.first.or(d)
 fn head_or(xs: List[Int], d: Int) -> Int
 = ?
@@ -92,19 +92,19 @@ fn oldest(ps: List[Person]) -> Int
 = ?
 test t = oldest([Person{name: "a", age: 30}, Person{name: "b", age: 41}, Person{name: "c", age: 7}]) == 41
 
-## join_comma
+## join_comma *
 want: cols.join(",")
 fn csv(cols: List[Str]) -> Str
 = ?
 test t = csv(["a", "b", "c"]) == "a,b,c"
 
-## join_space
+## join_space *
 want: ws.join(" ")
 fn sentence(ws: List[Str]) -> Str
 = ?
 test t = sentence(["hi", "there"]) == "hi there"
 
-## total_chars
+## total_chars *
 want: ws.map(_.len).sum
 want: ws.join("").len
 fn total_chars(ws: List[Str]) -> Int
@@ -123,13 +123,13 @@ fn word_count(s: Str) -> Int
 = ?
 test t = word_count("the quick fox") == 3
 
-## contains_param
+## contains_param *
 want: xs.contains(x)
 fn member(xs: List[Int], x: Int) -> Bool
 = ?
 test t = member([1, 2, 3], 2)
 
-## contains_literal
+## contains_literal *
 want: roles.contains("admin")
 fn is_admin(roles: List[Str]) -> Bool
 = ?
@@ -150,20 +150,20 @@ fn all_at_least(ps: List[Person], min: Int) -> Bool
 test t = all_at_least([Person{name: "a", age: 30}, Person{name: "b", age: 18}], 18)
 test f = not all_at_least([Person{name: "a", age: 30}, Person{name: "b", age: 12}], 18)
 
-## option_default_literal
+## option_default_literal *
 want: cfg.or(80)
 fn port(cfg: Opt[Int]) -> Int
 = ?
 test t = port(some(8080)) == 8080
 test d = port(none) == 80
 
-## option_default_param
+## option_default_param *
 want: nick.or(name)
 fn display(nick: Opt[Str], name: Str) -> Str
 = ?
 test t = display(none, "Ann") == "Ann"
 
-## record_constructor
+## record_constructor *
 want: Point{x: x, y: y}
 fn point(x: Int, y: Int) -> Point
 = ?
@@ -196,7 +196,7 @@ fn last_index(xs: List[Int]) -> Int
 = ?
 test t = last_index([7, 8, 9]) == 2
 
-## middle_index
+## middle_index *
 want: xs.len / 2
 fn middle(xs: List[Int]) -> Int
   pre xs.len > 0
@@ -235,13 +235,13 @@ fn body(lines: List[Str]) -> List[Str]
 = ?
 test t = body(["h", "a", "b"]) == ["a", "b"]
 
-## smallest_n
+## smallest_n *
 want: xs.sort.take(n)
 fn smallest(xs: List[Int], n: Int) -> List[Int]
 = ?
 test t = smallest([5, 1, 3], 2) == [1, 3]
 
-## average_pre
+## average_pre *
 want: xs.sum / xs.len
 fn avg(xs: List[Int]) -> Int
   pre xs.len > 0
@@ -318,7 +318,7 @@ fn in_range(x: Int, lo: Int, hi: Int) -> Bool
 test t = in_range(5, 1, 10)
 test f = not in_range(11, 1, 10)
 
-## find_by_id
+## find_by_id *
 want: ps.find(_.name == n)
 want: ps.find(n == _.name)
 fn by_name(ps: List[Person], n: Str) -> Opt[Person]
@@ -331,7 +331,7 @@ fn names(ps: List[Person]) -> List[Str]
 = ?
 test t = names([Person{name: "a", age: 1}, Person{name: "b", age: 2}]) == ["a", "b"]
 
-## map_lookup
+## map_lookup *
 want: m.get(k).or(0)
 fn stock(m: Map[Str, Int], k: Str) -> Int
 = ?
