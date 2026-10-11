@@ -1,0 +1,168 @@
+{
+  "name": "sspur",
+  "displayName": "SSPUR",
+  "description": "SSPUR language support: diagnostics with quick fixes, typed-hole filling, completion, hover, formatting, navigation and highlighting, through sspur lsp",
+  "version": "0.6.0",
+  "publisher": "your-publisher-id",
+  "author": "Utkarsha Vardhana",
+  "license": "MIT OR Apache-2.0",
+  "homepage": "https://github.com/utkarshavardhana/sspur",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/utkarshavardhana/sspur",
+    "directory": "packaging/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/utkarshavardhana/sspur/issues"
+  },
+  "icon": "images/icon.png",
+  "engines": {
+    "vscode": "^1.82.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Formatters",
+    "Linters"
+  ],
+  "keywords": [
+    "sspur",
+    "language server",
+    "effects",
+    "contracts",
+    "agents"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "sspur",
+        "aliases": [
+          "SSPUR",
+          "sspur"
+        ],
+        "extensions": [
+          ".ssp"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./images/file-icon.svg",
+          "dark": "./images/file-icon.svg"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "sspur",
+        "scopeName": "source.sspur",
+        "path": "./syntaxes/sspur.tmLanguage.json"
+      }
+    ],
+    "semanticTokenTypes": [
+      {
+        "id": "effect",
+        "superType": "macro",
+        "description": "An effect in an effect row"
+      },
+      {
+        "id": "contract",
+        "superType": "keyword",
+        "description": "A contract clause: pre, post, where, ex"
+      }
+    ],
+    "semanticTokenScopes": [
+      {
+        "language": "sspur",
+        "scopes": {
+          "effect": [
+            "entity.other.attribute-name.effect.sspur"
+          ],
+          "contract": [
+            "keyword.other.contract.sspur"
+          ],
+          "macro": [
+            "constant.other.placeholder.hole.sspur"
+          ],
+          "enumMember": [
+            "entity.name.class.constructor.sspur"
+          ]
+        }
+      }
+    ],
+    "commands": [
+      {
+        "command": "sspur.run",
+        "title": "Run File",
+        "category": "SSPUR",
+        "icon": "$(play)"
+      },
+      {
+        "command": "sspur.test",
+        "title": "Test File",
+        "category": "SSPUR",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "sspur.fillHoles",
+        "title": "Fill Holes",
+        "category": "SSPUR"
+      },
+      {
+        "command": "sspur.restart",
+        "title": "Restart Language Server",
+        "category": "SSPUR"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "sspur.run",
+          "when": "editorLangId == sspur"
+        },
+        {
+          "command": "sspur.test",
+          "when": "editorLangId == sspur"
+        },
+        {
+          "command": "sspur.fillHoles",
+          "when": "editorLangId == sspur"
+        }
+      ],
+      "editor/title/run": [
+        {
+          "command": "sspur.run",
+          "when": "resourceLangId == sspur",
+          "group": "navigation@0"
+        },
+        {
+          "command": "sspur.test",
+          "when": "resourceLangId == sspur",
+          "group": "navigation@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "SSPUR",
+      "properties": {
+        "sspur.path": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to the `sspur` binary. Empty means `sspur` on your `PATH`.",
+          "scope": "machine-overridable"
+        },
+        "sspur.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Log the messages between VS Code and sspur lsp in the SSPUR output channel."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}

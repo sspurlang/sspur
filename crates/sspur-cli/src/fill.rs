@@ -124,7 +124,7 @@ fn load(args: &Args) -> Result<(Target, Loaded, Vec<String>), ExitCode> {
 }
 
 /// Replaces each hole's text with its candidate, last hole first so the earlier spans stay put.
-fn apply_text(src: &str, mut edits: Vec<Edit>) -> String {
+pub(crate) fn apply_text(src: &str, mut edits: Vec<Edit>) -> String {
     edits.sort_by_key(|e| std::cmp::Reverse(e.0.start));
     let mut out = src.to_string();
     for (span, text, expr) in edits {

@@ -10,6 +10,7 @@
 - [SSPUR for Go and Rust programmers](get-started/from-go-rust.md)
 - [SSPUR for AI agents](get-started/agents.md)
 - [Installation](get-started/installation.md)
+- [Editor setup](get-started/editors.md)
 
 # Handbook
 
@@ -107,6 +108,7 @@
   - [ADR 0028: Block lambdas and trait methods as values](adr/0028-block-lambdas.md)
   - [ADR 0029: Or-patterns, list patterns and if e is p](adr/0029-richer-patterns.md)
   - [ADR 0030: Hole filling and suggested contracts](adr/0030-hole-filling-and-suggested-contracts.md)
+  - [ADR 0031: The language server](adr/0031-language-server.md)
 - [Native performance versus C++](design/native-benchmarks.md)
 - [Agent benchmarks](design/agent-benchmarks.md)
 

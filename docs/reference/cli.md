@@ -15,6 +15,7 @@ Everything SSPUR does goes through one binary, `sspur`. This is its usage text, 
 | Write code and contracts from tests | `sspur fill [FILE] [?HOLE] [--apply]` (typed holes), `sspur suggest [FILE] [FN] [--apply]` (`pre` and `post` from runs) |
 | Work on a codebase | `sspur init [FILE]`, `sspur start [NAME...]`, `sspur q QUERY TARGET`, `sspur edit --test -e SRC`, `sspur log`, `sspur src` |
 | Agents and MCP | `sspur spec [--more|--full]`, `sspur start`, `sspur mcp [--dir PATH]` |
+| Editors | `sspur lsp` (the language server, see [Editor setup](../get-started/editors.md)) |
 | Packages | `sspur init --pkg NAME`, `sspur add PATH-OR-URL[@REV]`, `sspur deps fetch`, `sspur deps update [--force]`, `sspur deps tree` |
 | Native code and C | `sspur native FILE`, `sspur run --O3`, `--pgo`, `--lto`, `sspur explain-opt FILE`, `sspur bind HEADER.h`, `sspur export-c FILE` |
 | Bare metal and GPU | `sspur build --target riscv64-qemu\|aarch64-qemu\|thumbv7em-mps2 FILE`, `sspur gpu FILE --emit metal\|opencl\|spirv\|ptx` |
@@ -49,3 +50,7 @@ The query API is how an agent reads a large codebase without printing all of it.
 | `sspur suggest [FILE] [FN]` | For each function, the `pre` and `post` lines that held on every run, ready to paste: `  post r.len <= xs.len  // proved`. `--json` gives `refine` fixes, `--apply` adds them, `--cases N` sets the number of fuzzed inputs (200) |
 
 The MCP server has both as the tools `fill` and `suggest` ([MCP](../agent/mcp.md)).
+
+## The language server
+
+`sspur lsp` speaks the Language Server Protocol over stdin and stdout, for VS Code and any other editor with an LSP client ([Editor setup](../get-started/editors.md), [ADR 0031](../adr/0031-language-server.md)). It publishes diagnostics as you type, a short pause after the last edit, and then the candidates for each typed hole (150 ms a hole, or `SSPUR_FILL_MS`). It answers completion, hover, code actions (the compiler's fixes and the hole fills), formatting, definition, references, document highlights, rename, the outline and semantic tokens, all within one file, and the command `sspur.fill` fills every hole that has a passing candidate. A file under a directory with `sspur.toml` is checked with that package's dependencies. It takes no options, and ignores `--stdio`, which some clients add.

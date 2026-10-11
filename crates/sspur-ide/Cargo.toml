@@ -1,0 +1,13 @@
+[package]
+name = "sspur-ide"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Editor support for SSPUR: diagnostics with fixes, completion, hover, navigation and highlighting, shared by the language server and the playground"
+
+[dependencies]
+sspur-syntax.workspace = true
+sspur-check.workspace = true
+sspur-eval = { path = "../sspur-eval", default-features = false }
+serde_json.workspace = true

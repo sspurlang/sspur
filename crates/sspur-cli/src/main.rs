@@ -3,6 +3,8 @@ mod bind;
 mod deploy;
 mod fill;
 mod genfuzz;
+#[cfg(feature = "lsp")]
+mod lsp;
 mod mcp;
 mod pkgcmd;
 mod sync;
@@ -33,6 +35,7 @@ const USAGE: &str = "usage:
   sspur start [NAME|PATTERN...]         the agent spec plus this codebase: all of it if small, else counts, q pack of NAMEs, q find of the rest
   sspur spec [--more|--full] [src] [QUERY TARGET...]  the spec (--more: the rest of the builtins, --full: the reference), then optionally src and queries
   sspur src | log | export | mcp [--dir PATH] | --version
+  sspur lsp                             the language server, over stdio, for VS Code and other editors (docs: Editor setup)
   sspur bind header.h [--lib NAME] [-o out.ssp]   generate extern declarations from a C header (uses clang)
   sspur export-c file.ssp [-o libfoo] [--shared] [--prefix P]  build a C library and header from the C-compatible functions
   add --json for machine output (apply, edit, q, check)
@@ -169,6 +172,8 @@ fn real_main() -> ExitCode {
             ExitCode::SUCCESS
         }
         "mcp" => mcp::serve(args.val("--dir")),
+        #[cfg(feature = "lsp")]
+        "lsp" => lsp::serve(),
         "bind" => {
             let Some(h) = args.pos.get(1) else {
                 eprintln!("usage: sspur bind header.h [--lib NAME] [-o out.ssp]");

@@ -1,0 +1,5 @@
+**/*.vsix
+.gitignore
+node_modules/**/*.md
+node_modules/**/*.d.ts
+node_modules/**/*.map

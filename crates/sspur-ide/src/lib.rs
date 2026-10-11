@@ -1,43 +1,49 @@
-//! Editor support: diagnostics with quick fixes, completions and hover, from the checker's output.
+//! Editor support shared by the language server (`sspur lsp`) and the playground: diagnostics
+//! with quick fixes, completions, hover, navigation and highlighting, from the checker's output.
+//! Offsets in and out are UTF-16 code units, as editors count them.
 use serde_json::{json, Value as J};
 use sspur_check::{CheckOutput, Diag, Type};
 use sspur_syntax::{printer, visit, Def, Expr, ExprKind, FnDef, Module, Stmt};
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
-/// The last source that parsed, with its check: completions fall back to it while the text
-/// being typed doesn't parse.
-struct Analysis {
-    src: String,
-    module: Module,
-    check: CheckOutput,
+pub mod highlight;
+pub mod nav;
+
+/// A source that parsed, with its check. `src` is the text as the editor has it; a package's
+/// dependencies come after it in the module, so their spans lie past its end.
+pub struct Analysis {
+    pub src: String,
+    pub module: Module,
+    pub check: CheckOutput,
 }
 
-thread_local! {
-    static LAST: RefCell<Option<Rc<Analysis>>> = const { RefCell::new(None) };
+/// Parses and checks a source the way the host does: one file in the playground, a file with
+/// its package's dependencies in the language server.
+pub type Loader<'a> = &'a (dyn Fn(&str) -> Result<(Module, CheckOutput), Vec<Diag>> + Sync);
+
+/// What completions and hover work from: the host's loader, and the last source that parsed,
+/// which they fall back to while the text being typed doesn't parse.
+pub struct Ctx<'a> {
+    pub load: Loader<'a>,
+    pub last: Option<Arc<Analysis>>,
+    /// The mangled names of the direct dependencies' public definitions, for completion after
+    /// `pkg.`; empty outside a package.
+    pub exports: BTreeSet<String>,
 }
 
-fn analyze(src: &str) -> Option<Rc<Analysis>> {
-    let (module, check) = crate::load(src).ok()?;
-    Some(Rc::new(Analysis { src: src.to_string(), module, check }))
+impl Ctx<'_> {
+    pub fn analyze(&self, src: &str) -> Option<Arc<Analysis>> {
+        let (module, check) = (self.load)(src).ok()?;
+        Some(Arc::new(Analysis { src: src.to_string(), module, check }))
+    }
+
+    fn last_or(&self, src: &str) -> Option<Arc<Analysis>> {
+        self.analyze(src).or_else(|| self.last.clone())
+    }
 }
 
-/// Keeps a checked source for completions and hover.
-pub fn remember(src: &str, module: Module, check: CheckOutput) {
-    LAST.with(|l| *l.borrow_mut() = Some(Rc::new(Analysis { src: src.to_string(), module, check })));
-}
-
-fn last() -> Option<Rc<Analysis>> {
-    LAST.with(|l| l.borrow().clone())
-}
-
-fn last_or(src: &str) -> Option<Rc<Analysis>> {
-    analyze(src).or_else(last)
-}
-
-fn u16_of(src: &str, byte: usize) -> usize {
+pub fn u16_of(src: &str, byte: usize) -> usize {
     let mut b = byte.min(src.len());
     while !src.is_char_boundary(b) {
         b -= 1;
@@ -45,7 +51,7 @@ fn u16_of(src: &str, byte: usize) -> usize {
     src[..b].encode_utf16().count()
 }
 
-fn byte_of(src: &str, u16pos: usize) -> usize {
+pub fn byte_of(src: &str, u16pos: usize) -> usize {
     let mut n = 0;
     for (i, c) in src.char_indices() {
         if n >= u16pos {
@@ -56,7 +62,7 @@ fn byte_of(src: &str, u16pos: usize) -> usize {
     src.len()
 }
 
-fn is_ident(b: u8) -> bool {
+pub fn is_ident(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_'
 }
 
@@ -629,7 +635,7 @@ fn fn_scope(f: &FnDef, pos: u32, out: &mut Vec<String>) {
     }
 }
 
-fn locals_at(m: &Module, pos: u32) -> (Option<&Def>, Vec<String>) {
+pub(crate) fn locals_at(m: &Module, pos: u32) -> (Option<&Def>, Vec<String>) {
     let mut out = Vec::new();
     for d in &m.defs {
         let s = d.span();
@@ -666,7 +672,7 @@ fn ret_of(sig: &str) -> &str {
     split_sig(sig).map_or("", |(_, _, r)| r).split(" ! ").next().unwrap_or("")
 }
 
-pub fn complete(src: &str, pos16: usize) -> J {
+pub fn complete(cx: &Ctx, src: &str, pos16: usize) -> J {
     let pos = byte_of(src, pos16);
     let bytes = src.as_bytes();
     let mut start = pos;
@@ -678,16 +684,42 @@ pub fn complete(src: &str, pos16: usize) -> J {
     let before = &src[line_start..start];
     let in_str = before.matches('"').count() % 2 == 1 && !before.rsplit('"').next().unwrap_or("").contains('{');
     if in_str || before.contains("//") {
-        return json!({ "from": from, "items": [] });
+        return json!({ "from": from, "items": [], "at": "none" });
     }
-    let items = if start > 0 && bytes[start - 1] == b'.' && !(start > 1 && bytes[start - 2] == b'.') {
-        members(src, start - 1, pos)
+    let (items, at) = if start > 0 && bytes[start - 1] == b'.' && !(start > 1 && bytes[start - 2] == b'.') {
+        (members(cx, src, start - 1, pos), "member")
     } else if effect_row(before) {
-        effects_items(src)
+        (effects_items(cx, src), "effect")
     } else {
-        names(src, start, pos)
+        (names(cx, src, start, pos), "name")
     };
-    json!({ "from": from, "items": items.iter().map(Item::json).collect::<Vec<_>>() })
+    json!({ "from": from, "items": items.iter().map(Item::json).collect::<Vec<_>>(), "at": at })
+}
+
+/// Templates for the common shapes, offered next to the names where a name can go. The
+/// playground's editor (docs/play/editor.js) offers the same list.
+pub const SNIPPETS: &[(&str, &str, &str)] = &[
+    ("fn", "fn ${name}(${x}: ${Int}) -> ${Int}\n= ${x}", "function"),
+    ("fn do", "fn ${name}(${x}: ${Int}) -> ${Unit} ! log\n= do\n  ${}", "function with a block body"),
+    ("main", "fn main() -> Unit ! log\n= do\n  log(\"${hello}\")", "entry point"),
+    ("type record", "type ${Name} = {${field}: ${Int}}", "record type"),
+    ("type sum", "type ${Name} = ${A} | ${B}{${x}: ${Int}}", "sum type"),
+    ("match", "match ${e}\n  | ${pat} => ${}\n  | _ => ${}", "match arms"),
+    ("if is", "if ${e} is ${some(v)} then ${v} else ${d}", "one-pattern test"),
+    ("if then else", "if ${c} then ${a} else ${b}", "conditional"),
+    ("test", "test ${name} = ${f(1) == 1}", "test"),
+    ("for", "for ${x} in ${xs}\n  ${}", "loop"),
+    ("do", "do\n  ${}", "block"),
+    ("catch", "catch ${e}\n  | ${Err} => ${}", "handle failures"),
+    ("handle", "handle ${e}\n  | ${op}() => resume(${})", "effect handler"),
+    ("effect", "effect ${ask}() -> ${Int}", "effect declaration"),
+    ("trait", "trait ${Name}\n  fn ${m}(x: Self) -> ${Str}", "trait"),
+    ("impl", "impl ${Trait} for ${Type}\n  fn ${m}(x: ${Type}) -> ${Str} = ${}", "trait implementation"),
+];
+
+/// The keywords, as the completion list offers them.
+pub fn keywords() -> &'static [&'static str] {
+    sspur_syntax::lexer::KEYWORDS
 }
 
 /// The cursor is in an effect row: after `!` in a signature or a function type.
@@ -697,10 +729,10 @@ fn effect_row(before: &str) -> bool {
     !rest.starts_with('=') && !rest.contains('=') && rest.chars().all(|c| c.is_alphanumeric() || " ,_[].".contains(c))
 }
 
-fn effects_items(src: &str) -> Vec<Item> {
+fn effects_items(cx: &Ctx, src: &str) -> Vec<Item> {
     let d = docs();
     let mut out: Vec<Item> = EFFECTS.iter().map(|e| Item { label: e.to_string(), kind: "keyword", detail: "effect".into(), info: d.effects.get(*e).cloned(), apply: None, boost: 1 }).collect();
-    if let Some(a) = last_or(src) {
+    if let Some(a) = cx.last_or(src) {
         for def in &a.module.defs {
             if let Def::Effect(e) = def {
                 out.push(Item { label: e.name.clone(), kind: "keyword", detail: "effect".into(), info: Some(printer::print_def(def)), apply: None, boost: 2 });
@@ -710,23 +742,79 @@ fn effects_items(src: &str) -> Vec<Item> {
     out
 }
 
-fn members(src: &str, dot: usize, pos: usize) -> Vec<Item> {
+fn members(cx: &Ctx, src: &str, dot: usize, pos: usize) -> Vec<Item> {
     let patched = format!("{}{}", &src[..dot], &src[pos..]);
     let mut ty = None;
-    let mut a = analyze(&patched);
+    let mut a = cx.analyze(&patched);
     if let Some(an) = &a {
         ty = an.check.expr_types.iter().filter(|((_, e, _), _)| *e as usize == dot).max_by_key(|((s, _, _), _)| *s).map(|(_, t)| t.clone());
     }
     if ty.is_none() {
         let recv: String = src[..dot].chars().rev().take_while(|c| c.is_alphanumeric() || *c == '_').collect::<Vec<_>>().into_iter().rev().collect();
-        a = last_or(src);
+        a = cx.last_or(src);
         if let Some(an) = &a {
             let t = an.check.expr_types.iter().filter(|((s, e, tag), _)| *tag == 8 && an.src.get(*s as usize..*e as usize) == Some(&recv)).min_by_key(|((s, _, _), _)| (*s as i64 - dot as i64).abs()).map(|(_, t)| t.clone());
             ty = t;
         }
     }
+    let recv = word_before(src, dot);
+    if ty.is_none()
+        && let Some(an) = &a
+    {
+        let items = package_items(an, &cx.exports, recv);
+        if !items.is_empty() {
+            return items;
+        }
+    }
     let (Some(t), Some(a)) = (ty, a) else { return vec![] };
     member_items(&t, &a)
+}
+
+/// The identifier that ends at `end`.
+fn word_before(src: &str, end: usize) -> &str {
+    let k = src.as_bytes()[..end].iter().rev().take_while(|c| is_ident(**c)).count();
+    &src[end - k..end]
+}
+
+/// The definitions of a dependency `pkg` in a package's module, by their mangled names.
+fn dep_defs<'a>(m: &'a Module, pkg: &str) -> impl Iterator<Item = (&'a Def, &'a str)> + 'a {
+    let (lower, upper) = (sspur_syntax::link::mangle(pkg, "a"), sspur_syntax::link::mangle(pkg, "A"));
+    let (lower, upper) = (lower[..lower.len() - 1].to_string(), upper[..upper.len() - 1].to_string());
+    let own = m.own.unwrap_or(m.defs.len()).min(m.defs.len());
+    m.defs[own..].iter().filter_map(move |d| {
+        let n = d.name();
+        n.strip_prefix(lower.as_str()).or_else(|| n.strip_prefix(upper.as_str())).filter(|r| !r.is_empty() && !r.contains("__")).map(|r| (d, r))
+    })
+}
+
+/// After `pkg.`: the public functions, types and constructors of that dependency.
+fn package_items(a: &Analysis, exports: &BTreeSet<String>, pkg: &str) -> Vec<Item> {
+    if pkg.is_empty() || !pkg.as_bytes()[0].is_ascii_lowercase() {
+        return vec![];
+    }
+    let mut out = Vec::new();
+    for (d, name) in dep_defs(&a.module, pkg).filter(|(d, _)| exports.contains(d.name())) {
+        match d {
+            Def::Fn(f) => {
+                let ps: Vec<String> = f.params.iter().map(|p| format!("{}: {}", p.name, printer::ty(&p.ty))).collect();
+                let ps: Vec<&str> = ps.iter().map(String::as_str).collect();
+                let ret = f.ret.as_ref().map_or("Unit".to_string(), printer::ty);
+                out.push(Item { label: name.to_string(), kind: "function", detail: format!("({}) -> {ret}", ps.join(", ")), info: Some(printer::print_sig(f)), apply: Some(snippet(name, &ps)), boost: 4 });
+            }
+            Def::Type(t) => {
+                out.push(Item { label: name.to_string(), kind: "type", detail: "type".into(), info: Some(printer::print_def(d)), apply: None, boost: 3 });
+                if let sspur_syntax::TypeBody::Sum(vs) = &t.body {
+                    for v in vs {
+                        let short = v.name.split_once("__").map_or(v.name.as_str(), |(_, r)| r);
+                        out.push(Item { label: short.to_string(), kind: "enum", detail: name.to_string(), info: Some(printer::print_def(d)), apply: None, boost: 3 });
+                    }
+                }
+            }
+            Def::Effect(_) | Def::Trait(_) => out.push(Item { label: name.to_string(), kind: "type", detail: if matches!(d, Def::Effect(_)) { "effect" } else { "trait" }.into(), info: Some(printer::print_def(d)), apply: None, boost: 2 }),
+            _ => {}
+        }
+    }
+    out
 }
 
 fn member_items(t: &Type, a: &Analysis) -> Vec<Item> {
@@ -791,11 +879,11 @@ fn member_items(t: &Type, a: &Analysis) -> Vec<Item> {
     out
 }
 
-fn names(src: &str, start: usize, pos: usize) -> Vec<Item> {
+fn names(cx: &Ctx, src: &str, start: usize, pos: usize) -> Vec<Item> {
     let patched = format!("{}?{}", &src[..start], &src[pos..]);
-    let (a, at, fresh) = match analyze(&patched) {
+    let (a, at, fresh) = match cx.analyze(&patched) {
         Some(a) => (Some(a), start as u32, true),
-        None => (last_or(src), start as u32, false),
+        None => (cx.last_or(src), start as u32, false),
     };
     let mut out = Vec::new();
     let Some(a) = a else { return out };
@@ -866,7 +954,7 @@ fn param_type(def: Option<&Def>, name: &str) -> Option<String> {
     f.params.iter().find(|p| p.name == name).map(|p| printer::ty(&p.ty))
 }
 
-pub fn hover(src: &str, pos16: usize) -> J {
+pub fn hover(cx: &Ctx, src: &str, pos16: usize) -> J {
     let pos = byte_of(src, pos16);
     let bytes = src.as_bytes();
     let (mut s, mut e) = (pos, pos);
@@ -880,7 +968,7 @@ pub fn hover(src: &str, pos16: usize) -> J {
         return J::Null;
     }
     let word = &src[s..e];
-    let Some(a) = last().filter(|a| a.src == src).or_else(|| analyze(src)) else { return J::Null };
+    let Some(a) = cx.last.clone().filter(|a| a.src == src).or_else(|| cx.analyze(src)) else { return J::Null };
     let out = |text: String, doc: Option<&String>| json!({ "from": u16_of(src, s), "to": u16_of(src, e), "text": text, "doc": doc });
     let after_dot = s > 0 && bytes[s - 1] == b'.';
     if after_dot {
@@ -895,6 +983,18 @@ pub fn hover(src: &str, pos16: usize) -> J {
             }
             if let Some(sig) = methods_of(&key).find(|sig| split_sig(sig).is_some_and(|(n, _, _)| n == word)) {
                 return out(format!("{}.{}", shown(&key), method_sig(sig)), docs().by_method.get(&(shown(&key).to_string(), word.to_string())));
+            }
+        }
+        let recv = word_before(src, s - 1);
+        if !recv.is_empty() {
+            let m = sspur_syntax::link::mangle(recv, word);
+            if let Some(sig) = a.check.sigs.get(&m) {
+                return out(sig.clone(), None);
+            }
+            for (d, _) in dep_defs(&a.module, recv) {
+                if d.name() == m || matches!(d, Def::Type(t) if matches!(&t.body, sspur_syntax::TypeBody::Sum(vs) if vs.iter().any(|v| v.name == m))) {
+                    return out(printer::print_def(d), None);
+                }
             }
         }
     }
@@ -932,4 +1032,43 @@ pub fn hover(src: &str, pos16: usize) -> J {
         return out(format!("{word}: {t}"), None);
     }
     J::Null
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn load(src: &str) -> Result<(Module, CheckOutput), Vec<Diag>> {
+        let m = sspur_syntax::parse(src).map_err(|e| vec![sspur_check::syntax_diag(&e)])?;
+        let c = sspur_check::check(&m);
+        Ok((m, c))
+    }
+
+    const SRC: &str = "type P = {x: Int, y: Int}\n\nfn norm(p: P) -> Int\n= p.x * p.x + p.y * p.y\n";
+
+    #[test]
+    fn completes_locals_fields_and_effects() {
+        let cx = Ctx { load: &load, last: None, exports: BTreeSet::new() };
+        let labels = |r: &J| r["items"].as_array().unwrap().iter().map(|i| i["label"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+        let at = SRC.find("p.x *").unwrap();
+        let r = complete(&cx, SRC, at + 1);
+        assert_eq!(r["at"], "name");
+        assert!(labels(&r).contains(&"p".to_string()) && labels(&r).contains(&"norm".to_string()));
+        let r = complete(&cx, SRC, at + 2);
+        assert_eq!(r["at"], "member");
+        assert!(labels(&r).starts_with(&["x".to_string(), "y".to_string()]), "{r}");
+        let src = "fn f() -> Unit ! l\n= ()\n";
+        let r = complete(&cx, src, src.find(" l\n").unwrap() + 2);
+        assert_eq!(r["at"], "effect");
+        assert!(labels(&r).contains(&"log".to_string()));
+    }
+
+    #[test]
+    fn hovers_signatures_and_fields() {
+        let cx = Ctx { load: &load, last: None, exports: BTreeSet::new() };
+        let h = hover(&cx, SRC, SRC.find("norm").unwrap() + 1);
+        assert_eq!(h["text"], "fn norm(p: P) -> Int");
+        let h = hover(&cx, SRC, SRC.find("p.y").unwrap() + 2);
+        assert_eq!(h["text"], "P.y: Int");
+    }
 }

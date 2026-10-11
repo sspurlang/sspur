@@ -1,0 +1,120 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "SSPUR",
+  "scopeName": "source.sspur",
+  "fileTypes": ["ssp"],
+  "patterns": [{ "include": "#code" }],
+  "repository": {
+    "code": {
+      "patterns": [
+        { "include": "#comment" },
+        { "include": "#string" },
+        { "include": "#number" },
+        { "include": "#effects" },
+        { "include": "#contract" },
+        { "include": "#definition" },
+        { "include": "#words" },
+        { "include": "#names" },
+        { "include": "#hole" },
+        { "include": "#operator" },
+        { "include": "#braces" }
+      ]
+    },
+    "comment": {
+      "match": "//.*$",
+      "name": "comment.line.double-slash.sspur"
+    },
+    "string": {
+      "begin": "\"",
+      "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.sspur" } },
+      "end": "\"|$",
+      "endCaptures": { "0": { "name": "punctuation.definition.string.end.sspur" } },
+      "name": "string.quoted.double.sspur",
+      "patterns": [
+        { "match": "\\\\.", "name": "constant.character.escape.sspur" },
+        { "include": "#interpolation" }
+      ]
+    },
+    "interpolation": {
+      "begin": "\\{",
+      "beginCaptures": { "0": { "name": "punctuation.section.interpolation.begin.sspur" } },
+      "end": "\\}",
+      "endCaptures": { "0": { "name": "punctuation.section.interpolation.end.sspur" } },
+      "name": "meta.interpolation.sspur",
+      "contentName": "source.sspur",
+      "patterns": [{ "include": "#code" }]
+    },
+    "braces": {
+      "begin": "\\{",
+      "end": "\\}",
+      "beginCaptures": { "0": { "name": "punctuation.section.braces.begin.sspur" } },
+      "endCaptures": { "0": { "name": "punctuation.section.braces.end.sspur" } },
+      "patterns": [{ "include": "#code" }]
+    },
+    "number": {
+      "match": "\\b(?:0x[0-9a-fA-F_]+|0b[01_]+|0o[0-7_]+|\\d[\\d_]*(?:\\.\\d[\\d_]*)?(?:[eE][+-]?\\d+)?)\\b",
+      "name": "constant.numeric.sspur"
+    },
+    "effects": {
+      "comment": "An effect row: after `!` in a signature or a function type, up to `=`, a contract, a closing bracket or the end of the line.",
+      "begin": "!(?!=)",
+      "beginCaptures": { "0": { "name": "keyword.operator.effect.sspur" } },
+      "end": "(?==)|(?=\\b(?:pre|post|where|ex)\\b)|(?=[)}])|(?=//)|$",
+      "patterns": [
+        { "match": "\\b[A-Z][A-Za-z0-9_]*\\b", "name": "entity.name.type.sspur" },
+        { "match": "\\b[a-z_][A-Za-z0-9_]*(?:\\.[a-z_][A-Za-z0-9_]*)*\\b", "name": "entity.other.attribute-name.effect.sspur" },
+        { "begin": "\\[", "end": "\\]", "patterns": [{ "match": "\\b[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*\\b", "name": "entity.name.type.sspur" }] },
+        { "match": ",", "name": "punctuation.separator.comma.sspur" }
+      ]
+    },
+    "contract": {
+      "match": "\\b(?:pre|post|where|ex)\\b",
+      "name": "keyword.other.contract.sspur"
+    },
+    "definition": {
+      "patterns": [
+        {
+          "match": "\\b(fn|test|rule|store|svc)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": { "1": { "name": "storage.type.sspur" }, "2": { "name": "entity.name.function.sspur" } }
+        },
+        {
+          "match": "\\b(type|effect|trait)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": { "1": { "name": "storage.type.sspur" }, "2": { "name": "entity.name.type.sspur" } }
+        }
+      ]
+    },
+    "words": {
+      "patterns": [
+        { "match": "\\b(?:true|false)\\b", "name": "constant.language.boolean.sspur" },
+        { "match": "\\bnone\\b", "name": "constant.language.none.sspur" },
+        { "match": "\\b(?:and|or|not)\\b", "name": "keyword.operator.word.sspur" },
+        { "match": "\\b(?:if|then|else|match|catch|handle|do|for|in|while|return|raise|resume|yield|with|par|is)\\b", "name": "keyword.control.sspur" },
+        { "match": "\\b(?:fn|type|test|var|rule|trait|impl|store|svc|queue|effect|use|extern|kernel|static)\\b", "name": "storage.type.sspur" },
+        { "match": "\\b(?:pub|own|mut|unsafe|derive|profile|new|migrate|dec|cost)\\b", "name": "storage.modifier.sspur" },
+        { "match": "\\b_\\b", "name": "variable.language.placeholder.sspur" }
+      ]
+    },
+    "names": {
+      "patterns": [
+        { "match": "(?<=\\.)[a-z_][A-Za-z0-9_]*(?=\\()", "name": "entity.name.function.member.sspur" },
+        { "match": "(?<=\\.)[a-z_][A-Za-z0-9_]*\\b", "name": "variable.other.property.sspur" },
+        { "match": "\\b(?:Int|F64|F32|Bool|Str|Unit|List|Opt|Res|Map|Set|Heap|StrBuf|Time|Duration|Bits|HashMap|HashSet|BigInt|Dec|Regex|Rng|Complex|Ratio|Locale|Zone|File|View|FlatMap|MdSpan|DevBuf|Atomic|Chan|Secret|Pii|Untrusted|Guess|Ptr|Array|Mmio|Self|I8|I16|I32|U8|U16|U32|U64)\\b(?!\\{)", "name": "support.type.sspur" },
+        { "match": "\\b[A-Z][A-Za-z0-9_]*(?=[{(])", "name": "entity.name.class.constructor.sspur" },
+        { "match": "(?<=:|: |->|-> |\\[|new |for )[A-Z][A-Za-z0-9_]*\\b", "name": "entity.name.type.sspur" },
+        { "match": "\\b[A-Z][A-Za-z0-9_]*\\b", "name": "entity.name.class.constructor.sspur" },
+        { "match": "\\b(?:some|ok|err)\\b", "name": "entity.name.class.constructor.sspur" },
+        { "match": "\\b[a-z_][A-Za-z0-9_]*(?=\\()", "name": "entity.name.function.call.sspur" }
+      ]
+    },
+    "hole": {
+      "match": "\\?[A-Za-z_][A-Za-z0-9_]*|\\?",
+      "name": "constant.other.placeholder.hole.sspur"
+    },
+    "operator": {
+      "patterns": [
+        { "match": "=>|->|:=|==|!=|<=|>=|\\.\\.\\.|\\.\\.|\\*\\*|[+\\-*/%<>=&@;]", "name": "keyword.operator.sspur" },
+        { "match": "\\|", "name": "punctuation.separator.arm.sspur" }
+      ]
+    }
+  }
+}

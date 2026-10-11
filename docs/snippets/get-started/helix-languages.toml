@@ -1,0 +1,12 @@
+[language-server.sspur]
+command = "sspur"
+args = ["lsp"]
+
+[[language]]
+name = "sspur"
+scope = "source.sspur"
+file-types = ["ssp"]
+roots = ["sspur.toml"]
+comment-token = "//"
+indent = { tab-width = 2, unit = "  " }
+language-servers = ["sspur"]

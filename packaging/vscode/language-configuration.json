@@ -1,0 +1,67 @@
+{
+  "comments": {
+    "lineComment": "//"
+  },
+  "brackets": [
+    [
+      "{",
+      "}"
+    ],
+    [
+      "[",
+      "]"
+    ],
+    [
+      "(",
+      ")"
+    ]
+  ],
+  "autoClosingPairs": [
+    {
+      "open": "{",
+      "close": "}"
+    },
+    {
+      "open": "[",
+      "close": "]"
+    },
+    {
+      "open": "(",
+      "close": ")"
+    },
+    {
+      "open": "\"",
+      "close": "\"",
+      "notIn": [
+        "string",
+        "comment"
+      ]
+    }
+  ],
+  "surroundingPairs": [
+    [
+      "{",
+      "}"
+    ],
+    [
+      "[",
+      "]"
+    ],
+    [
+      "(",
+      ")"
+    ],
+    [
+      "\"",
+      "\""
+    ]
+  ],
+  "wordPattern": "\\?[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*|-?\\d[\\d_]*(?:\\.\\d[\\d_]*)?",
+  "indentationRules": {
+    "increaseIndentPattern": "^(?!\\s*//).*(?:\\bdo|\\bthen|\\belse|=>|=)\\s*(?://.*)?$|^\\s*(?:pub\\s+)?(?:trait|impl|svc)\\b.*$|^\\s*(?:pub\\s+)?effect\\s+\\w+(?:\\[[^\\]]*\\])?\\s*$|^[^|]*\\b(?:match|catch|handle)\\b[^|]*$",
+    "decreaseIndentPattern": "^\\s*=(?!=|>)"
+  },
+  "folding": {
+    "offSide": true
+  }
+}

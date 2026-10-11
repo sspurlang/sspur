@@ -4,6 +4,14 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+### Added
+- `sspur lsp`, a language server over stdio (ADR 0031). It publishes the checker's diagnostics as you type (checked off the main loop, a short pause after the last edit), then the candidates for each typed hole, and answers completion with signatures and the standard library's docs, hover, code actions with the compiler's fixes and the hole fills, formatting, go to definition, references, document highlights, rename, the outline and semantic tokens in the playground's classes. The command `sspur.fill` fills every hole that has a passing candidate. A file in a package is checked with its dependencies, and their names show as `pkg.name`; `pkg.` completes their public definitions.
+- A VS Code extension in `packaging/vscode/`: a TextMate grammar that highlights like the playground, the language configuration, the language server, and the commands Run File, Test File and Fill Holes. It builds into a `.vsix` that also installs in Cursor, Windsurf and VSCodium.
+- [Editor setup](https://utkarshavardhana.github.io/sspur/get-started/editors.html): VS Code and its forks, Neovim, Vim, Helix, Emacs, Sublime Text, JetBrains IDEs through LSP4IJ, Kate and Eclipse, and what Zed, Visual Studio and Xcode lack.
+
+### Changed
+- The editor logic behind the playground moved from `crates/sspur-wasm` into a new crate, `sspur-ide`, which the language server uses too.
+
 ## [0.6.0] - 2026-10-11
 
 ### Added

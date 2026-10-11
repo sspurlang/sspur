@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="40 24 176 208" role="img" aria-label="SSPUR">
+  <title>SSPUR</title>
+  <defs><linearGradient id="sspur-ink" gradientUnits="userSpaceOnUse" x1="60" y1="30" x2="200" y2="230"><stop offset="0" stop-color="#22D3EE"/><stop offset=".5" stop-color="#6366F1"/><stop offset="1" stop-color="#A855F7"/></linearGradient><mask id="sspur-holes" maskUnits="userSpaceOnUse" x="0" y="0" width="256" height="256"><rect width="256" height="256" fill="#fff"/>
+      <circle cx="168.6" cy="73.6" r="11" fill="#000"/><circle cx="87.4" cy="182.4" r="11" fill="#000"/><circle cx="128" cy="128" r="9" fill="#000"/></mask></defs>
+  <g mask="url(#sspur-holes)">
+    <path d="M168.6 73.6 A46 37 0 1 0 128 128 A46 37 0 1 1 87.4 182.4" fill="none" stroke="url(#sspur-ink)" stroke-width="40" stroke-linecap="round"/>
+    <circle cx="168.6" cy="73.6" r="27" fill="url(#sspur-ink)"/><circle cx="87.4" cy="182.4" r="27" fill="url(#sspur-ink)"/>
+  </g>
+</svg>

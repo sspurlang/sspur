@@ -4,9 +4,19 @@ use serde_json::{json, Value as J};
 use sspur_check::{CheckOutput, Diag};
 use sspur_eval::Interp;
 use sspur_syntax::{Def, Module};
+use sspur_ide as ide;
+use std::cell::RefCell;
+use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 
-mod ide;
+thread_local! {
+    /// The last source that parsed, with its check, for completions and hover.
+    static LAST: RefCell<Option<Arc<ide::Analysis>>> = const { RefCell::new(None) };
+}
+
+fn ctx() -> ide::Ctx<'static> {
+    ide::Ctx { load: &load, last: LAST.with(|l| l.borrow().clone()), exports: Default::default() }
+}
 
 #[cfg(target_family = "wasm")]
 #[wasm_bindgen]
@@ -39,7 +49,7 @@ pub fn check(src: &str) -> String {
             }
             fill_holes(&m, &mut d);
             let j = ide::diags_json(src, &d, Some(&m));
-            ide::remember(src, m, c);
+            LAST.with(|l| *l.borrow_mut() = Some(Arc::new(ide::Analysis { src: src.to_string(), module: m, check: c })));
             j
         }
         Err(d) => ide::diags_json(src, &d, None),
@@ -115,13 +125,13 @@ pub fn tokens(src: &str) -> u32 {
 /// Completions at `pos` (a UTF-16 offset): names in scope, fields and methods after a dot.
 #[wasm_bindgen]
 pub fn complete(src: &str, pos: u32) -> String {
-    ide::complete(src, pos as usize).to_string()
+    ide::complete(&ctx(), src, pos as usize).to_string()
 }
 
 /// The type or signature of the name under `pos`.
 #[wasm_bindgen]
 pub fn hover(src: &str, pos: u32) -> String {
-    ide::hover(src, pos as usize).to_string()
+    ide::hover(&ctx(), src, pos as usize).to_string()
 }
 
 /// Builtin functions, methods, types, keywords and effects with signatures and short docs.
@@ -155,7 +165,7 @@ fn lines(out: Vec<String>) -> Vec<J> {
 }
 
 /// Parses and checks one file. Packages need a manifest and a cache, which a page doesn't have.
-pub(crate) fn load(src: &str) -> Result<(Module, CheckOutput), Vec<Diag>> {
+fn load(src: &str) -> Result<(Module, CheckOutput), Vec<Diag>> {
     let module = sspur_syntax::parse(src).map_err(|e| vec![sspur_check::syntax_diag_in(src, &e)])?;
     if let Some(Def::Use(u)) = module.defs.iter().find(|d| matches!(d, Def::Use(_))) {
         let e = sspur_syntax::SyntaxError::new("E_PKG_UNKNOWN", format!("no dependency '{}': packages are not available in the playground", u.pkg), u.span);

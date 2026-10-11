@@ -1,0 +1,31 @@
+# ADR 0031: The language server
+
+Status: accepted, 2026-10-11
+
+## Problem
+
+The playground had diagnostics with quick fixes, completion, hover and formatting, but only in the browser. Anyone writing SSPUR in a real editor got none of it, and agents that drive editors (or editors that drive agents) had nothing to talk to. The editor features lived in `crates/sspur-wasm/src/ide.rs`, next to the wasm bindings, so a second front end would have meant a second copy.
+
+## Decisions
+
+| # | Decision | Why |
+|---|---|---|
+| 1 | `sspur lsp` is a Language Server Protocol server over stdio, in the `sspur` binary, behind the default cargo feature `lsp` | One binary to install, already on the user's `PATH`, and the same compiler as `sspur check`. Every editor that speaks LSP can start a program with arguments; none needs a port or a daemon |
+| 2 | The editor logic moves into a new crate, `sspur-ide`, which the wasm crate and the server both use. It takes a loader (how to parse and check a source) and the last analysis that parsed, and returns plain JSON in UTF-16 offsets | One implementation of diagnostics with fixes, completion, hover and the docs tables read from `docs/reference/stdlib`. The loader is the only platform-specific part: one file in the browser, a file with its package's dependencies in the server. JSON in UTF-16 is what both CodeMirror and LSP want, so the playground's API did not change |
+| 3 | The transport is `lsp-server` (the crate rust-analyzer uses), with messages built as `serde_json` values rather than through `lsp-types` | `lsp-server` is small and synchronous: channels and two threads for stdio, no async runtime. The IDE layer already produces JSON, so typed protocol structs would be converted straight back. The feature adds about 400 KB to a 7.9 MB binary |
+| 4 | The main thread only reads messages and keeps the open documents. Checking runs on a diagnostics thread that waits until 150 ms pass without an edit, then checks each changed document once; requests run in order on a second thread | Typing never waits for the checker, and a slow check never delays a completion or a hover. Each check notes the document version it read and publishes nothing if the document changed meanwhile, so stale diagnostics never replace fresh ones |
+| 5 | Diagnostics come in two steps: the check, published at once, then, for a file whose only problems are typed holes, the hole candidates (`sspur check`'s search with 150 ms a hole, `SSPUR_FILL_MS` overrides it), published again with `candidates: ...` in the message | The search runs the program's tests and can take a second; nobody should wait for it to see a type error. The code actions for a hole are its candidates, best first and marked preferred |
+| 6 | Code actions are the fixes `sspur-ide` computes for each diagnostic, as text edits: canonical spellings, effects to add or remove, missing match arms, unreachable arms, did-you-mean names and hole fills. The command `sspur.fill` applies the best passing candidate of every hole through `workspace/applyEdit`, like `sspur fill --apply` on the open buffer | The same fixes as the playground and `sspur check --json`, so an agent, the browser and an editor agree. Applying edits to the buffer rather than the file keeps unsaved work |
+| 7 | A file under a directory with `sspur.toml` is checked with that package's dependencies through `pkg::load`, as `sspur check FILE` does. The environment is cached per package root and reloaded when `sspur.toml` or `sspur.lock` changes. Hover, completion and diagnostics show dependency names as `pkg.name`, and `pkg.` completes the dependency's public definitions | Package code must check in the editor exactly as on the command line, and the mangled names (`textutils__convert`) are an implementation detail |
+| 8 | Text sync is incremental. Positions are UTF-16, the LSP default | Editors send one small change per keystroke instead of the whole file, and UTF-16 is what every client supports |
+| 9 | Go to definition, references, rename, document highlights and the outline work within one file. Names come from the highlighter's tokens; a local resolves to the nearest binding above it in its definition (a token that is not a use the checker typed, not a field and not an assignment), anything else to a top-level definition, constructor, effect operation, trait method or record field. Rename refuses a name of the other case or one that a top-level definition already has | It is cheap, works on any file that parses, and matches what the checker sees for the common cases. A definition from a dependency has no place in the file to go to |
+| 10 | Semantic tokens use a Rust port of the playground's highlighter (`docs/play/editor.js`): the same rules and the same classes, mapped to standard token types plus `effect` and `contract` | Every editor colors SSPUR the way the playground does, including effects after `!` and contracts, which TextMate scopes alone can't tell apart from names reliably |
+| 11 | The VS Code extension in `packaging/vscode/` is a TextMate grammar, a language configuration and about 100 lines of JavaScript on `vscode-languageclient`. It finds `sspur` on `PATH` or through `sspur.path`, and adds Run File and Test File (as tasks, so paths need no shell quoting) and Fill Holes. It is built into a `.vsix` with `vsce`; the same file installs in VS Code forks and goes to Open VSX | No bundler and no TypeScript build to maintain. JetBrains IDEs (through LSP4IJ and their TextMate bundle support) and Eclipse (TM4E) read the same grammar |
+
+## Deferred
+
+- Navigation across files and into dependencies, and rename across a package. The codebase layer (`sspur-store`) knows every definition by hash, so a workspace-wide index can come from it.
+- Signature help, inlay hints (inferred types of `let`), code lens for tests, and the `suggest` contracts as code actions.
+- Cancellation: requests run to completion in order, which is fine at the speeds measured so far.
+- Tree-sitter grammar, which Helix and Zed need for highlighting (Zed needs it to load a language at all), a Kate highlighting definition, and a JetBrains Marketplace plugin.
+- Publishing the extension, which needs the maintainer's publisher accounts.
