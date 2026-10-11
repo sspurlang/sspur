@@ -1381,9 +1381,11 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
             c.score = cost(&t.show, t.size) + t.prior + if odd { 5 } else { 0 } + if needs_pre { 0 } else { 6 } + if constant { 20 } else { 0 };
             cands.push(c);
         }
-        // Terms found later are larger than `s`, so they can't outrank a passing one that costs `s` or less.
-        let ok = cands.iter().filter(|c| c.ok() && (!no_evidence || c.uses_input) && c.unused == 0 && c.score <= 10 * s).count();
-        if ok >= opts.top || en.out_of_time {
+        // Terms found later are larger than `s`, so they can't outrank a passing one that costs `s` or less:
+        // stop once the best is settled and there are enough others to show.
+        let best = cands.iter().filter(|c| c.ok()).min_by_key(|c| rank(c, no_evidence));
+        let settled = best.is_some_and(|c| (!no_evidence || c.uses_input) && c.unused == 0 && c.score <= 10 * s);
+        if settled && cands.iter().filter(|c| c.ok()).count() >= opts.top || en.out_of_time {
             break;
         }
     }

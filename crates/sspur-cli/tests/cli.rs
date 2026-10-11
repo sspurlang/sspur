@@ -248,11 +248,11 @@ fn fill_synthesizes_classic_holes() {
     assert!(ok, "{out}");
     assert_eq!(
         out,
-        "?total: items.map(_.qty * _.price).sum (passes 2 tests, 3 others also fit)\n?count: xs.len (passes 1 test, 21 others also fit)\n?first: xs.first.or(d) (passes 2 tests, 24 others also fit)\n?shape: Circle{r: r} (passes 1 test, 8 others also fit)"
+        "?total: items.map(_.qty * _.price).sum (passes 2 tests, 3 others also fit)\n?count: xs.len (passes 1 test, 4 others also fit)\n?first: xs.first.or(d) (passes 2 tests, 5 others also fit)\n?shape: Circle{r: r} (passes 1 test, 2 others also fit)"
     );
     let (out, ok) = sspur(&d, &["check", "h.ssp", "--fill-ms", "5000"], "");
     assert!(ok, "{out}");
-    assert!(out.contains("h.ssp:8:3 hole E_HOLE hole ?count expects type Int\n  ?count: xs.len (passes 1 test, 21 others also fit)\n"), "{out}");
+    assert!(out.contains("h.ssp:8:3 hole E_HOLE hole ?count expects type Int\n  ?count: xs.len (passes 1 test, 4 others also fit)\n"), "{out}");
     let (json, _) = sspur(&d, &["check", "h.ssp", "--json", "--fill-ms", "5000"], "");
     let first: serde_json::Value = serde_json::from_str(json.lines().next().unwrap()).unwrap();
     assert_eq!(first["fix"][0], serde_json::json!({"op": "fill", "hole": "?total", "target": "total", "expr": "items.map(_.qty * _.price).sum", "evidence": "passes 2 tests, 3 others also fit", "ok": true}));
@@ -320,7 +320,9 @@ fn fill_honors_its_budget() {
 }
 
 /// The hole-filling benchmark, bench/fill/holes.txt: the share of holes whose top candidate is the
-/// intended one. `cargo test --release fill_benchmark -- --nocapture` prints the table.
+/// intended one. `cargo test --release fill_benchmark -- --nocapture` prints the table, and
+/// `SSPUR_FILL_BENCH_MS=200` measures it at another budget (the default one of `sspur check`) without
+/// asserting anything.
 #[test]
 fn fill_benchmark() {
     const MIN_TOP1: usize = 25;
@@ -329,7 +331,8 @@ fn fill_benchmark() {
     let prelude = head.split_once("prelude:\n").unwrap().1;
     // A generous budget, so the result depends on the search and not on how fast the machine is:
     // CI runners, Windows ones in particular, are several times slower than a laptop.
-    let budget = "5000";
+    let measure = std::env::var("SSPUR_FILL_BENCH_MS").ok();
+    let budget = measure.as_deref().unwrap_or("5000");
     let d = hole_dir("fill_bench", "");
     let (mut top1, mut top3, mut ms, mut lost) = (0, 0, vec![], vec![]);
     let mut rows = vec![];
@@ -359,6 +362,9 @@ fn fill_benchmark() {
     println!("{}", rows.join("\n"));
     println!("top-1 {top1}/{n}, top-3 {top3}/{n}, median {:.0} ms, max {:.0} ms", ms[ms.len() / 2], ms[ms.len() - 1]);
     let _ = std::fs::remove_dir_all(&d);
+    if measure.is_some() {
+        return;
+    }
     assert!(lost.is_empty(), "no longer the top candidate: {lost:?}");
     assert!(top1 >= MIN_TOP1, "top-1 {top1}/{n}, expected at least {MIN_TOP1}");
 }

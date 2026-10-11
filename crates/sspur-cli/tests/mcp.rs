@@ -132,10 +132,10 @@ fn fill_and_suggest_tools() {
     let (out, err) = c.tool("edit", json!({"src": "fn count(xs: List[Str]) -> Int\n= ?n\n\nfn avg(xs: List[Int]) -> Int\n= xs.sum / xs.len\n\ntest c = count([\"a\", \"b\"]) == 2"}));
     assert!(!err, "{out}");
     let (out, err) = c.tool("check", json!({}));
-    assert!(!err && out.contains("hole count:2:3 E_HOLE hole ?n expects type Int\n  ?n: xs.len (passes 1 test, 5 others also fit)"), "{out}");
+    assert!(!err && out.contains("hole count:2:3 E_HOLE hole ?n expects type Int\n  ?n: xs.len (passes 1 test, 2 others also fit)"), "{out}");
     let (out, err) = c.tool("fill", json!({"hole": "?n", "apply": true}));
     assert!(!err, "{out}");
-    assert_eq!(out, "?n: xs.len (passes 1 test, 5 others also fit)\nok ~count");
+    assert_eq!(out, "?n: xs.len (passes 1 test, 2 others also fit)\nok ~count");
     let (out, err) = c.tool("suggest", json!({"fn": "avg"}));
     assert!(!err && out.starts_with("avg\n  pre xs.len > 0  // traps on "), "{out}");
     let (out, err) = c.tool("suggest", json!({"fn": "avg", "apply": true}));
