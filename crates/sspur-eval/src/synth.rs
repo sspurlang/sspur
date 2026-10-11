@@ -308,7 +308,9 @@ fn components(ctx: &HoleCtx, check: &CheckOutput, site: &HoleSite) -> Vec<Comp> 
     shapes.extend(check.records.values().flat_map(|(_, fs)| fs.iter().map(|(_, t)| t.to_string())));
     shapes.extend(check.sums.values().flat_map(|(_, vs)| vs.iter().flat_map(|(_, fs)| fs.iter().flatten().map(|(_, t)| t.to_string()))));
     let wraps = |w: &str| shapes.iter().any(|t| t.contains(&format!("{w}[")));
-    let allowed = |s: &Sig| s.effects.iter().all(|e| site.effects.contains(e) || s.tparams.iter().any(|p| e.contains(&format!("[{p}]"))));
+    // Only effects the hole may perform, and none that reach outside the program: the search runs candidates.
+    let harmless = |e: &str| e == "log" || e == "div" || e.starts_with("fail[");
+    let allowed = |s: &Sig| s.effects.iter().all(|e| harmless(e) && (site.effects.contains(e) || s.tparams.iter().any(|p| e.contains(&format!("[{p}]")))));
     for s in &ctx.sigs {
         let wrap = match (&s.kind, s.name.as_str()) {
             (SigKind::Global, "some") => wraps("Opt"),
