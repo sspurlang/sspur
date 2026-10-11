@@ -4,12 +4,19 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-11
+
 ### Added
 - Hole filling (ADR 0030): for each typed hole, `sspur check` lists up to three complete expressions that fit, one line each, `?total: items.map(_.qty * _.price).sum (passes 3 tests, post)`, and `--json` gives them as `fill` fixes with `evidence` and `ok`. They come from a bottom-up search over the values in scope, literals, fields, constructors, the program's functions and trait methods, operators and the common methods of lists, strings, options and numbers (lambdas like `map(_.f * _.g)` included), limited to 7 nodes and 200 ms a hole (`--fill-ms N`, `--no-fill`). Candidates only use effects the function declares, and run against the tests and examples that reach the hole and against small and fuzzed inputs that check `post` and a refined result type. Expressions that agree on every observed input count once, which keeps the search fast. Files without holes are checked exactly as before. With weak tests the ranking uses a prior over what agents mean (every unused parameter used, no constant offsets or vacuous patterns, a `pre` or the empty input respected), constants from the tests, one-step `Opt` defaults and `with` updates, and the evidence says `N others also fit` when the tests don't decide; on the 51 holes of `bench/fill/holes.txt` the top candidate is the intended one for 41, up from 26.
 - `sspur fill [file] [?hole|fn]` prints the best candidate for each hole and `--apply` writes it into the file (in parentheses where precedence needs them) or applies it to the codebase; with z3 installed a candidate whose `post` it proves says `post proved`.
 - `sspur suggest [file] [fn]` proposes contracts from runs: the `post` clauses from a fixed set (`r >= 0`, `r.len <= xs.len`, `r == x`, sorted output, comparisons with each parameter) that held on every test-derived, small and fuzzed input, minus implied ones, and a `pre` such as `xs.len > 0` that rules out the inputs it traps on. Lines are ready to paste, marked `proved` (z3) or `held on N runs`; `--json` gives `refine` fixes and `--apply` adds them.
 - The MCP server has `fill` and `suggest` tools, and its `check` shows the hole candidates. The playground's quick fix for a hole offers the checked candidates.
 - The playground has an Input tab: Run passes its text to the program as stdin, for `read_line` and `read_lines`, and share links carry it. The From Python example reads its words from there.
+
+- `SSPUR_FILL_MS` sets the time hole filling may spend per hole, for `check`, `fill` and the MCP tools.
+
+### Changed
+- The playground was redesigned for phones and desktops: a menu on phones, icons on every action, an examples menu that opens below its button, a copied-link toast instead of the link box, a collapsible output panel on phones, a resizable split on desktops, no layout shift while a program runs, no zoom when the editor is focused, and a creator credit. The docs header links to it.
 
 ### Fixed
 - Concurrent native builds on Windows could fail to link (LNK1104) while another build published the same object file; outputs are now published without replacing a file that may be open.
@@ -222,7 +229,8 @@ This release covers Phases 3 to 7 of the roadmap and ADRs 0003 to 0024. SSPUR no
 - Language design spec, JSON schemas and the token benchmark.
 - Compiler core: parser, checker, content hashing, interpreter and the `sspur` CLI, with an 11-program suite.
 
-[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/utkarshavardhana/sspur/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/utkarshavardhana/sspur/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/utkarshavardhana/sspur/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/utkarshavardhana/sspur/compare/v0.3.2...v0.4.0
