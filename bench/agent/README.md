@@ -2,7 +2,9 @@
 
 This measures the Phase 3 exit criterion: an agent completes multi-step feature tasks using SSPUR (CLI ops only) with fewer total tokens than the same agent using Python. Run 9 adds TypeScript and Go as controls, because beating Python alone does not show that the language is the reason.
 
-**Latest result (run 12, 2026-10-12): after 0.6 and 0.7 (hole filling, `e is p`, guard clauses, long lines, the language server), SSPUR is still cheaper than Python and close to TypeScript and Go, but not better than run 11. On the 17 cells, Sonnet 5.5 used 0.79x Python's tokens, 1.16x TypeScript's and 1.05x Go's (medians 0.67x, 1.03x, 1.01x), with 246/246 hidden tests passing in every language. Every task was solved; the difference from run 11 is a few cells that took 2 to 4 more calls.** Details in [Results, run 12](#results-run-12).
+**Latest result (run 13, 2026-10-12): SSPUR is back at run 11's level after 0.6 and 0.7. On the 17 cells, Sonnet 5.5 used 0.69x Python's tokens, 1.02x TypeScript's and 0.92x Go's (medians 0.60x, 1.02x, 1.00x), with 246/246 hidden tests passing in every language and 61 calls (run 11: 58).** Two of the three extra calls came from `python3` failing in the agents' shell on this machine (a locale setting), not from the language. Details in [Results, run 13](#results-run-13).
+
+**Run 12 (2026-10-12): 0.79x Python, 1.16x TypeScript, 1.05x Go**, after 0.6 and 0.7 grew the core spec to 698 tokens and two language gaps cost extra calls. Details in [Results, run 12](#results-run-12).
 
 **Run 11 (2026-10-09): SSPUR is cheaper than Python and at parity with TypeScript and Go. On the 17 cells, Sonnet 5.5 used 0.65x Python's tokens, 0.95x TypeScript's and 0.86x Go's (medians 0.59x, 1.01x, 1.00x), in 58 API calls against 88, 61 and 66, with 246/246 hidden tests passing.** The changes from run 10: failing tests print the values they compared, a 556-token core spec (was 777) and a shorter SSPUR prompt. The totals against TypeScript and Go are below 1.0x but the medians are not, so this is parity, not a win. The large codebase took one call more than in run 10 and is level with TypeScript (0.99x), still ahead of Python and Go. 20 pilot cells from four restarted attempts are excluded and listed. Details in [Results, run 11](#results-run-11).
 
@@ -42,6 +44,7 @@ This measures the Phase 3 exit criterion: an agent completes multi-step feature 
 | 10, Sonnet 5.5, 16 tasks + s1_shop | `change.ssp` edits, tolerant input, 777-token core spec, all 17 SSPUR cells rerun at `b7ef6fa` | 246/246 in each of the 4 languages | 63 / 88 | **0.72x** vs Python, **1.06x** vs TypeScript, **0.96x** vs Go |
 | 11, Sonnet 5.5, 16 tasks + s1_shop | test failures print values, 556-token core spec, shorter prompt, all 17 SSPUR cells rerun at `ef439aa` | 246/246 in each of the 4 languages | 58 / 88 | **0.65x** vs Python, **0.95x** vs TypeScript (median 1.01x), **0.86x** vs Go (median 1.00x) |
 | 12, Sonnet 5.5, 16 tasks + s1_shop | compiler at 0.7.1 (`11263bc`): hole filling, `e is p`, guard clauses, long lines; 698-token core spec (run 11: 556); same prompts as run 11 | 246/246 in each of the 4 languages | 68 / 88 | **0.79x** vs Python, **1.16x** vs TypeScript, **1.05x** vs Go (medians 0.67x, 1.03x, 1.01x) |
+| 13, Sonnet 5.5, 16 tasks + s1_shop | 584-token core spec, escaped quotes in interpolation, `catch do` arms at the block indent, compiler at `b0baa83`, same prompts | 246/246 in each of the 4 languages | 61 / 88 | **0.69x** vs Python, **1.02x** vs TypeScript, **0.92x** vs Go (medians 0.60x, 1.02x, 1.00x) |
 
 Python's side was identical in all runs; its totals were 1.27M, 1.20M, 1.48M and 1.22M. Against Python's cheapest run, SSPUR run 3 is 0.73x and run 4 after the fix is 0.71x.
 
@@ -102,6 +105,27 @@ All changes are in the CLI and the spec. The language is unchanged.
 - The MCP server gained `sspur_edit`, and its tools return the same compact text (`json: true` for the old format).
 
 Run 2 used a heredoc (`./sspur edit --test <<'EOF'`). The sandbox refused that command in 6 of 8 runs: it treats `{a, b}` inside the heredoc (any record literal with two fields) as possible brace expansion and won't verify the command. Each refusal cost a retry plus a Write call to put the input in a file. Run 3's spec recommends one single-quoted `-e` argument instead, which passed in 7 of 8 runs (a8 was refused once, apparently because of a `#` inside a string).
+
+## Results, run 13
+
+Run 13 reruns all 17 SSPUR cells after fixing what run 12 showed, with the same harness and prompts, the compiler frozen at `b0baa83` (`target/sspur-frozen-b0baa83`). Run directory: `runs/2026-10-12-r13/`. No cell was excluded or repeated.
+
+What changed from run 12:
+
+- The core spec is 584 cl100k tokens (run 12: 698, run 11: 556). The pattern line is shorter, and block lambdas and traits are only in `spec --more`; the 28 tokens over run 11 are one line on `e is p` and guard clauses.
+- A string written with escaped quotes inside an interpolation, `"{path.join(\" -> \")}"`, is the same as with plain quotes (run 12's b5 printed the braces).
+- An arm of `catch do` written at the block's own indent ends the block (run 12's b4 failed to parse it).
+
+| | Run 11 | Run 12 | Run 13 |
+|---|---|---|---|
+| Hidden tests | 246/246 | 246/246 | 246/246 |
+| Calls | 58 | 68 | 61 |
+| Total vs Python | 0.65x | 0.79x | 0.69x |
+| Total vs TypeScript | 0.95x | 1.16x | 1.02x |
+| Total vs Go | 0.86x | 1.05x | 0.92x |
+| Median vs TypeScript, Go | 1.01x, 1.00x | 1.03x, 1.01x | 1.02x, 1.00x |
+
+Against run 11, five cells took one call fewer (a2, b1, b2, b6, s1) and five took more: b3 (+3) and b8 (+1) each lost a call to `python3` failing with a locale error when the agent tried a one-line Python edit of `change.ssp` (the machine's `LANG=en_US` without `.UTF-8`; it affects any language, and the run 9 cells for Python, TypeScript and Go ran before it appeared); b4, b5 and a5 spent a call on a wrong expected value in the agent's own new test, which the failing test's printed values showed at once. In b8 a test that caught an error printed only `evaluated to false`; showing the caught error there is the next improvement.
 
 ## Results, run 12
 
