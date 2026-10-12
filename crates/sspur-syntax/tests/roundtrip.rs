@@ -189,6 +189,8 @@ fn long_lines_continue() {
         ("fn f() -> Int\n= do\n  total =\n    1 + 2\n  total", "  total = 1 + 2"),
         ("type S =\n  | A\n  | B{x: Int}", "type S = A | B{x: Int}"),
         ("type S = | A | B", "type S = A | B"),
+        ("fn f(p: List[Str]) -> Str\n= \"c {p.join(\\\" -> \\\")}\"", "= \"c {p.join(\" -> \")}\""),
+        ("type E = Bad\ntest t = catch do\n  a = 1\n  a == 1\n  | _ => false", "| _ => false"),
     ];
     for (src, want) in cases {
         roundtrip(src);

@@ -36,7 +36,7 @@ $ sspur test cart.ssp
 
 Most languages are designed around a human at a keyboard. SSPUR starts from a different question: what does a language look like when the author is a model that reads every token, pays for every token, and never gets tired of writing contracts?
 
-- **Fewer tokens for agents.** On 17 multi-step coding tasks, agents writing SSPUR used 0.65x the tokens of the same agents writing Python, and were level with TypeScript and Go (0.95x and 0.86x in total, 1.0x per task at the median), with every hidden test passing in all four languages. SSPUR code is also the smallest of the four. [The full report](bench/agent/README.md) has every task, model and caveat.
+- **Fewer tokens for agents.** On 17 multi-step coding tasks, agents writing SSPUR used 0.79x the tokens of the same agents writing Python, and were close to TypeScript and Go (1.16x and 1.05x in total, 1.0x per task at the median), with every hidden test passing in all four languages. SSPUR code is also the smallest of the four. [The full report](bench/agent/README.md) has every task, model and caveat.
 - **Every side effect is in the signature.** `log`, `fail[E]`, `db.read[T]`, `fs`, `proc`, `ffi`, `conc` and user-defined effects are tracked by the checker, so a reviewer, or a deployer, can see exactly what a function is allowed to do.
 - **Contracts are checked, not just documented.** `pre`, `post`, and refinement types (`Int where _ > 0`) are enforced at runtime, proved with Z3 where possible, turned into property tests by the fuzzer, and used by the optimizer to remove checks it can prove unnecessary.
 - **Edits are atomic.** `sspur edit` replaces definitions by name, typechecks the whole codebase, and either applies everything or nothing. One call can edit and run the tests.

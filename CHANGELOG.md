@@ -4,6 +4,13 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+### Fixed
+- A string written with escaped quotes inside an interpolation, `"cycle {path.join(\" -> \")}"`, printed the braces as text; it now means the same as `"cycle {path.join(" -> ")}"`.
+- An arm of `catch do` or `match ... do` written at the block's own indent (`catch do`, the lines, then `| _ => false` under them) was read as a statement and failed with `E_PARSE_EXPR`; a `|` line now ends the block and starts the arms.
+
+### Changed
+- The core agent spec is 584 tokens again (0.7.1: 698): the pattern line is shorter, and block lambdas and traits are in `sspur spec --more` only.
+
 ## [0.7.1] - 2026-10-12
 
 ### Fixed

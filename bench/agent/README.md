@@ -2,7 +2,9 @@
 
 This measures the Phase 3 exit criterion: an agent completes multi-step feature tasks using SSPUR (CLI ops only) with fewer total tokens than the same agent using Python. Run 9 adds TypeScript and Go as controls, because beating Python alone does not show that the language is the reason.
 
-**Latest result (run 11, 2026-10-09): SSPUR is cheaper than Python and at parity with TypeScript and Go. On the 17 cells, Sonnet 5.5 used 0.65x Python's tokens, 0.95x TypeScript's and 0.86x Go's (medians 0.59x, 1.01x, 1.00x), in 58 API calls against 88, 61 and 66, with 246/246 hidden tests passing.** The changes from run 10: failing tests print the values they compared, a 556-token core spec (was 777) and a shorter SSPUR prompt. The totals against TypeScript and Go are below 1.0x but the medians are not, so this is parity, not a win. The large codebase took one call more than in run 10 and is level with TypeScript (0.99x), still ahead of Python and Go. 20 pilot cells from four restarted attempts are excluded and listed. Details in [Results, run 11](#results-run-11).
+**Latest result (run 12, 2026-10-12): after 0.6 and 0.7 (hole filling, `e is p`, guard clauses, long lines, the language server), SSPUR is still cheaper than Python and close to TypeScript and Go, but not better than run 11. On the 17 cells, Sonnet 5.5 used 0.79x Python's tokens, 1.16x TypeScript's and 1.05x Go's (medians 0.67x, 1.03x, 1.01x), with 246/246 hidden tests passing in every language. Every task was solved; the difference from run 11 is a few cells that took 2 to 4 more calls.** Details in [Results, run 12](#results-run-12).
+
+**Run 11 (2026-10-09): SSPUR is cheaper than Python and at parity with TypeScript and Go. On the 17 cells, Sonnet 5.5 used 0.65x Python's tokens, 0.95x TypeScript's and 0.86x Go's (medians 0.59x, 1.01x, 1.00x), in 58 API calls against 88, 61 and 66, with 246/246 hidden tests passing.** The changes from run 10: failing tests print the values they compared, a 556-token core spec (was 777) and a shorter SSPUR prompt. The totals against TypeScript and Go are below 1.0x but the medians are not, so this is parity, not a win. The large codebase took one call more than in run 10 and is level with TypeScript (0.99x), still ahead of Python and Go. 20 pilot cells from four restarted attempts are excluded and listed. Details in [Results, run 11](#results-run-11).
 
 **Run 10 (2026-10-09): 0.72x Python, 1.06x TypeScript, 0.96x Go (medians 0.60x, 1.02x, 1.01x).** Edits through a `change.ssp` written with the Write tool, canonical storage of unambiguous foreign spellings and a 777-token core spec. Details in [Results, run 10](#results-run-10).
 
@@ -39,6 +41,7 @@ This measures the Phase 3 exit criterion: an agent completes multi-step feature 
 | 9, Sonnet 5.5, 16 tasks + s1_shop | all SSPUR cells rerun at `aa61bf4`; TypeScript and Go added | 246/246 in each of the 4 languages | 70 / 88 | **0.83x** vs Python, **1.23x** vs TypeScript, **1.11x** vs Go |
 | 10, Sonnet 5.5, 16 tasks + s1_shop | `change.ssp` edits, tolerant input, 777-token core spec, all 17 SSPUR cells rerun at `b7ef6fa` | 246/246 in each of the 4 languages | 63 / 88 | **0.72x** vs Python, **1.06x** vs TypeScript, **0.96x** vs Go |
 | 11, Sonnet 5.5, 16 tasks + s1_shop | test failures print values, 556-token core spec, shorter prompt, all 17 SSPUR cells rerun at `ef439aa` | 246/246 in each of the 4 languages | 58 / 88 | **0.65x** vs Python, **0.95x** vs TypeScript (median 1.01x), **0.86x** vs Go (median 1.00x) |
+| 12, Sonnet 5.5, 16 tasks + s1_shop | compiler at 0.7.1 (`11263bc`): hole filling, `e is p`, guard clauses, long lines; 698-token core spec (run 11: 556); same prompts as run 11 | 246/246 in each of the 4 languages | 68 / 88 | **0.79x** vs Python, **1.16x** vs TypeScript, **1.05x** vs Go (medians 0.67x, 1.03x, 1.01x) |
 
 Python's side was identical in all runs; its totals were 1.27M, 1.20M, 1.48M and 1.22M. Against Python's cheapest run, SSPUR run 3 is 0.73x and run 4 after the fix is 0.71x.
 
@@ -99,6 +102,31 @@ All changes are in the CLI and the spec. The language is unchanged.
 - The MCP server gained `sspur_edit`, and its tools return the same compact text (`json: true` for the old format).
 
 Run 2 used a heredoc (`./sspur edit --test <<'EOF'`). The sandbox refused that command in 6 of 8 runs: it treats `{a, b}` inside the heredoc (any record literal with two fields) as possible brace expansion and won't verify the command. Each refusal cost a retry plus a Write call to put the input in a file. Run 3's spec recommends one single-quoted `-e` argument instead, which passed in 7 of 8 runs (a8 was refused once, apparently because of a `#` inside a string).
+
+## Results, run 12
+
+Run 12 measures what 0.6 and 0.7 did for agents. Nothing in the harness changed: the same prompts as run 11, one fresh Sonnet 5.5 `general-purpose` subagent per cell, strictly one at a time, no retries, the compiler frozen at 0.7.1 (`11263bc`, `target/sspur-frozen-11263bc`). Python, TypeScript and Go are run 9's cells, as in runs 10 and 11. Run directory: `runs/2026-10-12-r12/`. No cell was excluded or repeated.
+
+| | Run 11 | Run 12 |
+|---|---|---|
+| Hidden tests | 246/246 | 246/246 |
+| Calls | 58 | 68 |
+| Total vs Python | 0.65x | 0.79x |
+| Total vs TypeScript | 0.95x | 1.16x |
+| Total vs Go | 0.86x | 1.05x |
+| Median vs TypeScript | 1.01x | 1.03x |
+
+What moved the total:
+
+- **Every call costs a little more.** The core spec grew from 556 to 698 cl100k tokens across 0.5 to 0.7 (patterns, `is`, guard clauses, holes), and every call re-reads it, so the 3-call cells cost 1,000 to 1,500 more tokens each than in run 11 (about 1.4%). Trimming the spec back is the cheapest lever.
+- **A few cells took more calls, and a few took fewer.** a1 went from 3 to 5 calls, b4 from 4 to 7, b5 from 3 to 7, and b6, b8 and s1 one more each. a2, b1 and b2 went from 4 to 3. With one sample per cell, a swing of one or two calls is within run-to-run noise, but the three worst cells had causes worth fixing:
+  - a1: the agent's own new test expected the wrong value. `FAIL total_value_sum: left 704, right 864` showed it at once, and it fixed the test.
+  - b4: the agent wrote the arm of `catch do` at the same indent as the block's statements, so `| _ => false` was read as a statement (`E_PARSE_EXPR expected an expression, found '|'`). This was the same before 0.7.
+  - b5: `"error: cycle {path.join(\" -> \")}"` printed the braces literally. An escaped quote inside an interpolation is not code, and SSPUR said nothing about it.
+  - In b4 and b5 the agent also tried a `python3` one-liner to edit `change.ssp`, which failed with a locale error in that shell, one wasted call each. That is the machine, not the language.
+- **Hole filling, `is` and guards were not exercised much.** The tasks don't use typed holes, and the agents used `is` and guard clauses in only a few places. Their benefit shows in code size and in fewer `match` blocks, not in these call counts.
+
+The two language gaps from b4 and b5 are next to fix: an arm of `catch do` written at the block's indent, and escaped quotes inside an interpolation.
 
 ## Results, run 11
 

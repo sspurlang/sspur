@@ -255,7 +255,11 @@ fn lex_string(src: &str, start: usize) -> Result<(String, usize), SyntaxError> {
         match ch {
             '{' => match interp_end(src, pos) {
                 Some(end) => {
-                    out.push_str(&src[pos..=end]);
+                    // `"{xs.join(\" -> \")}"`: a string written with escaped quotes inside an
+                    // interpolation is the same string as `"{xs.join(" -> ")}"`.
+                    let inner = &src[pos..=end];
+                    let escaped_only = inner.contains("\\\"") && !inner.replace("\\\"", "").contains('"');
+                    out.push_str(&if escaped_only { inner.replace("\\\"", "\"") } else { inner.to_string() });
                     skip_to = end + 1;
                 }
                 None => out.push_str("\\{"),
@@ -295,6 +299,16 @@ fn interp_end(src: &str, open: usize) -> Option<usize> {
             b'"' | b'\'' if depth > 0 => {
                 let (_, end) = lex_string(src, i).ok()?;
                 i = end;
+                continue;
+            }
+            b'\\' if depth > 0 && bytes.get(i + 1) == Some(&b'"') => {
+                // A string inside the interpolation written with escaped quotes: skip to the
+                // matching `\"`.
+                let close = src[i + 2..].find("\\\"")?;
+                if src[i + 2..i + 2 + close].contains('\n') {
+                    return None;
+                }
+                i += 2 + close + 2;
                 continue;
             }
             b'\n' => return None,

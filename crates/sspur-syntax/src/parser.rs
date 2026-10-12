@@ -1371,6 +1371,11 @@ impl Parser {
                 self.bump();
                 break;
             }
+            // No statement starts with `|`, so a `|` line at the block's indent ends the block: it is
+            // an arm of the `catch`, `match` or `handle` the block belongs to (`catch do` + lines + `| _ => e`).
+            if c == col && !stmts.is_empty() && matches!(self.peek_at(1), Tok::Sym("|")) {
+                break;
+            }
             if c != col {
                 if c > col {
                     return self.err("E_PARSE_INDENT", "unexpected indentation");

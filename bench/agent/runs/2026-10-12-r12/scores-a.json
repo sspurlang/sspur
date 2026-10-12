@@ -1,0 +1,66 @@
+[
+ {
+  "lang": "sspur",
+  "task": "a1_inventory",
+  "passed": 12,
+  "total": 12,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "sspur",
+  "task": "a2_wordstats",
+  "passed": 11,
+  "total": 11,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "sspur",
+  "task": "a3_bank",
+  "passed": 13,
+  "total": 13,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "sspur",
+  "task": "a4_calc",
+  "passed": 13,
+  "total": 13,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "sspur",
+  "task": "a5_orders",
+  "passed": 11,
+  "total": 11,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "sspur",
+  "task": "a6_todo",
+  "passed": 11,
+  "total": 11,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "sspur",
+  "task": "a7_grades",
+  "passed": 11,
+  "total": 11,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "sspur",
+  "task": "a8_config",
+  "passed": 13,
+  "total": 13,
+  "ok": true,
+  "msg": ""
+ }
+]
