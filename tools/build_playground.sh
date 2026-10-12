@@ -57,7 +57,7 @@ CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS="-C link-arg=-zstack-size=33554432
   cargo build --release -p sspur-wasm --target wasm32-unknown-unknown
 
 rm -rf "$out/pkg"
-wasm-bindgen --target web --no-typescript --out-dir "$out/pkg" target/wasm32-unknown-unknown/release/sspur_wasm.wasm
+wasm-bindgen --target web --no-typescript --out-dir "$out/pkg" "${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/release/sspur_wasm.wasm"
 wasm="$out/pkg/sspur_wasm_bg.wasm"
 if command -v wasm-opt >/dev/null; then
   # The asyncify pass lets an interpreter call move the frames under it off the browser's small
