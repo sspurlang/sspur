@@ -319,13 +319,21 @@ fn fill_honors_its_budget() {
     let _ = std::fs::remove_dir_all(&d);
 }
 
+#[test]
+fn fill_reaches_longer_predicates() {
+    let d = hole_dir("fill_preds", "fn odds(xs: List[Int]) -> List[Int]\n= ?\n\ntest t = odds([1, 2, 3, 4, 5]) == [1, 3, 5]\n");
+    let (out, ok) = sspur(&d, &["fill", "h.ssp", "--fill-ms", "5000"], "");
+    assert!(ok && out.starts_with("?: xs.filter(_ % 2 != 0) (passes 1 test"), "{out}");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
 /// The hole-filling benchmark, bench/fill/holes.txt: the share of holes whose top candidate is the
 /// intended one. `cargo test --release fill_benchmark -- --nocapture` prints the table, and
 /// `SSPUR_FILL_BENCH_MS=200` measures it at another budget (the default one of `sspur check`) without
 /// asserting anything.
 #[test]
 fn fill_benchmark() {
-    const MIN_TOP1: usize = 41;
+    const MIN_TOP1: usize = 42;
     let table = include_str!("../../../bench/fill/holes.txt");
     let (head, cases) = table.split_once("\n## ").unwrap();
     let prelude = head.split_once("prelude:\n").unwrap().1;

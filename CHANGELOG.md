@@ -13,6 +13,7 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 - A test written `catch e | Err => false`, which expects `e` to finish without an error, was stored as `catch do (_ = e) false | ..` and so always failed; when every arm is `false` it is now stored as `catch do (_ = e) true | ..`, and a failing run shows the error that was raised.
 
 ### Changed
+- Hole filling reaches longer predicates: a lambda for `filter`, `any`, `all` or `find` can now have up to 5 nodes, as in `xs.filter(_ % 2 == 0)`, where other lambda bodies still stop at 3. The longer bodies are only built once a candidate has room for them, and only from parts that can still end in a `Bool`, so holes that settle on something small cost the same as before. An equality or comparison with a literal is written with the literal on the right, and `x - -y` counts as unlikely. The benchmark goes from 41 to 42 of 51 at 5000 ms (`evens`); at 200 ms it stays at 41, because that case needs about 400 ms.
 - The core agent spec is 584 tokens again (0.7.1: 698): the pattern line is shorter, and block lambdas and traits are in `sspur spec --more` only.
 
 ## [0.7.1] - 2026-10-12

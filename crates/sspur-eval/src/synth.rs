@@ -64,6 +64,9 @@ pub struct Opts {
     /// The largest candidate, in AST nodes (`_` in a lambda is free).
     pub max_size: usize,
     pub lambda_size: usize,
+    /// The largest predicate (a lambda body of type `Bool`, for `filter`, `any`, `all`, `find`), built
+    /// past `lambda_size` only for bodies that can still end in a `Bool`.
+    pub pred_size: usize,
     /// How many candidates to return.
     pub top: usize,
     /// Fuzzed inputs of the enclosing function, from its `pre` and `where` clauses.
@@ -75,7 +78,7 @@ pub struct Opts {
 
 impl Default for Opts {
     fn default() -> Self {
-        Opts { budget_ms: 200, max_size: 7, lambda_size: 3, top: 3, fuzz: 24, envs: 16, seed: 7 }
+        Opts { budget_ms: 200, max_size: 7, lambda_size: 3, pred_size: 5, top: 3, fuzz: 24, envs: 16, seed: 7 }
     }
 }
 
@@ -430,6 +433,16 @@ fn components(ctx: &HoleCtx, check: &CheckOutput, site: &HoleSite) -> Vec<Comp> 
     out
 }
 
+/// The lambda bodies over one element type, and the search that built them, kept to grow predicates later.
+struct Lam<'a> {
+    samples: usize,
+    at: usize,
+    pool: Pool,
+    sub: Option<Box<En<'a>>>,
+    /// The size its bodies have been grown to.
+    grown: usize,
+}
+
 struct En<'a> {
     it: &'a Interp,
     check: &'a CheckOutput,
@@ -448,7 +461,8 @@ struct En<'a> {
     explored: usize,
     spans: Rc<Cell<u32>>,
     /// Per element type: how many samples it was built from, the term count then, and the bodies.
-    lambdas: HashMap<String, (usize, usize, Pool)>,
+    lambdas: HashMap<String, Lam<'a>>,
+    pred_size: usize,
     fn_values: Vec<(String, Type, Type)>,
     out_of_time: bool,
     steps: u64,
@@ -655,7 +669,7 @@ impl<'a> En<'a> {
                 continue;
             }
             let w = weight(c);
-            if s < w {
+            if s < w || self.target.is_some() && !self.useful(&wild(&c.ret, &c.tparams), self.max.saturating_sub(s)) {
                 continue;
             }
             let mut found = Vec::new();
@@ -748,9 +762,12 @@ impl<'a> En<'a> {
             if self.lambda || ps.len() != 1 || open(&ps[0], &c.tparams) {
                 return;
             }
-            let pool = self.lambda_pool(&ps[0], site);
+            // Bodies past `lambda_size` are predicates, for the arguments that take one.
+            let pred = **r == Type::bool();
+            let room = if pred { left - rest } else { left.min(self.lambda_size + rest) - rest };
+            let pool = self.lambda_pool(&ps[0], site, room);
             for t in pool.iter() {
-                if t.size > left || left - t.size < rest {
+                if t.size > room {
                     continue;
                 }
                 let mut b2 = b.clone();
@@ -789,8 +806,12 @@ impl<'a> En<'a> {
                 if self.lambda && t.var && i > 0 && !matches!(c.kind, Kind::Bin(_)) {
                     continue;
                 }
-                if c.commutes && i == 1 && matches!(picked[0], Arg::Term(a) if a > id) {
-                    continue;
+                // One order of a commutative operator; an equality puts its literal on the right, `_ % 2 == 0`.
+                if c.commutes && i == 1 {
+                    let lit = |id: usize| matches!(c.kind, Kind::Bin(BinOp::Eq | BinOp::Ne)) && literal(&self.terms[id].show);
+                    if matches!(picked[0], Arg::Term(a) if (lit(a), a) > (lit(id), id)) {
+                        continue;
+                    }
                 }
                 if closed {
                     picked.push(Arg::Term(id));
@@ -834,7 +855,7 @@ impl<'a> En<'a> {
             return;
         }
         let size: usize = weight(c) + args.iter().map(|a| self.arg_size(a)).sum::<usize>();
-        if size > self.max.max(self.lambda_size) || !self.lambda && !self.useful(&ty, self.max.saturating_sub(size)) {
+        if size > self.max.max(self.lambda_size) || (!self.lambda || self.target.is_some()) && !self.useful(&ty, self.max.saturating_sub(size)) {
             return;
         }
         for e in &c.effects {
@@ -1031,13 +1052,22 @@ impl<'a> En<'a> {
         }
     }
 
-    /// Lambda bodies over `_: p`, enumerated against elements of the lists seen so far.
-    fn lambda_pool(&mut self, p: &Type, site: &HoleSite) -> Pool {
+    /// Lambda bodies over `_: p`, enumerated against elements of the lists seen so far: every body up
+    /// to `lambda_size`, and once an argument has room for more (`room`), predicates up to `pred_size`.
+    fn lambda_pool(&mut self, p: &Type, site: &HoleSite, room: usize) -> Pool {
         let key = p.to_string();
-        if let Some((n, at, x)) = self.lambdas.get(&key)
-            && (*n > 0 || *at == self.terms.len())
+        let (short, deadline, terms) = (self.lambda_size, self.deadline, self.terms.len());
+        if let Some(l) = self.lambdas.get_mut(&key)
+            && (l.samples > 0 || l.at == terms)
         {
-            return x.clone();
+            if let Some(sub) = l.sub.as_mut().filter(|sub| room > l.grown && l.grown < sub.pred_size) {
+                let before = sub.explored;
+                l.grown = sub.grow_preds(deadline, l.grown, room, site);
+                l.pool = sub.pool(short);
+                let grown = sub.explored - before;
+                self.explored += grown;
+            }
+            return l.pool.clone();
         }
         let mut samples: Vec<Rc<Env>> = Vec::new();
         let list = Type::list(p.clone());
@@ -1077,6 +1107,7 @@ impl<'a> En<'a> {
             explored: 0,
             spans: self.spans.clone(),
             lambdas: HashMap::new(),
+            pred_size: self.pred_size,
             fn_values: vec![],
             out_of_time: false,
             steps: 0,
@@ -1090,10 +1121,42 @@ impl<'a> En<'a> {
         sub.seed(site, &[("_".into(), p.clone())]);
         sub.grow(if n == 0 { 1 } else { self.lambda_size }, site);
         self.explored += sub.explored;
-        let pool: Vec<Rc<Term>> = sub.terms.into_iter().filter(|t| t.var && t.size > 0).map(Rc::new).collect();
-        let pool = Rc::new(pool);
-        self.lambdas.insert(key, (n, self.terms.len(), pool.clone()));
+        let mut pool = sub.pool(self.lambda_size);
+        let mut lam = Lam { samples: n, at: self.terms.len(), pool: pool.clone(), sub: None, grown: self.lambda_size };
+        if n > 0 && sub.pred_size > sub.lambda_size {
+            if room > self.lambda_size {
+                let before = sub.explored;
+                lam.grown = sub.grow_preds(self.deadline, lam.grown, room, site);
+                self.explored += sub.explored - before;
+                pool = sub.pool(self.lambda_size);
+                lam.pool = pool.clone();
+            }
+            lam.sub = Some(Box::new(sub));
+        }
+        self.lambdas.insert(key, lam);
         pool
+    }
+
+    /// The bodies a lambda can take: every one up to `short`, and the predicates past it.
+    fn pool(&self, short: usize) -> Pool {
+        Rc::new(self.terms.iter().filter(|t| t.var && t.size > 0 && (t.size <= short || t.ty == Type::bool())).cloned().map(Rc::new).collect())
+    }
+
+    /// Grows the bodies of a lambda search from size `from` up to `room` (at most `pred_size`), keeping
+    /// only terms that can still become a `Bool` in the nodes left: `_.age >= 18`, `_ % 2 == 0`.
+    /// Returns the size reached.
+    fn grow_preds(&mut self, deadline: f64, from: usize, room: usize, site: &HoleSite) -> usize {
+        self.deadline = deadline;
+        self.out_of_time = false;
+        let to = room.min(self.pred_size);
+        self.target = Some(Type::bool());
+        self.max = to;
+        self.lambda_size = to;
+        self.memo.clear();
+        for s in from + 1..=to {
+            self.grow_level(s, site);
+        }
+        to
     }
 }
 
@@ -1220,10 +1283,25 @@ fn lambda(body: &Expr, span: Span) -> Expr {
 /// The names compositional evaluation binds the argument values to.
 const SLOTS: [&str; 6] = ["$0", "$1", "$2", "$3", "$4", "$5"];
 
-/// Of two equally big expressions, the shorter text, then the alphabetically first.
+/// Of two equally big expressions, the shorter text, then the one that compares with a literal on the
+/// right (`_ % 2 > 0` rather than `0 < _ % 2`), then the alphabetically first.
 fn simpler(a: &Expr, b: &Expr) -> bool {
-    let (a, b) = (printer::expr(a, 0), printer::expr(b, 0));
-    (a.len(), &a) < (b.len(), &b)
+    let key = |e: &Expr| {
+        let mut left = 0;
+        visit::walk_expr(e, &mut |x| {
+            if let ExprKind::Binary(BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge, l, r) = &x.kind {
+                left += (literal(l) && !literal(r)) as usize;
+            }
+            true
+        });
+        let text = printer::expr(e, 0);
+        (text.len(), left, text)
+    };
+    key(a) < key(b)
+}
+
+fn literal(x: &Expr) -> bool {
+    matches!(x.kind, ExprKind::Int(_) | ExprKind::Float(_) | ExprKind::Str(_) | ExprKind::Bool(_) | ExprKind::List(_))
 }
 
 impl En<'_> {
@@ -1383,6 +1461,7 @@ fn fill_one(m: &Module, check: &CheckOutput, ctx: &HoleCtx, it: &Interp, site: &
         explored: 0,
         spans: spans.clone(),
         lambdas: HashMap::new(),
+        pred_size: opts.pred_size,
         fn_values,
         out_of_time: false,
         steps: 0,
@@ -1572,7 +1651,6 @@ fn rank(c: &Cand, no_evidence: bool) -> (bool, usize, usize, bool, usize, usize,
 /// what agents and programs rarely write costs more.
 fn cost(e: &Expr, size: usize) -> usize {
     let mut extra = 0;
-    let lit = |x: &Expr| matches!(x.kind, ExprKind::Int(_) | ExprKind::Float(_) | ExprKind::Str(_) | ExprKind::Bool(_) | ExprKind::List(_));
     visit::walk_expr(e, &mut |x| {
         match &x.kind {
             ExprKind::Field(r, name) | ExprKind::Method { recv: r, name, .. } => {
@@ -1582,11 +1660,11 @@ fn cost(e: &Expr, size: usize) -> usize {
                     extra += 12;
                 }
                 // `xs.first.or(0)` is one step in the search, but a little less likely than one method.
-                if name == "or" && matches!(&x.kind, ExprKind::Method { args, .. } if args.len() == 1 && lit(&args[0])) {
+                if name == "or" && matches!(&x.kind, ExprKind::Method { args, .. } if args.len() == 1 && literal(&args[0])) {
                     extra += 2;
                 }
             }
-            ExprKind::Call(f, args) if matches!(&f.kind, ExprKind::Name(n) if n == "min" || n == "max" || n == "clamp") && args.iter().any(lit) => extra += 3,
+            ExprKind::Call(f, args) if matches!(&f.kind, ExprKind::Name(n) if n == "min" || n == "max" || n == "clamp") && args.iter().any(literal) => extra += 3,
             ExprKind::Binary(op, a, b) => {
                 if printer::expr(a, 0) == printer::expr(b, 0) {
                     extra += 10;
@@ -1600,13 +1678,17 @@ fn cost(e: &Expr, size: usize) -> usize {
                     extra += 8;
                 }
                 // `1 % xs.len` is 1 or 0 whatever `xs` holds.
-                if matches!(op, BinOp::Div | BinOp::Rem) && lit(a) {
+                if matches!(op, BinOp::Div | BinOp::Rem) && literal(a) {
+                    extra += 10;
+                }
+                // `x - -y` is `x + y` the long way round.
+                if matches!(op, BinOp::Add | BinOp::Sub) && matches!(b.kind, ExprKind::Unary(UnOp::Neg, _)) {
                     extra += 10;
                 }
                 // `1 + xs.len`: an offset that makes one test pass is more often a fit than the intent
                 // (halving and doubling less so).
                 let two = |x: &Expr| matches!(x.kind, ExprKind::Int(2));
-                if lit(a) != lit(b) && matches!(op, BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem) {
+                if literal(a) != literal(b) && matches!(op, BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem) {
                     extra += if matches!(op, BinOp::Mul | BinOp::Div | BinOp::Rem) && (two(a) || two(b)) { 4 } else { 8 };
                 }
             }
