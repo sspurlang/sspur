@@ -539,6 +539,7 @@ The parser accepts these common spellings and stores the canonical form:
 
 - `if c then` with the branch body indented on the following lines (no `do` needed), and `else` at the start of the next line
 - `for x in xs do`
+- repeated effect clauses, `-> Int ! fail[E] ! div`, stored as `! fail[E], div`
 - `=` or `=>` at the end of a line, followed by an indented body
 - a block lambda's `)` on its own line, `x =>` and a block without `do`, and `x => {` + block + `}`
 - `'single quoted'` strings

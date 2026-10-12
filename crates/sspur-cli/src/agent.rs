@@ -3,7 +3,7 @@ use sspur_check::Diag;
 use sspur_eval::Interp;
 use sspur_store::{query::Ctx, Change, Loaded, Store, Tx, TxResult};
 use sspur_syntax::{ast::Def, line_col, printer::print_def};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// Ends a rejected edit: weak models otherwise retry one definition per call.
 pub const RESEND: &str = "fix these and resend the whole edit in one call";
@@ -143,11 +143,20 @@ pub fn edit_ops(store: &Store, input: &str) -> Result<Vec<Json>, String> {
     if module.defs.is_empty() && renames.is_empty() && removes.is_empty() {
         return Err("nothing to edit: give definitions, 'rename OLD NEW', or 'remove NAME'".into());
     }
-    let mut names: BTreeSet<String> = store.head_root().map(|r| r.names.keys().cloned().collect()).unwrap_or_default();
+    let root = store.head_root();
+    let mut names: BTreeSet<String> = root.as_ref().map(|r| r.names.keys().cloned().collect()).unwrap_or_default();
     for r in &renames {
         let from = r["from"].as_str().unwrap_or_default();
         if names.remove(from) {
             names.insert(r["to"].as_str().unwrap_or_default().to_string());
+        }
+    }
+    if let Some(root) = &root {
+        for (from, to) in implied_renames(store, root, &renames, &removes, &module.defs, &names) {
+            removes.retain(|o| o["path"] != from.as_str());
+            names.remove(&from);
+            names.insert(to.clone());
+            renames.push(json!({"op": "rename", "from": from, "to": to}));
         }
     }
     let mut ops = renames;
@@ -160,10 +169,67 @@ pub fn edit_ops(store: &Store, input: &str) -> Result<Vec<Json>, String> {
     Ok(ops)
 }
 
+/// `remove X` plus a new definition whose text is X's with only the defined name changed is
+/// `rename X Y`, so stored callers of X follow it. Pairs only when X has one such Y and Y one X.
+fn implied_renames(store: &Store, root: &sspur_store::Root, renames: &[Json], removes: &[Json], defs: &[Def], names: &BTreeSet<String>) -> Vec<(String, String)> {
+    let explicit: BTreeSet<&str> = renames.iter().flat_map(|r| [r["from"].as_str(), r["to"].as_str()]).flatten().collect();
+    let mut old: Vec<(String, String)> = removes
+        .iter()
+        .filter_map(|o| o["path"].as_str())
+        .filter(|x| !x.contains(' ') && !explicit.contains(x) && names.contains(*x))
+        .filter_map(|x| {
+            let text = store.text(&root.names.get(x)?.text)?;
+            let m = sspur_syntax::parse(&text).ok()?;
+            let [d] = m.defs.as_slice() else { return None };
+            Some((x.to_string(), print_def(d)))
+        })
+        .collect();
+    let mut fresh: Vec<&Def> = defs.iter().filter(|d| !names.contains(d.name())).collect();
+    let mut back: HashMap<String, String> = renames.iter().filter_map(|r| Some((r["to"].as_str()?.to_string(), r["from"].as_str()?.to_string()))).collect();
+    let mut out = Vec::new();
+    loop {
+        let mut cands: Vec<(usize, usize)> = Vec::new();
+        for (i, (x, text)) in old.iter().enumerate() {
+            for (j, d) in fresh.iter().enumerate() {
+                let mut map = back.clone();
+                map.insert(d.name().to_string(), x.clone());
+                let mut one = [(*d).clone()];
+                sspur_syntax::rename::rename_defs(&mut one, &map, &HashSet::new());
+                if print_def(&one[0]) == *text {
+                    cands.push((i, j));
+                }
+            }
+        }
+        let mut pairs: Vec<(usize, usize)> = cands.iter().copied().filter(|&(i, j)| cands.iter().filter(|c| c.0 == i || c.1 == j).count() == 1).collect();
+        if pairs.is_empty() {
+            return out;
+        }
+        pairs.sort_by(|a, b| b.cmp(a));
+        let mut gone = Vec::new();
+        for (i, j) in pairs {
+            let (x, _) = old.remove(i);
+            let y = fresh[j].name().to_string();
+            back.insert(y.clone(), x.clone());
+            out.push((x, y));
+            gone.push(j);
+        }
+        gone.sort_by(|a, b| b.cmp(a));
+        for j in gone {
+            fresh.remove(j);
+        }
+    }
+}
+
 pub fn run_edit(store: &Store, ops: Vec<Json>, agent: &str, test: Option<&dyn Fn(&sspur_store::Loaded) -> Interp>) -> (String, bool) {
     let (said, ops): (Vec<Json>, Vec<Json>) = ops.into_iter().partition(|o| o["op"] == "note");
     let named: BTreeSet<String> = ops.iter().flat_map(|o| ["path", "target", "to"].map(|k| o.get(k).and_then(Json::as_str).map(String::from))).flatten().collect();
+    let removed: BTreeSet<String> = ops.iter().filter(|o| o["op"] == "remove").filter_map(|o| o["path"].as_str().map(String::from)).collect();
     let mut r = store.apply(Tx { base: None, agent: Some(agent.into()), reason: None, gate: None, merge: false, ops, normalize: true });
+    for d in r.diags.iter_mut().filter(|d| d.code == "E_UNKNOWN_NAME") {
+        let Some(x) = d.msg.strip_prefix("unknown name '").and_then(|m| m.strip_suffix('\'')).filter(|x| removed.contains(*x)) else { continue };
+        let caller = d.def.as_deref().map_or("this definition".to_string(), |c| format!("'{c}'"));
+        d.hint = Some(format!("{caller} still uses the removed '{x}': write 'rename {x} NEW' instead of 'remove {x}' so its callers follow, or update or remove {caller} in this edit"));
+    }
     if r.ok {
         let mut all: Vec<String> = said.iter().filter_map(|o| o["text"].as_str().map(String::from)).collect();
         all.append(&mut r.notes);

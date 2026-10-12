@@ -34,7 +34,7 @@ The other queries agents use: `q find 'ship|tax_*'` for names and signatures, `q
 
 ### Edits
 
-`edit` takes plain SSPUR definitions. Each one replaces the definition with the same name or adds a new one. Leading `rename OLD NEW` and `remove NAME` lines rename (scope-aware, callers included) or delete. `--test` runs every test in the same call:
+`edit` takes plain SSPUR definitions. Each one replaces the definition with the same name or adds a new one. Leading `rename OLD NEW` and `remove NAME` lines rename (scope-aware, callers included) or delete. A `remove X` plus a new definition that is X's with only the name changed counts as `rename X NEW`, when that pairing is the only one, so stored callers of X follow it. `--test` runs every test in the same call:
 
 ```console
 {{#include ../snippets/get-started/agents/session.out:edit}}

@@ -706,7 +706,9 @@ impl Parser {
             }
             out.push(Effect { name, args, span: start.to(self.prev_span()) });
             let continues = self.is_sym(",") && matches!(self.peek_at(1), Tok::Ident(_)) && !matches!(self.peek_at(2), Tok::Sym(":"));
-            if !continues {
+            if !continues && self.is_sym("!") && matches!(self.peek_at(1), Tok::Ident(_)) {
+                self.note("! a ! b -> ! a, b");
+            } else if !continues {
                 break;
             }
             self.bump();

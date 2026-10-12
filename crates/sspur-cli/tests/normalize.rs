@@ -51,6 +51,7 @@ const CASES: &[(&str, &str, &str)] = &[
     ("fn f(xs: List[Int]) -> Int\n= match xs\n  | [x, *rest] => x + rest.len\n  | [] => 0\n", "fn f(xs: List[Int]) -> Int\n= match xs\n| [x, ..rest] => x + rest.len\n| [] => 0", "*rest -> ..rest"),
     ("fn f(o: Opt[Int]) -> Int\n= do\n  let some(x) = o else { return 0 }\n  x + 1\n", "fn f(o: Opt[Int]) -> Int\n= do\n  some(x) = o else return 0\n  x + 1", "let p = e else -> p = e else"),
     ("fn f(o: Opt[Int]) -> Int\n= do\n  guard let x = o else {\n    return 0\n  }\n  x\n", "fn f(o: Opt[Int]) -> Int\n= do\n  some(x) = o else return 0\n  x", "guard let x = e else -> some(x) = e else"),
+    ("fn f(n: Int) -> Int ! fail[E] ! log\n= do\n  log(\"x\")\n  check(n)\n", "fn f(n: Int) -> Int ! fail[E], log\n= do\n  log(\"x\")\n  check(n)", "! a ! b -> ! a, b"),
     ("fn f(o: Opt[Int], g: Bool) -> Bool\n= o is some(v) && v > 0 || g\n", "fn f(o: Opt[Int], g: Bool) -> Bool\n= o is some(v) and (v > 0 or g)", "&& -> and"),
 ];
 
@@ -119,4 +120,40 @@ fn catch_with_only_false_arms_in_a_test_expects_success() {
     assert!(out.contains("stored as: catch e | .. with a non-Bool e and only false arms in a test -> catch do (_ = e) true | .."), "{out}");
     let (body, _) = sspur(&d, &["q", "body", "ok"], "");
     assert_eq!(body, "test ok = catch do\n  _ = check(1)\n  true\n| Bad{n} => false");
+}
+
+const ORDER: &str = "type Order = {qty: Int, price: Int}\n\nfn subtotal(o: Order) -> Int\n= o.qty * o.price\n\nfn total(o: Order) -> Int\n= subtotal(o) + 1\n\ntest subtotal_sample = subtotal(Order{qty: 2, price: 3}) == 6\n";
+
+fn orders(name: &str) -> std::path::PathBuf {
+    let d = fresh(name);
+    assert!(sspur(&d, &["edit"], ORDER).1);
+    d
+}
+
+#[test]
+fn remove_plus_the_same_definition_under_a_new_name_is_a_rename() {
+    let d = orders("rename");
+    let (out, ok) = sspur(&d, &["edit", "--test", "--interp"], "remove subtotal\n\nfn gross(o: Order) -> Int\n= o.qty  *  o.price\n");
+    assert!(ok && out.starts_with("ok subtotal->gross\n") && out.contains("1 passed"), "{out}");
+    assert_eq!(sspur(&d, &["q", "body", "subtotal_sample"], "").0, "test subtotal_sample = gross(Order{qty: 2, price: 3}) == 6");
+    assert_eq!(sspur(&d, &["q", "body", "total"], "").0, "fn total(o: Order) -> Int\n= gross(o) + 1");
+
+    let d = orders("rename2");
+    let (out, ok) = sspur(&d, &["edit"], "remove subtotal\nremove subtotal_sample\n\nfn gross(o: Order) -> Int\n= o.qty * o.price\n\ntest gross_sample = gross(Order{qty: 2, price: 3}) == 6\n\nfn total(o: Order) -> Int\n= gross(o) + 2\n");
+    assert!(ok && out.starts_with("ok subtotal->gross subtotal_sample->gross_sample ~total"), "{out}");
+    assert_eq!(sspur(&d, &["q", "body", "total"], "").0, "fn total(o: Order) -> Int\n= gross(o) + 2");
+}
+
+#[test]
+fn an_ambiguous_or_changed_removal_is_not_a_rename() {
+    let d = orders("norename");
+    for edit in [
+        "remove subtotal\n\nfn gross(o: Order) -> Int\n= o.qty * o.price\n\nfn net(o: Order) -> Int\n= o.qty * o.price\n",
+        "remove subtotal\n\nfn gross(o: Order) -> Int\n= o.qty * o.price + 1\n",
+        "remove subtotal\n",
+    ] {
+        let (out, ok) = sspur(&d, &["edit"], edit);
+        assert!(!ok && out.contains("subtotal_sample:1:24 E_UNKNOWN_NAME unknown name 'subtotal'"), "{edit}\n{out}");
+        assert!(out.contains("hint: 'subtotal_sample' still uses the removed 'subtotal': write 'rename subtotal NEW' instead of 'remove subtotal'"), "{out}");
+    }
 }
