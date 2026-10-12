@@ -4,6 +4,10 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+### Fixed
+- A binding broken after its `=` (`(_, total) =` with the value on the next line, which pressing Enter in an editor produces) failed with `E_PARSE_EXPR`; a line ending in `=` now continues on the next line.
+- A sum type can start with `|`, so the variants can each go on their own line under `type S =`.
+
 ## [0.7.0] - 2026-10-12
 
 ### Added

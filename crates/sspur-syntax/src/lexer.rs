@@ -185,7 +185,8 @@ fn ends_operand(t: &Tok) -> bool {
 }
 
 /// Whether the line starting at `rest` continues the line before it instead of starting a
-/// new statement: the line before ends in a binary operator (`and`, `+`, `==`, `,`, ...), or
+/// new statement: the line before ends in a binary operator (`and`, `+`, `==`, `,`, ...) or in
+/// the `=` of a binding or definition, or
 /// it ends a value and this line, indented deeper than its statement, starts with `.name` or
 /// a binary operator.
 fn continues(out: &[Token], rest: &str, deeper: bool) -> bool {
@@ -193,7 +194,7 @@ fn continues(out: &[Token], rest: &str, deeper: bool) -> bool {
     let Some(last) = out.last().map(|t| &t.tok) else { return false };
     let doubled = |s: &str| n >= 2 && matches!(&out[n - 2].tok, Tok::Sym(x) if *x == s) && out[n - 2].span.end == out[n - 1].span.start;
     let trailing = match last {
-        Tok::Sym("+" | "-" | "*" | "/" | "%" | "**" | "==" | "!=" | "<" | "<=" | ">" | ">=" | "," | ":=" | "->") => true,
+        Tok::Sym("+" | "-" | "*" | "/" | "%" | "**" | "==" | "!=" | "<" | "<=" | ">" | ">=" | "," | ":=" | "->" | "=") => true,
         Tok::Sym("&") => doubled("&"),
         Tok::Sym("|") => doubled("|"),
         Tok::Kw("and" | "or" | "with") => true,

@@ -185,6 +185,10 @@ fn long_lines_continue() {
         ("fn f(a: Int) -> Int\n= do\n  b = a\n  -b", "  b = a\n  -b"),
         ("fn f(a: Int) -> Int\n= do\n  -a", "= -a"),
         ("fn f(r: R) -> R\n= r with a := 1,\n  b := 2", "= r with a := 1, b := 2"),
+        ("fn f() -> Int\n= do\n  (a, b) =\n    (1, 2)\n  a + b", "  (a, b) = (1, 2)"),
+        ("fn f() -> Int\n= do\n  total =\n    1 + 2\n  total", "  total = 1 + 2"),
+        ("type S =\n  | A\n  | B{x: Int}", "type S = A | B{x: Int}"),
+        ("type S = | A | B", "type S = A | B"),
     ];
     for (src, want) in cases {
         roundtrip(src);

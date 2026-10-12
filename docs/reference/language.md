@@ -24,8 +24,9 @@ test total_empty = total([]) == 0
 
 A statement can go on over several lines:
 
-- A line that ends in a binary operator (`and`, `or`, `+`, `-`, `*`, `/`, `%`, `**`, a comparison, `,`, `:=`, `->`, `with` or `is`) continues on the next line.
+- A line that ends in a binary operator (`and`, `or`, `+`, `-`, `*`, `/`, `%`, `**`, a comparison, `,`, `:=`, `->`, `with` or `is`) or in the `=` of a binding or definition continues on the next line.
 - A line that starts with `.name` or a binary operator (`and`, `or`, `+`, `-`, `==`, `is`, ...) continues the line before it, when it's indented deeper than the line its statement starts on and the line before ends in a value (a name, a literal or a closing bracket).
+- A sum type can put each variant on its own line, starting with `|`: `type Shape =` and then `| Circle{r: F64}`, `| Dot` on the lines below. It is stored as one line.
 - Inside `(`, `[` and `{` lines join as they always have.
 
 ```

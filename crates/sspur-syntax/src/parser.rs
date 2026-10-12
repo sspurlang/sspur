@@ -541,6 +541,10 @@ impl Parser {
     }
 
     fn type_body(&mut self) -> PResult<TypeBody> {
+        // `type S =` and then the variants each on a line starting with `|`, as in OCaml or F#.
+        if self.is_sym("|") && matches!(self.peek_at(1), Tok::Ident(s) if is_upper(s)) {
+            self.bump();
+        }
         if self.is_sym("{") {
             return Ok(TypeBody::Record(self.fields()?));
         }
