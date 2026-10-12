@@ -225,6 +225,9 @@ fn is_tests_and_guards_print_canonically() {
         ("fn f(xs: List[Opt[Int]]) -> List[Int]\n= xs.map(x => do\n  some(v) = x else 0\n  v * 2)", "xs.map(x => do\n  some(v) = x else 0\n  v * 2)"),
         ("fn f(xs: List[Opt[Int]]) -> Unit ! log\n= do\n  for x in xs\n    some(v) = x else ()\n    log(\"{v}\")\n  ()", "    some(v) = x else ()\n    log("),
         ("fn f(o: Opt[Int]) -> Int\n= do\n  x = 1; some(v) = o else x; v", "  some(v) = o else x\n  v"),
+        ("fn f(xs: List[Int]) -> Int ! div\n= do\n  var q = xs\n  var t = 0\n  while q.pop_front is some((x, r)) and x > 0 do\n    t := t + x\n    q := r\n  t", "  while q.pop_front is some((x, r)) and x > 0\n    t := t + x\n    q := r\n  t"),
+        ("fn f(a: Opt[Int], b: Opt[Int]) -> Unit ! log, div\n= do\n  while a is some(x) and b is some(y) and x < y\n    log(\"{x}{y}\")\n  ()", "  while a is some(x) and b is some(y) and x < y\n    log("),
+        ("fn f(a: Opt[Int]) -> Unit ! log, div\n= do\n  while a is some(_)\n    log(\"x\")\n  ()", "  while a is some(_)\n    log("),
     ];
     for (src, want) in cases {
         roundtrip(src);

@@ -582,41 +582,43 @@ fn stmt(s: &Stmt, ind: usize) -> String {
             _ => format!("{} := {}", n, expr(e, ind)),
         },
         Stmt::Expr(e) => expr(e, ind),
-        Stmt::For(p, it, body) => match &body.kind {
-            ExprKind::Block(stmts) => {
-                let mut s = format!("for {} in {}", pat(p), iter_expr(it, ind));
-                for l in stmt_lines(stmts, ind + 2) {
-                    s.push_str(&format!("\n{}{l}", pad(ind + 2)));
-                }
-                s
-            }
-            ExprKind::Match(_, _, MatchForm::LetElse) => {
-                let mut s = format!("for {} in {}", pat(p), iter_expr(it, ind));
-                for l in guard_lines(body, ind + 2) {
-                    s.push_str(&format!("\n{}{l}", pad(ind + 2)));
-                }
-                s
-            }
-            _ => format!("for {} in {}\n{}{}", pat(p), iter_expr(it, ind), pad(ind + 2), branch(body, ind + 2)),
-        },
-        Stmt::While(c, body) => match &body.kind {
-            ExprKind::Block(stmts) => {
-                let mut s = format!("while {}", expr(c, ind));
-                for l in stmt_lines(stmts, ind + 2) {
-                    s.push_str(&format!("\n{}{l}", pad(ind + 2)));
-                }
-                s
-            }
-            ExprKind::Match(_, _, MatchForm::LetElse) => {
-                let mut s = format!("while {}", expr(c, ind));
-                for l in guard_lines(body, ind + 2) {
-                    s.push_str(&format!("\n{}{l}", pad(ind + 2)));
-                }
-                s
-            }
-            _ => format!("while {}\n{}{}", expr(c, ind), pad(ind + 2), branch(body, ind + 2)),
-        },
+        Stmt::For(p, it, body) => loop_lines(&format!("for {} in {}", pat(p), iter_expr(it, ind)), body, ind),
+        Stmt::While(c, body) => {
+            let (c, body) = while_is(c, body, ind).unwrap_or_else(|| (expr(c, ind), body));
+            loop_lines(&format!("while {c}"), body, ind)
+        }
         Stmt::Fn(f) => print_fn_at(f, ind),
+    }
+}
+
+/// The tests and the body of `while e is p ...` (see `while_is_body`).
+fn while_is<'a>(c: &'a Expr, body: &Expr, ind: usize) -> Option<(String, &'a Expr)> {
+    let b = while_is_body(c, body)?;
+    let tests = match &c.kind {
+        ExprKind::Match(inner, _, MatchForm::IfChain) => chain_parts(inner, ind)?.0.join(" and "),
+        ExprKind::Match(s, arms, _) if arms[1].pat == Pat::Wild && arms[1].guard.is_none() => is_test(s, &arms[0], ind),
+        _ => return None,
+    };
+    Some((tests, b))
+}
+
+fn loop_lines(head: &str, body: &Expr, ind: usize) -> String {
+    match &body.kind {
+        ExprKind::Block(stmts) => {
+            let mut s = head.to_string();
+            for l in stmt_lines(stmts, ind + 2) {
+                s.push_str(&format!("\n{}{l}", pad(ind + 2)));
+            }
+            s
+        }
+        ExprKind::Match(_, _, MatchForm::LetElse) => {
+            let mut s = head.to_string();
+            for l in guard_lines(body, ind + 2) {
+                s.push_str(&format!("\n{}{l}", pad(ind + 2)));
+            }
+            s
+        }
+        _ => format!("{head}\n{}{}", pad(ind + 2), branch(body, ind + 2)),
     }
 }
 

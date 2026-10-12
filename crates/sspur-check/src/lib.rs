@@ -208,6 +208,8 @@ struct Checker {
     task_depth: u32,
     cur_rparams: Vec<String>,
     chan_checks: Vec<(Type, Span)>,
+    /// The spans of `while e is p` loop bodies, which must be `Unit` like any `while` body.
+    while_bodies: HashSet<(u32, u32)>,
     stores: BTreeMap<String, (Type, Type)>,
     json_sites: Vec<((u32, u32), Type, Span, bool)>,
     refined_names: HashSet<String>,
@@ -336,6 +338,7 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
         task_depth: 0,
         cur_rparams: vec![],
         chan_checks: vec![],
+        while_bodies: HashSet::new(),
         stores: BTreeMap::new(),
         json_sites: vec![],
         refined_names: HashSet::new(),
@@ -2215,10 +2218,15 @@ impl Checker {
                         self.bind(&f.name, ty, false);
                     }
                 }
+                let unit = Type::unit();
                 let mut last = Type::unit();
                 for (i, s) in stmts.iter().enumerate() {
                     let is_last = i + 1 == stmts.len();
-                    last = self.infer_stmt(s, if is_last { exp } else { None });
+                    let loop_body = matches!(s, Stmt::Expr(x) if self.while_bodies.contains(&(x.span.start, x.span.end)));
+                    last = self.infer_stmt(s, if is_last { exp } else if loop_body { Some(&unit) } else { None });
+                    if loop_body && let Stmt::Expr(x) = s {
+                        self.expect(&unit, &last, x.span);
+                    }
                     if !is_last {
                         if let Stmt::Expr(x) = s
                             && matches!(x.kind, ExprKind::Return(_) | ExprKind::Raise(_))
@@ -3173,6 +3181,7 @@ impl Checker {
         for u in self.unreachable_arms(st, arms) {
             let a = &arms[u.arm];
             let (msg, hint) = match (u.alt, form) {
+                (None, MatchForm::IfIs) if matches!(&arms[0].body.kind, ExprKind::Block(st) if matches!(st.first(), Some(Stmt::Expr(b)) if self.while_bodies.contains(&(b.span.start, b.span.end)))) => ("the pattern always matches, so the loop never stops on it".to_string(), "write 'while true' and bind it in the body: 'p = e'".to_string()),
                 (None, MatchForm::IfIs) => ("the pattern always matches, so the else branch never runs".to_string(), "bind it directly: 'p = e', then use the names".to_string()),
                 (None, MatchForm::Is) => ("the pattern always matches, so this test is always true".to_string(), "write 'true', or test a narrower pattern".to_string()),
                 (None, MatchForm::LetElse) => ("the pattern always matches, so 'else' never runs".to_string(), "drop the else: 'p = e'".to_string()),
@@ -3279,6 +3288,9 @@ impl Checker {
                 Type::unit()
             }
             Stmt::While(c, body) => {
+                if let Some(b) = while_is_body(c, body) {
+                    self.while_bodies.insert((b.span.start, b.span.end));
+                }
                 let ct = self.infer(c, Some(&Type::bool()));
                 self.expect(&Type::bool(), &ct, c.span);
                 let bt = self.infer(body, Some(&Type::unit()));

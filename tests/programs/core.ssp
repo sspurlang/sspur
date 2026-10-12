@@ -96,6 +96,22 @@ test agrees = (2..60).filter(is_prime) == sieve(59)
 test fizz = fizzbuzz(15) == "FizzBuzz" and fizzbuzz(9) == "Fizz" and fizzbuzz(7) == "7"
 test gcd_ok = gcd(48, 18) == 6
 
+fn pair_sum(a: List[Int], b: List[Int]) -> Int ! div
+= do
+  var p = a
+  var q = b
+  var total = 0
+  while p.pop_front is some((x, pr)) and q.pop_front is some((y, qr)) and x * y != 0
+    total := total + x * y
+    p := pr
+    q := qr
+  while p.pop_front is some((x, rest)) and x > 0
+    total := total + x
+    p := rest
+  total
+
+test pair_sum_ok = pair_sum([1, 2, 5, 6, -1, 7], [3, 4]) == 22 and pair_sum([], [1]) == 0 and pair_sum([2, 0, 4], [5, 1]) == 10
+
 
 // calc
 

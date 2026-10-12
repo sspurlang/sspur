@@ -142,6 +142,7 @@ test t = Circle{r: 1.0}.describe == "shape: 3.14" and Vec2{x: 1, y: 2} + Vec2{x:
 | `x := e` | Assign to a `var`. Also allowed directly as an `if` branch or match arm body |
 | `for p in list` + indented body | Loop over a `List`, a range `a..b` (which excludes `b`), or a generator (see Generators) |
 | `while cond` + indented body | Loop while `cond` holds. Adds the `div` effect ("may not terminate"), which must be declared |
+| `while e is p` + indented body | Loop while `e` matches `p`, with the names `p` binds in scope in the body. `e` is evaluated and matched again before each pass, and the loop ends when it doesn't match: `while q.pop_front is some((x, rest)) and x > 0`. Tests join with `and` as after `if` |
 | `var (a, b) = e` | Mutable destructuring |
 | `fn helper(...) -> T` + `= body` | Local function. It can see enclosing variables and can be recursive, but cannot be generic |
 | `e` | Expression statement |

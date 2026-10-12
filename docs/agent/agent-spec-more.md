@@ -8,7 +8,7 @@ The rest of what `./sspur spec` leaves out; `./sspur spec --full` is the whole r
 ## Functions
 Return type required unless Unit. Effects after `!` are declared (`! fail[E], log`): `fail[E]` (raise or call a failing fn), `log`, `div` (while), `conc fs io time env proc`. Optional `pre`, `post` (`r` = result). Body: expression or `do` + block (last line is the value). `x.f(a)` is `f(x, a)`; `x.f` is a field or a zero-arg call; a bare fn name is a value.
 
-Block lines: `x = e`, `(a, b) = e`, `var x = e`, `x := e`, `for x in xs` or `while c` + body (`0..n` excludes n), `return e`, local `fn`. `if` without `else` is for Unit or `raise`.
+Block lines: `x = e`, `(a, b) = e`, `var x = e`, `x := e`, `for x in xs`, `while c` or `while e is p` (names in scope in the body) + body (`0..n` excludes n), `return e`, local `fn`. `if` without `else` is for Unit or `raise`.
 
 ## Expressions
 - `if c then a else b`; `then do` / `else do` + block.

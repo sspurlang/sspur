@@ -1508,9 +1508,10 @@ impl Parser {
             return Ok(vec![Stmt::For(pat, iter, body)]);
         }
         if self.eat_kw("while") {
+            let start = self.prev_span().start;
             let cond = self.expr()?;
             let body = self.loop_body()?;
-            return Ok(vec![Stmt::While(cond, body)]);
+            return Ok(vec![while_is(start, cond, body)]);
         }
         if let (Tok::Ident(name), Tok::Sym(":=")) = (self.peek().clone(), self.peek_at(1)) {
             let span = self.span();
@@ -2170,6 +2171,30 @@ fn if_is(scrut: Expr, pat: Pat, guard: Option<Expr>, cspan: Span, t: Expr, other
     let it = Pat::Ctor { name: "some".into(), args: CtorArgs::Positional(vec![Pat::Bind(CHAIN_VALUE.into())]) };
     let arms = vec![Arm { pat: it, guard: None, body: Expr::new(ExprKind::Name(CHAIN_VALUE.into()), point(span.end)) }, Arm { pat: Pat::Wild, guard: None, body: other }];
     Expr::new(ExprKind::Match(Box::new(acc), arms, MatchForm::IfChain), span)
+}
+
+/// `while e1 is p1 and ... body` where a test binds names: `while (if e1 is p1 and ... then`
+/// `(body; true) else false) ()`, so the names are bound afresh each time round. A test that
+/// binds nothing stays a plain `Bool` condition. The parts it adds get spans no other
+/// expression has, since the checker records types by span.
+fn while_is(start: u32, cond: Expr, body: Expr) -> Stmt {
+    fn binds(e: &Expr) -> bool {
+        let ExprKind::Match(_, arms, MatchForm::Is) = &e.kind else { return false };
+        let mut v = Vec::new();
+        arms[0].pat.binds(&mut v);
+        !v.is_empty() || arms[0].guard.as_ref().is_some_and(binds)
+    }
+    if !binds(&cond) {
+        return Stmt::While(cond, body);
+    }
+    let cspan = cond.span;
+    let ExprKind::Match(s, arms, _) = cond.kind else { unreachable!() };
+    let a = arms.into_iter().next().unwrap();
+    let end = body.span.end;
+    let t = Expr::new(ExprKind::Block(vec![Stmt::Expr(body), Stmt::Expr(Expr::new(ExprKind::Bool(true), point(end)))]), Span { start: cspan.start, end });
+    let other = Expr::new(ExprKind::Bool(false), point(cspan.end));
+    let c = if_is(*s, a.pat, a.guard, cspan, t, other, Span { start, end });
+    Stmt::While(c, Expr::new(ExprKind::Unit, point(start)))
 }
 
 /// The body of a `p = e else b` statement until the statements after it are folded in.

@@ -515,6 +515,36 @@ pub enum MatchForm {
 /// The name an `IfChain` binds the then-branch's value to.
 pub const CHAIN_VALUE: &str = "it";
 
+/// The loop body of `while e is p ... body`, which is stored as the `while` statement
+/// `while (if e is p ... then (body; true) else false) ()`.
+pub fn while_is_body<'a>(c: &'a Expr, body: &Expr) -> Option<&'a Expr> {
+    if body.kind != ExprKind::Unit {
+        return None;
+    }
+    let ExprKind::Match(s, arms, form) = &c.kind else { return None };
+    if arms.len() != 2 || arms[1].body.kind != ExprKind::Bool(false) {
+        return None;
+    }
+    let mut t = &arms[0].body;
+    if *form == MatchForm::IfChain {
+        t = s;
+        while let ExprKind::Match(_, arms, MatchForm::IfIs) = &t.kind {
+            t = &arms[0].body;
+        }
+        let ExprKind::Call(_, args) = &t.kind else { return None };
+        t = args.first()?;
+    } else if *form != MatchForm::IfIs {
+        return None;
+    }
+    match &t.kind {
+        ExprKind::Block(st) => match st.as_slice() {
+            [Stmt::Expr(b), Stmt::Expr(Expr { kind: ExprKind::Bool(true), .. })] => Some(b),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum CtorArgs {
     None,

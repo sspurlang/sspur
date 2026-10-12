@@ -4,6 +4,9 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+### Added
+- `while e is p` loops: `while q.pop_front is some((x, rest)) and x > 0` binds `x` and `rest` in the body, matches again before each pass and stops when the pattern doesn't match. Tests join with `and` as they do after `if`, and the interpreter and native code run it the same way. A pattern that always matches warns `W_ARM_UNREACHABLE`, and the body must be `Unit` like any `while` body.
+
 ### Fixed
 - A string written with escaped quotes inside an interpolation, `"cycle {path.join(\" -> \")}"`, printed the braces as text; it now means the same as `"cycle {path.join(" -> ")}"`.
 - An arm of `catch do` or `match ... do` written at the block's own indent (`catch do`, the lines, then `| _ => false` under them) was read as a statement and failed with `E_PARSE_EXPR`; a `|` line now ends the block and starts the arms.
