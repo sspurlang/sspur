@@ -10,7 +10,7 @@ import { pathToFileURL } from "node:url";
 
 const dir = resolve(process.argv[2] || "docs/book/play");
 const wasm = await import(pathToFileURL(join(dir, "pkg/sspur_wasm.js")));
-wasm.initSync({ module: readFileSync(join(dir, "pkg/sspur_wasm_bg.wasm")) });
+const exported = wasm.initSync({ module: readFileSync(join(dir, "pkg/sspur_wasm_bg.wasm")) });
 const { encode, decode, fromHash } = await import(pathToFileURL(join(dir, "share.js")));
 const examples = JSON.parse(readFileSync(join(dir, "examples.json"), "utf8"));
 const bin = process.env.SSPUR_BIN;
@@ -107,6 +107,15 @@ const ffi = call("run", 'extern fn abs(x: Int) -> Int ! ffi\n\nfn main() -> Unit
 expect(ffi.status === "trap" && /not available in the playground/.test(ffi.message), "host: extern fn reports that it is unavailable", ffi.message);
 const err = call("run", 'fn main() -> Unit ! log, io\n= do\n  eprint("to stderr")\n  log("to stdout")\n');
 same("host: eprint goes to stderr in order", err.output, [{ stream: "err", text: "to stderr" }, { stream: "out", text: "to stdout" }]);
+
+// Recursion: after the asyncify pass, which tools/build_playground.sh runs when wasm-opt is
+// installed, calls go as deep as in `sspur run --interp`, and one more is the same clean error.
+if (exported.asyncify_start_unwind) {
+  const sum = (n) => `fn sum(n: Int) -> Int\n= if n == 0 then 0 else n + sum(n - 1)\n\nfn main() -> Unit ! log\n= log("{sum(${n})}")\n`;
+  const ok = call("run", sum(19998));
+  const deep = call("run", sum(19999));
+  same("recursion: 19,998 calls deep, then a stack overflow", [stdoutOf(ok), deep.message], [["199970001"], "runtime error: stack overflow in sum"]);
+}
 
 // Share links survive the round trip.
 for (const s of [...examples.map((e) => e.source), "", "fn main() -> Unit ! log\n= log(\"héllo ✓ {1 + 1}\")\n"]) {

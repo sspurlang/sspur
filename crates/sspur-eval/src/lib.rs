@@ -23,6 +23,8 @@ mod stdview;
 mod stdx;
 mod sys;
 #[cfg(target_family = "wasm")]
+pub mod hop;
+#[cfg(target_family = "wasm")]
 pub mod web;
 pub mod value;
 
@@ -156,6 +158,16 @@ fn pat_rebinds(p: &Pat, env: &Env) -> bool {
     }
 }
 
+#[inline(never)]
+fn define_local_fns(stmts: &[Stmt], env: &Rc<Env>) {
+    for s in stmts {
+        if let Stmt::Fn(f) = s {
+            env.define(&f.name, Value::LocalFn(Rc::new((**f).clone()), env.clone()));
+        }
+    }
+}
+
+#[inline(never)]
 fn frame_for(s: &Stmt, frames: &mut Vec<Rc<Env>>) -> Rc<Env> {
     let cur = frames.last().unwrap().clone();
     let shadows = match s {
@@ -174,6 +186,21 @@ fn frame_for(s: &Stmt, frames: &mut Vec<Rc<Env>>) -> Rc<Env> {
         *c.borrow_mut() = Value::LocalFn(Rc::new((**f).clone()), cur.clone());
     }
     cur
+}
+
+#[inline(never)]
+fn no_match(p: &Pat, v: &Value) -> R {
+    trap(format!("pattern {} did not match {v}", printer::pat(p)))
+}
+
+#[inline(never)]
+fn has_span(set: &HashSet<(u32, u32)>, span: Span) -> bool {
+    set.contains(&(span.start, span.end))
+}
+
+#[inline(never)]
+fn closure(params: &[String], body: &Expr, env: &Rc<Env>) -> Value {
+    Value::Closure(Rc::new(Closure { params: params.to_vec(), body: body.clone(), env: env.clone() }))
 }
 
 fn ty_name(t: &Ty) -> Option<&str> {
@@ -474,6 +501,7 @@ impl Interp {
         r
     }
 
+    #[inline(never)]
     fn arg_values(&self, f: &FnDef, args: &[&Expr], env: &Rc<Env>) -> R<Vec<Value>> {
         let mut out = Vec::with_capacity(args.len());
         for (i, a) in args.iter().enumerate() {
@@ -630,6 +658,7 @@ impl Interp {
         self.call_fn_in(f, args, &globals)
     }
 
+    #[inline(never)]
     fn launch(&self, f: &FnDef, args: &[Expr], env: &Rc<Env>) -> R {
         let k = match self.kernels.borrow().get(&f.name).cloned() {
             Some(k) => k,
@@ -729,7 +758,11 @@ impl Interp {
 
     fn call_fn_in(&self, f: &FnDef, args: Vec<Value>, parent: &Rc<Env>) -> R {
         let d = self.depth.get() + 1;
-        if d > MAX_DEPTH {
+        #[cfg(target_family = "wasm")]
+        let too_deep = d > MAX_DEPTH || hop::stack_low();
+        #[cfg(not(target_family = "wasm"))]
+        let too_deep = d > MAX_DEPTH;
+        if too_deep {
             return trap(format!("stack overflow in {}", f.name));
         }
         if let Some(c) = self.calls.borrow_mut().as_mut() {
@@ -742,6 +775,13 @@ impl Interp {
             }
         }
         self.depth.set(d);
+        #[cfg(target_family = "wasm")]
+        if hop::due() {
+            let (mut args, mut r) = (Some(args), None);
+            hop::hop(|| r = args.take().map(|a| self.call_fn_inner(f, a, parent)));
+            self.depth.set(d - 1);
+            return r.unwrap();
+        }
         let r = self.call_fn_inner(f, args, parent);
         self.depth.set(d - 1);
         r
@@ -767,9 +807,8 @@ impl Interp {
                 env.vars.borrow_mut().insert(p.name.as_str().into(), cell);
                 continue;
             }
-            self.check_value_type(&p.ty, &v, &format!("parameter '{}' of {}", p.name, f.name))?;
-            if let Some(r) = &p.refine {
-                self.check_refine(r, &v, &format!("parameter '{}' of {}", p.name, f.name))?;
+            if p.refine.is_some() || self.has_alias_refine(&p.ty) {
+                self.check_param(f, p, &v)?;
             }
             if destructor {
                 env.define(&p.name, v);
@@ -777,15 +816,8 @@ impl Interp {
                 self.own_define(&env, &p.name, v);
             }
         }
-        for pre in &f.pres {
-            if !self.truthy(pre, &env)? {
-                let shown: Vec<String> = visit::mentioned_params(&f.params, pre)
-                    .into_iter()
-                    .filter_map(|i| env.get(&f.params[i].name).map(|v| format!("{} = {}", f.params[i].name, value::Quoted(&v))))
-                    .collect();
-                let vals = if shown.is_empty() { String::new() } else { format!(" ({})", shown.join(", ")) };
-                return trap(format!("contract violated: pre {} in {}{vals}", printer::expr(pre, 0), f.name));
-            }
+        if !f.pres.is_empty() {
+            self.check_pres(f, &env)?;
         }
         let body = match &f.body.kind {
             ExprKind::Table(rows) => self.eval_table(rows, f, &env),
@@ -795,19 +827,55 @@ impl Interp {
             Ok(v) | Err(Ctrl::Return(v)) => v,
             Err(c) => return Err(c),
         };
-        if let Some(rt) = &f.ret {
+        if let Some(rt) = &f.ret
+            && self.has_alias_refine(rt)
+        {
             self.check_value_type(rt, &result, &format!("result of {}", f.name))?;
         }
         if !f.posts.is_empty() {
-            let penv = Env::child(&env);
-            penv.define("r", result.clone());
-            for post in &f.posts {
-                if !self.truthy(post, &penv)? {
-                    return trap(format!("contract violated: post {} in {} (r = {})", printer::expr(post, 0), f.name, value::Quoted(&result)));
-                }
-            }
+            self.check_posts(f, &env, &result)?;
         }
         Ok(result)
+    }
+
+    #[inline(never)]
+    fn check_pres(&self, f: &FnDef, env: &Rc<Env>) -> R<()> {
+        for pre in &f.pres {
+            if !self.truthy(pre, env)? {
+                let shown: Vec<String> = visit::mentioned_params(&f.params, pre)
+                    .into_iter()
+                    .filter_map(|i| env.get(&f.params[i].name).map(|v| format!("{} = {}", f.params[i].name, value::Quoted(&v))))
+                    .collect();
+                let vals = if shown.is_empty() { String::new() } else { format!(" ({})", shown.join(", ")) };
+                return trap(format!("contract violated: pre {} in {}{vals}", printer::expr(pre, 0), f.name));
+            }
+        }
+        Ok(())
+    }
+
+    #[inline(never)]
+    fn check_posts(&self, f: &FnDef, env: &Rc<Env>, result: &Value) -> R<()> {
+        let penv = Env::child(env);
+        penv.define("r", result.clone());
+        for post in &f.posts {
+            if !self.truthy(post, &penv)? {
+                return trap(format!("contract violated: post {} in {} (r = {})", printer::expr(post, 0), f.name, value::Quoted(result)));
+            }
+        }
+        Ok(())
+    }
+
+    fn has_alias_refine(&self, t: &Ty) -> bool {
+        !self.alias_refines.is_empty() && ty_name(t).is_some_and(|n| self.alias_refines.contains_key(n))
+    }
+
+    #[inline(never)]
+    fn check_param(&self, f: &FnDef, p: &Param, v: &Value) -> R<()> {
+        self.check_value_type(&p.ty, v, &format!("parameter '{}' of {}", p.name, f.name))?;
+        if let Some(r) = &p.refine {
+            self.check_refine(r, v, &format!("parameter '{}' of {}", p.name, f.name))?;
+        }
+        Ok(())
     }
 
     fn check_value_type(&self, t: &Ty, v: &Value, ctx: &str) -> R<()> {
@@ -1002,6 +1070,7 @@ impl Interp {
         hs.pop().map(|f| f.posts).unwrap_or_default()
     }
 
+    #[inline(never)]
     fn eval_handle(&self, body: &Expr, arms: &[Arm], env: &Rc<Env>) -> R {
         let (id, base) = self.push_handler(HKind::Arms(arms as *const [Arm], env.clone()));
         let r = self.eval(body, env);
@@ -1056,10 +1125,12 @@ impl Interp {
         self.call_method(name, recv, args)
     }
 
+    #[inline(never)]
     fn is_static(&self, x: &Expr, env: &Rc<Env>) -> bool {
         matches!(&x.kind, ExprKind::Name(n) if self.statics.contains_key(n) && env.cell(n).is_none())
     }
 
+    #[inline(never)]
     fn static_op(&self, x: &Expr, m: &str, args: &[Expr], env: &Rc<Env>) -> R {
         let ExprKind::Name(n) = &x.kind else { unreachable!() };
         let vals = self.eval_args(args, env)?;
@@ -1108,240 +1179,307 @@ impl Interp {
         })
     }
 
+    /// Kept small, with the bigger cases in their own functions, because every level of
+    /// recursion in the program being run puts a frame of it on the stack. A branch of an `if`
+    /// is evaluated in the same frame.
     pub fn eval(&self, e: &Expr, env: &Rc<Env>) -> R {
-        let fuel = self.fuel.get();
-        if fuel == 0 {
-            return trap(OUT_OF_FUEL);
-        }
-        self.fuel.set(fuel - 1);
-        match &e.kind {
-            ExprKind::Field(x, f) if self.is_static(x, env) => self.static_op(x, f, &[], env),
-            ExprKind::Method { recv, name, args, .. } if self.is_static(recv, env) => self.static_op(recv, name, args, env),
-            ExprKind::Method { recv, name, targs, .. } if name == "#array" && targs.len() == 1 => {
-                let v = self.eval(recv, env)?;
-                let n = match &targs[0] {
-                    Ty::Named { name, .. } => name.parse::<usize>().unwrap_or(0),
-                    _ => 0,
-                };
-                Ok(Value::List(Rc::new(vec![v; n])))
+        let mut e = e;
+        loop {
+            let fuel = self.fuel.get();
+            if fuel == 0 {
+                return trap(OUT_OF_FUEL);
             }
-            ExprKind::Int(n) => Ok(Value::Int(*n)),
-            ExprKind::Float(x) => Ok(Value::Float(*x)),
-            ExprKind::Bool(b) => Ok(Value::Bool(*b)),
-            ExprKind::Unit => Ok(Value::Unit),
-            ExprKind::Str(parts) => {
-                let mut s = String::new();
-                for p in parts {
-                    match p {
-                        StrPart::Lit(l) => s.push_str(l),
-                        StrPart::Expr(x) => s.push_str(&self.eval(x, env)?.to_string()),
-                    }
-                }
-                Ok(Value::str(&s))
-            }
-            ExprKind::Placeholder => env.get("_").map_or_else(|| trap("unbound '_'"), Ok),
-            ExprKind::Hole(_) => self.on_hole(e, env),
-            ExprKind::Name(n) if self.moves.contains(&(e.span.start, e.span.end)) => match env.cell(n) {
-                Some(c) => Ok(std::mem::replace(&mut *c.borrow_mut(), Value::Unit)),
-                None => self.eval_name(n, env),
-            },
-            ExprKind::Name(n) => self.eval_name(n, env),
-            ExprKind::Field(x, f) if self.sys && self.user_methods.contains(&(e.span.start, e.span.end)) && self.fns.contains_key(f) => {
-                let fd = self.fns[f].clone();
-                let a = self.arg_values(&fd, &[&**x], env)?;
-                self.call_fn(&fd, a)
-            }
-            ExprKind::Method { recv, name, args, .. } if self.sys && self.user_methods.contains(&(e.span.start, e.span.end)) && self.fns.contains_key(name) => {
-                let fd = self.fns[name].clone();
-                let all: Vec<&Expr> = std::iter::once(&**recv).chain(args.iter()).collect();
-                let a = self.arg_values(&fd, &all, env)?;
-                self.call_fn(&fd, a)
-            }
-            ExprKind::Unary(UnOp::Ref | UnOp::RefMut, x) => self.eval(x, env),
-            ExprKind::Field(x, f) => {
-                let v = self.eval(x, env)?;
-                if let Some(fv) = v.field(f) {
-                    return Ok(fv);
-                }
-                if let (Value::Tuple(items), Ok(i)) = (&v, f.parse::<usize>()) {
-                    return items.get(i).cloned().map_or_else(|| trap("tuple index out of range"), Ok);
-                }
-                if let (Value::New(_, inner), "raw") = (&v, f.as_str()) {
-                    return Ok((**inner).clone());
-                }
-                self.method(e.span, f, v, vec![])
-            }
-            ExprKind::Method { recv, name, args, .. } if matches!(&recv.kind, ExprKind::Name(n) if n == "json") && env.cell("json").is_none() && !self.fns.contains_key("json") => self.json_op(e.span, name, args, env),
-            ExprKind::Method { name, targs, .. } if name == "mmio" && !targs.is_empty() => trap("mmio needs a bare target: build with 'sspur build --target riscv64-qemu|aarch64-qemu'"),
-            ExprKind::Method { recv, name, args, .. } if name == "asm" && args.len() == 3 && matches!(recv.kind, ExprKind::Str(_)) => trap("inline asm needs native code: it runs in compiled sys functions and on bare targets, not in the interpreter"),
-            ExprKind::Method { recv, name, args, .. } => {
-                let r = self.eval(recv, env)?;
-                let a = self.eval_args(args, env)?;
-                self.method(e.span, name, r, a)
-            }
-            ExprKind::Call(f, args) => {
-                if let ExprKind::Name(n) = &f.kind
-                    && env.cell(n).is_none() {
-                        if self.newtypes.contains(n) {
-                            let v = self.eval(&args[0], env)?;
-                            return Ok(Value::New(n.as_str().into(), Rc::new(v)));
-                        }
-                        if let Some(fd) = self.fns.get(n).cloned() {
-                            if fd.kernel.is_some() {
-                                return self.launch(&fd, args, env);
-                            }
-                            let a = if self.sys { self.arg_values(&fd, &args.iter().collect::<Vec<_>>(), env)? } else { self.eval_args(args, env)? };
-                            return self.call_fn(&fd, a);
-                        }
-                        if self.bare && BARE_NAMES.contains(&n.as_str()) {
-                            return if n == "arch" { Ok(Value::str("host")) } else { trap(format!("'{n}' needs a bare target: build with 'sspur build --target riscv64-qemu|aarch64-qemu'")) };
-                        }
-                        if self.sys && matches!(n.as_str(), "drop" | "leak" | "alloc" | "free" | "null") {
-                            let a = self.eval_args(args, env)?;
-                            return self.sys_call(n, a);
-                        }
-                        if self.ops.contains(n) {
-                            let a = self.eval_args(args, env)?;
-                            return self.perform(n, a);
-                        }
-                        if builtins::is_global(n) {
-                            let a = self.eval_args(args, env)?;
-                            return self.call_global(n, a);
-                        }
-                    }
-                let fv = self.eval(f, env)?;
-                let a = self.eval_args(args, env)?;
-                self.apply(&fv, a)
-            }
-            ExprKind::Index(a, i) => {
-                let av = self.eval(a, env)?;
-                let iv = self.eval(i, env)?;
-                match (av, iv) {
-                    (Value::List(xs), Value::Int(i)) => {
-                        if i < 0 || i as usize >= xs.len() {
-                            trap(format!("index {i} out of bounds for list of length {}", xs.len()))
-                        } else {
-                            Ok(xs[i as usize].clone())
-                        }
-                    }
-                    (a, _) => trap(format!("cannot index {a}")),
-                }
-            }
-            ExprKind::Lambda { params, body, .. } => Ok(Value::Closure(Rc::new(Closure { params: params.clone(), body: (**body).clone(), env: env.clone() }))),
-            ExprKind::Binary(op, l, r) => self.eval_binary(*op, l, r, env),
-            ExprKind::Unary(UnOp::Neg, x) => match self.eval(x, env)? {
-                Value::Int(n) => n.checked_neg().map(Value::Int).map_or_else(|| trap("integer overflow"), Ok),
-                Value::Float(f) => Ok(Value::Float(-f)),
-                v => trap(format!("cannot negate {v}")),
-            },
-            ExprKind::Unary(UnOp::Not, x) => Ok(Value::Bool(!self.truthy(x, env)?)),
-            ExprKind::Range(a, b) => match (self.eval(a, env)?, self.eval(b, env)?) {
-                (Value::Int(a), Value::Int(b)) if b as i128 - a as i128 > 1 << 26 => trap("out of memory"),
-                (Value::Int(a), Value::Int(b)) => Ok(Value::list((a..b).map(Value::Int).collect())),
-                _ => trap("range bounds must be Int"),
-            },
-            ExprKind::If(c, t, f) => {
-                if self.truthy(c, env)? {
-                    self.eval(t, env)
-                } else if let Some(f) = f {
-                    self.eval(f, env)
-                } else {
-                    Ok(Value::Unit)
-                }
-            }
-            ExprKind::Match(s, arms, _) => {
-                let v = self.eval(s, env)?;
-                match self.match_arms(&v, arms, env)? {
-                    Some(r) => Ok(r),
-                    None => trap(format!("no match arm for {v}")),
-                }
-            }
-            ExprKind::Catch(body, arms) => match self.eval(body, env) {
-                Err(Ctrl::Raise(v)) => match self.match_arms(&v, arms, env)? {
-                    Some(r) => Ok(r),
-                    None => Err(Ctrl::Raise(v)),
+            self.fuel.set(fuel - 1);
+            return match &e.kind {
+                ExprKind::Field(x, f) if self.is_static(x, env) => self.static_op(x, f, &[], env),
+                ExprKind::Method { recv, name, args, .. } if self.is_static(recv, env) => self.static_op(recv, name, args, env),
+                ExprKind::Method { recv, name, targs, .. } if name == "#array" && targs.len() == 1 => self.eval_array(recv, targs, env),
+                ExprKind::Int(n) => Ok(Value::Int(*n)),
+                ExprKind::Float(x) => Ok(Value::Float(*x)),
+                ExprKind::Bool(b) => Ok(Value::Bool(*b)),
+                ExprKind::Unit => Ok(Value::Unit),
+                ExprKind::Str(parts) => self.eval_str(parts, env),
+                ExprKind::Placeholder => env.get("_").map_or_else(|| trap("unbound '_'"), Ok),
+                ExprKind::Hole(_) => self.on_hole(e, env),
+                ExprKind::Name(n) if has_span(&self.moves, e.span) => match env.cell(n) {
+                    Some(c) => Ok(std::mem::replace(&mut *c.borrow_mut(), Value::Unit)),
+                    None => self.eval_name(n, env),
                 },
-                other => other,
-            },
-            ExprKind::Handle(body, arms) => self.eval_handle(body, arms, env),
-            ExprKind::Block(stmts) => {
-                let env = Env::child(env);
-                for s in stmts {
-                    if let Stmt::Fn(f) = s {
-                        env.define(&f.name, Value::LocalFn(Rc::new((**f).clone()), env.clone()));
+                ExprKind::Name(n) => self.eval_name(n, env),
+                ExprKind::Field(x, f) if self.sys && has_span(&self.user_methods, e.span) && self.fns.contains_key(f) => self.eval_sys_method(f, &[&**x], env),
+                ExprKind::Method { recv, name, args, .. } if self.sys && has_span(&self.user_methods, e.span) && self.fns.contains_key(name) => {
+                    let all: Vec<&Expr> = std::iter::once(&**recv).chain(args.iter()).collect();
+                    self.eval_sys_method(name, &all, env)
+                }
+                ExprKind::Unary(UnOp::Ref | UnOp::RefMut, x) => {
+                    e = x;
+                    continue;
+                }
+                ExprKind::Field(x, f) => self.eval_field(e.span, x, f, env),
+                ExprKind::Method { recv, name, args, .. } if matches!(&recv.kind, ExprKind::Name(n) if n == "json") && env.cell("json").is_none() && !self.fns.contains_key("json") => self.json_op(e.span, name, args, env),
+                ExprKind::Method { name, targs, .. } if name == "mmio" && !targs.is_empty() => trap("mmio needs a bare target: build with 'sspur build --target riscv64-qemu|aarch64-qemu'"),
+                ExprKind::Method { recv, name, args, .. } if name == "asm" && args.len() == 3 && matches!(recv.kind, ExprKind::Str(_)) => trap("inline asm needs native code: it runs in compiled sys functions and on bare targets, not in the interpreter"),
+                ExprKind::Method { recv, name, args, .. } => self.eval_method(e.span, recv, name, args, env),
+                ExprKind::Call(f, args) => self.eval_call(f, args, env),
+                ExprKind::Index(a, i) => self.eval_index(a, i, env),
+                ExprKind::Lambda { params, body, .. } => Ok(closure(params, body, env)),
+                ExprKind::Binary(op, l, r) => self.eval_binary(*op, l, r, env),
+                ExprKind::Unary(UnOp::Neg, x) => self.eval_neg(x, env),
+                ExprKind::Unary(UnOp::Not, x) => Ok(Value::Bool(!self.truthy(x, env)?)),
+                ExprKind::Range(a, b) => self.eval_range(a, b, env),
+                ExprKind::If(c, t, f) => {
+                    if self.truthy(c, env)? {
+                        e = t;
+                        continue;
+                    } else if let Some(f) = f {
+                        e = f;
+                        continue;
+                    } else {
+                        Ok(Value::Unit)
                     }
                 }
-                let mut last = Value::Unit;
-                let mut frames = vec![env];
-                let mut r = Ok(());
-                for s in stmts {
-                    let cur = frame_for(s, &mut frames);
-                    match self.exec(s, &cur) {
-                        Ok(v) => last = v,
-                        Err(c) => {
-                            r = Err(c);
-                            break;
-                        }
-                    }
-                }
-                for f in frames.iter().rev() {
-                    r = self.release(f, r);
-                }
-                r.map(|_| last)
-            }
-            ExprKind::Record { ctor, fields } => {
-                let owner = match ctor {
-                    Some(c) => c.clone(),
-                    None => match self.record_types.get(&(e.span.start, e.span.end)) {
-                        Some(n) => n.clone(),
-                        None => return trap("untyped record literal"),
-                    },
-                };
-                let order: Vec<String> = match self.variant_fields.get(&owner) {
-                    Some(Some(fs)) => fs.clone(),
-                    _ => self.record_fields.get(&owner).cloned().unwrap_or_else(|| fields.iter().map(|(n, _)| n.clone()).collect()),
-                };
-                let mut vals = Vec::with_capacity(order.len());
-                let mut given = HashMap::new();
-                for (n, x) in fields {
-                    given.insert(n.as_str(), self.eval(x, env)?);
-                }
-                for n in &order {
-                    let v = given.remove(n.as_str()).map_or_else(|| trap(format!("missing field {n}")), Ok)?;
-                    vals.push((Rc::<str>::from(n.as_str()), v));
-                }
-                let fs = self.build_record(&owner, vals)?;
-                if self.variant_fields.contains_key(&owner) {
-                    Ok(Value::Variant(owner.as_str().into(), Some(fs)))
-                } else {
-                    Ok(Value::Record(owner.as_str().into(), fs))
-                }
-            }
-            ExprKind::List(xs) => Ok(Value::list(self.eval_args(xs, env)?)),
-            ExprKind::Tuple(xs) => Ok(Value::Tuple(Rc::new(self.eval_args(xs, env)?))),
-            ExprKind::Par(xs) => Ok(Value::Tuple(Rc::new(self.run_tasks(xs.len(), &|k| self.eval(&xs[k], &Env::child(env)))?))),
-            ExprKind::Raise(x) => Err(Ctrl::Raise(self.eval(x, env)?)),
-            ExprKind::Return(x) => Err(Ctrl::Return(self.eval(x, env)?)),
-            ExprKind::Table(_) => trap("a rule table can only be the body of a rule"),
-            ExprKind::With(base, ups) => {
-                let mut v = self.eval(base, env)?;
-                for (path, value) in ups {
-                    let mut keys = Vec::with_capacity(path.len());
-                    for seg in path {
-                        keys.push(match seg {
-                            PathSeg::Field(f) => Ok(f.as_str()),
-                            PathSeg::Index(i) => match self.eval(i, env)? {
-                                Value::Int(n) => Err(n),
-                                other => return trap(format!("index must be Int, got {other}")),
-                            },
-                        });
-                    }
-                    let nv = self.eval(value, env)?;
-                    v = self.set_path(&v, &keys, nv)?;
-                }
-                Ok(v)
+                ExprKind::Match(s, arms, _) => self.eval_match(s, arms, env),
+                ExprKind::Catch(body, arms) => self.eval_catch(body, arms, env),
+                ExprKind::Handle(body, arms) => self.eval_handle(body, arms, env),
+                ExprKind::Block(stmts) => self.eval_block(stmts, env),
+                ExprKind::Record { ctor, fields } => self.eval_record(e.span, ctor, fields, env),
+                ExprKind::List(xs) => Ok(Value::list(self.eval_args(xs, env)?)),
+                ExprKind::Tuple(xs) => Ok(Value::Tuple(Rc::new(self.eval_args(xs, env)?))),
+                ExprKind::Par(xs) => self.eval_par(xs, env),
+                ExprKind::Raise(x) => Err(Ctrl::Raise(self.eval(x, env)?)),
+                ExprKind::Return(x) => Err(Ctrl::Return(self.eval(x, env)?)),
+                ExprKind::Table(_) => trap("a rule table can only be the body of a rule"),
+                ExprKind::With(base, ups) => self.eval_with(base, ups, env),
+            };
+        }
+    }
+
+    #[inline(never)]
+    fn eval_array(&self, recv: &Expr, targs: &[Ty], env: &Rc<Env>) -> R {
+        let v = self.eval(recv, env)?;
+        let n = match &targs[0] {
+            Ty::Named { name, .. } => name.parse::<usize>().unwrap_or(0),
+            _ => 0,
+        };
+        Ok(Value::List(Rc::new(vec![v; n])))
+    }
+
+    #[inline(never)]
+    fn eval_str(&self, parts: &[StrPart], env: &Rc<Env>) -> R {
+        let mut s = String::new();
+        for p in parts {
+            match p {
+                StrPart::Lit(l) => s.push_str(l),
+                StrPart::Expr(x) => s.push_str(&self.eval(x, env)?.to_string()),
             }
         }
+        Ok(Value::str(&s))
+    }
+
+    #[inline(never)]
+    fn eval_sys_method(&self, name: &str, args: &[&Expr], env: &Rc<Env>) -> R {
+        let fd = self.fns[name].clone();
+        let a = self.arg_values(&fd, args, env)?;
+        self.call_fn(&fd, a)
+    }
+
+    #[inline(never)]
+    fn eval_field(&self, span: Span, x: &Expr, f: &str, env: &Rc<Env>) -> R {
+        let v = self.eval(x, env)?;
+        if let Some(fv) = v.field(f) {
+            return Ok(fv);
+        }
+        if let (Value::Tuple(items), Ok(i)) = (&v, f.parse::<usize>()) {
+            return items.get(i).cloned().map_or_else(|| trap("tuple index out of range"), Ok);
+        }
+        if let (Value::New(_, inner), "raw") = (&v, f) {
+            return Ok((**inner).clone());
+        }
+        self.method(span, f, v, vec![])
+    }
+
+    #[inline(never)]
+    fn eval_method(&self, span: Span, recv: &Expr, name: &str, args: &[Expr], env: &Rc<Env>) -> R {
+        let r = self.eval(recv, env)?;
+        let a = self.eval_args(args, env)?;
+        self.method(span, name, r, a)
+    }
+
+    #[inline(never)]
+    fn eval_call(&self, f: &Expr, args: &[Expr], env: &Rc<Env>) -> R {
+        if let ExprKind::Name(n) = &f.kind
+            && env.cell(n).is_none()
+        {
+            if self.newtypes.contains(n) {
+                let v = self.eval(&args[0], env)?;
+                return Ok(Value::New(n.as_str().into(), Rc::new(v)));
+            }
+            if let Some(fd) = self.fns.get(n).cloned() {
+                if fd.kernel.is_some() {
+                    return self.launch(&fd, args, env);
+                }
+                let a = if self.sys { self.arg_values(&fd, &args.iter().collect::<Vec<_>>(), env)? } else { self.eval_args(args, env)? };
+                return self.call_fn(&fd, a);
+            }
+            return self.eval_call_named(n, f, args, env);
+        }
+        let fv = self.eval(f, env)?;
+        let a = self.eval_args(args, env)?;
+        self.apply(&fv, a)
+    }
+
+    #[inline(never)]
+    fn eval_call_named(&self, n: &str, f: &Expr, args: &[Expr], env: &Rc<Env>) -> R {
+        if self.bare && BARE_NAMES.contains(&n) {
+            return if n == "arch" { Ok(Value::str("host")) } else { trap(format!("'{n}' needs a bare target: build with 'sspur build --target riscv64-qemu|aarch64-qemu'")) };
+        }
+        if self.sys && matches!(n, "drop" | "leak" | "alloc" | "free" | "null") {
+            let a = self.eval_args(args, env)?;
+            return self.sys_call(n, a);
+        }
+        if self.ops.contains(n) {
+            let a = self.eval_args(args, env)?;
+            return self.perform(n, a);
+        }
+        if builtins::is_global(n) {
+            let a = self.eval_args(args, env)?;
+            return self.call_global(n, a);
+        }
+        let fv = self.eval(f, env)?;
+        let a = self.eval_args(args, env)?;
+        self.apply(&fv, a)
+    }
+
+    #[inline(never)]
+    fn eval_index(&self, a: &Expr, i: &Expr, env: &Rc<Env>) -> R {
+        let av = self.eval(a, env)?;
+        let iv = self.eval(i, env)?;
+        match (av, iv) {
+            (Value::List(xs), Value::Int(i)) => {
+                if i < 0 || i as usize >= xs.len() {
+                    trap(format!("index {i} out of bounds for list of length {}", xs.len()))
+                } else {
+                    Ok(xs[i as usize].clone())
+                }
+            }
+            (a, _) => trap(format!("cannot index {a}")),
+        }
+    }
+
+    #[inline(never)]
+    fn eval_neg(&self, x: &Expr, env: &Rc<Env>) -> R {
+        match self.eval(x, env)? {
+            Value::Int(n) => n.checked_neg().map(Value::Int).map_or_else(|| trap("integer overflow"), Ok),
+            Value::Float(f) => Ok(Value::Float(-f)),
+            v => trap(format!("cannot negate {v}")),
+        }
+    }
+
+    #[inline(never)]
+    fn eval_range(&self, a: &Expr, b: &Expr, env: &Rc<Env>) -> R {
+        match (self.eval(a, env)?, self.eval(b, env)?) {
+            (Value::Int(a), Value::Int(b)) if b as i128 - a as i128 > 1 << 26 => trap("out of memory"),
+            (Value::Int(a), Value::Int(b)) => Ok(Value::list((a..b).map(Value::Int).collect())),
+            _ => trap("range bounds must be Int"),
+        }
+    }
+
+    #[inline(never)]
+    fn eval_match(&self, s: &Expr, arms: &[Arm], env: &Rc<Env>) -> R {
+        let v = self.eval(s, env)?;
+        match self.match_arms(&v, arms, env)? {
+            Some(r) => Ok(r),
+            None => trap(format!("no match arm for {v}")),
+        }
+    }
+
+    #[inline(never)]
+    fn eval_catch(&self, body: &Expr, arms: &[Arm], env: &Rc<Env>) -> R {
+        match self.eval(body, env) {
+            Err(Ctrl::Raise(v)) => match self.match_arms(&v, arms, env)? {
+                Some(r) => Ok(r),
+                None => Err(Ctrl::Raise(v)),
+            },
+            other => other,
+        }
+    }
+
+    #[inline(never)]
+    fn eval_block(&self, stmts: &[Stmt], env: &Rc<Env>) -> R {
+        let env = Env::child(env);
+        define_local_fns(stmts, &env);
+        let mut last = Value::Unit;
+        let mut frames = vec![env];
+        let mut r = Ok(());
+        for s in stmts {
+            let cur = frame_for(s, &mut frames);
+            match self.exec(s, &cur) {
+                Ok(v) => last = v,
+                Err(c) => {
+                    r = Err(c);
+                    break;
+                }
+            }
+        }
+        for f in frames.iter().rev() {
+            r = self.release(f, r);
+        }
+        r.map(|_| last)
+    }
+
+    #[inline(never)]
+    fn eval_record(&self, span: Span, ctor: &Option<String>, fields: &[(String, Expr)], env: &Rc<Env>) -> R {
+        let owner = match ctor {
+            Some(c) => c.clone(),
+            None => match self.record_types.get(&(span.start, span.end)) {
+                Some(n) => n.clone(),
+                None => return trap("untyped record literal"),
+            },
+        };
+        let order: Vec<String> = match self.variant_fields.get(&owner) {
+            Some(Some(fs)) => fs.clone(),
+            _ => self.record_fields.get(&owner).cloned().unwrap_or_else(|| fields.iter().map(|(n, _)| n.clone()).collect()),
+        };
+        let mut vals = Vec::with_capacity(order.len());
+        let mut given = HashMap::new();
+        for (n, x) in fields {
+            given.insert(n.as_str(), self.eval(x, env)?);
+        }
+        for n in &order {
+            let v = given.remove(n.as_str()).map_or_else(|| trap(format!("missing field {n}")), Ok)?;
+            vals.push((Rc::<str>::from(n.as_str()), v));
+        }
+        let fs = self.build_record(&owner, vals)?;
+        if self.variant_fields.contains_key(&owner) {
+            Ok(Value::Variant(owner.as_str().into(), Some(fs)))
+        } else {
+            Ok(Value::Record(owner.as_str().into(), fs))
+        }
+    }
+
+    #[inline(never)]
+    fn eval_par(&self, xs: &[Expr], env: &Rc<Env>) -> R {
+        Ok(Value::Tuple(Rc::new(self.run_tasks(xs.len(), &|k| self.eval(&xs[k], &Env::child(env)))?)))
+    }
+
+    #[inline(never)]
+    fn eval_with(&self, base: &Expr, ups: &[(Vec<PathSeg>, Expr)], env: &Rc<Env>) -> R {
+        let mut v = self.eval(base, env)?;
+        for (path, value) in ups {
+            let mut keys = Vec::with_capacity(path.len());
+            for seg in path {
+                keys.push(match seg {
+                    PathSeg::Field(f) => Ok(f.as_str()),
+                    PathSeg::Index(i) => match self.eval(i, env)? {
+                        Value::Int(n) => Err(n),
+                        other => return trap(format!("index must be Int, got {other}")),
+                    },
+                });
+            }
+            let nv = self.eval(value, env)?;
+            v = self.set_path(&v, &keys, nv)?;
+        }
+        Ok(v)
     }
 
     fn eval_table(&self, rows: &[TableRow], f: &FnDef, env: &Rc<Env>) -> R {
@@ -1386,6 +1524,7 @@ impl Interp {
         }
     }
 
+    #[inline(never)]
     fn eval_name(&self, n: &str, env: &Rc<Env>) -> R {
         if let Some(v) = env.get(n) {
             return Ok(v);
@@ -1411,7 +1550,7 @@ impl Interp {
             Stmt::Let(p, e) => {
                 let v = self.eval(e, env)?;
                 if !self.bind_pat(p, &v, env) {
-                    return trap(format!("pattern {} did not match {v}", printer::pat(p)));
+                    return no_match(p, &v);
                 }
                 Ok(Value::Unit)
             }
@@ -1420,16 +1559,26 @@ impl Interp {
                 self.own_define(env, n, v);
                 Ok(Value::Unit)
             }
-            Stmt::Assign(n, e, span) => {
-                let v = self.eval(e, env)?;
-                let Some(c) = env.cell(n) else { return trap(format!("unbound name '{n}'")) };
-                let old = std::mem::replace(&mut *c.borrow_mut(), v);
-                if self.droppable(&old) && !self.inplace.contains(&(span.start, span.end)) {
-                    self.run_drop(old)?;
-                }
-                Ok(Value::Unit)
-            }
+            Stmt::Assign(n, e, span) => self.exec_assign(n, e, *span, env),
             Stmt::Fn(_) => Ok(Value::Unit),
+            _ => self.exec_loop(s, env),
+        }
+    }
+
+    #[inline(never)]
+    fn exec_assign(&self, n: &str, e: &Expr, span: Span, env: &Rc<Env>) -> R {
+        let v = self.eval(e, env)?;
+        let Some(c) = env.cell(n) else { return trap(format!("unbound name '{n}'")) };
+        let old = std::mem::replace(&mut *c.borrow_mut(), v);
+        if self.droppable(&old) && !self.inplace.contains(&(span.start, span.end)) {
+            self.run_drop(old)?;
+        }
+        Ok(Value::Unit)
+    }
+
+    #[inline(never)]
+    fn exec_loop(&self, s: &Stmt, env: &Rc<Env>) -> R {
+        match s {
             Stmt::While(c, body) => {
                 while self.truthy(c, env)? {
                     self.eval(body, &Env::child(env))?;
@@ -1508,6 +1657,7 @@ impl Interp {
                 }
                 Ok(Value::Unit)
             }
+            _ => unreachable!(),
         }
     }
 
@@ -1582,6 +1732,7 @@ impl Interp {
         }
     }
 
+    #[inline(never)]
     fn eval_binary(&self, op: BinOp, l: &Expr, r: &Expr, env: &Rc<Env>) -> R {
         use BinOp::*;
         if op == And {

@@ -50,15 +50,22 @@ if [ "$have" != "$want" ]; then
   cargo install wasm-bindgen-cli --version "$want" --locked
 fi
 
-# The interpreter recurses on the wasm stack, so give it more than the 1 MiB default.
-CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS="-C link-arg=-zstack-size=16777216" \
+# The interpreter keeps its frames on the shadow stack in linear memory, about 1.5 KiB a call,
+# so give it 32 MiB rather than the 1 MiB default: enough for 20,000 small calls, the limit of
+# `sspur run --interp`. A program that doesn't recurse deeply never touches most of it.
+CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS="-C link-arg=-zstack-size=33554432" \
   cargo build --release -p sspur-wasm --target wasm32-unknown-unknown
 
 rm -rf "$out/pkg"
 wasm-bindgen --target web --no-typescript --out-dir "$out/pkg" target/wasm32-unknown-unknown/release/sspur_wasm.wasm
 wasm="$out/pkg/sspur_wasm_bg.wasm"
 if command -v wasm-opt >/dev/null; then
-  wasm-opt -O3 --enable-bulk-memory --enable-sign-ext --enable-mutable-globals --enable-nontrapping-float-to-int \
+  # The asyncify pass lets an interpreter call move the frames under it off the browser's small
+  # stack (crates/sspur-eval/src/hop.rs). Only sspur_hop unwinds, and never through an indirect
+  # call. It runs before -O3: in the other order, Node 20 (an older V8 than current browsers have)
+  # computes wrong results once it optimizes the interpreter.
+  wasm-opt --asyncify --pass-arg='asyncify-imports@*.__wbg_sspur_hop_*' --pass-arg=asyncify-ignore-indirect -O3 \
+    --enable-bulk-memory --enable-sign-ext --enable-mutable-globals --enable-nontrapping-float-to-int \
     --enable-reference-types --enable-multivalue "$wasm" -o "$wasm.opt"
   mv "$wasm.opt" "$wasm"
 else

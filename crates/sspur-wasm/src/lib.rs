@@ -14,6 +14,14 @@ thread_local! {
     static LAST: RefCell<Option<Arc<ide::Analysis>>> = const { RefCell::new(None) };
 }
 
+/// Runs the interpreter so that deep recursion doesn't overflow the browser's stack.
+fn drive<T>(f: impl FnOnce() -> T) -> T {
+    #[cfg(target_family = "wasm")]
+    return sspur_eval::hop::drive(f);
+    #[cfg(not(target_family = "wasm"))]
+    f()
+}
+
 fn ctx() -> ide::Ctx<'static> {
     ide::Ctx { load: &load, last: LAST.with(|l| l.borrow().clone()), exports: Default::default() }
 }
@@ -70,7 +78,7 @@ pub fn run(src: &str, stdin: &str) -> String {
         Err(d) => return json!({ "status": "error", "diags": d, "output": [] }).to_string(),
     };
     *it.output.borrow_mut() = Some(vec![]);
-    let r = it.run_main();
+    let r = drive(|| it.run_main());
     let output = lines(it.output.borrow_mut().take().unwrap_or_default());
     let end = match (exit_code(), r) {
         (Some(code), _) => json!({ "status": "exit", "code": code }),
@@ -92,7 +100,7 @@ pub fn test(src: &str) -> String {
         Ok(x) => x,
         Err(d) => return json!({ "status": "error", "diags": d, "tests": [] }).to_string(),
     };
-    let results = it.run_tests();
+    let results = drive(|| it.run_tests());
     let failed = results.iter().filter(|(_, r)| r.is_err()).count();
     let mut text: Vec<String> = results.iter().filter_map(|(n, r)| r.as_ref().err().map(|e| format!("FAIL  {n}: {e}"))).collect();
     text.push(format!("{} passed, {failed} failed", results.len() - failed));

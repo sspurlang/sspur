@@ -123,7 +123,7 @@
           <li><code>fs</code> works on a file system in memory that starts empty, with <code>/</code> and <code>/tmp</code>, on every run. Symlinks aren't supported.</li>
           <li><code>env</code> is empty and <code>args()</code> is <code>[]</code>. <code>read_line</code> and <code>read_lines</code> read the Input tab.</li>
           <li><code>time</code> uses the browser's clock. <code>sleep_ms</code> moves the clock forward instead of waiting.</li>
-          <li>Recursion goes a few hundred calls deep rather than 20,000, because a browser gives the page a much smaller stack.</li>
+          <li>Recursion goes 20,000 calls deep, as with <code>sspur run --interp</code>, when each call is small. Calls with larger bodies, or through lambdas, report the same <code>stack overflow</code> error sooner, after 10,000 or more. Data nested thousands of levels deep, such as a long linked list, can still run out of the browser's own stack, which is much smaller.</li>
           <li><code>par</code> tasks run one after another, which gives the same results unless a task waits on a channel that a later task fills.</li>
           <li><code>proc</code>, <code>extern fn</code> (C interop), named time zones, packages, services and native code aren't available. They report an error instead of running.</li>
         </ul>

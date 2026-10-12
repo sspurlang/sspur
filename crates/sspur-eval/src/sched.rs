@@ -96,7 +96,7 @@ impl Interp {
         Value::Chan(Rc::new(ChanCell { id: self.new_obj_id(), q: RefCell::new(VecDeque::new()), closed: Cell::new(false), waiters: RefCell::new(VecDeque::new()) }))
     }
 
-    pub(crate) fn run_tasks(&self, n: usize, body: &dyn Fn(usize) -> R) -> R<Vec<Value>> {
+    pub(crate) fn run_tasks(&self, n: usize, body: &impl Fn(usize) -> R) -> R<Vec<Value>> {
         if n == 0 {
             return Ok(vec![]);
         }
@@ -192,8 +192,9 @@ impl Interp {
 
     /// Without threads every task runs to completion in spawn order, which is the order the
     /// threaded scheduler starts them in. A `recv` that would wait for a later task can't.
+    /// Generic, not `dyn`, so the asyncify pass sees that a body can hop (see hop.rs).
     #[cfg(target_family = "wasm")]
-    fn run_bodies(&self, me: usize, ids: &[usize], body: &dyn Fn(usize) -> R) -> Vec<RefCell<Option<R>>> {
+    fn run_bodies(&self, me: usize, ids: &[usize], body: &impl Fn(usize) -> R) -> Vec<RefCell<Option<R>>> {
         let depth = self.depth.get();
         let handlers = self.handlers.take();
         let mut results = Vec::with_capacity(ids.len());

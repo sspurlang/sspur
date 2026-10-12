@@ -947,6 +947,7 @@ impl Interp {
         })
     }
 
+    #[inline(never)]
     pub(crate) fn json_op(&self, span: Span, name: &str, args: &[Expr], env: &Rc<crate::value::Env>) -> R {
         let Some(t) = self.json_types.get(&(span.start, span.end)) else { return trap("json needs the checker's type information") };
         let v = self.eval(&args[0], env)?;

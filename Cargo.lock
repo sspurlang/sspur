@@ -573,6 +573,7 @@ dependencies = [
  "sspur-check",
  "sspur-native",
  "sspur-syntax",
+ "wasm-bindgen",
 ]
 
 [[package]]

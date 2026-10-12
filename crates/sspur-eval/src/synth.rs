@@ -36,6 +36,7 @@ struct Probe {
 }
 
 impl Interp {
+    #[inline(never)]
     pub(crate) fn on_hole(&self, e: &Expr, env: &Rc<Env>) -> R {
         let fill = {
             let mut h = self.hole.borrow_mut();
