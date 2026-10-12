@@ -17,6 +17,24 @@ fn foreign_syntax_gets_a_hint() {
 }
 
 #[test]
+fn a_tuple_one_paren_short_around_a_record_update_gets_a_hint() {
+    let ty = "type R = {name: Str, items: List[Str]}\ntype G = {room: Str, rooms: List[R], inventory: List[Str]}\n";
+    let want = "a ')' here closes more than it opens; a tuple holding a record update is written ((r with a := x, b := y), other)";
+    let taken = "(g with rooms := g.rooms.map(r => if r.name == g.room then r with items := r.items.filter(_ != item) else r), inventory := g.inventory.push(item)), \"Taken.\")";
+    let one_line = format!("{ty}fn take(g: G, item: Str) -> (G, Str)\n= if g.inventory.contains(item) then {taken} else (g, \"There is no {{item}} here.\")");
+    assert_eq!(hint(&one_line), want);
+    let in_do = format!("{ty}fn take(g: G, item: Str) -> (G, Str)\n= do\n  n = 1\n  if n > 0 then {taken}\n  else (g, \"no\")");
+    assert_eq!(hint(&in_do), want);
+    for src in [
+        "fn f(x: Int) -> Int\n= (x), 2",
+        "type P = {a: Int, b: Int}\nfn f(p: P) -> P\n= (p with a := 1), 2",
+        "fn f(x: Int) -> Int\n= g(x), 2",
+    ] {
+        assert!(!hint(src).contains("closes more than it opens"), "{src}");
+    }
+}
+
+#[test]
 fn parse_all_reports_every_bad_definition() {
     let src = "fn a(x: Int) -> Bool\n= x > 0 ? 1 : 2\n\nfn b() -> Int\n= 1\n\nfn c(x: Bool) -> Bool\n= x -> 2\n";
     let errs = parse_all(src).expect_err("two bad definitions");

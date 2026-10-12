@@ -87,6 +87,7 @@ fn ambiguous_spellings_stay_errors_with_hints() {
         ("fn f(xs: List[Int]) -> Opt[Int]\n= xs.head\n", "'.first' (an Opt)"),
         ("fn f(s: Str) -> Opt[Str]\n= s.get\n", ""),
         ("test t = pay(_) == 2\n", "write 'x => f(g(x))'"),
+        ("fn f(g: G) -> (G, Str)\n= if g.n > 0 then (g with n := 1, m := 2), \"ok\") else (g, \"no\")\n", "hint: a ')' here closes more than it opens"),
     ] {
         let (out, ok) = sspur(&d, &["edit"], input);
         assert!(!ok && out.starts_with("rejected, nothing changed"), "{input}\n{out}");

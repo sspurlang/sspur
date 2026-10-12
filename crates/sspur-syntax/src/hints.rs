@@ -1,5 +1,6 @@
 //! Fix hints for syntax errors, mostly constructs from other languages.
 
+use crate::lexer::{lex, Tok};
 use crate::{parse, parser::parse_noted, Module, SyntaxError};
 
 fn ident_end(s: &str) -> usize {
@@ -10,6 +11,29 @@ fn last_ident(s: &str) -> &str {
     let t = s.trim_end();
     let start = t.rfind(|c: char| !(c.is_alphanumeric() || c == '_')).map_or(0, |i| i + 1);
     &t[start..]
+}
+
+/// Whether the error at byte `at` is a ',' right after a ')' that closes a parenthesized
+/// record update with several fields, `(g with a := x, b := y), z`: the tuple around it is
+/// one '(' short.
+fn closes_record_update(src: &str, at: usize) -> bool {
+    let Ok(toks) = lex(src) else { return false };
+    let Some(k) = toks.iter().position(|t| t.span.start as usize == at) else { return false };
+    if k < 2 || toks[k].tok != Tok::Sym(",") || toks[k - 1].tok != Tok::Sym(")") {
+        return false;
+    }
+    let (mut depth, mut withs, mut sets) = (0, 0, 0);
+    for t in toks[..k - 1].iter().rev() {
+        match &t.tok {
+            Tok::Sym(")" | "]" | "}") => depth += 1,
+            Tok::Sym("(" | "[" | "{") if depth == 0 => return withs > 0 && sets > 1,
+            Tok::Sym("(" | "[" | "{") => depth -= 1,
+            Tok::Kw("with") if depth == 0 => withs += 1,
+            Tok::Sym(":=") if depth == 0 => sets += 1,
+            _ => {}
+        }
+    }
+    false
 }
 
 /// A hint for a syntax error in `src`, from the text at and before the error.
@@ -48,6 +72,9 @@ pub fn syntax_hint(src: &str, e: &SyntaxError) -> Option<String> {
     }
     if e.code == "E_PARSE_PATTERN" && e.msg.contains("at most one '..'") {
         return h("keep one '..' per list pattern: '[first, ..rest]', '[..init, last]' or '[first, .., last]'");
+    }
+    if rest.starts_with(',') && closes_record_update(src, at) {
+        return h("a ')' here closes more than it opens; a tuple holding a record update is written ((r with a := x, b := y), other)");
     }
     if word == "is" {
         return h("'is' tests a pattern: 'e is p' is a Bool, and 'if e is p then a else b' uses what it binds; in a rule row, parenthesize it: '(x is some(_))'");
