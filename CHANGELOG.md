@@ -4,6 +4,8 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-12
+
 ### Fixed
 - A binding broken after its `=` (`(_, total) =` with the value on the next line, which pressing Enter in an editor produces) failed with `E_PARSE_EXPR`; a line ending in `=` now continues on the next line.
 - A sum type can start with `|`, so the variants can each go on their own line under `type S =`.
@@ -256,7 +258,8 @@ This release covers Phases 3 to 7 of the roadmap and ADRs 0003 to 0024. SSPUR no
 - Language design spec, JSON schemas and the token benchmark.
 - Compiler core: parser, checker, content hashing, interpreter and the `sspur` CLI, with an 11-program suite.
 
-[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/utkarshavardhana/sspur/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/utkarshavardhana/sspur/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/utkarshavardhana/sspur/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/utkarshavardhana/sspur/compare/v0.4.1...v0.5.0
