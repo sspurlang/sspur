@@ -4,6 +4,8 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-13
+
 ### Added
 - `while e is p` loops: `while q.pop_front is some((x, rest)) and x > 0` binds `x` and `rest` in the body, matches again before each pass and stops when the pattern doesn't match. Tests join with `and` as they do after `if`, and the interpreter and native code run it the same way. A pattern that always matches warns `W_ARM_UNREACHABLE`, and the body must be `Unit` like any `while` body.
 
@@ -276,7 +278,8 @@ This release covers Phases 3 to 7 of the roadmap and ADRs 0003 to 0024. SSPUR no
 - Language design spec, JSON schemas and the token benchmark.
 - Compiler core: parser, checker, content hashing, interpreter and the `sspur` CLI, with an 11-program suite.
 
-[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/utkarshavardhana/sspur/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/utkarshavardhana/sspur/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/utkarshavardhana/sspur/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/utkarshavardhana/sspur/compare/v0.5.0...v0.6.0
