@@ -1,0 +1,148 @@
+================================================================================
+Function with contract and do block
+================================================================================
+
+fn take(xs: List[Item], n: Int where _ > 0) -> List[Item] ! fail[Err]
+  pre n < 100
+= do
+  it = xs.find(_.sku == sku).ok_or(Missing{sku})
+  xs.map(i => i with qty := i.qty - n)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    name: (identifier)
+    parameters: (parameters
+      (identifier)
+      (type_identifier)
+      (bracket_group
+        (type_identifier))
+      (identifier)
+      (type_identifier)
+      (placeholder)
+      (integer)))
+  (type_identifier)
+  (bracket_group
+    (type_identifier))
+  (identifier)
+  (bracket_group
+    (type_identifier))
+  (identifier)
+  (identifier)
+  (integer)
+  (identifier)
+  (identifier)
+  (member
+    name: (identifier))
+  (paren_group
+    (placeholder)
+    (member
+      name: (identifier))
+    (identifier))
+  (member
+    name: (identifier))
+  (paren_group
+    (type_identifier)
+    (brace_group
+      (identifier)))
+  (identifier)
+  (member
+    name: (identifier))
+  (paren_group
+    (identifier)
+    (identifier)
+    (identifier)
+    (identifier)
+    (member
+      name: (identifier))
+    (identifier)))
+
+================================================================================
+Type, test and comment
+================================================================================
+
+// shapes
+type Shape = Circle{r: F64} | Dot
+type Pair[A, B] = {first: A, second: B}
+test empty = total([]) == 0
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (comment)
+  (type_definition
+    name: (type_identifier))
+  (type_identifier)
+  (brace_group
+    (identifier)
+    (type_identifier))
+  (type_identifier)
+  (type_definition
+    name: (type_identifier)
+    type_parameters: (type_parameters
+      (type_identifier)
+      (type_identifier)))
+  (brace_group
+    (identifier)
+    (type_identifier)
+    (identifier)
+    (type_identifier))
+  (test_definition
+    name: (identifier))
+  (identifier)
+  (paren_group
+    (bracket_group))
+  (integer))
+
+================================================================================
+Trait, impl, effect, store and svc
+================================================================================
+
+trait Sh
+  fn area(x: Self) -> F64
+impl[T: Show] Show for Box[T]
+effect ask() -> Int
+store Items = table[ItemId, Item]
+svc items
+  ep get "/items/{id}" = read
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (trait_definition
+    name: (type_identifier))
+  (function_definition
+    name: (identifier)
+    parameters: (parameters
+      (identifier)
+      (type_identifier)))
+  (type_identifier)
+  (impl_definition
+    type_parameters: (type_parameters
+      (type_identifier)
+      (type_identifier))
+    trait: (type_identifier)
+    type: (type_identifier)
+    type_arguments: (type_arguments
+      (type_identifier)))
+  (effect_definition
+    name: (identifier)
+    parameters: (parameters))
+  (type_identifier)
+  (store_definition
+    name: (type_identifier))
+  (identifier)
+  (bracket_group
+    (type_identifier)
+    (type_identifier))
+  (service_definition
+    name: (identifier))
+  (identifier)
+  (identifier)
+  (string
+    (string_content)
+    (interpolation
+      (identifier)))
+  (identifier))
+

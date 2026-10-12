@@ -151,6 +151,21 @@ IntelliJ IDEA, PyCharm, GoLand, RustRover, WebStorm, CLion and the rest, Communi
 
 If `sspur` isn't on the `PATH` that the IDE sees, edit the server's *Command* to the full path, for example `/opt/homebrew/bin/sspur lsp`. The template is the same as setting it up by hand: a server running `sspur lsp`, mapped to `*.ssp` with the language id `sspur`.
 
+## Zed
+
+The extension in [`packaging/zed/`](https://github.com/utkarshavardhana/sspur/tree/main/packaging/zed) adds a Tree-sitter grammar (highlighting, brackets, indentation, and an outline of the `fn`, `type`, `test`, `trait` and `impl` definitions) and starts `sspur lsp`. Each [release](https://github.com/utkarshavardhana/sspur/releases/latest) has it as `sspur-zed-vX.Y.Z.zip`, with its checksum in `SHA256SUMS`, and it installs as a dev extension, with no account or registry:
+
+1. Unzip `sspur-zed-vX.Y.Z.zip`.
+2. In Zed, run **zed: install dev extension** from the command palette and pick the unzipped `sspur-zed` folder.
+
+Zed compiles the extension with Rust (from rustup, which lets it add the `wasm32-wasip2` target itself) and fetches the grammar from GitHub at the release's commit. If `sspur` isn't on the `PATH` that Zed sees, set its path in `settings.json`:
+
+```json
+{ "lsp": { "sspur": { "binary": { "path": "/opt/homebrew/bin/sspur" } } } }
+```
+
+To try the grammar from a checkout instead, commit, run `packaging/zed/package.sh /tmp/sspur-zed "file://$PWD"` in the repository, and install `/tmp/sspur-zed` the same way: Zed then reads the grammar from your local repository at `HEAD`.
+
 ## Kate
 
 In *Settings > Configure Kate > LSP Client > User Server Settings*:
@@ -179,6 +194,6 @@ With LSP4E and TM4E (both in the Eclipse IDE for Java developers, or from the Ma
 
 Open `.ssp` files with the Generic Text Editor.
 
-## Zed, Visual Studio and Xcode
+## Visual Studio and Xcode
 
-Zed loads languages only from extensions, and a Zed language needs a Tree-sitter grammar, which SSPUR doesn't have yet. Visual Studio has no setting for a third-party language server; it needs an extension built on its language server SDK, and there isn't one for SSPUR. Xcode doesn't support third-party language servers. Use VS Code or one of the editors above for now.
+Visual Studio has no setting for a third-party language server; it needs an extension built on its language server SDK, and there isn't one for SSPUR. Xcode doesn't support third-party language servers. Use VS Code, Zed or one of the editors above for now.

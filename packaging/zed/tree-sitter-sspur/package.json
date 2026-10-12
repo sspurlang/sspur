@@ -1,0 +1,12 @@
+{
+  "name": "tree-sitter-sspur",
+  "version": "0.7.1",
+  "description": "SSPUR grammar for tree-sitter",
+  "private": true,
+  "license": "MIT OR Apache-2.0",
+  "repository": "https://github.com/utkarshavardhana/sspur",
+  "scripts": {
+    "generate": "npx --yes tree-sitter-cli@0.25.10 generate --abi 14",
+    "test": "npx --yes tree-sitter-cli@0.25.10 test"
+  }
+}

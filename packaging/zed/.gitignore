@@ -1,0 +1,9 @@
+/target/
+/extension.wasm
+/grammars/
+tree-sitter-sspur/node_modules/
+tree-sitter-sspur/build/
+tree-sitter-sspur/*.dylib
+tree-sitter-sspur/*.so
+tree-sitter-sspur/*.wasm
+tree-sitter-sspur/log.html

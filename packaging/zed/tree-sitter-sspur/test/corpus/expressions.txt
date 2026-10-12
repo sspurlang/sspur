@@ -1,0 +1,70 @@
+================================================================================
+Match arms and patterns
+================================================================================
+
+fn area(s: Shape) -> F64
+= match s
+  | Circle{r} => 3.14 * r * r
+  | [x, ..rest] if x > 0 => 0x1f
+  | _ => ?fill
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    name: (identifier)
+    parameters: (parameters
+      (identifier)
+      (type_identifier)))
+  (type_identifier)
+  (identifier)
+  (type_identifier)
+  (brace_group
+    (identifier))
+  (float)
+  (identifier)
+  (identifier)
+  (bracket_group
+    (identifier)
+    (identifier))
+  (identifier)
+  (integer)
+  (integer)
+  (placeholder)
+  (hole))
+
+================================================================================
+Members, ranges and tuples
+================================================================================
+
+y = (0..n).map(_.str).join(", ") + t.0.str + lib.{f, T}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (identifier)
+  (paren_group
+    (integer)
+    (identifier))
+  (member
+    name: (identifier))
+  (paren_group
+    (placeholder)
+    (member
+      name: (identifier)))
+  (member
+    name: (identifier))
+  (paren_group
+    (string
+      (string_content)))
+  (identifier)
+  (member
+    name: (integer))
+  (member
+    name: (identifier))
+  (identifier)
+  (member
+    name: (brace_group
+      (identifier)
+      (type_identifier))))
+

@@ -68,7 +68,7 @@ Most languages are designed around a human at a keyboard. SSPUR starts from a di
 - `sspur verify` for SMT-checked contracts
 - Typed holes that fill themselves: `sspur check` lists the small expressions that fit a `?hole` and pass the tests and contracts, and `sspur suggest` proposes `pre` and `post` clauses from runs of a function
 - An MCP server and a compact query API so agents can pull exactly the context they need
-- `sspur lsp`, a language server with diagnostics, quick fixes, hole filling, completion, hover, signature help, inlay hints, formatting, navigation and rename, and a VS Code extension; Neovim, Vim, Helix, Emacs, Sublime Text, JetBrains IDEs and Eclipse work through their LSP clients ([Editor setup](docs/get-started/editors.md))
+- `sspur lsp`, a language server with diagnostics, quick fixes, hole filling, completion, hover, signature help, inlay hints, formatting, navigation and rename, and a VS Code extension; Neovim, Vim, Helix, Emacs, Sublime Text, JetBrains IDEs and Eclipse work through their LSP clients, and Zed through an extension with a Tree-sitter grammar ([Editor setup](docs/get-started/editors.md))
 - C interop in both directions: `extern fn`, `sspur bind` for C headers, and `sspur export-c` to ship SSPUR as a C library
 - `kernel fn` GPU kernels: Metal with exact `F32` and identical traps, queued launches, shared memory and barriers, deterministic atomics, 2D grids and inlined helper fns, plus OpenCL C, SPIR-V and PTX through `sspur gpu`
 - `sspur deploy` to generate infrastructure and least-privilege IAM policies from a service's effects, run the service locally, migrate data, hot swap versions, and replay recorded traffic
@@ -160,10 +160,11 @@ On macOS: `brew install z3 qemu llvm lld`. On Ubuntu: `sudo apt install z3 qemu-
 
 ### Editors
 
-`sspur lsp` is a language server: errors as you type, quick fixes, hole filling, completion, hover, signature help, inlay hints, formatting, go to definition and rename. Each release has the files for the two most common editors, and neither needs an account or a marketplace:
+`sspur lsp` is a language server: errors as you type, quick fixes, hole filling, completion, hover, signature help, inlay hints, formatting, go to definition and rename. Each release has the files for these editors, and none of them needs an account or a marketplace:
 
 - **VS Code**, and Cursor, Windsurf and VSCodium: download `sspur-vX.Y.Z.vsix` and run `code --install-extension sspur-vX.Y.Z.vsix` (or *Extensions: Install from VSIX...*).
 - **JetBrains IDEs** (IntelliJ IDEA, PyCharm, GoLand, RustRover, WebStorm, CLion): install the free LSP4IJ plugin, download and unzip `sspur-lsp4ij-vX.Y.Z.zip`, then in *Settings > Languages & Frameworks > Language Servers* click **+**, **Import template...** and pick the `sspur` folder.
+- **Zed**: download and unzip `sspur-zed-vX.Y.Z.zip`, then run **zed: install dev extension** and pick the `sspur-zed` folder.
 
 [Editor setup](https://utkarshavardhana.github.io/sspur/get-started/editors.html) has these in detail, plus Neovim, Vim, Helix, Emacs, Sublime Text and Eclipse.
 
@@ -242,7 +243,7 @@ The documentation is an mdBook in [`docs/`](docs/), published at [utkarshavardha
 |---|---|
 | [Playground](https://utkarshavardhana.github.io/sspur/play/) | Check, run, test and format programs in the browser, with completions, hover types and quick fixes from the compiler. Its source is [`docs/play/`](docs/play/) and [`crates/sspur-wasm`](crates/sspur-wasm/); `tools/build_playground.sh` builds it |
 | [Get Started](https://utkarshavardhana.github.io/sspur/get-started/five-minutes.html) | SSPUR in 5 minutes, pages for [TypeScript](https://utkarshavardhana.github.io/sspur/get-started/from-typescript.html), [Python](https://utkarshavardhana.github.io/sspur/get-started/from-python.html) and [Go and Rust](https://utkarshavardhana.github.io/sspur/get-started/from-go-rust.html) programmers, [SSPUR for AI agents](https://utkarshavardhana.github.io/sspur/get-started/agents.html) and [installation](https://utkarshavardhana.github.io/sspur/get-started/installation.html) |
-| [Editor setup](https://utkarshavardhana.github.io/sspur/get-started/editors.html) | `sspur lsp` in VS Code (the extension in [`packaging/vscode/`](packaging/vscode/)) and its forks, Neovim, Vim, Helix, Emacs, Sublime Text, JetBrains IDEs, Kate and Eclipse |
+| [Editor setup](https://utkarshavardhana.github.io/sspur/get-started/editors.html) | `sspur lsp` in VS Code (the extension in [`packaging/vscode/`](packaging/vscode/)) and its forks, Zed (the extension in [`packaging/zed/`](packaging/zed/)), Neovim, Vim, Helix, Emacs, Sublime Text, JetBrains IDEs, Kate and Eclipse |
 | [Handbook](https://utkarshavardhana.github.io/sspur/handbook/index.html) | The language in eleven pages, from the basics to traits, concurrency and packages |
 | [Reference](https://utkarshavardhana.github.io/sspur/reference/language.html) | The [full language reference](docs/reference/language.md) (what `sspur spec --full` prints), the [standard library](https://utkarshavardhana.github.io/sspur/reference/stdlib.html), [effects](https://utkarshavardhana.github.io/sspur/reference/effects.html), [error codes](https://utkarshavardhana.github.io/sspur/reference/errors.html), the [command line](https://utkarshavardhana.github.io/sspur/reference/cli.html), the [agent reference](docs/agent/agent-spec.md) and [JSON schemas](https://utkarshavardhana.github.io/sspur/reference/schema.html) |
 | [Tutorials](https://utkarshavardhana.github.io/sspur/tutorials/index.html) | A CRUD service, migrations and hot swap, calling C, bare metal, GPU kernels, and a multi-agent codebase |
@@ -285,7 +286,7 @@ See the [roadmap](docs/design/roadmap.md) for details and exit criteria.
 | `examples/` | Small complete programs: hello, a CRUD service, C interop, packages |
 | `tests/` | Suite programs, the ownership soundness suite, bare-metal, GPU and fuzz regression tests |
 | `bench/` | Benchmarks: `native/` against C++, `agent/` and `eval/` for agents, `incremental/`, `llvm/`, and `tokens/`, the Phase 1 token count |
-| `packaging/` | The Homebrew formula and Scoop manifest templates, the Claude Code plugin (`packaging/claude-code/`), the VS Code extension (`packaging/vscode/`) and the LSP4IJ template for JetBrains IDEs (`packaging/jetbrains/`) |
+| `packaging/` | The Homebrew formula and Scoop manifest templates, the Claude Code plugin (`packaging/claude-code/`), the VS Code extension (`packaging/vscode/`) the LSP4IJ template for JetBrains IDEs (`packaging/jetbrains/`) and the Zed extension with its Tree-sitter grammar (`packaging/zed/`) |
 | `tools/` | The corpus differential check, the site link check, and the playground build and its smoke test, all run by CI |
 
 ## Contributing

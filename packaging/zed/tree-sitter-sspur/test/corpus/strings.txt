@@ -1,0 +1,62 @@
+================================================================================
+Interpolation and literal braces
+================================================================================
+
+x = "n={n} {x.name}" + "{}" + "([{" + "\{\"a\":1}"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (identifier)
+  (string
+    (string_content)
+    (interpolation
+      (identifier))
+    (string_content)
+    (interpolation
+      (identifier)
+      (member
+        name: (identifier))))
+  (string
+    (string_content)
+    (string_content))
+  (string
+    (string_content)
+    (string_content))
+  (string
+    (escape_sequence)
+    (escape_sequence)
+    (string_content)
+    (escape_sequence)
+    (string_content)))
+
+================================================================================
+Strings inside interpolation
+================================================================================
+
+s = "{xs.join(" -> ")}" + "{xs.join(\" -> \")}" + 'one {n}'
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (identifier)
+  (string
+    (interpolation
+      (identifier)
+      (member
+        name: (identifier))
+      (paren_group
+        (string
+          (string_content)))))
+  (string
+    (interpolation
+      (identifier)
+      (member
+        name: (identifier))
+      (paren_group
+        (escaped_string))))
+  (string
+    (string_content)
+    (interpolation
+      (identifier))))
+

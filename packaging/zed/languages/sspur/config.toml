@@ -1,0 +1,17 @@
+name = "SSPUR"
+grammar = "sspur"
+path_suffixes = ["ssp"]
+line_comments = ["// "]
+tab_size = 2
+hard_tabs = false
+word_characters = ["_"]
+autoclose_before = ";:.,=}])> \n\t\""
+brackets = [
+  { start = "{", end = "}", close = true, newline = true },
+  { start = "[", end = "]", close = true, newline = true },
+  { start = "(", end = ")", close = true, newline = true },
+  { start = "\"", end = "\"", close = true, newline = false, not_in = ["string", "comment"] },
+  { start = "'", end = "'", close = true, newline = false, not_in = ["string", "comment"] },
+]
+# A line ending in `=`, `=>`, `do`, `then`, `else`, an operator or an open bracket opens a block.
+increase_indent_pattern = "(=|=>|->|:=|\\bdo|\\bthen|\\belse|\\band|\\bor|[-+*/%]|==|!=|<=|>=)\\s*(//.*)?$"

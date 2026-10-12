@@ -111,7 +111,7 @@ jobs:
           packaging/scoop/render.sh "${GITHUB_REF_NAME#v}" dist/SHA256SUMS > dist/sspur.json
           cat dist/sspur.json
 
-      - name: VS Code extension and JetBrains template
+      - name: VS Code extension, JetBrains template and Zed extension
         run: |
           v="${GITHUB_REF_NAME#v}"
           cd packaging/vscode
@@ -120,8 +120,11 @@ jobs:
           npx --yes @vscode/vsce@3 package -o "../../dist/sspur-${GITHUB_REF_NAME}.vsix"
           cd ../jetbrains
           zip -qr "../../dist/sspur-lsp4ij-${GITHUB_REF_NAME}.zip" sspur
-          cd ../../dist
-          sha256sum "sspur-${GITHUB_REF_NAME}.vsix" "sspur-lsp4ij-${GITHUB_REF_NAME}.zip" >> SHA256SUMS
+          cd ../..
+          packaging/zed/package.sh "$RUNNER_TEMP/zed/sspur-zed" https://github.com/utkarshavardhana/sspur "$GITHUB_SHA" "$v"
+          (cd "$RUNNER_TEMP/zed" && zip -qr "$GITHUB_WORKSPACE/dist/sspur-zed-${GITHUB_REF_NAME}.zip" sspur-zed)
+          cd dist
+          sha256sum "sspur-${GITHUB_REF_NAME}.vsix" "sspur-lsp4ij-${GITHUB_REF_NAME}.zip" "sspur-zed-${GITHUB_REF_NAME}.zip" >> SHA256SUMS
           sha256sum -c SHA256SUMS
 
       - name: Release notes

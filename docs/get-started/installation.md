@@ -60,6 +60,6 @@ GPU kernels run on Metal on macOS and on the CPU elsewhere (Linux and Windows re
 
 ## Editor and agent setup
 
-`sspur lsp` is a language server, so SSPUR works in any editor with an LSP client. Each release has a VS Code extension (`sspur-vX.Y.Z.vsix`, also for Cursor, Windsurf and VSCodium) and a template for JetBrains IDEs (`sspur-lsp4ij-vX.Y.Z.zip`); both install without any account. [Editor setup](editors.md) covers those and Neovim, Vim, Helix, Emacs, Sublime Text and Eclipse. For coding agents, `sspur mcp` is an MCP server and the Claude Code plugin bundles it with a skill; [SSPUR for AI agents](agents.md) shows both.
+`sspur lsp` is a language server, so SSPUR works in any editor with an LSP client. Each release has a VS Code extension (`sspur-vX.Y.Z.vsix`, also for Cursor, Windsurf and VSCodium) a template for JetBrains IDEs (`sspur-lsp4ij-vX.Y.Z.zip`) and a Zed extension (`sspur-zed-vX.Y.Z.zip`); all three install without any account. [Editor setup](editors.md) covers those and Neovim, Vim, Helix, Emacs, Sublime Text and Eclipse. For coding agents, `sspur mcp` is an MCP server and the Claude Code plugin bundles it with a skill; [SSPUR for AI agents](agents.md) shows both.
 
 Next: [SSPUR in 5 minutes](five-minutes.md).
