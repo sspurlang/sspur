@@ -2,7 +2,11 @@
 
 This measures the Phase 3 exit criterion: an agent completes multi-step feature tasks using SSPUR (CLI ops only) with fewer total tokens than the same agent using Python. Run 9 adds TypeScript and Go as controls, because beating Python alone does not show that the language is the reason.
 
-**Latest result (run 13, 2026-10-12): SSPUR is back at run 11's level after 0.6 and 0.7. On the 17 cells, Sonnet 5.5 used 0.69x Python's tokens, 1.02x TypeScript's and 0.92x Go's (medians 0.60x, 1.02x, 1.00x), with 246/246 hidden tests passing in every language and 61 calls (run 11: 58).** Two of the three extra calls came from `python3` failing in the agents' shell on this machine (a locale setting), not from the language. Details in [Results, run 13](#results-run-13).
+**Latest result (run 15, 2026-10-12): the best since run 11. On the 17 cells, Sonnet 5.5 used 0.67x Python's tokens, 0.98x TypeScript's and 0.89x Go's (medians 0.62x, 1.02x, 1.01x), in 59 calls (run 11: 58), with 246/246 hidden tests passing in every language.** The medians against TypeScript and Go are still about 1.0x, so this is parity with them, not a win. Details in [Results, run 15](#results-run-15).
+
+**Run 14 (2026-10-12): 0.73x Python, 1.07x TypeScript, 0.97x Go**, 64 calls. The fixes aimed at run 13's misses worked, but six other cells took a call or two more. Details in [Results, run 14](#results-run-14).
+
+**Run 13 (2026-10-12): 0.69x Python, 1.02x TypeScript, 0.92x Go**, 61 calls, back at run 11's level after 0.6 and 0.7. Details in [Results, run 13](#results-run-13).
 
 **Run 12 (2026-10-12): 0.79x Python, 1.16x TypeScript, 1.05x Go**, after 0.6 and 0.7 grew the core spec to 698 tokens and two language gaps cost extra calls. Details in [Results, run 12](#results-run-12).
 
@@ -45,6 +49,8 @@ This measures the Phase 3 exit criterion: an agent completes multi-step feature 
 | 11, Sonnet 5.5, 16 tasks + s1_shop | test failures print values, 556-token core spec, shorter prompt, all 17 SSPUR cells rerun at `ef439aa` | 246/246 in each of the 4 languages | 58 / 88 | **0.65x** vs Python, **0.95x** vs TypeScript (median 1.01x), **0.86x** vs Go (median 1.00x) |
 | 12, Sonnet 5.5, 16 tasks + s1_shop | compiler at 0.7.1 (`11263bc`): hole filling, `e is p`, guard clauses, long lines; 698-token core spec (run 11: 556); same prompts as run 11 | 246/246 in each of the 4 languages | 68 / 88 | **0.79x** vs Python, **1.16x** vs TypeScript, **1.05x** vs Go (medians 0.67x, 1.03x, 1.01x) |
 | 13, Sonnet 5.5, 16 tasks + s1_shop | 584-token core spec, escaped quotes in interpolation, `catch do` arms at the block indent, compiler at `b0baa83`, same prompts | 246/246 in each of the 4 languages | 61 / 88 | **0.69x** vs Python, **1.02x** vs TypeScript, **0.92x** vs Go (medians 0.60x, 1.02x, 1.00x) |
+| 14, Sonnet 5.5, 16 tasks + s1_shop | a caught error shown by a failing test, a `catch e \| E => false` test that expects success, `while e is p`, longer fill predicates, deeper playground recursion; compiler at `4cd32dc`, same prompts; the machine's `python3` locale fixed | 246/246 in each of the 4 languages | 64 / 88 | **0.73x** vs Python, **1.07x** vs TypeScript, **0.97x** vs Go (medians 0.70x, 1.02x, 1.01x) |
+| 15, Sonnet 5.5, 16 tasks + s1_shop | `! a ! b` stored as `! a, b`, `remove X` plus X's text under a new name read as a rename; compiler at `be2f46b`, same prompts | 246/246 in each of the 4 languages | 59 / 88 | **0.67x** vs Python, **0.98x** vs TypeScript, **0.89x** vs Go (medians 0.62x, 1.02x, 1.01x) |
 
 Python's side was identical in all runs; its totals were 1.27M, 1.20M, 1.48M and 1.22M. Against Python's cheapest run, SSPUR run 3 is 0.73x and run 4 after the fix is 0.71x.
 
@@ -105,6 +111,32 @@ All changes are in the CLI and the spec. The language is unchanged.
 - The MCP server gained `sspur_edit`, and its tools return the same compact text (`json: true` for the old format).
 
 Run 2 used a heredoc (`./sspur edit --test <<'EOF'`). The sandbox refused that command in 6 of 8 runs: it treats `{a, b}` inside the heredoc (any record literal with two fields) as possible brace expansion and won't verify the command. Each refusal cost a retry plus a Write call to put the input in a file. Run 3's spec recommends one single-quoted `-e` argument instead, which passed in 7 of 8 runs (a8 was refused once, apparently because of a `#` inside a string).
+
+## Results, run 15
+
+Run 15 reruns all 17 SSPUR cells after the two fixes that run 14 pointed to, with the same harness and prompts and the compiler frozen at `be2f46b` (`target/sspur-frozen-be2f46b`). Run directory: `runs/2026-10-12-r15/`. One cell was repeated: the first b6 agent stopped on an API error (its output was blocked by content filtering) before it finished, so b6 was rerun once from a fresh setup with the same prompt and only the rerun counts (`excluded.txt`).
+
+What changed from run 14:
+
+- A signature with repeated effect clauses, `-> Int ! fail[CalcErr] ! div`, is stored as `! fail[CalcErr], div` (run 14's b2 lost a call to the parse error).
+- `remove X` together with a new definition whose text is X's under another name is read as `rename X NEW`, so stored callers follow it (run 14's a5 was rejected because a stored test still called the old name). When nothing pairs, the error for a stored caller of a removed name says which caller and suggests `rename`.
+
+| | Run 13 | Run 14 | Run 15 |
+|---|---|---|---|
+| Hidden tests | 246/246 | 246/246 | 246/246 |
+| Calls | 61 | 64 | 59 |
+| Total vs Python | 0.69x | 0.73x | 0.67x |
+| Total vs TypeScript | 1.02x | 1.07x | 0.98x |
+| Total vs Go | 0.92x | 0.97x | 0.89x |
+| Median vs TypeScript, Go | 1.02x, 1.00x | 1.02x, 1.01x | 1.02x, 1.01x |
+
+Twelve cells took 3 calls, the minimum. The rest: b1 (6) ran an extra `./sspur test` and then lost a call to a GNU-style `sed` command that macOS sed rejects; b6 (5) wrote `(g with rooms := a, inventory := b), "Taken.")`, one `(` short, then lost a call to the same `sed -i` difference; b3 (4) and b5 (4) each had a wrong expected value in their own test; a5 (4) passed on its first edit and spent a call removing the old test, which the rename had turned into a duplicate of its new one. b6 made the same parenthesis mistake in run 14, so a better hint for that parse error is the next improvement.
+
+## Results, run 14
+
+Run 14 measures the follow-ups after run 13, with the same harness and prompts and the compiler frozen at `4cd32dc` (`target/sspur-frozen-4cd32dc`). Run directory: `runs/2026-10-12-r14/`. No cell was excluded or repeated. Between runs 13 and 14 the machine's locale was fixed (`LANG=en_US.UTF-8`), so `python3` works in the agents' shell again.
+
+The three cells run 13 lost calls on improved: b3 from 6 calls to 3 (the locale), b8 from 5 to 3 (a test written `catch require(..) | MissingKey{..} => false` now expects no error instead of always failing, and a failing catch test prints the error it caught) and b4 from 6 to 5. Six other cells took one or two calls more: three of those calls went to `sed -i` without the empty suffix macOS needs (agents that used to reach for `python3` and fail now reach for `sed`), a1 had a wrong expected value in its own test, and b6 had a parenthesis too few. Two were the language's: b2 wrote `! fail[CalcErr] ! div`, a parse error, and a5's `remove subtotal` with a new `gross` of the same body was rejected because a stored test still called `subtotal`. Both are fixed for run 15.
 
 ## Results, run 13
 

@@ -1,0 +1,1 @@
+b6_adventure: the first agent stopped on an API error (output blocked by content filtering) before finishing; the cell was rerun once from a fresh setup with the same prompt, and only the rerun is counted.

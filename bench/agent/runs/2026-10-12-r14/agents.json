@@ -1,0 +1,19 @@
+{
+ "sspur/a1_inventory": "/Users/utkrsh/.claude/projects/-Users-utkrsh/63ed1ca4-fdb8-431d-88ec-be0e8b925dde/subagents/agent-a8df9817a3443c230.jsonl",
+ "sspur/a2_wordstats": "/Users/utkrsh/.claude/projects/-Users-utkrsh/63ed1ca4-fdb8-431d-88ec-be0e8b925dde/subagents/agent-aed3cd8dd9696adc3.jsonl",
+ "sspur/a3_bank": "/Users/utkrsh/.claude/projects/-Users-utkrsh/63ed1ca4-fdb8-431d-88ec-be0e8b925dde/subagents/agent-a732aa01616d8413d.jsonl",
+ "sspur/a4_calc": "/Users/utkrsh/.claude/projects/-Users-utkrsh/63ed1ca4-fdb8-431d-88ec-be0e8b925dde/subagents/agent-a51cb5feec5143c49.jsonl",
+ "sspur/a5_orders": "/Users/utkrsh/.claude/projects/-Users-utkrsh/63ed1ca4-fdb8-431d-88ec-be0e8b925dde/subagents/agent-a7ce61dd798f50a43.jsonl",
+ "sspur/a6_todo": "/Users/utkrsh/.claude/projects/-Users-utkrsh/63ed1ca4-fdb8-431d-88ec-be0e8b925dde/subagents/agent-ad3b289d2e5c9ecfc.jsonl",
+ "sspur/a7_grades": "/Users/utkrsh/.claude/projects/-Users-utkrsh/63ed1ca4-fdb8-431d-88ec-be0e8b925dde/subagents/agent-a30a6edbccd2e115e.jsonl",
+ "sspur/a8_config": "/Users/utkrsh/.claude/projects/-Users-utkrsh/63ed1ca4-fdb8-431d-88ec-be0e8b925dde/subagents/agent-a677a383f259158d3.jsonl",
+ "sspur/b1_lru": "/Users/utkrsh/.claude/projects/-Users-utkrsh/63ed1ca4-fdb8-431d-88ec-be0e8b925dde/subagents/agent-a8747650a63203285.jsonl",
+ "sspur/b2_calc": "/Users/utkrsh/.claude/projects/-Users-utkrsh/63ed1ca4-fdb8-431d-88ec-be0e8b925dde/subagents/agent-aed79385b3fe194ce.jsonl",
+ "sspur/b3_payroll": "/Users/utkrsh/.claude/projects/-Users-utkrsh/63ed1ca4-fdb8-431d-88ec-be0e8b925dde/subagents/agent-a622e4bb96bdd2b19.jsonl",
+ "sspur/b4_ratelimit": "/Users/utkrsh/.claude/projects/-Users-utkrsh/63ed1ca4-fdb8-431d-88ec-be0e8b925dde/subagents/agent-a1f02da041ffccd34.jsonl",
+ "sspur/b5_deps": "/Users/utkrsh/.claude/projects/-Users-utkrsh/63ed1ca4-fdb8-431d-88ec-be0e8b925dde/subagents/agent-a6d26ad8d95fc7af8.jsonl",
+ "sspur/b6_adventure": "/Users/utkrsh/.claude/projects/-Users-utkrsh/63ed1ca4-fdb8-431d-88ec-be0e8b925dde/subagents/agent-a0f81f49923dc2e0d.jsonl",
+ "sspur/b7_ledger": "/Users/utkrsh/.claude/projects/-Users-utkrsh/63ed1ca4-fdb8-431d-88ec-be0e8b925dde/subagents/agent-a5cdd33c0059e4ec9.jsonl",
+ "sspur/b8_merge": "/Users/utkrsh/.claude/projects/-Users-utkrsh/63ed1ca4-fdb8-431d-88ec-be0e8b925dde/subagents/agent-a898bf6b79956747b.jsonl",
+ "sspur/s1_shop": "/Users/utkrsh/.claude/projects/-Users-utkrsh/63ed1ca4-fdb8-431d-88ec-be0e8b925dde/subagents/agent-abb33cab610bc2cde.jsonl"
+}

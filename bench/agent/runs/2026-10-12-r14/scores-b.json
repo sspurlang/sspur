@@ -1,0 +1,66 @@
+[
+ {
+  "lang": "sspur",
+  "task": "b1_lru",
+  "passed": 21,
+  "total": 21,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "sspur",
+  "task": "b2_calc",
+  "passed": 17,
+  "total": 17,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "sspur",
+  "task": "b3_payroll",
+  "passed": 17,
+  "total": 17,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "sspur",
+  "task": "b4_ratelimit",
+  "passed": 17,
+  "total": 17,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "sspur",
+  "task": "b5_deps",
+  "passed": 18,
+  "total": 18,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "sspur",
+  "task": "b6_adventure",
+  "passed": 17,
+  "total": 17,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "sspur",
+  "task": "b7_ledger",
+  "passed": 17,
+  "total": 17,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "sspur",
+  "task": "b8_merge",
+  "passed": 17,
+  "total": 17,
+  "ok": true,
+  "msg": ""
+ }
+]
