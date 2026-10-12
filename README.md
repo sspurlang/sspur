@@ -9,6 +9,8 @@
 
 Documentation: **[utkarshavardhana.github.io/sspur](https://utkarshavardhana.github.io/sspur/)**, with [Get Started](https://utkarshavardhana.github.io/sspur/get-started/five-minutes.html), the [Handbook](https://utkarshavardhana.github.io/sspur/handbook/index.html), the [Reference](https://utkarshavardhana.github.io/sspur/reference/language.html) and [Tutorials](https://utkarshavardhana.github.io/sspur/tutorials/index.html). To try it without installing anything, open the **[Playground](https://utkarshavardhana.github.io/sspur/play/)**, which runs the checker and the interpreter in your browser.
 
+<p align="center"><a href="https://utkarshavardhana.github.io/sspur/play/"><img src="docs/assets/playground.gif" width="720" alt="Typing a small SSPUR program in the playground, then running its test and main"></a></p>
+
 SSPUR is a statically typed, effect-tracked language whose primary users are AI coding agents rather than people. Programs are stored as a typed, content-addressed graph of definitions. Agents change code through atomic, typechecked operations instead of text diffs, and the compiler treats contracts, effects, and tests as first-class data. The surface syntax is designed to spend as few tokens as possible while still compiling to native code that outperforms idiomatic C++.
 
 ```
