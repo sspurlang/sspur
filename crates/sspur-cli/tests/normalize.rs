@@ -110,3 +110,13 @@ fn catch_of_a_non_bool_in_a_test_is_stored_canonical() {
     let (again, ok) = sspur(&d, &["edit", "--interp"], &format!("{body}\n"));
     assert!(ok && !again.contains("stored as"), "{again}");
 }
+
+#[test]
+fn catch_with_only_false_arms_in_a_test_expects_success() {
+    let d = fresh("catchok");
+    let (out, ok) = sspur(&d, &["edit", "--test", "--interp"], "test ok = catch check(1)\n  | Bad{n} => false\n\ntest bad = catch check(-1)\n  | Bad{n} => false\n");
+    assert!(!ok && out.contains("FAIL  bad: raised Bad{n: -1}") && out.contains("1 passed, 1 failed"), "{out}");
+    assert!(out.contains("stored as: catch e | .. with a non-Bool e and only false arms in a test -> catch do (_ = e) true | .."), "{out}");
+    let (body, _) = sspur(&d, &["q", "body", "ok"], "");
+    assert_eq!(body, "test ok = catch do\n  _ = check(1)\n  true\n| Bad{n} => false");
+}

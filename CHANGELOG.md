@@ -7,6 +7,7 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 ### Fixed
 - A string written with escaped quotes inside an interpolation, `"cycle {path.join(\" -> \")}"`, printed the braces as text; it now means the same as `"cycle {path.join(" -> ")}"`.
 - An arm of `catch do` or `match ... do` written at the block's own indent (`catch do`, the lines, then `| _ => false` under them) was read as a statement and failed with `E_PARSE_EXPR`; a `|` line now ends the block and starts the arms.
+- A test written `catch e | Err => false`, which expects `e` to finish without an error, was stored as `catch do (_ = e) false | ..` and so always failed; when every arm is `false` it is now stored as `catch do (_ = e) true | ..`, and a failing run shows the error that was raised.
 
 ### Changed
 - The core agent spec is 584 tokens again (0.7.1: 698): the pattern line is shorter, and block lambdas and traits are in `sspur spec --more` only.

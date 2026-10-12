@@ -2691,7 +2691,7 @@ impl Checker {
         let mut bt = self.infer(body, if want_bool { None } else { exp });
         if want_bool && matches!(self.resolve(&bt), Type::Con(..) | Type::Tuple(_)) && self.resolve(&bt) != Type::bool() {
             let fix = fixup::Fix::CatchTest { span };
-            self.norm(span, "'catch e | ..' with a non-Bool e in a test is written 'catch do (_ = e) false | ..'".into(), fix);
+            self.norm(span, if arms.iter().all(|a| matches!(a.body.kind, ExprKind::Bool(false))) { "'catch e | ..' with a non-Bool e and only false arms in a test is written 'catch do (_ = e) true | ..'".into() } else { "'catch e | ..' with a non-Bool e in a test is written 'catch do (_ = e) false | ..'".into() }, fix);
             bt = Type::bool();
         }
         let frame = self.frames.pop().unwrap();

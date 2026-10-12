@@ -121,7 +121,10 @@ fn rewrite(x: &mut Expr, fix: &Fix) -> bool {
         (ExprKind::Field(recv, _), Fix::DropMethod { .. }) => (recv.kind, true),
         (ExprKind::Catch(body, arms), Fix::CatchTest { .. }) => {
             let sp = body.span;
-            let block = Expr::new(ExprKind::Block(vec![Stmt::Let(Pat::Wild, *body), Stmt::Expr(Expr::new(ExprKind::Bool(false), sp))]), sp);
+            // The test expects an error when an arm says so; when every arm is `false`, it expects
+            // `e` to finish without one (`catch require(cfg) | Missing{..} => false`).
+            let expects_success = !arms.is_empty() && arms.iter().all(|a| matches!(a.body.kind, ExprKind::Bool(false)));
+            let block = Expr::new(ExprKind::Block(vec![Stmt::Let(Pat::Wild, *body), Stmt::Expr(Expr::new(ExprKind::Bool(expects_success), sp))]), sp);
             (ExprKind::Catch(Box::new(block), arms), true)
         }
         (ExprKind::Name(_), Fix::Name { to, .. }) => (
