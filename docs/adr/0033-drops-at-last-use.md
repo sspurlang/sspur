@@ -104,7 +104,7 @@ On the two GC-bound programs used in option 1 (persistent maps and trees with ol
 - Runtime reference counts (option 2). The workloads that still peak above C++ do so because of values that really are shared, or because of what the program keeps alive, not because of garbage the analysis missed.
 - Freeing through records, tuples, sum values and maps. A record holding a list hands the list to the collector.
 - Reusing a dropped cell directly for the next constructor of the same shape (Perceus reuse tokens). ADR 0008's `__own` functions already do this for trees; for lists and strings the size-class free list gives the same effect one allocation later.
-- Streaming `dev_f32((0..n).map(f))` straight into the device buffer, which would remove `gpu`'s remaining transient host lists.
+- Streaming `dev_f32((0..n).map(f))` straight into the device buffer, which would remove `gpu`'s remaining transient host lists (done later, below).
 
 ## Follow-up: `app` (fused folds)
 
@@ -128,3 +128,23 @@ The handler needs a `setjmp`, which on macOS also saves the signal mask with a s
 | `report` in-process | | 87 ms | 84 ms |
 
 The CSV is still left for the collector (the split lines point into it, so `report` doesn't borrow its argument); it no longer matters for the peak, which is now the CSV and the line list while the fold runs.
+
+## Follow-up: `gpu` (uploads without host lists)
+
+`gpu` peaked at 178 MB against C++'s 54 MB (the C++ version runs on the CPU). Measured piece by piece:
+- Each 4M-element input was built as a 32 MB host list of `F64` before `dev_f32` converted it into the device buffer, and `y.to_list.sum` built another 32 MB list to sum it. The lists were freed at their last use, but the collector's heap still reached 64 MB.
+- The launch queue (ADR 0023) keeps a mask of flagged threads for each queued launch, 512 KB for 4M threads, and cleared each new mask before its first use, which made all of it resident: 100 queued `saxpy` launches held 51 MB of masks.
+
+Three changes, none of which changes a result:
+- `dev_f32((a..b).map(f))`, and the same for `dev_f64`, `dev_i32`, `dev_u32` and `dev_int`, allocate the device buffer and write each `f(i)` into it, with the conversion the list path does. An element out of range for `I32` or `U32` is remembered and reported after the last `f`, which is where the unfused upload would have found it, so a trap in a later `f` still wins.
+- `d.to_list.sum` sums the converted elements of the buffer in order, as the list's `sum` does, without the list.
+- A new Metal buffer is zero-filled, so a new mask is no longer cleared; it stays mostly untouched and out of memory.
+
+| `gpu` | C++ | before | after |
+|---|---|---|---|
+| time | 0.82s | 0.31s | 0.29s |
+| peak memory | 54 MB | 178 MB | 97 MB |
+| setup (building the inputs) | | 71 ms | 59 ms |
+| collector heap high water | | 64 MB | 4 MB |
+
+What remains is what a GPU program keeps: 52 MB of device buffers (the C++ version keeps the same data in about 50 MB of vectors), 18 MB of host copies of the buffers that kernels write, which let the queue rerun a launch exactly on the CPU when a thread flags a trap or a subnormal (ADR 0020), and about 14 MB for Metal itself. Dropping the copies would need the kernels to prove they can't flag, which they can't for `F32` arithmetic in general.

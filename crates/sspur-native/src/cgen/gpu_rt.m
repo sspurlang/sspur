@@ -188,10 +188,11 @@ int ss_gpu_enqueue(const char* src, const char* entry, int32_t nargs, const SsGp
         if (opts & 1) {
             id<MTLBuffer> m = g_masks[slot];
             if (!m || m.length < words * 4) {
+                // Metal zero-fills a new buffer; clearing it here would make all of it resident.
                 m = [g_dev newBufferWithLength:words * 4 + 4096 options:MTLResourceStorageModeShared];
                 if (!m) goto out;
                 g_masks[slot] = m;
-                g_mdirty[slot] = 1;
+                g_mdirty[slot] = 0;
             }
             if (g_mdirty[slot]) { memset([m contents], 0, m.length); g_mdirty[slot] = 0; }
         }

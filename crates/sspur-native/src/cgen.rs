@@ -3005,6 +3005,18 @@ impl<'a> Cx<'a> {
                     return self.call_closure(&fv, &ft, vals);
                 }
                 let ExprKind::Name(n) = &f.kind else { unreachable!() };
+                if args.len() == 1
+                    && n.starts_with("dev_")
+                    && self.builtin_reader(n, &[])
+                    && let ExprKind::Method { recv, name: mn, args: ma, .. } = &args[0].kind
+                    && mn == "map"
+                    && ma.len() == 1
+                    && !self.check.user_methods.contains(&(args[0].span.start, args[0].span.end))
+                    && let ExprKind::Range(a, b) = &recv.kind
+                {
+                    self.cty(&t)?;
+                    return self.dev_new_range(n, a, b, &ma[0], &t);
+                }
                 if args.len() == 1 && self.builtin_reader(n, &[]) && let Some(k) = self.rc_temp(&args[0]) {
                     return self.rc_hoist(&[(&args[0], Some(k))], |cx| cx.expr(e));
                 }
@@ -4067,6 +4079,19 @@ impl<'a> Cx<'a> {
         }
         if let Some(r) = self.fused(e, name, recv, args, t) {
             return r;
+        }
+        if name == "sum"
+            && args.is_empty()
+            && let Some(d) = match &recv.kind {
+                ExprKind::Method { recv: d, name: n, args: a, .. } if n == "to_list" && a.is_empty() && !self.check.user_methods.contains(&(recv.span.start, recv.span.end)) => Some(d),
+                ExprKind::Field(d, n) if n == "to_list" => Some(d),
+                _ => None,
+            }
+            && let Ok(dt) = self.ty(d)
+            && matches!(&dt, Type::Con(n, _) if n == "#DevBuf")
+        {
+            let r = self.expr(d)?;
+            return Ok(self.dev_sum(&r, &dt));
         }
         if name == "counts"
             && args.is_empty()

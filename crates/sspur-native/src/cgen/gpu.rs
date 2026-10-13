@@ -1580,6 +1580,47 @@ impl Cx<'_> {
         Ok(format!("({{ __auto_type l_ = {list}; SsDev* d_ = ss_dev_alloc(l_.len, {es}); {e}* h_ = ({e}*)d_->host; for (int64_t j_ = 0; j_ < l_.len; j_++) {{ {fill} }} d_; }})"))
     }
 
+    /// `dev_f32((a..b).map(f))` and the other `dev_*` constructors of a mapped range: each value
+    /// goes straight into the device buffer instead of a host list first. An element out of range
+    /// for a 32-bit buffer is reported after the last `f`, where the unfused upload would find it.
+    pub(super) fn dev_new_range(&mut self, n: &str, a: &Expr, b: &Expr, f: &Expr, t: &Type) -> G {
+        let kt = dev_elem(t);
+        let e = elem_c(kt, Tgt::C);
+        let es = es(kt);
+        let (av, bv) = (self.expr(a)?, self.expr(b)?);
+        let (i, x) = (self.fresh("i"), self.fresh("x"));
+        let m = self.know.facts.len();
+        self.for_range_facts(&x, a, b);
+        let body = self.apply(f, vec![(x.clone(), Type::int())]);
+        self.know.facts.truncate(m);
+        let body = body?;
+        let (fill, check) = match kt {
+            KTy::F32 => (format!("h_[{i}] = (float)({body});"), String::new()),
+            KTy::F64 | KTy::Int => (format!("h_[{i}] = ({e})({body});"), String::new()),
+            _ => {
+                let (lo, hi) = kt.range();
+                (
+                    format!("int64_t v_ = {body}; if (UNLIKELY((v_ < {lo}LL || v_ > {hi}LL) && bad_ < 0)) {{ bad_ = {i}; bv_ = v_; }} h_[{i}] = ({e})v_;"),
+                    format!("if (UNLIKELY(bad_ >= 0)) dev_fail(st, FIDX, \"dev: element \", bad_, \" of {n} is out of range for {} (value = \", bv_); ", kt.name()),
+                )
+            }
+        };
+        let bad = if check.is_empty() { "" } else { "int64_t bad_ = -1, bv_ = 0; " };
+        Ok(format!("({{ int64_t s_ = {av}; int64_t re_ = {bv}; int64_t n_ = re_ > s_ ? re_ - s_ : 0; if (UNLIKELY(n_ > (((int64_t)1 << 31) / 8))) sspur_trap((Status*)gc_root_ptr, 15, 0, 0, 0); SsDev* d_ = ss_dev_alloc(n_, {es}); {e}* h_ = ({e}*)d_->host; {bad}for (int64_t {i} = 0; {i} < n_; {i}++) {{ int64_t {x} = s_ + {i}; {fill} }} {check}d_; }})"))
+    }
+
+    /// `d.to_list.sum` without the list: the same sequential sum over the converted elements.
+    pub(super) fn dev_sum(&mut self, r: &str, rt: &Type) -> String {
+        let kt = dev_elem(rt);
+        let e = elem_c(kt, Tgt::C);
+        let head = format!("SsDev* d_ = {r}; ss_q_sync(st); {e}* h_ = ({e}*)d_->host; ");
+        if kt.is_float() {
+            format!("({{ {head}double s_ = -0.0; for (int64_t j_ = 0; j_ < d_->len; j_++) s_ += ss_canon((double)h_[j_]); d_->len ? s_ : 0.0; }})")
+        } else {
+            format!("({{ {head}int64_t s_ = 0; for (int64_t j_ = 0; j_ < d_->len; j_++) if (UNLIKELY(__builtin_add_overflow(s_, (int64_t)h_[j_], &s_))) TRAPV({T_OVERFLOW}, 0, 0); s_; }})")
+        }
+    }
+
     pub(super) fn dev_method(&mut self, r: &str, rt: &Type, name: &str, t: &Type) -> G {
         match name {
             "len" => Ok(format!("(({r})->len)")),

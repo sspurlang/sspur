@@ -67,6 +67,21 @@ fn both() -> Bool ! dev
   (a, b) = par(steps(2000, 3), steps(3000, 2))
   a == steps(2000, 3) and b == steps(3000, 2)
 
+fn ranged(n: Int, bad: Int, div: Int) -> List[Int] ! dev
+= do
+  m = dev_i32((0..n).map(i => if i == bad then 3000000000 + i else 100 / (i - div)))
+  bump(&mut m)
+  m.to_list
+
+fn ranged_sum(n: Int) -> F64 ! dev
+= do
+  y = dev_f32((0..n).map(i => (i % 9).to_f64 * 0.25 - 1.0))
+  h = dev_i32((3..n).map(i => i * i))
+  y.to_list.sum + h.to_list.sum.to_f64 + dev_f32((0..0).map(i => 1.0)).to_list.sum
+
+test ranged_ok = ranged(6, -1, 10) == [-9, -10, -11, -13, -15, -19] and ranged_sum(1000) == ranged_sum(1000) and ranged_sum(1000) > 0.0
+test ranged_bad_trap = ranged(9, 2, 20).len == 9
+test ranged_late_div_trap = ranged(9, 2, 6).len == 9
 test par_ok = both()
 test steps_ok = steps(1000, 4)[999] == 1.0 + 4.0 * 0.5 * 999.0
 test mixed_ok = mixed(4) == [0.0, 1.5, 3.0, 4.5, 0.0, 1.5, 3.0, 4.5]
