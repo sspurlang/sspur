@@ -9,7 +9,7 @@
 | Compute-heavy: recursion, loops, primes, gcd | `compute_big` | 1.02s | 1.03s | **1.01x** | 1 MB / 7 MB |
 | Records, lists, persistent trees, float simulation | `typical` | 0.80s idiomatic, 0.26s hand-tuned (arena, never frees) | 0.11s | **0.14x** idiomatic, **0.43x** tuned | 70 MB / 16 MB (tuned: 212 MB) |
 | Strings: build 2M words, lowercase, split, count, sort | `strings_big` | 0.09s | 0.06s | **0.67x** | 23 MB / 29 MB |
-| App: generate CSV, parse with errors, aggregate in a map, report | `app` | 0.15s | 0.13s | **0.83x** | 24 MB / 41 MB |
+| App: generate CSV, parse with errors, aggregate in a map, report | `app` | 0.15s | 0.12s | **0.82x** | 24 MB / 22 MB |
 | Long-running loop: 200,000 iterations, about 400 MB of short-lived lists | `churn` | | 0.03s | | 7 MB |
 | Pure pipelines: Collatz, primes, hashed table, Mandelbrot (10 cores) | `parallel` | 2.12s (single-threaded) | 0.35s | **0.16x** | 17 MB / 23 MB |
 | Data-parallel numeric: checked Int map/filter/sum, squares, counts, mapped lists, F64 dot and saxpy over 1M-element lists | `simd` | 0.33s | 0.18s | **0.53x** | 40 MB / 39 MB |
@@ -36,6 +36,7 @@ Native code frees what the compiler can prove has one owner at its last use, and
 - list buffers and strings that are fresh, owned by one local or temporary and only read afterwards are freed right after the last read; a `var` frees its old value when it gets a new one, and a list of strings it built from fresh strings frees them with it
 - a parameter that a function only reads is borrowed, so the caller frees a fresh argument after the call; a `Map.put` that takes an owned key frees it when the key was already there
 - `var v = []` that is only pushed onto and then joined once is built as a string directly
+- `xs.map(f).fold(init, g)` and `xs.filter(p).fold(init, g)`, where `g` has no effects and captures nothing, run as one loop over blocks of 64 elements and never build the mapped list; if `g` traps, the trap is held until `f` has seen every element, so a later failure of `f` still wins, as in the unfused order
 - freed small blocks go to a per-size LIFO list the allocator takes from, and freed pointer-free runs over 32 KB stay mapped (up to 64 MB) for the next allocation of the same size, so a loop that frees and allocates reuses the same memory
 - everything else (shared values, records, sums, maps, closures, `var` cells, anything that crosses a thread) is collected: mark-sweep over size-classed 64 KB pages in one reserved 8 GB region, conservative scanning of registers and the stack, bump allocation and lazy sweeping, a collection after max(256 MB, 4x live) of allocation
 
@@ -46,13 +47,13 @@ Peak memory and time, C++ against 0.8.1 (collector only) and 0.8.2, same session
 | `compute_big` | 1.02s, 1 MB | 1.03s, 7 MB | 1.03s, 7 MB | 1.04s, 7 MB | 0 |
 | `typical` | 0.80s, 70 MB | 0.11s, 16 MB | 0.11s, 16 MB | 0.12s, 16 MB | 329,508 (8 MB): tree nodes and records, which are never freed early |
 | `strings_big` | 0.09s, 23 MB | 0.06s, 92 MB | 0.06s, 29 MB | 0.06s, 60 MB | 2 (11 MB): the lowered text and the sorted list, which the printed result points into |
-| `app` | 0.15s, 24 MB | 0.13s, 137 MB | 0.13s, 41 MB | 0.13s, 137 MB | 134 (10 MB): the generated CSV, whose slices the parsed sales hold, and the map |
+| `app` | 0.15s, 24 MB | 0.13s, 137 MB | 0.12s, 22 MB | 0.13s, 119 MB | 134 (10 MB): the generated CSV, which the split lines point into, and the map |
 | `churn` | | 0.08s, 268 MB | 0.03s, 7 MB | 0.08s, 268 MB | 0 |
 | `parallel` | 2.12s, 17 MB | 0.35s, 23 MB | 0.35s, 23 MB | 0.34s, 23 MB | 0 |
 | `simd` | 0.33s, 40 MB | 0.20s, 273 MB | 0.18s, 39 MB | 0.21s, 273 MB | 2 (16 MB): the two F64 inputs, which `dot` and `saxpy` read inside a lambda, so they aren't borrowed |
 | `gpu` | 0.82s, 54 MB | 0.31s, 344 MB | 0.30s, 178 MB | 0.31s, 345 MB | 0 |
 
-Every benchmark is as fast as in 0.8.1 or faster. Two are still well above C++ in memory: `gpu` keeps about 52 MB of device buffers, Metal's own 14 MB, and a 32 MB host list while each 4M-element input is built before upload (the C++ version runs on the CPU and has neither); `app` holds the whole 10 MB CSV while the 400,000 parsed sales (19 MB) point into it, where the C++ version keeps copies. `strings_big` and `app` are also helped by two fixes outside ADR 0033 that `SSPUR_MEM=gc` keeps: `text.lower.words.counts` now counts while scanning instead of building the 2M-word list, and `split` no longer allocates a buffer it throws away.
+Every benchmark is as fast as in 0.8.1 or faster. `gpu` is still well above C++ in memory: it keeps about 52 MB of device buffers, Metal's own 14 MB, and a 32 MB host list while each 4M-element input is built before upload (the C++ version runs on the CPU and has neither). `app` used to hold its 400,000 parsed sales (19 MB) next to the 10 MB CSV they point into; the parse and the aggregation now run as one fused fold, so the sales are never stored, and it peaks below the C++ version, which keeps a copy of every line. `strings_big` and `app` are also helped by two fixes outside ADR 0033 that `SSPUR_MEM=gc` keeps: `text.lower.words.counts` now counts while scanning instead of building the 2M-word list, and `split` no longer allocates a buffer it throws away.
 
 The whole heap is released when native code returns to the interpreter. `SSPUR_MEM=gc` turns the frees off for A/B runs; `SSPUR_MEM=check` poisons freed blocks instead of reusing them. Stress mode is `SSPUR_GC_STRESS=<bytes>`, which collects every N bytes. The suite (4 KB and 64 KB), the benchmarks (3 MB), and all 199 corpus programs produce identical results under it. `SSPUR_GC_STATS=1` prints per-collection statistics and, at exit, the blocks freed at last use and the blocks left for the collector.
 
@@ -70,7 +71,7 @@ The whole heap is released when native code returns to the interpreter. `SSPUR_M
 | Payloadless constructors are static singletons; one-payload sums are nullable pointers | Smaller, fewer allocations (Rust-style niche optimization) |
 | List methods compile their lambdas inline | `xs.filter(..).map(..).sum` becomes plain loops |
 | **In-place reuse** (ADR 0008): a tree updated through `t := insert(t, x)` from a fresh value is uniquely owned, so `insert` rewrites the matched node; `ps := ps.map(f)` maps its buffer in place | One allocation per insert instead of a path copy; no per-step buffers |
-| **Pipeline fusion**: `filter`/`map` chains ending in `sum`, `len`, `map`, or `filter`, and `(a..b).map(f)` | One loop, no intermediate lists |
+| **Pipeline fusion**: `filter`/`map` chains ending in `sum`, `len`, `map`, or `filter`, `(a..b).map(f)`, and a `map` or `filter` folded by an effect-free function | One loop, no intermediate lists |
 | **Linearity analysis**: a map built from `empty_map()` and consumed exactly once per step (`fold`, or `var m` with `m := m.put(..)`) is mutated in place | Persistent semantics, with in-place speed when the compiler proves no one else can observe the old version |
 | `Map` is a persistent treap with key-ordered iteration | O(log n) `put`, versus the interpreter's O(n) copy |
 | `counts` uses a hash table consistent with SSPUR equality, sized to the distinct keys; `s.words.counts` counts while scanning | O(n), first-seen order preserved, no intermediate word list |

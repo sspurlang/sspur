@@ -225,6 +225,64 @@ test t_closed = closed() == ()
 }
 
 #[test]
+fn fused_folds_fail_like_the_unfused_order() {
+    if std::process::Command::new("clang").arg("--version").output().is_err() {
+        return;
+    }
+    let src = "type E = Neg{at: Int}
+type S = {n: Int, sum: Int}
+fn half(x: Int) -> Int
+  pre x != 7
+= x / 2
+fn step(s: S, x: Int) -> S
+= {n: s.n + 1, sum: s.sum + 4611686018427387904 / (x + 1) + half(x)}
+fn row(x: Int) -> Int ! fail[E]
+= if x < 0 then raise Neg{at: x} else if x == 1000 then 1 / (x - x) else x
+fn run(xs: List[Int]) -> Int ! fail[E]
+= xs.map(row).fold({n: 0, sum: 0}, step).n
+fn noisy(x: Int) -> Int ! log
+= do
+  log(\"row {x}\")
+  x
+fn loud(xs: List[Int]) -> Int ! log
+= xs.map(noisy).fold(0, (a, x) => a + 4611686018427387904 / (x + 1))
+fn picky(xs: List[Int]) -> Int
+= xs.filter(x => 100 / x > 0).fold(0, (a, x) => a + 4611686018427387904 / (x + 1))
+test g_traps = run([0, 0, 0, 5]) == 0
+test f_traps_after_g = run([0, 0, 0, 5, 1000]) == 0
+test f_raises_after_g = catch run([0, 0, 0, 5, -3]) == 0
+  | Neg{at} => at == -3
+test pre_in_g = run((0..200).map(i => if i == 150 then 7 else 2000)) == 0
+test logs_then_trap = loud([0, 1, 0, 2]) == 0
+test filter_traps_after_g = picky([1, 1, 1, 0]) == 0
+test filter_g_traps = picky((0..300).map(i => if i < 200 then 50 else 1)) == 0
+test ok = run((0..500).map(i => i + 1001)) == 500
+";
+    let path = std::env::temp_dir().join(format!("sspur_fused_fold_{}.ssp", std::process::id()));
+    std::fs::write(&path, src).unwrap();
+    let expected = [
+        "FAIL  g_traps: integer overflow",
+        "FAIL  f_traps_after_g: division by zero",
+        "FAIL  logs_then_trap: integer overflow",
+        "FAIL  filter_traps_after_g: division by zero",
+        "FAIL  filter_g_traps: integer overflow",
+        "2 passed, 6 failed",
+    ];
+    let mut outputs = Vec::new();
+    for mode in ["--interp", "--release"] {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_sspur")).arg("test").arg(mode).arg(&path).output().unwrap();
+        let out = String::from_utf8(out.stdout).unwrap();
+        for line in expected {
+            assert!(out.lines().any(|l| l == line), "{mode}: missing {line:?} in\n{out}");
+        }
+        assert!(out.contains("pre x != 7"), "{mode}: {out}");
+        outputs.push(out);
+    }
+    std::fs::remove_file(&path).ok();
+    assert_eq!(outputs[0], outputs[1]);
+}
+
+#[test]
 fn vectorized_pipelines_trap_exactly_like_the_interpreter() {
     if std::process::Command::new("clang").arg("--version").output().is_err() {
         return;

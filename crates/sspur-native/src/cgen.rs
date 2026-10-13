@@ -46,6 +46,10 @@ typedef struct { int64_t code, func, clause, value, limit; int64_t* rbuf; int64_
 #define UNLIKELY(x) __builtin_expect(!!(x), 0)
 #define LIKELY_(x) __builtin_expect(!!(x), 1)
 #include <setjmp.h>
+#ifdef __APPLE__
+#define setjmp(b) _setjmp(b)
+#define longjmp(b, v) _longjmp(b, v)
+#endif
 static _Thread_local jmp_buf* sspur_jb;
 static void __attribute__((noinline, cold, noreturn)) sspur_trap(Status* st, int64_t c, int64_t f, int64_t cl, int64_t v) { st->code = c; st->func = f; st->clause = cl; st->value = v; longjmp(*sspur_jb, 1); }
 #define TRAPV(c, cl, val) sspur_trap(st, (c), FIDX, (cl), (int64_t)(val))
@@ -4016,6 +4020,12 @@ impl<'a> Cx<'a> {
                 if let Some(subs) = self.rc_call_temps(name, &all) {
                     return self.rc_hoist(&subs, |cx| cx.method_inner(e, recv, name, args, t));
                 }
+            } else if name == "fold"
+                && let Some((src, _, _)) = self.fold_fusable(recv, args)
+                && !matches!(src.kind, ExprKind::Range(..))
+                && let Some(k) = self.rc_temp(src)
+            {
+                return self.rc_hoist(&[(src, Some(k))], |cx| cx.method_inner(e, recv, name, args, t));
             } else if matches!(name, "sum" | "len" | "map" | "filter") {
                 let mut base = recv;
                 while let ExprKind::Method { recv: r, name: n, args: a, .. } = &base.kind {
@@ -4049,6 +4059,11 @@ impl<'a> Cx<'a> {
         }
         if self.ty(recv).is_ok_and(|rt| matches!(&rt, Type::Con(n, _) if n == "#View")) {
             return self.view_method(e, recv, name, args, t);
+        }
+        if name == "fold"
+            && let Some(r) = self.fused_fold(recv, args, t)
+        {
+            return r;
         }
         if let Some(r) = self.fused(e, name, recv, args, t) {
             return r;
@@ -4246,6 +4261,40 @@ impl<'a> Cx<'a> {
         Err(format!("uses method '{name}' on {rt}"))
     }
 
+    /// The step `acc = g(acc, x)` of `xs.fold(init, g)`, in place when the accumulator is a fresh map that `g` uses linearly.
+    fn fold_step(&mut self, args: &[Expr], acc: &str, x: &str, et: &Type) -> G {
+        let acc_t = self.ty(&args[0])?;
+        let is_map = matches!(&acc_t, Type::Con(n, _) if n == "Map");
+        let lin_lambda = is_map
+            && is_fresh_map(&args[0])
+            && matches!(&args[1].kind, ExprKind::Lambda { params, body, .. } if params.len() == 2 && linear(body, &params[0], true));
+        let lin_fn = match &args[1].kind {
+            ExprKind::Name(n) if is_map && is_fresh_map(&args[0]) && self.lookup(n).is_none() && !self.generics.contains_key(n) => self
+                .fn_def(n)
+                .filter(|f| f.posts.is_empty() && f.params.len() == 2 && linear(&f.body, &f.params[0].name, true))
+                .map(|f| f.name.clone()),
+            _ => None,
+        };
+        let body = if let Some(fname) = lin_fn {
+            let cname = format!("{fname}__lin");
+            if self.spec_done.insert(cname.clone()) {
+                self.spec_queue.push((fname.clone(), HashMap::new(), cname.clone()));
+            }
+            let (_, ret) = self.check.fn_types[&fname].clone();
+            let rr = self.rr(&ret)?;
+            let handlers = self.handlers("c_.code")?;
+            format!("({{ {rr} c_ = f_{cname}({acc}, {x}, st, depth); if (UNLIKELY(c_.code)) {{ {handlers}return (RRT){{.code = c_.code}}; }} c_.v; }})")
+        } else {
+            if lin_lambda {
+                self.inplace.insert(acc.to_string());
+            }
+            let b = self.apply(&args[1], vec![(acc.to_string(), acc_t), (x.to_string(), et.clone())]);
+            self.inplace.remove(acc);
+            b?
+        };
+        Ok(body)
+    }
+
     fn list_method(&mut self, r: &str, lt: &Type, et: &Type, name: &str, args: &[Expr], t: &Type) -> G {
         let ec = self.decl(et)?;
         let lc = self.cty(lt)?;
@@ -4316,37 +4365,9 @@ impl<'a> Cx<'a> {
             }
             "fold" => {
                 let init = self.expr(&args[0])?;
-                let acc_t = self.ty(&args[0])?;
                 let at = self.cty(t)?;
                 let acc = self.fresh("acc");
-                let is_map = matches!(&acc_t, Type::Con(n, _) if n == "Map");
-                let lin_lambda = is_map
-                    && is_fresh_map(&args[0])
-                    && matches!(&args[1].kind, ExprKind::Lambda { params, body, .. } if params.len() == 2 && linear(body, &params[0], true));
-                let lin_fn = match &args[1].kind {
-                    ExprKind::Name(n) if is_map && is_fresh_map(&args[0]) && self.lookup(n).is_none() && !self.generics.contains_key(n) => self
-                        .fn_def(n)
-                        .filter(|f| f.posts.is_empty() && f.params.len() == 2 && linear(&f.body, &f.params[0].name, true))
-                        .map(|f| f.name.clone()),
-                    _ => None,
-                };
-                let body = if let Some(fname) = lin_fn {
-                    let cname = format!("{fname}__lin");
-                    if self.spec_done.insert(cname.clone()) {
-                        self.spec_queue.push((fname.clone(), HashMap::new(), cname.clone()));
-                    }
-                    let (_, ret) = self.check.fn_types[&fname].clone();
-                    let rr = self.rr(&ret)?;
-                    let handlers = self.handlers("c_.code")?;
-                    format!("({{ {rr} c_ = f_{cname}({acc}, {x}, st, depth); if (UNLIKELY(c_.code)) {{ {handlers}return (RRT){{.code = c_.code}}; }} c_.v; }})")
-                } else {
-                    if lin_lambda {
-                        self.inplace.insert(acc.clone());
-                    }
-                    let b = self.apply(&args[1], vec![(acc.clone(), acc_t), (x.clone(), et.clone())]);
-                    self.inplace.remove(&acc);
-                    b?
-                };
+                let body = self.fold_step(args, &acc, &x, et)?;
                 wrap(format!("{at} {acc} = {init}; for (int64_t {i} = 0; {i} < {l}.len; {i}++) {{ __auto_type {x} = {l}.data[{i}]; {acc} = {body}; }} {acc};"))
             }
             "any" | "all" => {

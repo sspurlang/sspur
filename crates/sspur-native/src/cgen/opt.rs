@@ -42,7 +42,7 @@ const ALLOC: f64 = 24.0;
 const ALLOC_ELEM: f64 = 6.0;
 const SMALL: f64 = 40.0;
 const N_UNKNOWN: f64 = 1000.0;
-const PURE_METHODS: &[&str] = &[
+pub(super) const PURE_METHODS: &[&str] = &[
     "map", "filter", "sum", "len", "is_empty", "to_f64", "to_int", "to_str", "upper", "lower", "trim", "words", "split", "join", "contains", "starts_with", "ends_with", "get", "or", "keys", "values", "items", "put", "push", "concat", "take", "drop",
     "reverse", "sort", "sort_by", "unique", "fold", "any", "all", "count", "min", "max", "abs", "sqrt", "floor", "ceil", "round", "first", "last", "zip", "enumerate", "find", "chars", "counts", "is_some", "is_none", "has", "remove", "size",
 ];

@@ -606,3 +606,132 @@ sspur_jb = sv_; pr_->acc = acc_; pr_->mn = mn_; pr_->mx = mx_; return 1; }}\n#un
         Ok((id, init.join(", ")))
     }
 }
+
+impl Cx<'_> {
+    /// The initial value of a fused fold, which the fused loop evaluates before the stage instead
+    /// of after it: only values that can't trap, allocate observably or read anything the stage changes.
+    fn fold_init_ok(&self, e: &Expr) -> bool {
+        match &e.kind {
+            ExprKind::Int(_) | ExprKind::Float(_) | ExprKind::Bool(_) | ExprKind::Unit | ExprKind::Name(_) => true,
+            ExprKind::Str(parts) => matches!(parts.as_slice(), [] | [StrPart::Lit(_)]),
+            ExprKind::Unary(UnOp::Neg, x) => matches!(x.kind, ExprKind::Int(_) | ExprKind::Float(_)),
+            ExprKind::Call(f, a) => a.is_empty() && matches!(&f.kind, ExprKind::Name(n) if n == "empty_map" && self.lookup(n).is_none() && !self.check.fn_types.contains_key(n)),
+            ExprKind::List(xs) | ExprKind::Tuple(xs) => xs.iter().all(|x| self.fold_init_ok(x)),
+            ExprKind::Record { ctor: None, fields } => {
+                let Ok(Type::Con(owner, _)) = self.ty(e) else { return false };
+                let plain = self.field_refines.get(&owner).is_none_or(|fs| fs.iter().all(|(_, r, ty)| r.is_none() && ty.as_ref().is_none_or(|t| !self.alias_refines.contains_key(t))));
+                plain && fields.iter().all(|(_, x)| self.fold_init_ok(x))
+            }
+            _ => false,
+        }
+    }
+
+    fn fold_quiet(&self, e: &Expr, params: &[String]) -> bool {
+        let mut ok = true;
+        visit::walk_expr(e, &mut |x| {
+            ok &= match &x.kind {
+                ExprKind::Name(n) => params.contains(n) || self.lookup(n).is_none(),
+                ExprKind::Call(f, _) => match &f.kind {
+                    ExprKind::Name(n) if params.contains(n) || self.lookup(n).is_some() => false,
+                    ExprKind::Name(n) => match self.fn_def(n) {
+                        Some(g) => g.effects.is_empty() && g.ext.is_none() && g.kernel.is_none(),
+                        None => !self.check.fn_types.contains_key(n) && (n.starts_with(|c: char| c.is_ascii_uppercase()) || matches!(n.as_str(), "some" | "empty_map" | "ok" | "err")),
+                    },
+                    _ => false,
+                },
+                ExprKind::Method { name, .. } => {
+                    if self.check.user_methods.contains(&(x.span.start, x.span.end)) {
+                        self.fn_def(name).is_some_and(|g| g.effects.is_empty() && g.ext.is_none())
+                    } else {
+                        opt::PURE_METHODS.contains(&name.as_str())
+                    }
+                }
+                ExprKind::Unary(UnOp::Ref | UnOp::RefMut, _) => false,
+                ExprKind::Raise(_) | ExprKind::Return(_) | ExprKind::Handle(..) | ExprKind::Hole(_) | ExprKind::Par(_) | ExprKind::Catch(..) | ExprKind::Table(_) => false,
+                ExprKind::Block(st) => st.iter().all(|s| !matches!(s, Stmt::Fn(_) | Stmt::Assign(..) | Stmt::While(..))),
+                _ => true,
+            };
+            ok
+        });
+        ok
+    }
+
+    /// The folder `g` of a fused fold: a top-level function or a lambda with no effects at all
+    /// (no `fail`, no `div`) that captures nothing.
+    fn fold_pure(&self, g: &Expr) -> bool {
+        match &g.kind {
+            ExprKind::Name(n) if self.lookup(n).is_none() && !self.generics.contains_key(n) => {
+                self.fn_def(n).is_some_and(|f| f.effects.is_empty() && f.ext.is_none() && f.kernel.is_none() && f.tparams.is_empty() && f.params.len() == 2)
+            }
+            ExprKind::Lambda { params, body, .. } => params.len() == 2 && self.fold_quiet(body, params),
+            _ => false,
+        }
+    }
+
+    /// The stage `f` of a fused fold may do anything except change a local that `g` or the
+    /// initial value could see.
+    fn fold_stage_ok(&self, f: &Expr) -> bool {
+        match &f.kind {
+            ExprKind::Name(n) => self.lookup(n).is_none() && self.fn_def(n).is_some_and(|g| g.params.len() == 1),
+            ExprKind::Lambda { params, body, .. } if params.len() == 1 => {
+                let mut ok = true;
+                visit::walk_expr(body, &mut |x| {
+                    ok &= match &x.kind {
+                        ExprKind::Call(c, _) => !matches!(&c.kind, ExprKind::Name(n) if self.lookup(n).is_some()) && matches!(c.kind, ExprKind::Name(_)),
+                        ExprKind::Unary(UnOp::RefMut, _) | ExprKind::Handle(..) => false,
+                        ExprKind::Block(st) => st.iter().all(|s| !matches!(s, Stmt::Fn(_) | Stmt::Assign(..))),
+                        _ => true,
+                    };
+                    ok
+                });
+                ok
+            }
+            _ => false,
+        }
+    }
+
+    /// `src.map(f).fold(init, g)` (or `filter`) that can run as one loop: `(src, stage, f)`.
+    pub(super) fn fold_fusable<'e>(&self, recv: &'e Expr, args: &'e [Expr]) -> Option<(&'e Expr, &'e str, &'e Expr)> {
+        if args.len() != 2 || self.bare || self.sys || self.target.is_some() || self.vec.is_some() || self.par_mode {
+            return None;
+        }
+        let ExprKind::Method { recv: src, name, args: a, .. } = &recv.kind else { return None };
+        if !(name == "map" || name == "filter") || a.len() != 1 || self.check.user_methods.contains(&(recv.span.start, recv.span.end)) {
+            return None;
+        }
+        elem(&self.ty(src).ok()?, "List")?;
+        (self.fold_init_ok(&args[0]) && self.fold_pure(&args[1]) && self.fold_stage_ok(&a[0])).then_some((&**src, name.as_str(), &a[0]))
+    }
+
+    /// The fused loop runs the stage on a block of up to 64 elements in order, then folds the
+    /// block, so the intermediate list is never built (blocks keep the two loops' code and data
+    /// hot, which interleaving them one element at a time doesn't). The unfused order runs the
+    /// whole stage before the first step of `g`, which only shows when `g` traps: the loop then
+    /// remembers the trap, stops folding, finishes the stage (whose own trap or raise wins, as it
+    /// would have), and reports the remembered trap at the end.
+    pub(super) fn fused_fold(&mut self, recv: &Expr, args: &[Expr], t: &Type) -> Option<G> {
+        let (src, kind, f) = self.fold_fusable(recv, args)?;
+        Some(self.fused_fold_code(src, kind, f, recv, args, t))
+    }
+
+    fn fused_fold_code(&mut self, src: &Expr, kind: &str, f: &Expr, recv: &Expr, args: &[Expr], t: &Type) -> G {
+        let et = elem(&self.ty(src)?, "List").ok_or("bad fold source")?;
+        let yt = elem(&self.ty(recv)?, "List").ok_or("bad fold stage")?;
+        let yc = self.decl(&yt)?;
+        let r = self.expr(src)?;
+        let init = self.expr(&args[0])?;
+        let at = self.cty(t)?;
+        let [l, i, x, y, acc, b, n, e, k, gj, gs, gp, gi, gd, gst, gpre] = ["l", "i", "x", "y", "acc", "b", "n", "e", "k", "gj", "gs", "gp", "gi", "gd", "gst", "gpre"].map(|v| self.fresh(v));
+        let fx = self.apply(f, vec![(x.clone(), et)])?;
+        let gbody = self.fold_step(args, &acc, &y, &yt)?;
+        let fill = if kind == "map" { format!("{b}[{n}++] = {fx};") } else { format!("if ({fx}) {b}[{n}++] = {x};") };
+        Ok(format!(
+            "({{ __auto_type {l} = {r}; {at} {acc} = {init}; jmp_buf {gj}; jmp_buf** {gp} = &sspur_jb; jmp_buf* {gs} = sspur_jb; volatile int64_t {gi} = 0; int {gd} = 0; Status {gpre} = *st, {gst}; int64_t {i} = 0; \
+if (setjmp({gj})) {{ *{gp} = {gs}; {gd} = 1; {gst} = *st; *st = {gpre}; {i} = {gi}; }} \
+while ({i} < {l}.len) {{ {yc} {b}[sizeof({yc}) > 256 ? 8 : 64]; int64_t {e} = {l}.len - {i} > (int64_t)(sizeof {b} / sizeof {b}[0]) ? {i} + (int64_t)(sizeof {b} / sizeof {b}[0]) : {l}.len; int64_t {n} = 0; \
+for (; {i} < {e}; {i}++) {{ __auto_type {x} = {l}.data[{i}]; {fill} }} \
+if (!{gd}) {{ {gi} = {e}; *{gp} = &{gj}; for (int64_t {k} = 0; {k} < {n}; {k}++) {{ __auto_type {y} = {b}[{k}]; {acc} = {gbody}; }} *{gp} = {gs}; }} }} \
+if (UNLIKELY({gd})) {{ *st = {gst}; longjmp(*sspur_jb, 1); }} {acc}; }})"
+        ))
+    }
+}

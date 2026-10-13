@@ -105,3 +105,26 @@ On the two GC-bound programs used in option 1 (persistent maps and trees with ol
 - Freeing through records, tuples, sum values and maps. A record holding a list hands the list to the collector.
 - Reusing a dropped cell directly for the next constructor of the same shape (Perceus reuse tokens). ADR 0008's `__own` functions already do this for trees; for lists and strings the size-class free list gives the same effect one allocation later.
 - Streaming `dev_f32((0..n).map(f))` straight into the device buffer, which would remove `gpu`'s remaining transient host lists.
+
+## Follow-up: `app` (fused folds)
+
+The first idea for `app` was to copy small string slices into their own blocks when they are stored into a record, as the C++ version copies its fields, so the 10 MB CSV would have one owner and be freed at its last use. Measuring where the peak sat showed that it wouldn't lower it: the peak is at the end of `text.split("\n").map(parse)`, when the CSV, the 400,000 line slices (6 MB) and the 400,000 parsed sales (19 MB) are all alive, and the CSV has to stay alive while the lines are parsed whatever the sales hold. Copies would have added about 13 MB of small strings to that peak.
+
+What the program doesn't need is the list of sales: `fold(empty_map(), add)` reads each sale once. So `xs.map(f).fold(init, g)` and `xs.filter(p).fold(init, g)` now compile to one loop when:
+- `g` is a top-level function or a lambda with no effects at all (no `fail`, no `div`) that captures no local, so nothing it does can be seen except its result and its traps;
+- `f` is a top-level function or a lambda that assigns no captured variable and takes no `&mut`, so `g` and the initial value can't see what it changes;
+- the initial value is a literal, a name, `empty_map()`, or a list, tuple or plain record of those, which can't trap.
+
+The unfused order runs `f` on every element before `g` runs once, and that is only visible when `g` traps (an `f` that logs, raises or traps does so in the same order either way). The fused loop sets a handler around `g`; if `g` traps, it keeps the trap, stops folding, runs `f` on the rest of the elements (so a raise or trap in `f` wins, as it would have), and then reports the kept trap. `tests/programs/pipelines.ssp` and a CLI test compare every case with the interpreter: `g` trapping alone, `g` trapping before a trap or raise in `f`, a contract of a function `g` calls, an `f` that logs, and the `filter` form.
+
+Interleaving `f` and `g` one element at a time made `report` 10% slower than the two loops (the parser's and the map's code and allocations evict each other), so the loop runs `f` on a block of up to 64 elements into a buffer on the stack, then folds the block. That is 3% faster than before.
+
+The handler needs a `setjmp`, which on macOS also saves the signal mask with a system call (0.34 microseconds against 4 ns). Native code never changes the signal mask, so on macOS every `setjmp` and `longjmp` in generated code, including the entry of every call from the interpreter, now uses `_setjmp` and `_longjmp`.
+
+| `app` | C++ | before | after |
+|---|---|---|---|
+| time | 0.15s | 0.125s | 0.122s |
+| peak memory | 24 MB | 41 MB | 22 MB |
+| `report` in-process | | 87 ms | 84 ms |
+
+The CSV is still left for the collector (the split lines point into it, so `report` doesn't borrow its argument); it no longer matters for the peak, which is now the CSV and the line list while the fold runs.
