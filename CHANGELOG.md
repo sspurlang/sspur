@@ -4,6 +4,8 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-10-14
+
 ### Added
 - Native code frees list buffers and strings at their last use when the compiler can prove they have one owner (ADR 0033), in front of the collector, which still reclaims everything else. Locals and temporaries that are only read are freed after the last read, a `var` frees its old value when it gets a new one, a parameter a function only reads is borrowed so the caller frees a fresh argument after the call, a list of strings built from fresh strings frees them with it, a `Map.put` that takes an owned key frees it when the key was already there, and `var v = []` that is only pushed onto and then joined is built as a string directly. Freed blocks are reused by the next allocation of their size. Peak memory, 0.8.1 to 0.8.2 (C++): `simd` 273 to 39 MB (40), `churn` 268 to 7 MB, `strings_big` 92 to 29 MB (23), `app` 137 to 22 MB (24, with the fused fold below), `gpu` 344 to 97 MB (54, with the GPU changes below); every benchmark is as fast as before or faster (`simd` 0.20s to 0.18s, `churn` 0.08s to 0.03s).
 - `sspur run file.ssp` of a program that hasn't changed runs the cached native library's `main` directly, without parsing, checking or generating code (ADR 0034). The run is keyed by the source, the `sspur` binary, the `SSPUR_*` variables and the compiler's environment, checks the cached library's contents, and falls back to the normal path on any difference, inside a package, with any flag (`--no-cache` forces it) or when the program has warnings to print. A trap or raise in `main` is described by the normal path, so the output and exit code are the same. Hello world takes 10.3 ms instead of 12.7 ms (C++ 8.0 ms), each benchmark 3 to 11 ms less, and peak memory is 4 to 5 MB lower; `compute_big` is within 1% of C++ (1.02s against 1.01s).
@@ -306,7 +308,8 @@ This release covers Phases 3 to 7 of the roadmap and ADRs 0003 to 0024. SSPUR no
 - Language design spec, JSON schemas and the token benchmark.
 - Compiler core: parser, checker, content hashing, interpreter and the `sspur` CLI, with an 11-program suite.
 
-[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.8.2...HEAD
+[0.8.2]: https://github.com/utkarshavardhana/sspur/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/utkarshavardhana/sspur/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/utkarshavardhana/sspur/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/utkarshavardhana/sspur/compare/v0.7.0...v0.7.1
