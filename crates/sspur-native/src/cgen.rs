@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 mod conc;
+mod drops;
 pub mod export;
 pub mod flags;
 mod ffi;
@@ -164,12 +165,24 @@ static int sum_i64(const int64_t* d, int64_t n, int64_t* out) {
 #include <sys/mman.h>
 #include <setjmp.h>
 #include <time.h>
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define SS_ASAN 1
+void __asan_poison_memory_region(void const volatile* addr, size_t size);
+void __asan_unpoison_memory_region(void const volatile* addr, size_t size);
+#endif
+#endif
+#ifdef SS_ASAN
+#define SS_UNPOISON(p, n) __asan_unpoison_memory_region((p), (n))
+#else
+#define SS_UNPOISON(p, n) ((void)0)
+#endif
 #define GC_SHIFT 16
 #define GC_PAGE ((size_t)1 << GC_SHIFT)
 #define GC_REGION ((size_t)8 << 30)
 #define GC_NCLS 35
 static const uint32_t gc_sizes[GC_NCLS] = {16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 448, 512, 640, 768, 1024, 1280, 1536, 2048, 2560, 3072, 4096, 5120, 6144, 8192, 10240, 12288, 16384, 32768};
-typedef struct GcPage { uint8_t kind, atomic, cls, swept; uint32_t obj, nobj, bump, live; size_t head, npages; void* free; uint64_t freebits[64], mark[64]; } GcPage;
+typedef struct GcPage { uint8_t kind, atomic, cls, swept; uint32_t obj, nobj, bump, live; size_t head, npages, act; void* free; uint64_t freebits[64], mark[64]; } GcPage;
 typedef struct { char* next; char* end; size_t page; } GcCursor;
 static char* gc_lo; static char* gc_hi; static GcPage** gc_meta; static size_t gc_next;
 static uint64_t* gc_freemap; static size_t gc_free_n, gc_hint;
@@ -179,7 +192,12 @@ static size_t gc_marked_bytes;
 static GcCursor gc_cur[2][GC_NCLS];
 static void* gc_flist[2][GC_NCLS];
 static size_t gc_flist_page[2][GC_NCLS];
-static size_t gc_since, gc_threshold = (size_t)256 << 20, gc_live_bytes, gc_stress;
+static size_t gc_since, gc_threshold = (size_t)256 << 20, gc_live_bytes, gc_stress, gc_min = (size_t)256 << 20, gc_factor = 4;
+static void* gc_rfree[2][GC_NCLS];
+static int ss_mem_mode;
+static size_t ss_rc_frees, ss_rc_bytes;
+#define GC_CACHE 8
+static size_t gc_cache[GC_CACHE]; static size_t gc_cache_n, gc_cache_pages;
 static char* gc_stack_base; static int gc_depth; static void* gc_root_ptr; static size_t gc_root_len;
 static const uint8_t gc_class_of[(32768 >> 3) + 1] = {0,0,0,1,2,3,4,5,6,7,7,8,8,9,9,10,10,11,11,11,11,12,12,12,12,13,13,13,13,14,14,14,14,15,15,15,15,15,15,15,15,16,16,16,16,16,16,16,16,17,17,17,17,17,17,17,17,18,18,18,18,18,18,18,18,19,19,19,19,19,19,19,19,19,19,19,19,19,19,19,19,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,20,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,21,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,22,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,23,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,24,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,25,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,26,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,27,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,28,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,29,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,31,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,32,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,33,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34,34};
 static int gc_ready, gc_stats;
@@ -190,15 +208,23 @@ static void gc_init(void) {
     gc_hi = gc_lo + GC_REGION;
     gc_meta = (GcPage**)calloc(GC_REGION >> GC_SHIFT, sizeof(GcPage*));
     gc_freemap = (uint64_t*)calloc((GC_REGION >> GC_SHIFT) / 64, 8);
+    const char* gm = getenv("SSPUR_GC_MIN_MB");
+    if (gm && *gm && atol(gm) > 0) { gc_min = (size_t)atol(gm) << 20; gc_threshold = gc_min; }
+    const char* gf = getenv("SSPUR_GC_FACTOR");
+    if (gf && *gf && atol(gf) > 0) gc_factor = (size_t)atol(gf);
     const char* stress = getenv("SSPUR_GC_STRESS");
     if (stress && *stress) { gc_stress = (size_t)atol(stress); gc_threshold = gc_stress; }
     gc_stats = getenv("SSPUR_GC_STATS") != 0;
+    const char* mem = getenv("SSPUR_MEM");
+    if (mem && !strcmp(mem, "gc")) ss_mem_mode = 1;
+    else if (mem && !strcmp(mem, "check")) ss_mem_mode = 2;
     gc_ready = 1;
 }
 static void gc_push(size_t** v, size_t* n, size_t* cap, size_t x) {
     if (*n == *cap) { *cap = *cap ? *cap * 2 : 64; *v = (size_t*)realloc(*v, *cap * sizeof(size_t)); }
     (*v)[(*n)++] = x;
 }
+static void gc_activate(size_t i) { gc_meta[i]->act = gc_active_n; gc_push(&gc_active, &gc_active_n, &gc_active_cap, i); }
 static int gc_reused;
 static size_t gc_find_run(size_t n) {
     size_t words = (gc_next + 63) >> 6, run = 0;
@@ -232,6 +258,7 @@ static size_t gc_take_pages(size_t n) {
 static void gc_release_page(size_t i) {
     GcPage* m = gc_meta[i];
     size_t n = m->kind == 2 ? m->npages : 1;
+    SS_UNPOISON(gc_lo + (i << GC_SHIFT), n << GC_SHIFT);
     if (n > 1 || gc_free_n > 1024) mmap(gc_lo + (i << GC_SHIFT), n << GC_SHIFT, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | MAP_FIXED | MAP_NORESERVE, -1, 0);
     for (size_t k = i; k < i + n; k++) { free(gc_meta[k]); gc_meta[k] = 0; gc_freemap[k >> 6] |= (uint64_t)1 << (k & 63); }
     gc_free_n += n;
@@ -261,7 +288,7 @@ static inline void gc_consider(uintptr_t w, size_t** stack, size_t* sn, size_t* 
     m->live++;
     if (!m->atomic) { gc_push(stack, sn, scap, pi); gc_push(stack, sn, scap, idx); }
 }
-static void gc_scan_roots(char* lo, char* hi, size_t** st, size_t* sn, size_t* scap) {
+static void __attribute__((no_sanitize("address"))) gc_scan_roots(char* lo, char* hi, size_t** st, size_t* sn, size_t* scap) {
     lo = (char*)(((uintptr_t)lo + 7) & ~(uintptr_t)7);
     for (char* p = lo; p + 8 <= hi; p += 8) {
         uintptr_t w = *(uintptr_t*)p;
@@ -270,7 +297,7 @@ static void gc_scan_roots(char* lo, char* hi, size_t** st, size_t* sn, size_t* s
         gc_consider(w - 1, st, sn, scap);
     }
 }
-static void gc_scan(char* lo, char* hi, size_t** st, size_t* sn, size_t* scap) {
+static void __attribute__((no_sanitize("address"))) gc_scan(char* lo, char* hi, size_t** st, size_t* sn, size_t* scap) {
     for (char* p = lo; p + 8 <= hi; p += 8) gc_consider(*(uintptr_t*)p, st, sn, scap);
 }
 static void gc_sweep_page(GcPage* m, size_t i) {
@@ -281,6 +308,7 @@ static void gc_sweep_page(GcPage* m, size_t i) {
             uint32_t j = w * 64 + b;
             if (j >= m->bump) break;
             if (marks & ((uint64_t)1 << b)) continue;
+            SS_UNPOISON(base + (size_t)j * m->obj, m->obj);
             m->freebits[w] |= (uint64_t)1 << b;
             *(void**)(base + (size_t)j * m->obj) = m->free; m->free = base + (size_t)j * m->obj;
         }
@@ -288,9 +316,47 @@ static void gc_sweep_page(GcPage* m, size_t i) {
     }
     m->swept = 1;
 }
-static void __attribute__((noinline)) gc_collect(void) {
+static void gc_rfree_flush(void) {
+    for (int a = 0; a < 2; a++) for (int c = 0; c < GC_NCLS; c++) {
+        for (char* f = (char*)gc_rfree[a][c]; f;) {
+            char* nx = *(char**)f;
+            size_t pi = (size_t)(f - gc_lo) >> GC_SHIFT; GcPage* m = gc_meta[pi];
+            uint32_t j = (uint32_t)((size_t)(f - (gc_lo + (pi << GC_SHIFT))) / m->obj);
+            m->freebits[j >> 6] |= (uint64_t)1 << (j & 63);
+            *(char**)f = 0; f = nx;
+        }
+        gc_rfree[a][c] = 0;
+    }
+}
+static void gc_cache_release(size_t i) { gc_meta[i]->kind = 2; gc_release_page(i); }
+static void gc_cache_put(size_t i) {
+    GcPage* m = gc_meta[i];
+    size_t limit = (size_t)64 << (20 - GC_SHIFT);
+    if (m->npages > limit) { gc_release_page(i); return; }
+    while (gc_cache_n && (gc_cache_n == GC_CACHE || gc_cache_pages + m->npages > limit)) {
+        size_t o = gc_cache[0];
+        gc_cache_pages -= gc_meta[o]->npages;
+        memmove(gc_cache, gc_cache + 1, (gc_cache_n - 1) * sizeof(size_t)); gc_cache_n--;
+        gc_cache_release(o);
+    }
+    m->kind = 4; gc_cache[gc_cache_n++] = i; gc_cache_pages += m->npages;
+}
+static void* gc_cache_take(size_t np, int atomic) {
+    for (size_t k = gc_cache_n; k-- > 0;) {
+        size_t i = gc_cache[k]; GcPage* m = gc_meta[i];
+        if (m->npages != np) continue;
+        memmove(gc_cache + k, gc_cache + k + 1, (gc_cache_n - k - 1) * sizeof(size_t)); gc_cache_n--; gc_cache_pages -= np;
+        m->kind = 2; m->atomic = (uint8_t)atomic; m->mark[0] = 0;
+        gc_activate(i);
+        return gc_lo + (i << GC_SHIFT);
+    }
+    return 0;
+}
+static void gc_cache_clear(void) { while (gc_cache_n) gc_cache_release(gc_cache[--gc_cache_n]); gc_cache_pages = 0; }
+static void __attribute__((noinline, no_sanitize("address"))) gc_collect(void) {
     jmp_buf regs; setjmp(regs);
     gc_flush_cursors();
+    gc_rfree_flush();
     for (size_t k = 0; k < gc_active_n; k++) { GcPage* m = gc_meta[gc_active[k]]; m->live = 0; if (m->kind == 1 && !m->swept) memset(m->mark, 0, sizeof(m->mark)); }
     size_t* st = 0; size_t sn = 0, scap = 0;
     char probe; char* sp = &probe;
@@ -310,19 +376,19 @@ static void __attribute__((noinline)) gc_collect(void) {
     for (size_t k = 0; k < gc_active_n; k++) {
         size_t i = gc_active[k]; GcPage* m = gc_meta[i];
         if (m->kind == 2) {
-            if (m->mark[0] & 1) { m->mark[0] = 0; gc_live_bytes += m->npages << GC_SHIFT; gc_active[keep++] = i; }
+            if (m->mark[0] & 1) { m->mark[0] = 0; gc_live_bytes += m->npages << GC_SHIFT; m->act = keep; gc_active[keep++] = i; }
             else gc_release_page(i);
             continue;
         }
         if (m->live == 0) { gc_release_page(i); continue; }
         m->swept = 0;
         gc_live_bytes += (size_t)m->live * m->obj;
-        gc_active[keep++] = i;
+        m->act = keep; gc_active[keep++] = i;
         if (m->live < m->nobj) gc_push(&gc_partial[m->atomic][m->cls], &gc_partial_n[m->atomic][m->cls], &gc_partial_cap[m->atomic][m->cls], i);
     }
     gc_active_n = keep;
     gc_since = 0;
-    if (!gc_stress) { gc_threshold = gc_live_bytes * 4; if (gc_threshold < ((size_t)256 << 20)) gc_threshold = (size_t)256 << 20; }
+    if (!gc_stress) { gc_threshold = gc_live_bytes * gc_factor; if (gc_threshold < gc_min) gc_threshold = gc_min; }
     gc_collections++;
     if (gc_stats) fprintf(stderr, "sspur gc: collection %lld, live %zu KB, active pages %zu\n", (long long)gc_collections, gc_live_bytes >> 10, gc_active_n);
 }
@@ -330,7 +396,7 @@ static void gc_new_page(int atomic, int cls) {
     size_t i = gc_take_pages(1);
     GcPage* m = (GcPage*)calloc(1, sizeof(GcPage));
     m->kind = 1; m->swept = 1; m->atomic = (uint8_t)atomic; m->cls = (uint8_t)cls; m->obj = gc_sizes[cls]; m->nobj = (uint32_t)(GC_PAGE / m->obj);
-    gc_meta[i] = m; gc_push(&gc_active, &gc_active_n, &gc_active_cap, i);
+    gc_meta[i] = m; gc_activate(i);
     char* base = gc_lo + (i << GC_SHIFT);
     gc_cur[atomic][cls] = (GcCursor){base, base + (size_t)m->nobj * m->obj, i + 1};
     gc_since += GC_PAGE;
@@ -342,18 +408,24 @@ static void* gc_alloc_large(size_t n, int atomic) {
     m->kind = 2; m->atomic = (uint8_t)atomic; m->npages = np; m->bump = 1;
     gc_meta[i] = m;
     for (size_t k = 1; k < np; k++) { GcPage* c = (GcPage*)calloc(1, sizeof(GcPage)); c->kind = 3; c->head = i; gc_meta[i + k] = c; }
-    gc_push(&gc_active, &gc_active_n, &gc_active_cap, i);
+    gc_activate(i);
     gc_since += np << GC_SHIFT;
     return gc_lo + (i << GC_SHIFT);
 }
 static void* gc_alloc_slow1(size_t n, int atomic) {
     if (!gc_ready) gc_init();
-    if (n > 32768) { if (gc_since > gc_threshold && gc_depth > 0 && !ss_live) gc_collect(); return gc_alloc_large(n, atomic); }
+    if (n > 32768) {
+        if (gc_cache_n) { void* r = gc_cache_take((n + GC_PAGE - 1) >> GC_SHIFT, atomic); if (r) return r; gc_cache_clear(); }
+        if (gc_since > gc_threshold && gc_depth > 0 && !ss_live) gc_collect();
+        return gc_alloc_large(n, atomic);
+    }
     int cls = gc_class_of[(n + 7) >> 3];
     for (;;) {
         GcCursor* k = &gc_cur[atomic][cls];
         uint32_t sz = gc_sizes[cls];
         if (k->next && k->next + sz <= k->end) { void* r = k->next; k->next += sz; return r; }
+        void* q = gc_rfree[atomic][cls];
+        if (q) { gc_rfree[atomic][cls] = *(void**)q; *(void**)q = 0; return q; }
         void* f = gc_flist[atomic][cls];
         if (f) {
             gc_flist[atomic][cls] = *(void**)f; *(void**)f = 0;
@@ -390,18 +462,69 @@ static inline __attribute__((always_inline)) void* gc_alloc(size_t n, int atomic
         int cls = gc_class_of[(n + 7) >> 3];
         GcCursor* k = &gc_cur[atomic][cls];
         uint32_t sz = gc_sizes[cls];
-        if (LIKELY_(k->next + sz <= k->end)) { void* r = k->next; k->next += sz; return r; }
+        if (LIKELY_((uintptr_t)k->end - (uintptr_t)k->next >= sz)) { void* r = k->next; k->next += sz; return r; }
+        void* f = gc_rfree[atomic][cls];
+        if (f) { gc_rfree[atomic][cls] = *(void**)f; *(void**)f = 0; return f; }
     }
     return gc_alloc_slow(n ? n : 1, atomic);
 }
+static void ss_poison(char* p, size_t n) {
+    if (n >= 16 && ((uint64_t*)p)[0] == 0xA5A5A5A5A5A5A5A5ULL && ((uint64_t*)p)[1] == 0xA5A5A5A5A5A5A5A5ULL) { fprintf(stderr, "sspur: block %p freed twice\n", (void*)p); abort(); }
+    memset(p, 0xA5, n);
+#ifdef SS_ASAN
+    __asan_poison_memory_region(p, n);
+#endif
+}
+static void __attribute__((noinline)) ss_free_slow(char* p) {
+    if (ss_mem_mode == 1 || SS_MT() || __atomic_load_n(&par_busy, __ATOMIC_RELAXED)) return;
+    size_t pi = (size_t)(p - gc_lo) >> GC_SHIFT; GcPage* m = gc_meta[pi];
+    if (!m) return;
+    char* base = gc_lo + (pi << GC_SHIFT);
+    if (m->kind == 1) {
+        if ((size_t)(p - base) % m->obj) return;
+        ss_rc_frees++; ss_rc_bytes += m->obj;
+        if (ss_mem_mode == 2) { ss_poison(p, m->obj); return; }
+        if (!m->atomic) memset(p, 0, m->obj);
+        *(void**)p = gc_rfree[m->atomic][m->cls]; gc_rfree[m->atomic][m->cls] = p;
+        return;
+    }
+    if (m->kind != 2 || p != base) return;
+    size_t bytes = m->npages << GC_SHIFT;
+    ss_rc_frees++; ss_rc_bytes += bytes;
+    if (ss_mem_mode == 2) { ss_poison(p, bytes); return; }
+    size_t k = m->act, last = gc_active[--gc_active_n];
+    gc_active[k] = last; gc_meta[last]->act = k;
+    gc_since = gc_since > bytes ? gc_since - bytes : 0;
+    if (m->atomic) gc_cache_put(pi); else gc_release_page(pi);
+}
+static inline void ss_free(const void* q) {
+    char* p = (char*)q;
+    if (!gc_lo || (uintptr_t)(p - gc_lo) >= GC_REGION) return;
+    ss_free_slow(p);
+}
+#define ss_drop_l(l) ss_free((l).hdr)
 static void (*ss_reset_hook)(void);
 static void (*ss_sync_hook)(Status*);
+static void gc_residue(size_t* objs, size_t* bytes) {
+    gc_flush_cursors(); gc_rfree_flush();
+    for (size_t k = 0; k < gc_active_n; k++) {
+        GcPage* m = gc_meta[gc_active[k]];
+        if (m->kind == 2) { *objs += 1; *bytes += m->npages << GC_SHIFT; continue; }
+        for (uint32_t j = 0; j < m->bump; j++) if (!(m->freebits[j >> 6] >> (j & 63) & 1)) { *objs += 1; *bytes += m->obj; }
+    }
+}
 static void gc_reset(void) {
     if (ss_reset_hook) ss_reset_hook();
-    if (gc_stats) fprintf(stderr, "sspur gc: %lld collections, %zu active pages, high water %zu MB\n", (long long)gc_collections, gc_active_n, (gc_next << GC_SHIFT) >> 20);
+    if (gc_stats) {
+        size_t objs = 0, bytes = 0;
+        if (gc_ready) gc_residue(&objs, &bytes);
+        fprintf(stderr, "sspur gc: %lld collections, %zu active pages, high water %zu MB\n", (long long)gc_collections, gc_active_n, (gc_next << GC_SHIFT) >> 20);
+        fprintf(stderr, "sspur mem: %s, %zu blocks freed at last use (%zu KB), %zu blocks (%zu KB) left for the collector at exit\n", ss_mem_mode == 1 ? "gc" : ss_mem_mode == 2 ? "check" : "rc", ss_rc_frees, ss_rc_bytes >> 10, objs, bytes >> 10);
+    }
     for (size_t k = 0; k < gc_active_n; k++) gc_release_page(gc_active[k]);
-    gc_active_n = 0; gc_since = 0;
-    for (int a = 0; a < 2; a++) for (int c = 0; c < GC_NCLS; c++) { gc_partial_n[a][c] = 0; gc_cur[a][c] = (GcCursor){0, 0, 0}; gc_flist[a][c] = 0; }
+    gc_cache_clear();
+    gc_active_n = 0; gc_since = 0; ss_rc_frees = 0; ss_rc_bytes = 0;
+    for (int a = 0; a < 2; a++) for (int c = 0; c < GC_NCLS; c++) { gc_partial_n[a][c] = 0; gc_cur[a][c] = (GcCursor){0, 0, 0}; gc_flist[a][c] = 0; gc_rfree[a][c] = 0; }
 }
 static inline void gc_enter(void* frame, void* root, size_t root_len) {
     if (gc_depth++ == 0) { gc_stack_base = (char*)frame + 256; gc_root_ptr = root; gc_root_len = root_len; }
@@ -471,7 +594,7 @@ static void raw_msort(char* a, int64_t n, size_t es, int (*cmp)(const void*, con
 }
 static RawL raw_sorted(RawL l, size_t es, int (*cmp)(const void*, const void*)) {
     RawL c = raw_copy(l, es);
-    if (c.len > 1) raw_msort((char*)c.data, c.len, es, cmp, (char*)sspur_alloc((size_t)c.len * es));
+    if (c.len > 1) { char* t = (char*)sspur_alloc((size_t)c.len * es); raw_msort((char*)c.data, c.len, es, cmp, t); ss_free(t); }
     return c;
 }
 typedef struct SsTask { void (*run)(struct SsTask*); void* clo; void* out; int64_t idx; Status st; int64_t depth; int64_t fail; struct SsGroup* g; pthread_t th; int started; } SsTask;
@@ -621,12 +744,16 @@ static HostApi host_;
 void sspur_set_host(const HostApi* h) { host_ = *h; }
 typedef struct { char* p; int64_t len, cap; char buf[112]; } SB;
 #define SB_INIT(b) SB b; b.p = 0; b.len = 0; b.cap = 0
+static void __attribute__((noinline)) sb_grow(SB* b, const char* s, int64_t n) {
+    char* old = 0;
+    if (!b->p && n <= (int64_t)sizeof(b->buf)) { b->p = b->buf; b->cap = (int64_t)sizeof(b->buf); }
+    else { int64_t nc = (b->cap + n) * 2 + 16; char* np = (char*)sspur_alloc_atomic((size_t)nc); if (b->len) memcpy(np, b->p, (size_t)b->len); if (b->p != b->buf) old = b->p; b->p = np; b->cap = nc; }
+    memcpy(b->p + b->len, s, (size_t)n); b->len += n;
+    if (old) ss_free(old);
+}
 static void sb_put(SB* b, const char* s, int64_t n) {
     if (n <= 0) return;
-    if (b->len + n > b->cap) {
-        if (!b->p && n <= (int64_t)sizeof(b->buf)) { b->p = b->buf; b->cap = (int64_t)sizeof(b->buf); }
-        else { int64_t nc = (b->cap + n) * 2 + 16; char* np = (char*)sspur_alloc_atomic((size_t)nc); if (b->len) memcpy(np, b->p, (size_t)b->len); b->p = np; b->cap = nc; }
-    }
+    if (UNLIKELY(b->len + n > b->cap)) { sb_grow(b, s, n); return; }
     memcpy(b->p + b->len, s, (size_t)n); b->len += n;
 }
 static Str sb_done(SB* b) { if (b->p == b->buf) { char* o = (char*)sspur_alloc_atomic((size_t)b->len); memcpy(o, b->buf, (size_t)b->len); return (Str){b->len, o}; } return (Str){b->len, b->p}; }
@@ -638,8 +765,11 @@ static void sb_int(SB* b, int64_t v) {
 }
 static void sb_f64(SB* b, double v) { char t[64]; int64_t n = host_.fmt_f64(v, t); sb_put(b, t, n); }
 static void sb_f64d(SB* b, double v) { char t[400]; int64_t n = host_.fmt_f64_display(v, t); sb_put(b, t, n); }
-static void sb_strq(SB* b, Str s) { int64_t cap = s.len * 10 + 8; char* o = (char*)sspur_alloc_atomic((size_t)cap); int64_t n = host_.str_op(3, s.p, s.len, o, cap); sb_put(b, o, n); }
+static void sb_strq(SB* b, Str s) { int64_t cap = s.len * 10 + 8; char* o = (char*)sspur_alloc_atomic((size_t)cap); int64_t n = host_.str_op(3, s.p, s.len, o, cap); sb_put(b, o, n); ss_free(o); }
 static inline Str str_lit(const char* p, int64_t n) { return (Str){n, p}; }
+static inline void ss_drop_s(Str s) { if (s.len > 0) ss_free(s.p); }
+static void ss_drop_strs(int64_t n, const Str* d, const void* hdr) { if (ss_mem_mode != 1 && gc_lo) for (int64_t i = 0; i < n; i++) ss_drop_s(d[i]); ss_free(hdr); }
+#define ss_drop_ls(l) ss_drop_strs((l).len, (l).data, (l).hdr)
 static inline uint64_t hash_S(Str s) {
     uint64_t h = (uint64_t)s.len * 0x9E3779B97F4A7C15ULL; const unsigned char* p = (const unsigned char*)s.p; int64_t n = s.len;
     while (n >= 8) { uint64_t w; memcpy(&w, p, 8); h = (h ^ w) * 0xbf58476d1ce4e5b9ULL; h ^= h >> 31; p += 8; n -= 8; }
@@ -709,7 +839,7 @@ static RawL str_split(Str s, Str sep) {
     if (sep.len == 1 && s.len > 0) {
         char c = sep.p[0]; const char* e = s.p + s.len; int64_t n = 1;
         for (const char* p = s.p; (p = (const char*)memchr(p, c, (size_t)(e - p))); p++) n++;
-        r = raw_alloc(n, sizeof(Str)); Str* d = (Str*)r.data; int64_t k = 0; const char* st = s.p;
+        ss_free(r.hdr); r = raw_alloc(n, sizeof(Str)); Str* d = (Str*)r.data; int64_t k = 0; const char* st = s.p;
         for (const char* p = s.p; (p = (const char*)memchr(p, c, (size_t)(e - p))); st = ++p) d[k++] = (Str){p - st, st};
         d[k++] = (Str){e - st, st}; r.len = k; r.hdr[1] = k;
         return r;
@@ -720,6 +850,7 @@ static RawL str_split(Str s, Str sep) {
     return raw_push(r, &last, sizeof(Str));
 }
 static inline void copy_short(char* w, const char* p, int64_t n) { if (n <= 16) { for (int64_t k = 0; k < n; k++) w[k] = p[k]; } else memcpy(w, p, (size_t)n); }
+static inline void sb_add(SB* b, const char* s, int64_t n) { if (LIKELY_(b->len + n <= b->cap)) { copy_short(b->p + b->len, s, n); b->len += n; } else if (n > 0) sb_grow(b, s, n); }
 static Str str_join(const Str* d, int64_t n, Str sep) {
     int64_t tot = n > 0 ? (n - 1) * sep.len : 0;
     for (int64_t i = 0; i < n; i++) tot += d[i].len;
@@ -1055,6 +1186,8 @@ fn generate(m: &Module, check: &CheckOutput, export: Option<&str>, target: Optio
         cx.generics = generic_defs.iter().filter(|(n, _)| ok.contains(*n)).map(|(n, f)| (n.clone(), f.clone())).collect();
         cx.fn_index = index.clone();
         cx.all_fns = defs.iter().map(|f| (f.name.clone(), (*f).clone())).collect();
+        cx.rc_off = std::env::var("SSPUR_MEM").is_ok_and(|v| v == "gc");
+        cx.rc_summaries();
         let mut failed = Vec::new();
         let mut bodies = String::new();
         let mut plan_fns = BTreeMap::new();
@@ -1258,7 +1391,8 @@ fn resolve_links(links: &[String]) -> Result<Vec<String>, String> {
 
 fn build(src: &str, opt: &str, links: &[String], lto: flags::Lto, names: &HashMap<usize, String>) -> Result<PathBuf, String> {
     let links = resolve_links(links)?;
-    let key = blake3::hash(format!("{opt}{}{}\n{src}", lto.flag().unwrap_or(""), links.iter().map(|l| format!(" {l}")).collect::<String>()).as_bytes()).to_hex().to_string();
+    let extra = flags::extra();
+    let key = blake3::hash(format!("{opt}{}{}{}\n{src}", lto.flag().unwrap_or(""), links.iter().map(|l| format!(" {l}")).collect::<String>(), extra.join(" ")).as_bytes()).to_hex().to_string();
     let dir = cache_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let lib = dir.join(format!("{}.{}", &key[..32], std::env::consts::DLL_EXTENSION));
@@ -1270,7 +1404,7 @@ fn build(src: &str, opt: &str, links: &[String], lto: flags::Lto, names: &HashMa
     std::fs::write(&c, src).map_err(|e| e.to_string())?;
     let tmp = lib.with_extension(format!("{uniq}.tmp"));
     let cc = flags::cc();
-    let out = Command::new(&cc).args([opt, "-shared", "-w"]).args(flags::pic()).args(lto.flag()).args(lto.linker()).arg("-o").arg(&tmp).arg(&c).args(links).args(flags::sys_libs()).output().map_err(|e| format!("cannot run {cc}: {e}"))?;
+    let out = Command::new(&cc).args([opt, "-shared", "-w"]).args(flags::pic()).args(&extra).args(lto.flag()).args(lto.linker()).arg("-o").arg(&tmp).arg(&c).args(links).args(flags::sys_libs()).output().map_err(|e| format!("cannot run {cc}: {e}"))?;
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
         if std::env::var_os("SSPUR_SPLIT_DEBUG").is_some() {
@@ -1324,7 +1458,8 @@ fn build_split(src: &str, opt: &str, plan: &Plan, lto: flags::Lto, names: &HashM
         flags::Lto::Thin => "true",
         flags::Lto::Full => "full",
     };
-    let memo = dir.join(format!("{}.split", &blake3::hash(format!("{cc} {opt} {}{}\n{src}", lto_tag, links.iter().map(|l| format!(" {l}")).collect::<String>()).as_bytes()).to_hex()[..32]));
+    let extra = flags::extra();
+    let memo = dir.join(format!("{}.split", &blake3::hash(format!("{cc} {opt} {}{}{}\n{src}", lto_tag, links.iter().map(|l| format!(" {l}")).collect::<String>(), extra.join(" ")).as_bytes()).to_hex()[..32]));
     if let Ok(name) = std::fs::read_to_string(&memo) {
         let lib = dir.join(name.trim());
         if lib.exists() {
@@ -1334,10 +1469,10 @@ fn build_split(src: &str, opt: &str, plan: &Plan, lto: flags::Lto, names: &HashM
     let tus = split_units(src, plan);
     let objdir = dir.join("obj");
     std::fs::create_dir_all(&objdir).map_err(|e| e.to_string())?;
-    let flags: Vec<&str> = [opt, "-c", "-w"].into_iter().chain(flags::pic().iter().copied()).chain(lto.flag()).collect();
+    let flags: Vec<&str> = [opt, "-c", "-w"].into_iter().chain(flags::pic().iter().copied()).chain(extra.iter().map(String::as_str)).chain(lto.flag()).collect();
     let stamp = format!("{cc} {}\n", flags.join(" "));
     let keys: Vec<String> = tus.iter().map(|t| blake3::hash(format!("{stamp}{}", t.text).as_bytes()).to_hex()[..32].to_string()).collect();
-    let lkey = blake3::hash(format!("{opt}{}\n{}", links.iter().map(|l| format!(" {l}")).collect::<String>(), keys.join("\n")).as_bytes()).to_hex()[..32].to_string();
+    let lkey = blake3::hash(format!("{opt}{}{}\n{}", links.iter().map(|l| format!(" {l}")).collect::<String>(), extra.join(" "), keys.join("\n")).as_bytes()).to_hex()[..32].to_string();
     let lib = dir.join(format!("{lkey}.{}", std::env::consts::DLL_EXTENSION));
     if lib.exists() {
         let _ = std::fs::write(&memo, format!("{lkey}.{}", std::env::consts::DLL_EXTENSION));
@@ -1412,7 +1547,7 @@ fn build_split(src: &str, opt: &str, plan: &Plan, lto: flags::Lto, names: &HashM
         }
     }
     let rsp = lib.with_extension(format!("{build}.rsp"));
-    link.args(["-shared", "-o"]).arg(&tmp);
+    link.args(&extra).args(["-shared", "-o"]).arg(&tmp);
     flags::inputs(&mut link, &objs, &rsp)?;
     link.args(&links).args(flags::sys_libs());
     // A file another build or a virus scanner holds open makes the Windows linker fail with
@@ -1581,6 +1716,15 @@ struct Cx<'a> {
     refine_used: HashMap<i64, String>,
     err_used: HashMap<i64, String>,
     statics: HashMap<String, Type>,
+    rc_off: bool,
+    rc_ret: HashSet<String>,
+    rc_bor: HashSet<(String, usize)>,
+    rc_vars: HashMap<String, drops::Rk>,
+    rc_subst: HashMap<usize, String>,
+    rc_deep: std::cell::Cell<bool>,
+    rc_take: std::cell::Cell<Option<usize>>,
+    rc_consume: HashSet<usize>,
+    sb_vars: HashMap<String, (String, String)>,
 }
 
 impl<'a> Cx<'a> {
@@ -1652,6 +1796,15 @@ impl<'a> Cx<'a> {
             refine_used: HashMap::new(),
             err_used: HashMap::new(),
             statics: HashMap::new(),
+            rc_off: false,
+            rc_ret: HashSet::new(),
+            rc_bor: HashSet::new(),
+            rc_vars: HashMap::new(),
+            rc_subst: HashMap::new(),
+            rc_deep: std::cell::Cell::new(false),
+            rc_take: std::cell::Cell::new(None),
+            rc_consume: HashSet::new(),
+            sb_vars: HashMap::new(),
         }
     }
 
@@ -2309,6 +2462,8 @@ impl<'a> Cx<'a> {
 
     fn function(&mut self, f: &FnDef, params: &[Type], ret: &Type, fidx: usize, cname: &str) -> G {
         self.box_names.clear();
+        self.rc_vars.clear();
+        self.sb_vars.clear();
         loop {
             let snap = self.snapshot();
             self.boxed.clear();
@@ -2745,6 +2900,9 @@ impl<'a> Cx<'a> {
     }
 
     fn expr(&mut self, e: &Expr) -> G {
+        if let Some(v) = self.rc_lookup(e) {
+            return Ok(v);
+        }
         let t = self.ty(e)?;
         match &e.kind {
             ExprKind::Int(n) => Ok(lit(*n)),
@@ -2760,7 +2918,10 @@ impl<'a> Cx<'a> {
                             let xt = self.ty(x)?;
                             let v = self.expr(x)?;
                             let sh = self.helper_show(&xt)?;
-                            write!(s, "{sh}(&sb_, {v}, 0); ").unwrap();
+                            match self.rc_temp(x) {
+                                Some(k) => write!(s, "{{ __auto_type pt_ = {v}; {sh}(&sb_, pt_, 0); {}}} ", drops::drop_code(k, "pt_")).unwrap(),
+                                None => write!(s, "{sh}(&sb_, {v}, 0); ").unwrap(),
+                            }
                         }
                     }
                 }
@@ -2840,6 +3001,9 @@ impl<'a> Cx<'a> {
                     return self.call_closure(&fv, &ft, vals);
                 }
                 let ExprKind::Name(n) = &f.kind else { unreachable!() };
+                if args.len() == 1 && self.builtin_reader(n, &[]) && let Some(k) = self.rc_temp(&args[0]) {
+                    return self.rc_hoist(&[(&args[0], Some(k))], |cx| cx.expr(e));
+                }
                 if !self.check.fn_types.contains_key(n)
                     && let Some(code) = self.conc_global(n, args, &t)? {
                         return Ok(code);
@@ -2885,14 +3049,28 @@ impl<'a> Cx<'a> {
                     _ if self.bare && sspur_check::BARE_NAMES.contains(&n.as_str()) && self.lookup(n).is_none() && !self.check.fn_types.contains_key(n) => self.bare_builtin(n, args),
                     _ if self.lookup(n).is_none() && self.check.kernels.contains_key(n) && self.fn_def(n).is_some_and(|f| f.kernel.is_some()) => self.kernel_call(n, args),
                     _ => {
+                        let tail = self.tail_spans.contains(&(e.span.start, e.span.end))
+                            && self.catch_stack.is_empty()
+                            && self.lookup(n).is_none()
+                            && (!self.tail_split || self.callee_safe(n, args, e));
+                        if !tail && self.rc_on() {
+                            let all: Vec<&Expr> = args.iter().collect();
+                            if let Some(subs) = self.rc_call_temps(n, &all) {
+                                let t2 = t.clone();
+                                return self.rc_hoist(&subs, |cx| {
+                                    let mut vals = Vec::new();
+                                    for (i, a) in args.iter().enumerate() {
+                                        vals.push(cx.call_arg(n, i, a)?);
+                                    }
+                                    cx.call_user(n, vals, Some(&t2), Some((e, args)))
+                                });
+                            }
+                        }
                         let mut vals = Vec::new();
                         for (i, a) in args.iter().enumerate() {
                             vals.push(self.call_arg(n, i, a)?);
                         }
-                        if self.tail_spans.contains(&(e.span.start, e.span.end))
-                            && self.catch_stack.is_empty()
-                            && self.lookup(n).is_none()
-                            && (!self.tail_split || self.callee_safe(n, args, e)) {
+                        if tail {
                                 let z = self.zero(&t)?;
                                 let mut s = String::from("({ ");
                                 for (i, (v, _)) in vals.iter().enumerate() {
@@ -3456,6 +3634,25 @@ impl<'a> Cx<'a> {
         Ok((m, node))
     }
 
+    /// When `key` is an owned value that this `put` takes over: emits the put variants that report
+    /// an existing key, and returns the drop for the unused key.
+    fn map_take(&mut self, m: &str, node: &str, kt: &Type, vt: &Type, key: &Expr) -> G<Option<String>> {
+        if !self.rc_consume.contains(&(key as *const Expr as usize)) {
+            return Ok(None);
+        }
+        let Some(k) = drops::rk_of(kt) else { return Ok(None) };
+        if self.helpers_done.insert(format!("mapk_{m}")) {
+            let kc = self.cty(kt)?;
+            let vc = self.cty(vt)?;
+            let kcmp = self.helper_cmp(kt)?;
+            writeln!(self.protos, "static {node}* putk_{m}({node}* t, {kc} k, {vc} v, uint64_t pr, int* kept);").unwrap();
+            let h = &mut self.helpers;
+            writeln!(h, "static {node}* putk_{m}({node}* t, {kc} k, {vc} v, uint64_t pr, int* kept) {{ if (!t) {{ {node}* n = ({node}*)sspur_alloc(sizeof({node})); n->k = k; n->v = v; n->pr = pr; n->sz = 1; n->l = n->r = 0; return n; }} int c = {kcmp}(k, t->k); {node}* n = cp_{m}(t); if (c == 0) {{ n->v = v; *kept = 1; return n; }} if (c < 0) {{ n->l = putk_{m}(t->l, k, v, pr, kept); if (n->l->pr > n->pr) {{ {node}* L = n->l; n->l = L->r; fix_{m}(n); L->r = n; fix_{m}(L); return L; }} }} else {{ n->r = putk_{m}(t->r, k, v, pr, kept); if (n->r->pr > n->pr) {{ {node}* R = n->r; n->r = R->l; fix_{m}(n); R->l = n; fix_{m}(R); return R; }} }} fix_{m}(n); return n; }}").unwrap();
+            writeln!(h, "static {node}* mputk_{m}({node}* t, {kc} k, {vc} v, uint64_t pr, int* kept) {{ if (!t) {{ {node}* n = ({node}*)sspur_alloc(sizeof({node})); n->k = k; n->v = v; n->pr = pr; n->sz = 1; n->l = n->r = 0; return n; }} int c = {kcmp}(k, t->k); if (c == 0) {{ t->v = v; *kept = 1; return t; }} if (c < 0) {{ t->l = mputk_{m}(t->l, k, v, pr, kept); if (t->l->pr > t->pr) {{ {node}* L = t->l; t->l = L->r; fix_{m}(t); L->r = t; fix_{m}(L); return L; }} }} else {{ t->r = mputk_{m}(t->r, k, v, pr, kept); if (t->r->pr > t->pr) {{ {node}* R = t->r; t->r = R->l; fix_{m}(t); R->l = t; fix_{m}(R); return R; }} }} fix_{m}(t); return t; }}").unwrap();
+        }
+        Ok(Some(drops::drop_code(k, "k_")))
+    }
+
     fn map_method(&mut self, r: &str, mt: &Type, name: &str, args: &[Expr], t: &Type) -> G {
         let (m, node) = self.map_helpers(mt)?;
         let Type::Con(_, a) = mt else { unreachable!() };
@@ -3486,15 +3683,25 @@ impl<'a> Cx<'a> {
                 format!("({{ {head}(int64_t)(find_{m}({mv}.root, {k}) != 0); }})")
             }
             "put" if self.inplace.contains(r) => {
+                let take = self.map_take(&m, &node, &kt, &vt, &args[0])?;
                 let (k, v) = (self.expr(&args[0])?, self.expr(&args[1])?);
+                let (put, kept, free) = match &take {
+                    Some(d) => (format!("mputk_{m}"), ", &kept_", format!("if (kept_) {d}")),
+                    None => (format!("mput_{m}"), "", String::new()),
+                };
+                let decl = if take.is_some() { "int kept_ = 0; " } else { "" };
                 match self.hit_var(r, &args[0]).filter(|h| self.hits.contains(h)) {
-                    Some(h) => format!("({{ __auto_type k_ = {k}; __auto_type v_ = {v}; if ({h} && memcmp(&{h}k, &k_, sizeof(k_)) == 0) {h}->v = v_; else {r}.root = mput_{m}({r}.root, k_, v_, sspur_prio()); {r}; }})"),
-                    None => format!("({{ __auto_type k_ = {k}; __auto_type v_ = {v}; {r}.root = mput_{m}({r}.root, k_, v_, sspur_prio()); {r}; }})"),
+                    Some(h) => format!("({{ __auto_type k_ = {k}; __auto_type v_ = {v}; {decl}if ({h} && memcmp(&{h}k, &k_, sizeof(k_)) == 0) {{ {h}->v = v_; kept_ = 1; }} else {r}.root = {put}({r}.root, k_, v_, sspur_prio(){kept}); {free}{r}; }})").replace("kept_ = 1; ", if take.is_some() { "kept_ = 1; " } else { "" }),
+                    None => format!("({{ __auto_type k_ = {k}; __auto_type v_ = {v}; {decl}{r}.root = {put}({r}.root, k_, v_, sspur_prio(){kept}); {free}{r}; }})"),
                 }
             }
             "put" => {
+                let take = self.map_take(&m, &node, &kt, &vt, &args[0])?;
                 let (k, v) = (self.expr(&args[0])?, self.expr(&args[1])?);
-                format!("({{ {head}__auto_type k_ = {k}; __auto_type v_ = {v}; ({mc}){{put_{m}({mv}.root, k_, v_, sspur_prio())}}; }})")
+                match take {
+                    Some(d) => format!("({{ {head}__auto_type k_ = {k}; __auto_type v_ = {v}; int kept_ = 0; {mc} m_ = ({mc}){{putk_{m}({mv}.root, k_, v_, sspur_prio(), &kept_)}}; if (kept_) {d}m_; }})"),
+                    None => format!("({{ {head}__auto_type k_ = {k}; __auto_type v_ = {v}; ({mc}){{put_{m}({mv}.root, k_, v_, sspur_prio())}}; }})"),
+                }
             }
             "remove" => {
                 let k = self.expr(&args[0])?;
@@ -3595,13 +3802,13 @@ impl<'a> Cx<'a> {
             let same = |a: &str, b: &str| if is(et, "Str") { format!("str_eq({a}, {b})") } else { format!("{c}({a}, {b}) == 0") };
             let eq = same("d[g - 1].f0", "ELEM");
             writeln!(self.protos, "static {out} {name}({lc} l);").unwrap();
-            let body = format!("uint64_t hv = {h}(ELEM); int64_t j = (int64_t)(hv & (uint64_t)(cap - 1)); for (;;) {{ int64_t g = slot[j]; if (!g) {{ if (k == dcap) {{ RawL nr = raw_alloc(dcap * 2, sizeof({pc})); memcpy(nr.data, d, (size_t)k * sizeof({pc})); r = nr; d = ({pc}*)r.data; dcap *= 2; }} slot[j] = k + 1; d[k].f0 = ELEM; d[k].f1 = 1; k++; if (k * 2 > cap) {{ cap *= 2; slot = (int64_t*)sspur_alloc_atomic((size_t)cap * 8); memset(slot, 0, (size_t)cap * 8); for (int64_t q = 0; q < k; q++) {{ int64_t z = (int64_t)({h}(d[q].f0) & (uint64_t)(cap - 1)); while (slot[z]) z = (z + 1) & (cap - 1); slot[z] = q + 1; }} }} break; }} if ({eq}) {{ d[g - 1].f1++; break; }} j = (j + 1) & (cap - 1); }}").replace("{eq}", &eq);
+            let body = format!("uint64_t hv = {h}(ELEM); int64_t j = (int64_t)(hv & (uint64_t)(cap - 1)); for (;;) {{ int64_t g = slot[j]; if (!g) {{ if (k == dcap) {{ RawL nr = raw_alloc(dcap * 2, sizeof({pc})); memcpy(nr.data, d, (size_t)k * sizeof({pc})); ss_free(r.hdr); r = nr; d = ({pc}*)r.data; dcap *= 2; }} slot[j] = k + 1; d[k].f0 = ELEM; d[k].f1 = 1; k++; if (k * 2 > cap) {{ cap *= 2; ss_free(slot); slot = (int64_t*)sspur_alloc_atomic((size_t)cap * 8); memset(slot, 0, (size_t)cap * 8); for (int64_t q = 0; q < k; q++) {{ int64_t z = (int64_t)({h}(d[q].f0) & (uint64_t)(cap - 1)); while (slot[z]) z = (z + 1) & (cap - 1); slot[z] = q + 1; }} }} break; }} if ({eq}) {{ d[g - 1].f1++; break; }} j = (j + 1) & (cap - 1); }}").replace("{eq}", &eq);
             let init = format!("int64_t cap = 16, dcap = 16, k = 0; int64_t* slot = (int64_t*)sspur_alloc_atomic((size_t)cap * 8); memset(slot, 0, (size_t)cap * 8); RawL r = raw_alloc(dcap, sizeof({pc})); {pc}* d = ({pc}*)r.data; ");
-            let fin = format!("r.hdr[1] = k; return ({out}){{k, d, r.hdr}};");
+            let fin = format!("ss_free(slot); r.hdr[1] = k; return ({out}){{k, d, r.hdr}};");
             writeln!(self.helpers, "static {out} {name}({lc} l) {{ int64_t n = l.len; {init}for (int64_t i = 0; i < n; i++) {{ {} }} {fin} }}", body.replace("ELEM", "l.data[i]")).unwrap();
             if is(et, "Str") {
                 writeln!(self.protos, "static {out} {name}_w(Str s);").unwrap();
-                writeln!(self.helpers, "static {out} {name}_w(Str s) {{ const unsigned char* p = (const unsigned char*)s.p; for (int64_t q = 0; q < s.len; q++) if (p[q] >= 0x80) {{ RawL wl = str_words(s); return {name}(({lc}){{wl.len, (Str*)wl.data, wl.hdr}}); }} {init}int64_t i = 0; while (i < s.len) {{ while (i < s.len && !word_class[p[i]]) i++; int64_t st = i; while (i < s.len && word_class[p[i]]) i++; if (i == st) continue; Str w_ = {{i - st, s.p + st}}; {} }} {fin} }}", body.replace("ELEM", "w_")).unwrap();
+                writeln!(self.helpers, "static {out} {name}_w(Str s) {{ const unsigned char* p = (const unsigned char*)s.p; {init}int64_t i = 0; while (i < s.len) {{ while (i < s.len && word_class[p[i]] == 0) i++; int64_t st = i; while (i < s.len && word_class[p[i]] == 1) i++; if (UNLIKELY(i < s.len && word_class[p[i]] == 2)) {{ ss_free(slot); ss_free(r.hdr); RawL wl = str_words(s); {out} c_ = {name}(({lc}){{wl.len, (Str*)wl.data, wl.hdr}}); ss_free(wl.hdr); return c_; }} if (i == st) continue; Str w_ = {{i - st, s.p + st}}; {} }} {fin} }}", body.replace("ELEM", "w_")).unwrap();
             }
         }
         Ok(format!("{name}({r})"))
@@ -3796,6 +4003,36 @@ impl<'a> Cx<'a> {
     }
 
     fn method(&mut self, e: &Expr, recv: &Expr, name: &str, args: &[Expr], t: &Type) -> G {
+        if name == "join"
+            && let ExprKind::Name(n) = &recv.kind
+            && let Some((c, _)) = self.lookup(n)
+            && self.sb_vars.contains_key(&c)
+        {
+            return Ok(format!("sb_done(&{c})"));
+        }
+        if self.rc_on() {
+            if self.check.user_methods.contains(&(e.span.start, e.span.end)) {
+                let all: Vec<&Expr> = std::iter::once(recv).chain(args.iter()).collect();
+                if let Some(subs) = self.rc_call_temps(name, &all) {
+                    return self.rc_hoist(&subs, |cx| cx.method_inner(e, recv, name, args, t));
+                }
+            } else if matches!(name, "sum" | "len" | "map" | "filter") {
+                let mut base = recv;
+                while let ExprKind::Method { recv: r, name: n, args: a, .. } = &base.kind {
+                    if !(n == "map" || n == "filter") || a.len() != 1 || self.check.user_methods.contains(&(base.span.start, base.span.end)) {
+                        break;
+                    }
+                    base = r;
+                }
+                if !std::ptr::eq(base, recv) && !matches!(base.kind, ExprKind::Range(..)) && !self.range_call(base) && let Some(k) = self.rc_temp(base) {
+                    return self.rc_hoist(&[(base, Some(k))], |cx| cx.method_inner(e, recv, name, args, t));
+                }
+            }
+        }
+        self.method_inner(e, recv, name, args, t)
+    }
+
+    fn method_inner(&mut self, e: &Expr, recv: &Expr, name: &str, args: &[Expr], t: &Type) -> G {
         if matches!(&recv.kind, ExprKind::Name(n) if n == "json") && self.lookup("json").is_none() && !self.check.fn_types.contains_key("json") {
             return self.json_call(e, name, args, t);
         }
@@ -3818,9 +4055,11 @@ impl<'a> Cx<'a> {
         }
         if name == "counts"
             && args.is_empty()
-            && let ExprKind::Method { recv: inner, name: wn, args: wa, .. } = &recv.kind
-            && wn == "words"
-            && wa.is_empty()
+            && let Some(inner) = match &recv.kind {
+                ExprKind::Method { recv: inner, name: wn, args: wa, .. } if wn == "words" && wa.is_empty() => Some(inner),
+                ExprKind::Field(inner, wn) if wn == "words" => Some(inner),
+                _ => None,
+            }
             && !self.check.user_methods.contains(&(recv.span.start, recv.span.end))
             && self.ty(inner).is_ok_and(|t| is(&t, "Str")) {
                 let lt = self.ty(recv)?;
@@ -3834,6 +4073,13 @@ impl<'a> Cx<'a> {
                 return self.range_map(a, b, &args[0], t);
             }
         let rt = self.ty(recv)?;
+        if let Some(k) = self.rc_temp(recv)
+            && !matches!(recv.kind, ExprKind::Range(..))
+            && drops::reads_recv(k, &rt, name)
+        {
+            let k = if k == drops::Rk::List && drops::reads_recv(drops::Rk::Strs, &rt, name) && self.rc_deep_init(recv, &mut Vec::new()) { drops::Rk::Strs } else { k };
+            return self.rc_hoist(&[(recv, Some(k))], |cx| cx.method_inner(e, recv, name, args, t));
+        }
         let r = self.expr(recv)?;
         if name == "str" {
             return self.show_str(&r, &rt);
@@ -4138,7 +4384,7 @@ impl<'a> Cx<'a> {
                     writeln!(self.helpers, "static int {pcmp}(const void* a, const void* b) {{ return {kc}(((const {pc}*)a)->f0, ((const {pc}*)b)->f0); }}").unwrap();
                 }
                 let body = self.apply(&args[0], vec![(x.clone(), et.clone())])?;
-                wrap(format!("RawL p_ = raw_alloc({l}.len, sizeof({pc})); {pc}* pd_ = ({pc}*)p_.data; for (int64_t {i} = 0; {i} < {l}.len; {i}++) {{ __auto_type {x} = {l}.data[{i}]; pd_[{i}].f0 = {body}; pd_[{i}].f1 = {x}; }} p_.len = {l}.len; p_.hdr[1] = {l}.len; if ({l}.len > 1) raw_msort((char*)pd_, {l}.len, sizeof({pc}), {pcmp}, (char*)sspur_alloc((size_t){l}.len * sizeof({pc}))); RawL r_ = raw_alloc({l}.len, sizeof({ec})); {ec}* d_ = ({ec}*)r_.data; for (int64_t {i} = 0; {i} < {l}.len; {i}++) d_[{i}] = pd_[{i}].f1; r_.hdr[1] = {l}.len; ({lc}){{{l}.len, d_, r_.hdr}};"))
+                wrap(format!("RawL p_ = raw_alloc({l}.len, sizeof({pc})); {pc}* pd_ = ({pc}*)p_.data; for (int64_t {i} = 0; {i} < {l}.len; {i}++) {{ __auto_type {x} = {l}.data[{i}]; pd_[{i}].f0 = {body}; pd_[{i}].f1 = {x}; }} p_.len = {l}.len; p_.hdr[1] = {l}.len; if ({l}.len > 1) {{ char* t_ = (char*)sspur_alloc((size_t){l}.len * sizeof({pc})); raw_msort((char*)pd_, {l}.len, sizeof({pc}), {pcmp}, t_); ss_free(t_); }} RawL r_ = raw_alloc({l}.len, sizeof({ec})); {ec}* d_ = ({ec}*)r_.data; for (int64_t {i} = 0; {i} < {l}.len; {i}++) d_[{i}] = pd_[{i}].f1; ss_free(p_.hdr); r_.hdr[1] = {l}.len; ({lc}){{{l}.len, d_, r_.hdr}};"))
             }
             "unique" => {
                 let c = self.helper_cmp(et)?;
@@ -4461,6 +4707,8 @@ impl<'a> Cx<'a> {
             _ => 0,
         };
         let n = stmts.len();
+        let rc = self.rc_on();
+        let mut rc_at: Vec<String> = vec![String::new(); n];
         for (i, st) in stmts.iter().enumerate() {
             if i == group_at {
                 match self.local_group(stmts) {
@@ -4481,10 +4729,43 @@ impl<'a> Cx<'a> {
                 Stmt::Var(v, init) if self.ty(init).is_ok_and(|t| is(&t, "Int")) => self.var_invariant(v, init, &stmts[i + 1..]),
                 _ => None,
             };
-            let r = match st {
-                Stmt::Expr(x) => self.expr(x).map(|v| if last { format!("{v}; ") } else { format!("(void)({v}); ") }),
-                other => self.stmt(other).map(|c| if last { format!("{c}0LL; ") } else { c }),
+            let sb = if rc { self.sb_plan(stmts, i) } else { None };
+            let plan = if rc && sb.is_none() { self.rc_plan(stmts, i) } else { None };
+            let r = match (st, sb) {
+                (Stmt::Var(v, init), Some(sep)) => self.ty(init).map(|t| {
+                    let name = self.bind(v, t);
+                    let cnt = self.fresh("sbn");
+                    self.mutable.insert(name.clone());
+                    self.sb_vars.insert(name.clone(), (cnt.clone(), sep));
+                    format!("SB {name}; {name}.p = 0; {name}.len = 0; {name}.cap = 0; int64_t {cnt} = 0; ")
+                }),
+                (Stmt::Expr(x), _) => self.expr(x),
+                (other, _) => self.stmt(other),
             };
+            if let Some(p) = &plan
+                && r.is_ok()
+                && let Some((c, _)) = self.lookup(&p.v)
+            {
+                if p.var {
+                    self.rc_vars.insert(c.clone(), p.k);
+                }
+                if let Some(k) = p.consumed {
+                    self.rc_consume.insert(k);
+                } else if !p.moved {
+                    rc_at[p.last].push_str(&drops::drop_code(p.k, &c));
+                }
+            }
+            let dr = std::mem::take(&mut rc_at[i]);
+            let r = r.map(|c| match (st, last) {
+                (Stmt::Expr(_), true) if dr.is_empty() => format!("{c}; "),
+                (Stmt::Expr(_), true) => {
+                    let rb = self.fresh("rb");
+                    format!("__auto_type {rb} = {c}; {dr}{rb}; ")
+                }
+                (Stmt::Expr(_), false) => format!("(void)({c}); {dr}"),
+                (_, true) => format!("{c}{dr}0LL; "),
+                (_, false) => format!("{c}{dr}"),
+            });
             if let Stmt::Var(v, init) = st
                 && !self.fn_has_catch
                 && self.owned_var(init, &stmts[i + 1..], v)
@@ -4575,10 +4856,21 @@ impl<'a> Cx<'a> {
             }
             Stmt::Assign(n, e, _) => {
                 let (var, _) = self.lookup(n).ok_or("assigns an unknown variable")?;
+                if let Some((cnt, sep)) = self.sb_vars.get(&var).cloned()
+                    && let ExprKind::Method { args, .. } = &e.kind
+                {
+                    let item = self.expr(&args[0])?;
+                    let drop = self.rc_temp(&args[0]).map(|k| drops::drop_code(k, "sv_")).unwrap_or_default();
+                    let gap = if sep.is_empty() { String::new() } else { format!("if ({cnt}) sb_add(&{var}, {}, {}); ", c_lit(&sep), sep.len()) };
+                    return Ok(format!("{{ Str sv_ = {item}; {gap}{cnt}++; sb_add(&{var}, sv_.p, sv_.len); {drop}}} "));
+                }
                 if self.owned.contains(&var) && self.own_assign(n, e) {
                     return self.own_update(&var, e);
                 }
                 let v = self.expr(e)?;
+                if let Some(k) = self.rc_vars.get(&var).copied() {
+                    return Ok(self.rc_assign(&var, k, e, n, &v));
+                }
                 Ok(format!("{var} = {v}; "))
             }
             Stmt::While(c, body) => {
@@ -4630,8 +4922,10 @@ impl<'a> Cx<'a> {
                     None if is(&lt, "Unit") => return Err("iterates a generator".into()),
                     None => return Err("for loop over a non-list".into()),
                 };
+                let it_drop = self.rc_temp(it).map(|k| (k, String::new()));
                 let lv = self.expr(it)?;
                 let (l, i) = (self.fresh("fl"), self.fresh("fi"));
+                let it_drop = it_drop.map(|(k, _)| drops::drop_code(k, &l)).unwrap_or_default();
                 self.scopes.push(HashMap::new());
                 let mut conds = Vec::new();
                 let mut binds = Vec::new();
@@ -4650,7 +4944,7 @@ impl<'a> Cx<'a> {
                 let body = self.expr(body);
                 self.scopes.pop();
                 let cond = if conds.is_empty() { "1".to_string() } else { conds.join(" && ") };
-                Ok(format!("{{ __auto_type {l} = {lv}; for (int64_t {i} = 0; {i} < {l}.len; {i}++) {{ __auto_type {item} = {l}.data[{i}]; {pre}if ({cond}) {{ {decl}(void)({}); }} }} }} ", body?))
+                Ok(format!("{{ __auto_type {l} = {lv}; for (int64_t {i} = 0; {i} < {l}.len; {i}++) {{ __auto_type {item} = {l}.data[{i}]; {pre}if ({cond}) {{ {decl}(void)({}); }} }} {it_drop}}} ", body?))
             }
             Stmt::Expr(e) => Ok(format!("(void)({}); ", self.expr(e)?)),
             Stmt::Fn(_) => Ok(String::new()),

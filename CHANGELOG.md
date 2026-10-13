@@ -4,6 +4,20 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+### Added
+- Native code frees list buffers and strings at their last use when the compiler can prove they have one owner (ADR 0033), in front of the collector, which still reclaims everything else. Locals and temporaries that are only read are freed after the last read, a `var` frees its old value when it gets a new one, a parameter a function only reads is borrowed so the caller frees a fresh argument after the call, a list of strings built from fresh strings frees them with it, a `Map.put` that takes an owned key frees it when the key was already there, and `var v = []` that is only pushed onto and then joined is built as a string directly. Freed blocks are reused by the next allocation of their size. Peak memory, 0.8.1 to 0.8.2 (C++): `simd` 273 to 39 MB (40), `churn` 268 to 7 MB, `strings_big` 92 to 29 MB (23), `app` 137 to 41 MB (24), `gpu` 344 to 178 MB (54); every benchmark is as fast as before or faster (`simd` 0.20s to 0.18s, `churn` 0.08s to 0.03s).
+- `SSPUR_MEM=gc` turns the frees off (the 0.8.1 behavior) and `SSPUR_MEM=check` poisons freed blocks and stops on a double free. `SSPUR_GC_STATS=1` also reports the blocks freed at last use and the blocks left for the collector. `SSPUR_GC_MIN_MB` and `SSPUR_GC_FACTOR` tune when the collector runs (defaults 256 and 4).
+- `SSPUR_CFLAGS` adds C compiler flags to native builds and their cache key, for example `-fsanitize=address,undefined`.
+
+### Changed
+- `text.lower.words.counts`, written without parentheses, now counts while it scans, as ADR 0008 describes, instead of building the whole word list first; non-ASCII text is detected during the scan instead of in a pass before it.
+- Interpolation and string building are about 7% faster: a string builder's growth is in a separate cold function, and it frees the buffer it outgrew.
+- The runtime frees its own temporaries: sort buffers, `sort_by` key pairs and `counts` hash tables.
+
+### Fixed
+- `split` on a one-byte separator allocated a buffer and threw it away.
+- The allocator's fast path did pointer arithmetic on a null cursor, which UndefinedBehaviorSanitizer reports.
+
 ## [0.8.1] - 2026-10-13
 
 ### Added

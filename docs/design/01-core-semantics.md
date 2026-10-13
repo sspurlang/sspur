@@ -150,8 +150,8 @@ type Order = {...} derive Eq, Hash, Json, Gen
 
 This section describes the default `app` profile. The `sys` and `bare` profiles (ownership, raw pointers, custom allocators, no runtime) are specified in `05-systems-layer.md`.
 
-- **Reference counting with reuse** (Perceus-style): no GC pauses, no borrow annotations. When a value is uniquely owned, "updates" happen in place.
-- **Immutable data cannot form cycles.** Only `Ref` can, and `Ref` requires `mut`; a small cycle collector covers that case.
+- **Ownership first, a collector behind it.** Native code frees a list buffer or a string at its last use when the compiler can prove it has one owner, the static half of Perceus-style reference counting (ADR 0033), and a conservative collector reclaims everything else (ADR 0006). No borrow annotations. When a value is uniquely owned, "updates" happen in place (ADR 0008).
+- **Cycles are the collector's job.** Immutable data can't form cycles; closures, `var` cells, handlers and `Ref` can, and none of them is ever freed early.
 - **Request arenas.** Each `ep` handler runs in an arena freed in one step when the request ends. Escaping values are promoted.
 - Agents never write memory management code. The compiler chooses the representation.
 

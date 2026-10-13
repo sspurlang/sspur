@@ -16,6 +16,7 @@ None of these are needed for normal use. They exist for CI, for pinning toolchai
 | `SSPUR_FILL_MS` | Time hole filling may spend per hole in milliseconds, for `check`, `fill` and the MCP tools; `--fill-ms` still wins (defaults 400 for `check`, 600 in editors, 1000 for `fill`) |
 | `SSPUR_LTO` | Default for `--lto`: `off`, `thin` or `full` |
 | `CC` | The C compiler for native code and `export-c` (default `clang`) |
+| `SSPUR_CFLAGS` | Extra C compiler flags for native builds, part of the cache key. `-fsanitize=address,undefined` builds native code under the sanitizers; on macOS run with `DYLD_INSERT_LIBRARIES` set to clang's `libclang_rt.asan_osx_dynamic.dylib` |
 | `SSPUR_PROFDATA` | The `llvm-profdata` to use for `--pgo` |
 | `SSPUR_LLVM_CC` | The clang for `--backend llvm` |
 
@@ -26,7 +27,10 @@ None of these are needed for normal use. They exist for CI, for pinning toolchai
 | `SSPUR_THREADS` | Threads for automatic data parallelism in pure pipelines (default: the number of cores). `1` makes them sequential |
 | `SSPUR_GPU=0` | Run GPU kernels on the CPU even when Metal is available |
 | `SSPUR_GPU_TRACE=1` | Print a line per GPU kernel launch |
-| `SSPUR_GC_STATS=1` | Print garbage collector statistics to stderr, per collection and when a native program exits |
+| `SSPUR_GC_STATS=1` | Print memory statistics to stderr: each collection, and when a native program exits, how many blocks were freed at their last use and how many were left for the collector |
+| `SSPUR_MEM` | `gc` turns off freeing at last use (no drops compiled, nothing freed early; the 0.8.1 behavior). `check` poisons freed blocks instead of reusing them and stops on a double free, for finding memory bugs (ADR 0033) |
+| `SSPUR_GC_MIN_MB`, `SSPUR_GC_FACTOR` | Collect after max(`MIN` MB, `FACTOR` x live) of allocation (defaults 256 and 4). Lower values trade speed for memory |
+| `SSPUR_GC_STRESS` | Collect every N bytes, for testing the collector |
 
 ## Targets and tools
 

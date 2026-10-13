@@ -1,0 +1,238 @@
+// drops at last use (ADR 0033)
+
+type Bag = {items: List[Int], name: Str}
+type Hit = Miss | Found{at: Int}
+type Err = Bad{msg: Str}
+
+fn make(n: Int) -> List[Int]
+= (0..n).map(i => i * 3 % 7)
+
+fn total(xs: List[Int]) -> Int
+= xs.sum
+
+fn keep2(xs: List[Int]) -> List[Int]
+= xs.take(2)
+
+fn words_of(n: Int) -> List[Str]
+= do
+  var out = []
+  for i in 0..n
+    out := out.push("w{i}")
+  out
+
+fn temps(n: Int) -> Int
+= total(make(n)) + make(n).len + keep2(make(n)).sum + make(n).map(_ + 1).filter(_ > 2).len
+
+fn alias(n: Int) -> Int
+= do
+  xs = make(n)
+  ys = xs
+  zs = make(n + 1)
+  ys.sum + zs.len + ys.len
+
+fn shared_views(n: Int) -> Int
+= do
+  xs = make(n)
+  a = xs.take(3)
+  b = xs.drop(1)
+  c = xs.push(99)
+  junk = make(50)
+  a.sum + b.sum + c.len + junk.len + c[c.len - 1]
+
+fn slices(s: Str) -> Int
+= do
+  t = "{s}  padded  "
+  u = t.trim
+  parts = "{s},x,y".split(",")
+  junk = "{s}{s}{s}{s}"
+  u.len + parts.len + parts[0].len + junk.len
+
+fn closure_keeps(n: Int) -> Int
+= do
+  xs = make(n)
+  f = k => xs.len + k
+  junk = make(100)
+  f(junk.len) + f(1)
+
+fn record_keeps(n: Int) -> Int
+= do
+  xs = make(n)
+  b = Bag{items: xs, name: "bag{n}"}
+  junk = make(100)
+  b.items.sum + b.name.len + junk.len
+
+fn remap(n: Int) -> Int
+= do
+  var v = make(n)
+  for i in 0..5
+    v := v.map(x => x + i)
+    v := v.filter(x => x % 5 != 0)
+  v.sum
+
+fn chain(n: Int) -> Int
+= do
+  var v = []
+  for i in 0..n
+    v := v.push(i).push(i * 2)
+    if i % 7 == 0 then v := v.concat([1, 2, 3])
+  v.len + v.sum
+
+fn grow_while_reading(n: Int) -> Int
+= do
+  var v = [1, 2, 3]
+  var w = []
+  for x in v
+    w := w.push(x)
+  for i in 0..n
+    w := w.push(w.len + v.len)
+  w.sum
+
+fn acc_str(n: Int) -> Int
+= do
+  var s = "start"
+  for i in 0..n
+    s := "{s}-{i}"
+  s.len
+
+fn deep_join(n: Int) -> Str
+= do
+  var lines = []
+  for i in 0..n
+    lines := lines.push("line {i} of {n}")
+  lines.join("\n")
+
+fn deep_escape(n: Int) -> Int
+= do
+  var lines = []
+  for i in 0..n
+    lines := lines.push("item{i}")
+  first = lines[0]
+  all = lines.join(",")
+  junk = deep_join(20)
+  first.len + all.len + junk.len
+
+fn mapped_join(n: Int) -> Str
+= (0..n).map(i => "<{i}>").join("")
+
+fn counts_of(text: Str) -> List[(Str, Int)]
+= text.lower.words.counts.sort_by((-_.1, _.0)).take(2)
+
+fn add_word(m: Map[Str, Int], w: Str) -> Map[Str, Int]
+= do
+  key = "{w}!"
+  old = m.get(key).or(0)
+  m.put(key, old + 1)
+
+fn tally(n: Int) -> Int
+= do
+  m = words_of(n).concat(words_of(n / 2)).fold(empty_map(), add_word)
+  m.keys.map(_.len).sum + m.values.sum + m.len
+
+fn persist(n: Int) -> Int
+= do
+  m0 = empty_map().put("a", 1)
+  var m = m0
+  for i in 0..n
+    key = "k{i % 4}"
+    m := m.put(key, i)
+  m0.len + m.len + m.keys.map(_.len).sum + m.values.sum
+
+fn early(xs: List[Int]) -> Int
+= do
+  tmp = make(10)
+  for x in xs
+    if x > 4 then return x + tmp.len
+  tmp.sum
+
+fn shadow(n: Int) -> Int
+= do
+  xs = make(n)
+  inner = do
+    xs = make(n * 2)
+    xs.len
+  xs.len + inner
+
+fn branchy(n: Int) -> Int
+= do
+  xs = make(n)
+  ys = make(n + 3)
+  if n % 2 == 0 then xs.sum else ys.sum + xs.len
+
+fn nested(n: Int) -> Int
+= do
+  xss = (0..n).map(i => make(i))
+  inner = xss[n - 1]
+  junk = make(77)
+  inner.sum + xss.len + junk.len
+
+fn lookup(xs: List[Int], k: Int) -> Hit
+= match xs.find(_ == k)
+  | some(x) => Found{at: x}
+  | none => Miss
+
+fn match_list(n: Int) -> Int
+= do
+  xs = make(n)
+  r = match xs
+    | [a, b, ..rest] => a + b + rest.len
+    | _ => 0
+  junk = make(40)
+  r + junk.len
+
+fn risky(xs: List[Int]) -> Int ! fail[Err]
+= if xs.len > 5 then raise Bad{msg: "long {xs.len}"} else xs.sum
+
+fn caught(n: Int) -> Int
+= catch risky(make(n))
+  | Bad{msg} => msg.len
+
+fn strs(n: Int) -> Int
+= do
+  a = "Hello {n} World".lower
+  b = a.replace("o", "0")
+  c = "{n}".repeat(0)
+  d = "xy".repeat(n)
+  e = a.take(3)
+  a.len + b.len + c.len + d.len + e.len
+
+fn show_temp(n: Int) -> Str
+= "{make(n)} and {words_of(2)}"
+
+fn churny(n: Int) -> Int
+= do
+  var acc = 0
+  var keep = []
+  for i in 0..n
+    xs = make(i % 17 + 1)
+    s = "{i}:{xs.len}"
+    if i % 5 == 0 then keep := keep.push(s)
+    acc := (acc + xs.sum + s.len) % 1000003
+  acc + keep.len + keep.map(_.len).sum
+
+test temps_ok = temps(10) == 50
+test alias_ok = alias(9) == 43
+test views_ok = shared_views(8) == 188
+test slices_ok = slices("ab") == 23
+test closure_ok = closure_keeps(5) == 111
+test record_ok = record_keeps(6) == 121
+test remap_ok = remap(30) == 173
+test chain_ok = chain(20) == 637
+test grow_ok = grow_while_reading(10) == 111
+test acc_ok = acc_str(50) == 145
+test deep_join_ok = deep_join(3) == "line 0 of 3\nline 1 of 3\nline 2 of 3"
+test deep_escape_ok = deep_escape(30) == 473
+test mapped_join_ok = mapped_join(5) == "<0><1><2><3><4>"
+test counts_ok = counts_of("A b a B c a") == [("a", 3), ("b", 2)]
+test counts_unicode_ok = counts_of("Ünïcode b ü Ü a ünïcode é") == [("ü", 2), ("ünïcode", 2)] and "x ü y ü".words.counts == [("x", 1), ("ü", 2), ("y", 1)]
+test tally_ok = tally(40) == 250
+test persist_ok = persist(10) == 46
+test early_ok = early([1, 9]) == 19 and early([1, 2]) == 30
+test shadow_ok = shadow(4) == 12
+test branchy_ok = branchy(4) == 11 and branchy(5) == 26
+test nested_ok = nested(6) == 99
+test lookup_ok = lookup(make(9), 6) == Found{at: 6}
+test match_ok = match_list(7) == 48
+test caught_ok = caught(3) == 9 and caught(9) == 6
+test strs_ok = strs(4) == 37
+test show_ok = show_temp(3) == "[0, 3, 6] and [\"w0\", \"w1\"]"
+test churny_ok = churny(5000) == 167560

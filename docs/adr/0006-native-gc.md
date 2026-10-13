@@ -25,6 +25,8 @@ Native code uses a conservative mark-sweep collector built into the generated C 
 
 Precise RC with reuse (Perceus) remains the long-term goal: deterministic memory, in-place updates at refcount 1, no stack scanning. It needs explicit dup/drop insertion in a core IR that the current direct-to-C generator doesn't have. SSPUR's immutable data can't form cycles, so RC will need no cycle collector when it lands. The conservative collector gives bounded memory today without touching the code generator.
 
+ADR 0033 (0.8.2) took the static half of that plan: blocks the compiler proves have one owner are freed at their last use, and this collector stays behind them for everything else.
+
 ## Bugs found while building it
 
 1. A page left behind by an advancing cursor didn't record its high-water mark, so its live objects looked unallocated and the page was released. Stress mode caught this as a corrupted tree (a "stack overflow" in `insert`).

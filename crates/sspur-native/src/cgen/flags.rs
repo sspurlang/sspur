@@ -33,6 +33,11 @@ impl Lto {
     }
 }
 
+/// Extra clang flags from `SSPUR_CFLAGS` (for example `-fsanitize=address,undefined`), part of every cache key.
+pub fn extra() -> Vec<String> {
+    std::env::var("SSPUR_CFLAGS").map(|v| v.split_whitespace().map(str::to_string).collect()).unwrap_or_default()
+}
+
 pub fn sys_libs() -> Vec<String> {
     if cfg!(windows) {
         win_builtins().into_iter().collect()

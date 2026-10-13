@@ -1,6 +1,6 @@
 # SSPUR for Go and Rust programmers
 
-If you write Go or Rust, you already expect static types, explicit errors and native speed. SSPUR keeps those and changes the defaults: values are immutable and garbage collected, errors are an effect instead of a return value, and every side effect a function can perform is in its type. Ownership exists, but only in the opt-in `sys` profile for code that manages real resources.
+If you write Go or Rust, you already expect static types, explicit errors and native speed. SSPUR keeps those and changes the defaults: values are immutable and their memory is managed for you (freed at last use when the compiler can prove a value has one owner, collected otherwise), errors are an effect instead of a return value, and every side effect a function can perform is in its type. Ownership exists, but only in the opt-in `sys` profile for code that manages real resources.
 
 ## What maps to what
 

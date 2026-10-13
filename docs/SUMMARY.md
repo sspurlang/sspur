@@ -110,6 +110,7 @@
   - [ADR 0030: Hole filling and suggested contracts](adr/0030-hole-filling-and-suggested-contracts.md)
   - [ADR 0031: The language server](adr/0031-language-server.md)
   - [ADR 0032: e is p anywhere, guard clauses and long lines](adr/0032-pattern-tests-guards-and-long-lines.md)
+  - [ADR 0033: Freeing at last use, in front of the collector](adr/0033-drops-at-last-use.md)
 - [Native performance versus C++](design/native-benchmarks.md)
 - [Agent benchmarks](design/agent-benchmarks.md)
 

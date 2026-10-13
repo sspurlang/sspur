@@ -346,9 +346,13 @@ impl Cx<'_> {
             }
             let Some((var, lt)) = self.lookup(v) else { continue };
             let Some(et) = elem(&lt, "List") else { continue };
+            if self.sb_vars.contains_key(&var) {
+                continue;
+            }
             let ec = self.decl(&et)?;
             let lc = self.cty(&lt)?;
-            write!(out, "{{ RawL r_ = raw_reserve_exact(TO_RAW({var}), {e} - {s}, sizeof({ec})); {var} = ({lc}){{r_.len, ({ec}*)r_.data, r_.hdr}}; }} ").unwrap();
+            let free_old = if self.rc_vars.contains_key(&var) { "if (o_.hdr != r_.hdr) ss_free(o_.hdr); " } else { "" };
+            write!(out, "{{ RawL o_ = TO_RAW({var}); RawL r_ = raw_reserve_exact(o_, {e} - {s}, sizeof({ec})); {var} = ({lc}){{r_.len, ({ec}*)r_.data, r_.hdr}}; {free_old}}} ").unwrap();
         }
         Ok(out)
     }
