@@ -48,6 +48,11 @@ pub fn sys_libs() -> Vec<String> {
     }
 }
 
+/// Drops unreached runtime functions and their libc imports, which cost time at every load.
+pub fn strip() -> &'static [&'static str] {
+    if cfg!(target_os = "macos") { &["-Wl,-dead_strip"] } else { &[] }
+}
+
 pub fn pic() -> &'static [&'static str] {
     if cfg!(windows) { &[] } else { &["-fPIC"] }
 }

@@ -14,6 +14,7 @@ pub(super) struct Vecx {
     flagged: bool,
     bad: bool,
     assumed: (usize, usize),
+    spec: bool,
 }
 
 pub(super) struct VBody {
@@ -148,11 +149,22 @@ impl Cx<'_> {
             BinOp::Mul => match point(rb).filter(|k| *k != 0).map(|k| (x, y, k)).or_else(|| point(ra).filter(|k| *k != 0).map(|k| (y, x, k))) {
                 Some((a, b, k)) => {
                     let (lo, hi) = mul_range(k);
-                    format!(
-                        "({{ int64_t a_ = {a}; int64_t b_ = {b}; {f} |= (uint64_t)a_ - (uint64_t){} > {}ULL; (int64_t)((uint64_t)a_ * (uint64_t)b_); }})",
-                        lit(lo as i64),
-                        (hi - lo) as u64
-                    )
+                    let r = if point(rb).is_some() { ra } else { rb };
+                    if r.0 >= lo && r.1 > hi {
+                        format!("({{ int64_t a_ = {a}; int64_t b_ = {b}; {f} |= a_ > {}; (int64_t)((uint64_t)a_ * (uint64_t)b_); }})", lit(hi as i64))
+                    } else if r.1 <= hi && r.0 < lo {
+                        format!("({{ int64_t a_ = {a}; int64_t b_ = {b}; {f} |= a_ < {}; (int64_t)((uint64_t)a_ * (uint64_t)b_); }})", lit(lo as i64))
+                    } else {
+                        format!(
+                            "({{ int64_t a_ = {a}; int64_t b_ = {b}; {f} |= (uint64_t)a_ - (uint64_t){} > {}ULL; (int64_t)((uint64_t)a_ * (uint64_t)b_); }})",
+                            lit(lo as i64),
+                            (hi - lo) as u64
+                        )
+                    }
+                }
+                None if v.spec => {
+                    v.bad = true;
+                    return None;
                 }
                 None => {
                     let mut cs = Vec::new();
@@ -166,6 +178,9 @@ impl Cx<'_> {
                 }
             },
             BinOp::Div | BinOp::Rem if point(rb).is_some_and(|k| k != 0 && k != -1) => {
+                if let Some(u) = unsigned_div(op, x, y, ra, rb) {
+                    return Some(u);
+                }
                 return Some(format!("({{ int64_t a_ = {x}; int64_t b_ = {y}; a_ {} b_; }})", op.symbol()));
             }
             _ => {
@@ -175,6 +190,10 @@ impl Cx<'_> {
         };
         v.flagged = true;
         Some(s)
+    }
+
+    pub(super) fn spec_proven(&self) -> bool {
+        self.vec.as_ref().is_some_and(|v| v.spec)
     }
 
     pub(super) fn vneg(&mut self, x: &str, proven: bool) -> Option<String> {
@@ -281,7 +300,7 @@ impl Cx<'_> {
         let snap = self.snapshot();
         let decls = self.fn_decls.len();
         let mark = self.know.facts.len();
-        self.vec = Some(Vecx { flag: String::new(), src: src.into(), lo: lo.into(), hi: hi.into(), pre: Vec::new(), flagged: false, bad: false, assumed: (mark, mark) });
+        self.vec = Some(Vecx { flag: String::new(), src: src.into(), lo: lo.into(), hi: hi.into(), pre: Vec::new(), flagged: false, bad: false, assumed: (mark, mark), spec: false });
         let r = self.vstage_body(stages, x.to_string(), et0.clone(), assume);
         let small = r.as_ref().is_ok_and(|(_, xf)| within(self.var_iv(xf), SMALL));
         self.know.facts.truncate(mark);
@@ -312,5 +331,59 @@ impl Cx<'_> {
             self.vrestore(snap.clone());
         }
         self.vec_try(stages, x, et0, src, lo, hi, true).or_else(|| self.vec_try(stages, x, et0, src, lo, hi, false))
+    }
+}
+
+const SPEC_OPS: usize = 6;
+
+impl Cx<'_> {
+    fn spec_shape(&self, e: &Expr, ops: &mut usize) -> bool {
+        let int = |x: &Expr| self.ty(x).is_ok_and(|t| is(&t, "Int"));
+        match &e.kind {
+            ExprKind::Int(_) => true,
+            ExprKind::Name(n) => self.lookup(n).is_some() && int(e),
+            ExprKind::Binary(op @ (BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem), a, b) => {
+                *ops += 1;
+                let k = |x: &Expr| matches!(x.kind, ExprKind::Int(k) if k != 0 && k != -1);
+                (*op != BinOp::Mul || k(a) || k(b)) && (!matches!(op, BinOp::Div | BinOp::Rem) || k(b)) && int(a) && int(b) && self.spec_shape(a, ops) && self.spec_shape(b, ops)
+            }
+            ExprKind::Unary(UnOp::Neg, x) => {
+                *ops += 1;
+                int(x) && self.spec_shape(x, ops)
+            }
+            _ => false,
+        }
+    }
+
+    /// A small `if` over Int with overflow checks as a select: both arms wrap and set exact flags,
+    /// and only the chosen arm's flag traps (every flagged check is an overflow).
+    pub(super) fn spec_select(&mut self, c: &Expr, a: &Expr, b: &Expr, cv: &str) -> Option<String> {
+        if self.vec.is_some() || !self.ty(a).is_ok_and(|t| is(&t, "Int")) {
+            return None;
+        }
+        let mut ops = 0;
+        if !self.spec_shape(a, &mut ops) || !self.spec_shape(b, &mut ops) || ops > SPEC_OPS {
+            return None;
+        }
+        let mark = self.know.facts.len();
+        let arm = |cx: &mut Self, x: &Expr, pos: bool| -> Option<(String, String, bool)> {
+            let fl = cx.fresh("sf");
+            cx.vec = Some(Vecx { flag: fl.clone(), src: String::new(), lo: String::new(), hi: String::new(), pre: Vec::new(), flagged: false, bad: false, assumed: (mark, mark), spec: true });
+            let r = cx.under(c, pos, |cx| cx.expr(x));
+            let v = cx.vec.take()?;
+            match r {
+                Ok(s) if !v.bad && v.pre.is_empty() && !s.contains("TRAPV") && !s.contains("sspur_") => Some((fl, s, v.flagged)),
+                _ => None,
+            }
+        };
+        let (fa, av, ga) = arm(self, a, true)?;
+        let (fb, bv, gb) = arm(self, b, false)?;
+        if !ga && !gb {
+            return None;
+        }
+        let (sc, sa, sb) = (self.fresh("sc"), self.fresh("sa"), self.fresh("sb"));
+        Some(format!(
+            "({{ int64_t {sc} = {cv}; uint64_t {fa} = 0; uint64_t {fb} = 0; int64_t {sa} = {av}; int64_t {sb} = {bv}; if (UNLIKELY(({sc} ? {fa} : {fb}) != 0)) TRAPV({T_OVERFLOW}, 0, 0); {sc} ? {sa} : {sb}; }})"
+        ))
     }
 }

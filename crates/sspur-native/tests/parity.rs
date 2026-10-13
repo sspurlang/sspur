@@ -73,6 +73,33 @@ fn proven_check_removal_keeps_real_traps() {
     assert_eq!(run(src, "g", &[84, 36]), Ok(12));
 }
 
+#[test]
+fn proven_signs_and_selects_keep_exact_results_and_traps() {
+    let src = "fn step(x: Int) -> Int\n= if x % 2 == 0 then x / 2 else 3 * x + 1\nfn len(n: Int where _ > 0) -> Int ! div\n= do\n  var x = n\n  var s = 0\n  while x != 1\n    x := if x % 2 == 0 then x / 2 else 3 * x + 1\n    s := s + 1\n  s\nfn q(a: Int) -> Int\n= a / 4 + a % 4 * 10 + a % 3 * 100 + a / 3 * 1000\nfn pq(a: Int where _ >= 0) -> Int\n= a / 4 + a % 4 * 10 + a % 3 * 100\nfn sel(a: Int, b: Int) -> Int\n= if a > b then a - b else b * 2 - a";
+    assert_eq!(run(src, "step", &[i64::MAX]), Err("integer overflow".into()));
+    assert_eq!(run(src, "step", &[i64::MAX - 1]), Ok(i64::MAX / 2));
+    assert_eq!(run(src, "step", &[i64::MAX / 3 + 1]), Err("integer overflow".into()));
+    assert_eq!(run(src, "step", &[i64::MAX / 3 - 1]), Ok(3 * (i64::MAX / 3 - 1) + 1));
+    assert_eq!(run(src, "step", &[i64::MIN]), Ok(i64::MIN / 2));
+    assert_eq!(run(src, "step", &[i64::MIN + 1]), Err("integer overflow".into()));
+    assert_eq!(run(src, "step", &[-7]), Ok(-20));
+    assert_eq!(run(src, "step", &[-6]), Ok(-3));
+    assert_eq!(run(src, "len", &[27]), Ok(111));
+    assert_eq!(run(src, "len", &[1]), Ok(0));
+    assert_eq!(run(src, "len", &[i64::MAX / 3 + 1]), Err("integer overflow".into()));
+    for a in [-9, -8, -5, -1, 0, 1, 5, 7, i64::MIN, i64::MAX] {
+        let want = (a / 3).checked_mul(1000).map(|t| a / 4 + (a % 4) * 10 + (a % 3) * 100 + t).ok_or_else(|| "integer overflow".to_string());
+        assert_eq!(run(src, "q", &[a]), want, "q({a})");
+        if a >= 0 {
+            assert_eq!(run(src, "pq", &[a]), Ok(a / 4 + (a % 4) * 10 + (a % 3) * 100), "pq({a})");
+        }
+    }
+    assert_eq!(run(src, "sel", &[i64::MAX, -1]), Err("integer overflow".into()));
+    assert_eq!(run(src, "sel", &[-1, i64::MAX]), Err("integer overflow".into()));
+    assert_eq!(run(src, "sel", &[5, 9]), Ok(13));
+    assert_eq!(run(src, "sel", &[9, 5]), Ok(4));
+}
+
 fn release(src: &str, f: &str, args: &[i64]) -> Result<i64, String> {
     let m = parse(src).unwrap();
     let check = sspur_check::check(&m);

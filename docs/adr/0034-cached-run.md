@@ -58,3 +58,13 @@ Apple M1 Pro, best of 7 alternating runs, wall time and peak RSS, `sspur run --n
 Peak memory also drops by 4 to 5 MB, because the checked program and the generated C are no longer in memory while `main` runs. A C++ hello world takes 8.3 ms on the same machine and `sspur --version` 8.9 ms, so what is left of SSPUR's startup is mostly starting the `sspur` binary itself; the checks and loading the library take about 1.3 ms.
 
 `compute_big` doesn't reach C++ (1.022s against 1.008s to 1.016s across runs). With the startup gone, the rest is in the four functions, and it moves with code placement: timed inside the process, SSPUR's versions take 1.01s, and a C++ build of the same functions with only timing calls added takes 1.03s to 1.06s, against about 1.01s for the benchmark's C++ binary.
+
+## Update, 2026-10-13: where the rest of the startup goes
+
+Measured on the same machine with `/usr/bin/time -l` (instructions retired, best of 8) and by stopping the cached path at each step:
+- Before `main`, `sspur` retires about 22 million instructions against 15 million for a minimal Rust program and 12 million for a C hello world. The binary has no static initializers and parses nothing before the cached path; the difference is the dynamic linker binding its 200 libc imports (Rust's standard library alone needs 75), about 40,000 instructions each, on every start. Binary size by itself costs little: 8 MB of data that isn't touched adds 0.2 million. Dropping the unused libiconv made no measurable difference.
+- The cached path's own checks (reading the source and the entry, hashing the library, the profile and the `sspur.toml` lookup) take under 0.1 ms in wall time. Loading the library took 3.5 million instructions, about 0.5 ms.
+
+Native libraries are now linked with `-dead_strip` on macOS, part of their cache key. Runtime functions a program never reaches are dropped with the libc functions only they import: hello world's library goes from 72 KB and 40 imports to 52 KB and 16, loading it costs 1.2 million instructions less, and `sspur run` of hello world takes 9.6 ms instead of 10.6 ms (best of 7; C hello world 7.2 ms, `sspur --version` 8.3 ms). Bigger programs reach more of the runtime and gain less (`app`'s library goes from 41 imports to 29). The exported entry points are the roots, and they are the only symbols the host looks up.
+
+With the faster code of the ADR 0007 update, `compute_big` now runs in 0.91s against 1.02s for C++.

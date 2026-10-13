@@ -95,7 +95,7 @@ fn is_cmp(op: BinOp) -> bool {
 
 fn plain_var(c: &str) -> bool {
     let c = c.strip_prefix("env_->").unwrap_or(c);
-    !c.is_empty() && c.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+    !c.is_empty() && c.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '$')
 }
 
 pub(super) fn pat_names(p: &Pat, out: &mut HashSet<String>) {
@@ -608,11 +608,11 @@ impl Cx<'_> {
 
 impl Cx<'_> {
     pub(super) fn hit_var(&self, map: &str, key: &Expr) -> Option<String> {
-        if !self.hit_ok || !self.inplace.contains(map) || !map.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        if !self.hit_ok || !self.inplace.contains(map) || !map.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$') {
             return None;
         }
         let k = self.fixed_var(key)?;
-        k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_').then(|| format!("hit_{map}_{k}"))
+        k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$').then(|| format!("hit_{map}_{k}"))
     }
 }
 

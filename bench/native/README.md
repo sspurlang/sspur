@@ -2,24 +2,24 @@
 
 `sspur run` and `sspur test` compile to native code by default: generated C, optimized by clang/LLVM, and cached by content hash. `--interp` forces the interpreter. `--native` uses the Cranelift JIT dev tier.
 
-## Results (Apple M1 Pro, 2026-10-13, best of 5, wall time of the whole process)
+## Results (Apple M1 Pro, 2026-10-13, best of 7, wall time of the whole process)
 
 | Workload | File | C++ clang -O2 | SSPUR | Ratio | Peak memory C++ / SSPUR |
 |---|---|---|---|---|---|
-| Compute-heavy: recursion, loops, primes, gcd | `compute_big` | 1.01s | 1.02s | **1.01x** | 1 MB / 3 MB |
-| Records, lists, persistent trees, float simulation | `typical` | 0.75s idiomatic, 0.21s hand-tuned (arena, never frees) | 0.11s | **0.15x** idiomatic, **0.52x** tuned | 70 MB / 11 MB (tuned: 212 MB) |
-| Strings: build 2M words, lowercase, split, count, sort | `strings_big` | 0.09s | 0.06s | **0.61x** | 23 MB / 25 MB |
-| App: generate CSV, parse with errors, aggregate in a map, report | `app` | 0.15s | 0.12s | **0.78x** | 24 MB / 17 MB |
+| Compute-heavy: recursion, loops, primes, gcd | `compute_big` | 1.02s | 0.91s | **0.89x** | 1 MB / 3 MB |
+| Records, lists, persistent trees, float simulation | `typical` | 0.82s idiomatic, 0.26s hand-tuned (arena, never frees) | 0.11s | **0.14x** idiomatic, **0.44x** tuned | 70 MB / 11 MB (tuned: 212 MB) |
+| Strings: build 2M words, lowercase, split, count, sort | `strings_big` | 0.10s | 0.06s | **0.57x** | 22 MB / 24 MB |
+| App: generate CSV, parse with errors, aggregate in a map, report | `app` | 0.17s | 0.10s | **0.59x** | 24 MB / 17 MB |
 | Long-running loop: 200,000 iterations, about 400 MB of short-lived lists | `churn` | | 0.03s | | 3 MB |
-| Pure pipelines: Collatz, primes, hashed table, Mandelbrot (10 cores) | `parallel` | 2.09s (single-threaded) | 0.31s | **0.15x** | 17 MB / 18 MB |
-| Data-parallel numeric: checked Int map/filter/sum, squares, counts, mapped lists, F64 dot and saxpy over 1M-element lists | `simd` | 0.31s | 0.16s | **0.51x** | 40 MB / 34 MB |
-| GPU kernels (Metal): F32 saxpy over 4M elements, two 4M reductions (strided partial sums, shared-memory tree), naive and tiled 512 x 512 matmul, a 256-bin histogram with atomics | `gpu` | 0.82s (single-threaded CPU) | 0.28s | **0.34x** | 54 MB / 92 MB |
+| Pure pipelines: Collatz, primes, hashed table, Mandelbrot (10 cores) | `parallel` | 2.11s (single-threaded) | 0.31s | **0.15x** | 17 MB / 18 MB |
+| Data-parallel numeric: checked Int map/filter/sum, squares, counts, mapped lists, F64 dot and saxpy over 1M-element lists | `simd` | 0.33s | 0.16s | **0.48x** | 40 MB / 34 MB |
+| GPU kernels (Metal): F32 saxpy over 4M elements, two 4M reductions (strided partial sums, shared-memory tree), naive and tiled 512 x 512 matmul, a 256-bin histogram with atomics | `gpu` | 0.84s (single-threaded CPU) | 0.32s | **0.38x** | 54 MB / 92 MB |
 
-The machine had background load during this run (an endpoint agent kept one core busy), and every column was measured in the same session, alternating runs. `compute_big` doesn't reproduce the 0.88x measured on 2026-10-03: before the cached run path (ADR 0034) it took 1.03s, of which about 6 ms was SSPUR's startup; now it is within 1% of C++. Timed inside the process, its four functions take 1.01s, and a C++ build of the same functions with only timing calls added takes 1.03s to 1.06s, so what is left is code placement, not the code.
+The machine had heavy background load during this run (endpoint agents kept two to four cores busy, load average 18 to 20), so every column was measured in the same session, alternating runs; C++ times are higher than in quieter sessions (`typical` 0.75s, `app` 0.15s), and `gpu` varies by about 10% from run to run. `compute_big` is now 11% below C++. Most of that is the Collatz loop, which went from 0.70s to 0.59s against 0.72s for C++: its `if x % 2 == 0 then x / 2 else 3 * x + 1` now compiles to a select of both arms, a shift and a single range check for the multiplication, instead of a branch on the parity that is mispredicted about half the time (ADR 0007). The same change, and the interval facts behind it, made `compute` 14% faster, `app` 14% (a map lookup followed by a `put` of the same key reuses the node it found), `parallel` 7% and `simd` 5%; nothing got slower beyond run-to-run noise.
 
 Against C++ -O3 (same machine, 2026-10-03): compute 0.88x, typical 0.18x (hand-tuned C++ -O3 0.20s, so 0.60x), strings 0.54x, app 0.60x, parallel 0.15x. -O3 is no faster than -O2 on these workloads.
 
-An unchanged program runs from the cache without parsing or checking it (ADR 0034): `sspur run` of hello world takes 10.3 ms against 8.0 ms for a C++ hello world (12.7 ms before), and the normal path, taken after any change or with any flag, adds 3 to 11 ms on these workloads. When speed and memory trade off, SSPUR picks speed (ADR 0008).
+An unchanged program runs from the cache without parsing or checking it (ADR 0034): `sspur run` of hello world takes 9.6 ms, against 7.2 ms for a C hello world and 8.3 ms for `sspur --version` (10.6 ms before native libraries were linked with dead stripping, 12.7 ms before the cached path), and the normal path, taken after any change or with any flag, adds 3 to 15 ms on these workloads. Most of what is left over C is the dynamic linker binding the `sspur` binary's 200 libc imports at every start, about 40,000 instructions each. When speed and memory trade off, SSPUR picks speed (ADR 0008).
 
 - Checks the compiler proves can never fail are omitted (ADR 0007). The rest stay.
 - Every C++ version carries the same safety checks SSPUR always has (overflow, bounds, contracts) via `__builtin_*_overflow` and `abort()`.
@@ -89,4 +89,4 @@ The whole heap is released when native code returns to the interpreter. `SSPUR_M
 |---|---|---|---|
 | Interpreter | `--interp` | everything | reference semantics; also powers `fuzz` with step budgets |
 | Cranelift JIT | `--native` | Int/Bool functions | about 1.66x C++, compiles in about 10ms |
-| Native (default) | none | the whole language | 0.15x to 1.01x C++ (faster on every benchmark but `compute_big`, which is within 1%; see Results) |
+| Native (default) | none | the whole language | 0.14x to 0.89x C++ (faster on every benchmark; see Results) |

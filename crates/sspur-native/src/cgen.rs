@@ -1370,6 +1370,23 @@ pub(super) fn range_count(n: &str, s: &str, e: &str, k: &str) -> String {
     format!("int64_t {n} = ({k} > 0 && {e} > {s}) ? (int64_t)(((__int128){e} - {s} - 1) / {k} + 1) : ({k} < 0 && {e} < {s}) ? (int64_t)(((__int128){s} - {e} - 1) / -(__int128){k} + 1) : 0;")
 }
 
+/// `a / b` and `a % b` for proven `a >= 0`, `b > 0`: unsigned, a shift or mask for a power of two.
+pub(super) fn unsigned_div(op: BinOp, x: &str, y: &str, ra: Iv, rb: Iv) -> Option<String> {
+    if !matches!(op, BinOp::Div | BinOp::Rem) || ra.0 < 0 || rb.0 <= 0 || ra.1 > FULL.1 || rb.1 > FULL.1 {
+        return None;
+    }
+    let k = rb.0;
+    Some(if rb.1 == k && k.count_ones() == 1 && k > 1 {
+        let sh = k.trailing_zeros();
+        match op {
+            BinOp::Div => format!("({{ int64_t a_ = {x}; int64_t b_ = {y}; (void)b_; (int64_t)((uint64_t)a_ >> {sh}); }})"),
+            _ => format!("({{ int64_t a_ = {x}; int64_t b_ = {y}; (void)b_; (int64_t)((uint64_t)a_ & {}ULL); }})", k - 1),
+        }
+    } else {
+        format!("({{ int64_t a_ = {x}; int64_t b_ = {y}; (int64_t)((uint64_t)a_ {} (uint64_t)b_); }})", op.symbol())
+    })
+}
+
 fn iv_safe(op: BinOp, ra: Iv, rb: Iv) -> bool {
     let safe = match op {
         BinOp::Div | BinOp::Rem => (rb.0 > 0 || rb.1 < 0) && (rb.0 > -1 || rb.1 < -1 || ra.0 > FULL.0),
@@ -1397,7 +1414,7 @@ fn resolve_links(links: &[String]) -> Result<Vec<String>, String> {
 fn build(src: &str, opt: &str, links: &[String], lto: flags::Lto, names: &HashMap<usize, String>) -> Result<PathBuf, String> {
     let links = resolve_links(links)?;
     let extra = flags::extra();
-    let key = blake3::hash(format!("{opt}{}{}{}\n{src}", lto.flag().unwrap_or(""), links.iter().map(|l| format!(" {l}")).collect::<String>(), extra.join(" ")).as_bytes()).to_hex().to_string();
+    let key = blake3::hash(format!("{opt}{}{}{}{}\n{src}", lto.flag().unwrap_or(""), links.iter().map(|l| format!(" {l}")).collect::<String>(), extra.join(" "), flags::strip().join(" ")).as_bytes()).to_hex().to_string();
     let dir = cache_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let lib = dir.join(format!("{}.{}", &key[..32], std::env::consts::DLL_EXTENSION));
@@ -1409,7 +1426,7 @@ fn build(src: &str, opt: &str, links: &[String], lto: flags::Lto, names: &HashMa
     std::fs::write(&c, src).map_err(|e| e.to_string())?;
     let tmp = lib.with_extension(format!("{uniq}.tmp"));
     let cc = flags::cc();
-    let out = Command::new(&cc).args([opt, "-shared", "-w"]).args(flags::pic()).args(&extra).args(lto.flag()).args(lto.linker()).arg("-o").arg(&tmp).arg(&c).args(links).args(flags::sys_libs()).output().map_err(|e| format!("cannot run {cc}: {e}"))?;
+    let out = Command::new(&cc).args([opt, "-shared", "-w"]).args(flags::strip()).args(flags::pic()).args(&extra).args(lto.flag()).args(lto.linker()).arg("-o").arg(&tmp).arg(&c).args(links).args(flags::sys_libs()).output().map_err(|e| format!("cannot run {cc}: {e}"))?;
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
         if std::env::var_os("SSPUR_SPLIT_DEBUG").is_some() {
@@ -1464,7 +1481,7 @@ fn build_split(src: &str, opt: &str, plan: &Plan, lto: flags::Lto, names: &HashM
         flags::Lto::Full => "full",
     };
     let extra = flags::extra();
-    let memo = dir.join(format!("{}.split", &blake3::hash(format!("{cc} {opt} {}{}{}\n{src}", lto_tag, links.iter().map(|l| format!(" {l}")).collect::<String>(), extra.join(" ")).as_bytes()).to_hex()[..32]));
+    let memo = dir.join(format!("{}.split", &blake3::hash(format!("{cc} {opt} {}{}{}{}\n{src}", lto_tag, links.iter().map(|l| format!(" {l}")).collect::<String>(), extra.join(" "), flags::strip().join(" ")).as_bytes()).to_hex()[..32]));
     if let Ok(name) = std::fs::read_to_string(&memo) {
         let lib = dir.join(name.trim());
         if lib.exists() {
@@ -1477,7 +1494,7 @@ fn build_split(src: &str, opt: &str, plan: &Plan, lto: flags::Lto, names: &HashM
     let flags: Vec<&str> = [opt, "-c", "-w"].into_iter().chain(flags::pic().iter().copied()).chain(extra.iter().map(String::as_str)).chain(lto.flag()).collect();
     let stamp = format!("{cc} {}\n", flags.join(" "));
     let keys: Vec<String> = tus.iter().map(|t| blake3::hash(format!("{stamp}{}", t.text).as_bytes()).to_hex()[..32].to_string()).collect();
-    let lkey = blake3::hash(format!("{opt}{}{}\n{}", links.iter().map(|l| format!(" {l}")).collect::<String>(), extra.join(" "), keys.join("\n")).as_bytes()).to_hex()[..32].to_string();
+    let lkey = blake3::hash(format!("{opt}{}{}{}\n{}", links.iter().map(|l| format!(" {l}")).collect::<String>(), extra.join(" "), flags::strip().join(" "), keys.join("\n")).as_bytes()).to_hex()[..32].to_string();
     let lib = dir.join(format!("{lkey}.{}", std::env::consts::DLL_EXTENSION));
     if lib.exists() {
         let _ = std::fs::write(&memo, format!("{lkey}.{}", std::env::consts::DLL_EXTENSION));
@@ -1552,7 +1569,7 @@ fn build_split(src: &str, opt: &str, plan: &Plan, lto: flags::Lto, names: &HashM
         }
     }
     let rsp = lib.with_extension(format!("{build}.rsp"));
-    link.args(&extra).args(["-shared", "-o"]).arg(&tmp);
+    link.args(&extra).args(flags::strip()).args(["-shared", "-o"]).arg(&tmp);
     flags::inputs(&mut link, &objs, &rsp)?;
     link.args(&links).args(flags::sys_libs());
     // A file another build or a virus scanner holds open makes the Windows linker fail with
@@ -2889,6 +2906,9 @@ impl<'a> Cx<'a> {
             return v;
         }
         if iv_safe(op, ra, rb) {
+            if let Some(u) = unsigned_div(op, x, y, ra, rb) {
+                return u;
+            }
             return format!("({{ int64_t a_ = {x}; int64_t b_ = {y}; a_ {} b_; }})", op.symbol());
         }
         match op {
@@ -3139,6 +3159,9 @@ impl<'a> Cx<'a> {
                     if self.vec.is_none() && *op != BinOp::Pow && !iv_safe(*op, ra, rb) && self.smt.proves(e, "arith") {
                         return Ok(format!("({{ int64_t a_ = {x}; int64_t b_ = {y}; a_ {} b_; }})", op.symbol()));
                     }
+                    if self.spec_proven() && matches!(op, BinOp::Add | BinOp::Sub | BinOp::Mul) && !iv_safe(*op, ra, rb) && self.smt.proves(e, "arith") {
+                        return Ok(format!("({{ int64_t a_ = {x}; int64_t b_ = {y}; (int64_t)((uint64_t)a_ {} (uint64_t)b_); }})", op.symbol()));
+                    }
                     return Ok(self.checked(*op, &x, &y, ra, rb));
                 }
                 if is(&at, "F64") {
@@ -3181,6 +3204,11 @@ impl<'a> Cx<'a> {
             }
             ExprKind::If(c, a, b) => {
                 let cv = self.expr(c)?;
+                if let Some(b) = b
+                    && let Some(s) = self.spec_select(c, a, b, &cv)
+                {
+                    return Ok(s);
+                }
                 let av = self.under(c, true, |cx| cx.expr(a))?;
                 let bv = match b {
                     Some(b) => self.under(c, false, |cx| cx.expr(b))?,
