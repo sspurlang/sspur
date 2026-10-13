@@ -1,0 +1,19 @@
+test hidden_title_key = title_key("The Hobbit") == "hobbit" and title_key("  the Hobbit ") == "hobbit" and title_key("THE END") == "end" and title_key("Theory") == "theory" and title_key("Other Worlds") == "other worlds"
+
+test hidden_titles_used = book_titles([book_new(1, "The Lost River", 2000, 1, Print), book_new(2, "Archive", 2000, 1, Print), book_new(3, "the Garden", 2000, 1, Print)]) == ["archive", "garden", "lost river"] and zine_titles([zine_new(1, "The Zine", 2000, 1, Print), zine_new(2, "Theme", 2000, 1, Print)]) == ["theme", "zine"]
+
+test hidden_block = fine_block() == 500 and student_can_borrow(student_charge(student_new(1, "a", 1), 500)) == false and student_can_borrow(student_charge(student_new(1, "a", 1), 499)) == true
+
+test hidden_block_used = family_borrow(family_charge(family_new(1, "a", 2), 700)).loans == 0 and guest_borrow(guest_charge(guest_new(1, "a", 1), 120)).loans == 1
+
+test hidden_fine_notice = fine_notice("Bo", 1205) == "Dear Bo, you owe $12.05." and fine_notice("Al", 7) == "Dear Al, you owe $0.07."
+
+test hidden_reminders = student_reminder(student_charge(student_new(1, "Al", 1), 250)) == "Dear Al, you owe $2.50." and staff_reminder(staff_charge(staff_new(1, "Bea", 1), 1000)) == "Dear Bea, you owe $10.00." and faculty_reminder(faculty_charge(faculty_new(1, "Cy", 1), 5)) == "Dear Cy, you owe $0.05." and alumni_reminder(alumni_new(1, "Di", 1)) == "Dear Di, you owe $0.00."
+
+test hidden_thesis_advisor = thesis_new(1, "On Rivers", 2010, 1, Print, "Dr. Lee").advisor == "Dr. Lee" and thesis_line(thesis_new(7, "Atlas", 1999, 3, Audio, "Kim")) == "Atlas (1999) [THE-7] 3/3 audio / Kim"
+
+test hidden_thesis_plain = thesis_line(thesis_new(7, "Atlas", 1999, 3, Audio, "")) == "Atlas (1999) [THE-7] 3/3 audio" and thesis_sample().map(_.advisor) == ["", "", ""] and thesis_available(thesis_checkout(thesis_new(1, "a", 2000, 2, Print, "X"))) == 1
+
+test hidden_staff_can_take = staff_can_take(staff_new(1, "a", 1), book_new(1, "b", 2000, 1, Print)) == true and staff_can_take(staff_new(1, "a", 1), book_checkout(book_new(1, "b", 2000, 1, Print))) == false and staff_can_take(staff_suspend(staff_new(1, "a", 1)), book_new(1, "b", 2000, 1, Print)) == false and staff_can_take(staff_charge(staff_new(1, "a", 1), 600), book_new(1, "b", 2000, 1, Print)) == false
+
+test hidden_unchanged = book_titles(book_sample()) == ["lost atlas", "northern voyage", "silent river"] and fine_for(Print, 10) == 250 and max_loans(3) == 10

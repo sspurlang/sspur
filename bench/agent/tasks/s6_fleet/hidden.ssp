@@ -1,0 +1,21 @@
+test hidden_hydrogen = cost_per_km(Hydrogen) == 9 and co2_per_km(Hydrogen) == 0 and fuel_name(Hydrogen) == "hydrogen"
+
+test hidden_fuels = fuels() == [Diesel, Petrol, Electric, Hydrogen]
+
+test hidden_hydrogen_used = bus_trip_cost(bus_new(1, "H", Hydrogen, 0, 40), 100) == 1150 and bus_label(bus_new(1, "H-1", Hydrogen, 0, 40)) == "H-1 (hydrogen)" and taxi_trip_co2(taxi_new(1, "H", Hydrogen, 0, 4), 50) == 0
+
+test hidden_interval = service_interval(Electric) == 30000 and service_interval(Diesel) == 15000 and service_interval(Petrol) == 15000 and service_interval(Hydrogen) == 15000
+
+test hidden_due_callers = truck_due_service(truck_drive(truck_new(1, "P", Electric, 0, 5), 20000)) == false and truck_due_service(truck_drive(truck_new(1, "P", Electric, 0, 5), 30000)) == true and van_due_service(van_drive(van_new(1, "P", Diesel, 0, 5), 15000)) == true and sweeper_due_list([sweeper_drive(sweeper_new(1, "P", Electric, 0, 5), 20000), sweeper_drive(sweeper_new(2, "P", Petrol, 0, 5), 20000)]).map(_.id) == [2]
+
+test hidden_due_rest = cargo_bike_due_service(cargo_bike_drive(cargo_bike_new(1, "P", Electric, 0, 5), 16000)) == false and ambulance_due_service(ambulance_drive(ambulance_new(1, "P", Petrol, 0, 5), 15000)) == true and scooter_due_service(scooter_drive(scooter_new(1, "P", Hydrogen, 0, 5), 15000)) == true
+
+test hidden_urgent = medical_new(1, "c", 0, 10, 600, true).urgent == true and medical_price(medical_new(1, "c", 0, 10, 600, true)) == 1125 and medical_price(medical_new(1, "c", 0, 10, 600, false)) == 750
+
+test hidden_urgent_line = medical_line(medical_new(3, "Iris", 0, 120, 480, true)) == "URGENT Iris #3: 120 km to zone B, arrives 9:30" and medical_line(medical_new(3, "Iris", 0, 120, 480, false)) == "Iris #3: 120 km to zone B, arrives 9:30"
+
+test hidden_urgent_rest = medical_sample().map(_.urgent) == [false, false, false] and medical_night_price(medical_new(1, "c", 0, 10, 1400, true)) == 1687 and medical_night_price(medical_new(1, "c", 0, 10, 1400, false)) == 1125
+
+test hidden_quote = courier_quote(courier_new(1, "c", 0, 100, 480), van_new(1, "V", Diesel, 0, 5)) == 3950 and courier_quote(courier_new(2, "c", 300, 150, 0), van_new(2, "W", Electric, 0, 5)) == 4500
+
+test hidden_unchanged = van_plates(van_sample()) == ["VA-101", "VA-201", "VA-301"] and toll(300) == 750 and courier_price(courier_new(1, "c", 0, 10, 0)) == 700

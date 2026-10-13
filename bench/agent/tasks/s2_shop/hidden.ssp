@@ -1,0 +1,19 @@
+test hidden_ca_rate = tax_rate("CA") == 5 and tax_rate("EU") == 19 and tax_rate("UK") == 20 and tax_rate("APAC") == 0
+
+test hidden_ca_used = customer_tax(customer_new(1, "a", 10, 100, "CA")) == 50 and invoice_gross(invoice_new(1, "a", 1, 1000, "CA")) == 1050
+
+test hidden_regions = regions() == ["EU", "US", "UK", "APAC", "CA"]
+
+test hidden_label_trim = label_of("  pen ", 4) == "pen #4" and label_of("box", 12) == "box #12"
+
+test hidden_label_used = product_label(product_new(4, " pen ", 1, 120, "US")) == "pen #4" and product_line(product_new(4, " pen", 1, 1234, "APAC")) == "pen #4: 12.34"
+
+test hidden_sub_months = subscription_new(1, "s", 2, 300, "US", 6).months == 6 and subscription_value(subscription_new(1, "s", 2, 300, "US", 6)) == 600
+
+test hidden_sub_renewal = subscription_renewal_value(subscription_new(1, "s", 2, 300, "US", 6)) == 3600 and subscription_renewal_value(subscription_new(2, "t", 1, 50, "UK", 1)) == 50
+
+test hidden_sub_sample = subscription_sample().map(_.months) == [1, 1, 1] and subscription_total(subscription_sample()) == 1799
+
+test hidden_cart_summary = cart_summary([cart_new(1, "a", 2, 500, "US"), cart_new(2, "b", 1, 1234, "EU"), cart_deactivate(cart_new(3, "c", 1, 999, "US")), cart_new(4, "d", 1, 234, "US"), cart_new(5, "e", 1, 1010, "UK")], "US") == "carts=2 total=13.20" and cart_summary([cart_new(1, "a", 2, 500, "US"), cart_new(2, "b", 1, 1234, "EU"), cart_deactivate(cart_new(3, "c", 1, 999, "US")), cart_new(4, "d", 1, 234, "US"), cart_new(5, "e", 1, 1010, "UK")], "UK") == "carts=1 total=12.12"
+
+test hidden_unchanged = customer_total(customer_sample()) == 886 and route_total(route_sample()) == 1308 and lesson_bucket(lesson_new(1, "l", 1, 1, "US")) == "small"

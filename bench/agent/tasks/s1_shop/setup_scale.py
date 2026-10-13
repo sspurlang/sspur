@@ -107,6 +107,7 @@ def main(root, r7=False, langs=("sspur", "python"), r9=False, r10=False):
         prompts.append({"lang": lang, "task": "s1_shop", "dir": d, "prompt": COMMON.format(intro=intro, title=TITLE, steps=steps, iface=IFACE[lang], dir=d)})
     json.dump(prompts, open(os.path.join(root, "prompts.json"), "w"), indent=1)
     print(f"{len(prompts)} prompts in {root}/prompts.json")
+    return prompts
 
 
 if __name__ == "__main__":

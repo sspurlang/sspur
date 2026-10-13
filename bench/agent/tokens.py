@@ -2,7 +2,9 @@
 
   python3 tokens.py <agents.json> <out.json>
 
-agents.json maps "<lang>/<task>" to a transcript path.
+agents.json maps "<lang>/<task>" to a transcript path (small tasks and the large-codebase tasks s1 to s6
+alike). It prints one row per cell, a TOTAL per language and, when the run has large-codebase cells
+other than s1_shop, a total per language over the large cells.
 
 Input side (exact, from the API usage records): for every API call (one per requestId),
 input_tokens + cache_creation_input_tokens + cache_read_input_tokens.
@@ -21,11 +23,12 @@ cl100k, so treat output counts as +-15%. Output is about 1% of the totals.
   read, wrote  cl100k tokens of all tool results the agent read, and of all tool inputs and
              text it wrote. Independent of the harness, and the cleanest language comparison.
 """
-import json, os, sys
+import json, os, re, sys
 import tiktoken
 
 BASE = int(os.environ.get("BASE", 25_750))  # no-op subagent context (system prompt + tools + one-line prompt), Sonnet, measured 2026-10-03; set BASE for other models
 ENC = tiktoken.get_encoding("cl100k_base")
+LARGE = re.compile(r"s\d+_")  # large-codebase task ids: s1_shop, s2_shop, s3_library, ...
 
 
 def ntok(s):
@@ -82,7 +85,13 @@ if __name__ == "__main__":
     print(f"{'run':22}" + "".join(f"{k:>10}" for k in keys))
     for k, v in out.items():
         print(f"{k:22}" + "".join(f"{v[x]:>10}" for x in keys))
-    for lang in ("sspur", "python"):
+    for lang in ("sspur", "python", "ts", "go"):
         rs = [v for k, v in out.items() if k.startswith(lang + "/")]
         if rs:
             print(f"{lang + ' TOTAL':22}" + "".join(f"{sum(r[x] for r in rs):>10}" for x in keys))
+    # the large-codebase cells (s1_shop to s6_fleet), when the run has any besides s1_shop
+    if any(LARGE.match(k.split("/", 1)[1]) and not k.endswith("/s1_shop") for k in out):
+        for lang in ("sspur", "python", "ts", "go"):
+            rs = [v for k, v in out.items() if k.startswith(lang + "/") and LARGE.match(k.split("/", 1)[1])]
+            if rs:
+                print(f"{lang + f' large ({len(rs)})':22}" + "".join(f"{sum(r[x] for r in rs):>10}" for x in keys))

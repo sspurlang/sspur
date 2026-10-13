@@ -79,6 +79,31 @@ Run 9 added TypeScript and Go versions of all 16 small tasks (`tasks/<id>/ts/{st
 
 Hidden tests (`tasks/<id>/hidden.ssp`, `hidden.py`, `ts/hidden.test.ts`, `go/hidden_test.go`, 95 per language for a1 to a8, 141 for b1 to b8, 17 more for a9) are equivalent across languages. a9 is marked `"new": true` in `tasks.json`; `setup.py` skips it unless `--new` is given, so the 8-task totals stay comparable. a9 has no TypeScript or Go port. `ref.*` are the author's solutions. `python3 score.py ref` checks that every reference passes its hidden tests and every starting codebase fails them.
 
+### Large-codebase tasks
+
+Up to run 15 the large-codebase result rested on one cell, s1_shop. There are now six large tasks, s1 to s6, on three generated codebases. No agent has run s2 to s6 yet.
+
+| Codebase | Tasks | Definitions | SSPUR | Python | TypeScript | Go |
+|---|---|---|---|---|---|---|
+| shop: a common module and 44 domain modules of one template (customer, invoice, warehouse, ...) | s1, s2 | 1,117 | 30,833 | 35,788 | 39,274 | 41,842 |
+| library: a common module, 22 catalog item modules (book, journal, dvd, ...) and 16 member modules (student, staff, ...) | s3, s4 | 1,034 | 30,961 | 36,007 | 39,066 | 41,282 |
+| fleet: a common module, 20 vehicle modules (truck, van, bus, ...) and 16 delivery-job modules (courier, freight, medical, ...) | s5, s6 | 993 | 29,352 | 34,427 | 37,382 | 40,111 |
+
+The token columns are cl100k tokens of the starting code with its visible tests (`score_large.py sizes`). Definitions count the same in every language: SSPUR types, functions and tests, and Python classes, functions and test functions. The library and fleet codebases have two record templates each instead of one, a field-less sum type in the common module (the book format, the fuel) that a few functions match on, and helpers with a handful of callers (five renewable item kinds call `renewal`, four member kinds call `notice`, five haulers call `weight_surcharge`, four night jobs call `night_rate`), so not every change is a one-line edit or a 40-module sweep. Each codebase is generated the same way in all four languages, idiomatic for each: frozen dataclasses and an `Enum` in Python, readonly interfaces and a string-literal union in TypeScript, structs and an `iota` constant in Go.
+
+What each task asks for:
+
+- **s1_shop** (unchanged, 10 hidden tests): the EU tax rate, a money formatting bug, a new `express` parameter on `ship_fee` with its 3 callers plus `order_express_shipping`, and a new `warehouse_restock_all`.
+- **s2_shop** (10): a new region CA at 5% that `regions()` lists, a bug fix in `label_of` (used by all 44 `*_label` functions) to trim names, a new field `months` on Subscription threaded through `subscription_new` and its 5 callers plus `subscription_renewal_value`, and a new `cart_summary` that composes `cart_in_region`, `cart_total` and `money`.
+- **s3_library** (11): the fine cap from $5.00 to $8.00, a new `times` parameter on `renewal` that must also be added to its 5 callers and passed on (a two-level signature ripple, with their tests), a new format Microfilm threaded through the three functions that match on the format and `formats()`, and a new `journal_overdue` that composes `journal_fine` and `journal_titles`.
+- **s4_library** (10): a bug fix in `title_key` (used by all 22 `*_titles` functions) to drop a leading "the ", the borrowing block from $10.00 to $5.00, a rename of `notice` to `fine_notice` with its 4 callers, a new field `advisor` on Thesis threaded through `thesis_new`, its 6 callers and `thesis_line`, and a new cross-module `staff_can_take`.
+- **s5_fleet** (10): a rounding bug in `eta_minutes` (used by all 16 job modules), tolls per started rather than per full 100 km, a new `fuel` parameter on `weight_surcharge` where each of the 5 callers passes its own vehicle's fuel, and a new `van_best_for` that returns an optional van.
+- **s6_fleet** (11): a new fuel Hydrogen through the three fuel matches and `fuels()`, a new `fuel` parameter on `service_interval` that all 20 vehicle modules must pass (the widest ripple of the six tasks), a new field `urgent` on Medical that changes `medical_new`, its 8 callers, `medical_price` and `medical_line`, and a new cross-module `courier_quote`.
+
+Every task also asks for a test per change. The prompts follow s1_shop's template word for word (the default prompt of run 11 on); only the codebase's package name, size and token count, the camelCase example in the TypeScript and Go prompts, and the task's title, steps and interface line differ.
+
+Files: `large/gen_library.py` and `large/gen_fleet.py` generate the new codebases (the shop comes from `tasks/s1_shop/gen.py` and `gen_xlang.py`, as before); `tasks/<id>/task.py` holds each task's text, its hidden tests written once in a small test language (`large/lib.py`) and its reference solution as checked text patches over the generated start, one set per language; `tasks/<id>/hidden.{ssp,py,test.ts}` and `hidden_test.go` are rendered from `task.py` by `score_large.py hidden` and committed. Generated codebases are not committed. `large/setup_large.py` sets up all six tasks (s1_shop through `setup_scale.py` with its default prompt, so its directory and prompt are exactly as before) and writes `prompts.json`; `large/score_large.py run` scores them and writes `scores-large.json`; `score_large.py ref` checks that in every language each reference passes all its hidden tests and its own visible tests, and the untouched start fails the hidden tests (all six score 0 at the start, as s1 always did). `report5.py --large` reports the large cells on their own, and `tokens.py` adds per-language totals over them.
+
 ## Method
 
 - `setup.py <dir>` creates one fresh work directory per (language, task) outside the repo, so agents never see hidden tests or references. `--v1` gives the run 1 SSPUR instructions.
@@ -1023,6 +1048,12 @@ python3 bench/agent/setup.py /tmp/sspur-agent-r10 --tmo --langs=sspur        # a
 python3 bench/agent/xlang/report5.py runs/2026-10-09-r10   # run 10 SSPUR against run 9's Python, TypeScript and Go
 # run 11: the shorter prompt is the default (--r10 gives run 10's); compiler frozen at ef439aa
 python3 bench/agent/xlang/report5.py runs/2026-10-09-r11
+# the six large-codebase tasks (s1_shop to s6_fleet), four languages
+SSPUR=target/sspur-frozen-be2f46b python3 bench/agent/large/score_large.py ref
+SSPUR=target/sspur-frozen-be2f46b python3 bench/agent/large/setup_large.py /tmp/sspur-agent-large   # --langs=..., --tasks=...
+SSPUR=target/sspur-frozen-be2f46b python3 bench/agent/large/score_large.py run /tmp/sspur-agent-large
+python3 bench/agent/tokens.py /tmp/sspur-agent-large/agents.json /tmp/sspur-agent-large/tokens.json
+python3 bench/agent/xlang/report5.py /tmp/sspur-agent-large --large   # --with DIR adds cells from another run directory
 ```
 
 `tokens.py` needs `tiktoken`. Set `LC_ALL=en_US.UTF-8` if Python fails with a locale error.

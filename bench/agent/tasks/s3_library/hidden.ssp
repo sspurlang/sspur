@@ -1,0 +1,21 @@
+test hidden_cap = fine_cap() == 800 and fine_for(Print, 100) == 800 and fine_for(Audio, 30) == 300
+
+test hidden_cap_used = book_fine(book_new(1, "a", 2000, 1, Print), 0, 60) == 800 and dvd_fine(dvd_new(1, "d", 2000, 1, Audio), 0, 74) == 600
+
+test hidden_renewal = renewal(21, Print, 0) == 31 and renewal(21, Print, 1) == 31 and renewal(21, Print, 2) == 21 and renewal(14, Ebook, 5) == 14 and renewal(7, Audio, 0) == 14
+
+test hidden_renewed_callers = book_renewed_due(book_new(1, "a", 2000, 1, Print), 0, 0) == 31 and journal_renewed_due(journal_new(1, "j", 2000, 1, Ebook), 10, 1) == 31 and score_renewed_due(score_new(1, "s", 2000, 1, Print), 0, 2) == 21
+
+test hidden_renewed_rest = comic_renewed_due(comic_new(1, "c", 2000, 1, Audio), 0, 3) == 14 and atlas_renewed_due(atlas_new(1, "a", 2000, 1, Print), 5, 1) == 36
+
+test hidden_microfilm = loan_days(Microfilm) == 7 and daily_fine(Microfilm) == 50 and format_name(Microfilm) == "microfilm"
+
+test hidden_formats = formats() == [Print, Ebook, Audio, Microfilm]
+
+test hidden_microfilm_used = book_line(book_new(7, "Atlas", 1999, 3, Microfilm)) == "Atlas (1999) [BOO-7] 3/3 microfilm" and book_fine(book_new(1, "a", 2000, 1, Microfilm), 0, 10) == 150 and book_due(book_new(1, "a", 2000, 1, Microfilm), 3) == 10
+
+test hidden_overdue = journal_overdue([journal_checkout(journal_new(1, "Quiet River", 2001, 2, Print)), journal_new(2, "Alpha", 2002, 1, Print), journal_checkout(journal_new(3, " Bright Atlas", 2003, 1, Ebook)), journal_checkout(journal_new(4, "Atlas Engine", 1990, 1, Audio))], 0, 30) == ["atlas engine", "quiet river"]
+
+test hidden_overdue_edges = journal_overdue([journal_checkout(journal_new(1, "a", 2000, 1, Print))], 0, 21) == [] and journal_overdue([], 0, 99) == []
+
+test hidden_unchanged = book_titles(book_sample()) == ["lost atlas", "northern voyage", "silent river"] and fine_for(Print, 10) == 250 and student_line(student_charge(student_new(3, "Ann", 1), 250)) == "Ann (tier 1): 0/3 loans, owes $2.50"

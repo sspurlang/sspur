@@ -1,0 +1,19 @@
+test hidden_eta_up = eta_minutes(11, 40) == 17 and eta_minutes(30, 60) == 30 and eta_minutes(1, 70) == 1 and eta_minutes(0, 50) == 0 and eta_minutes(5, 0) == 0
+
+test hidden_eta_used = courier_minutes(courier_new(1, "c", 0, 11, 0)) == 17 and courier_arrival_str(courier_new(1, "c", 0, 11, 480)) == "8:17" and freight_minutes(freight_new(1, "c", 0, 7, 0)) == 9
+
+test hidden_toll = toll(1) == 250 and toll(100) == 250 and toll(101) == 500 and toll(250) == 750 and toll(0) == 0
+
+test hidden_toll_used = van_trip_cost(van_new(1, "V", Diesel, 0, 5), 150) == 2300 and bus_trip_cost(bus_new(1, "B", Petrol, 0, 40), 50) == 1000
+
+test hidden_surcharge = weight_surcharge(12, Diesel) == 800 and weight_surcharge(12, Electric) == 400 and weight_surcharge(13, Electric) == 600 and weight_surcharge(9, Electric) == 0 and weight_surcharge(15, Petrol) == 2000
+
+test hidden_haul_callers = truck_haul_cost(truck_new(1, "T", Electric, 0, 20), 100, 12) == 1150 and tanker_haul_cost(tanker_new(1, "T", Diesel, 0, 20), 100, 12) == 2250
+
+test hidden_haul_rest = flatbed_haul_cost(flatbed_new(1, "F", Electric, 0, 20), 200, 15) == 2500 and reefer_haul_cost(reefer_new(1, "R", Petrol, 0, 20), 100, 11) == 2150 and tipper_haul_cost(tipper_new(1, "T", Electric, 0, 20), 0, 20) == 2000
+
+test hidden_best_van = van_best_for([van_retire(van_new(9, "Z", Electric, 0, 5)), van_new(1, "A", Petrol, 0, 5), van_new(2, "B", Diesel, 0, 5), van_new(3, "C", Diesel, 0, 9)], 100).map(_.id) == some(2) and van_best_for([van_new(4, "E", Electric, 0, 5), van_new(5, "F", Electric, 0, 5)], 100).map(_.id) == some(4) and van_best_for([van_retire(van_new(6, "G", Diesel, 0, 5)), van_new(7, "H", Petrol, 0, 5), van_new(8, "I", Electric, 0, 5)], 0).map(_.id) == some(7)
+
+test hidden_best_van_none = van_best_for([], 10) == none and van_best_for([van_retire(van_new(1, "A", Diesel, 0, 5))], 10) == none
+
+test hidden_unchanged = van_plates(van_sample()) == ["VA-101", "VA-201", "VA-301"] and hhmm(605) == "10:05" and courier_price(courier_new(1, "c", 0, 10, 0)) == 700
