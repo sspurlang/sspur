@@ -42,7 +42,7 @@ A test is a named `Bool` expression next to the code it checks:
 {{#include ../snippets/handbook/basics.out:run}}
 ```
 
-`sspur run` compiles the file to native code (through `clang`, cached by content hash) and runs `main`. `sspur test` runs every test and prints only the failures and a count.
+`sspur run` compiles the file to native code (through `clang`, cached by content hash) and runs `main`; run again unchanged, it goes straight to the cached code. `sspur test` runs every test and prints only the failures and a count.
 
 ## When it doesn't check
 

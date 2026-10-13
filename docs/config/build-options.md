@@ -1,6 +1,6 @@
 # Build options
 
-`sspur run` and `sspur test` compile to native code by default: SSPUR emits C, compiles it with `clang`, and caches the result by content hash under `~/.cache/sspur/native/`. The first run of a program pays for the build; later runs load the cached library. Each definition is its own cached object, so after an edit only the changed definitions and their callers are rebuilt.
+`sspur run` and `sspur test` compile to native code by default: SSPUR emits C, compiles it with `clang`, and caches the result by content hash under `~/.cache/sspur/native/`. The first run of a program pays for the build; later runs load the cached library. Each definition is its own cached object, so after an edit only the changed definitions and their callers are rebuilt. A plain `sspur run file.ssp` of a program that hasn't changed since its last run (same source, same `sspur` binary, same `SSPUR_*`, `CC` and `PATH`) skips parsing, checking and code generation and runs the cached library's `main` directly (ADR 0034); anything else, any flag included, takes the normal path.
 
 ```sspur
 {{#include ../snippets/config/build.ssp}}
@@ -56,7 +56,7 @@ The [bare-metal](../tutorials/bare-metal.md), [GPU](../tutorials/gpu-kernels.md)
 | Option | Commands | Effect |
 |---|---|---|
 | `--json` | `check`, `edit`, `apply`, `q` | Machine-readable output, with `fix` ops on diagnostics |
-| `--no-cache` | `check` | Recheck every definition instead of using the shared check cache |
+| `--no-cache` | `check`, `run` | `check`: recheck every definition instead of using the shared check cache. `run`: take the normal path even when the program is unchanged |
 | `--cases N`, `--seed N`, `--edge` | `fuzz` | Cases per function, the random seed (default 7), and a mix of extreme values such as the limits of `Int` and non-finite floats |
 | `--differential` | `fuzz` | Compare native code with the interpreter on every generated input |
 | `--write` | `fmt` | Rewrite the file in canonical form instead of printing it |

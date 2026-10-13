@@ -173,7 +173,55 @@ pub struct Compiled {
     pub functions: Vec<String>,
     pub skipped: BTreeMap<String, String>,
     pub fallback: Option<String>,
+    /// The shared library the functions were loaded from, for a release build.
+    pub library: Option<std::path::PathBuf>,
     inner: Rc<Inner>,
+}
+
+/// How `run_main` enters a native `main` with no parameters: `Some(true)` through the scalar
+/// entry, `Some(false)` through the encoded entry (only when it returns `Unit`).
+pub type MainEntry = Option<bool>;
+
+/// A run of a cached `main` that trapped or raised; `Compiled::main_failure` describes it the way
+/// the interpreter's call would have.
+pub struct MainFailure {
+    st: Status,
+    code: i64,
+    scalar: bool,
+}
+
+/// Runs the `main` of a library built by an earlier `compile_release` without loading the
+/// program: installs the host functions and arguments, then calls `main` through the entry that
+/// `Compiled::main_entry` chose. `Err` means nothing ran (the library or a symbol is missing).
+pub fn run_cached_main(lib: &std::path::Path, scalar: bool, max_depth: i64) -> Result<Result<(), MainFailure>, String> {
+    let library = unsafe { libloading::Library::new(lib) }.map_err(|e| e.to_string())?;
+    let sym: &[u8] = if scalar { b"sspur_entry_main" } else { b"sspur_wentry_main" };
+    let entry = *unsafe { library.get::<unsafe extern "C" fn()>(sym) }.map_err(|e| e.to_string())? as *const u8;
+    let free = *unsafe { library.get::<unsafe extern "C" fn(*mut i64)>(b"sspur_buf_free") }.map_err(|e| e.to_string())?;
+    let set_host = unsafe { library.get::<unsafe extern "C" fn(*const HostApi)>(b"sspur_set_host") }.map_err(|e| e.to_string())?;
+    unsafe { set_host(&HOST) };
+    if let Ok(set_args) = unsafe { library.get::<unsafe extern "C" fn(*const [usize; 2], i64)>(b"sspur_set_args") } {
+        let args = crate::program_args();
+        let views: Vec<[usize; 2]> = args.iter().map(|a| [a.len(), a.as_ptr() as usize]).collect();
+        unsafe { set_args(views.as_ptr(), views.len() as i64) };
+    }
+    std::mem::forget(library);
+    let mut st = Status { limit: max_depth.max(1), ..Status::default() };
+    if scalar {
+        PRE_NOTES.with(|n| n.borrow_mut().clear());
+        unsafe { std::mem::transmute::<*const u8, extern "C" fn(*mut Status) -> i64>(entry)(&mut st) };
+        let code = st.code;
+        return Ok(if code == 0 { Ok(()) } else { Err(MainFailure { st, code, scalar }) });
+    }
+    let words = [0i64];
+    let mut out: *mut i64 = std::ptr::null_mut();
+    let mut out_len: i64 = 0;
+    let code = unsafe { std::mem::transmute::<*const u8, extern "C" fn(*const i64, *mut Status, *mut *mut i64, *mut i64) -> i64>(entry)(words.as_ptr(), &mut st, &mut out, &mut out_len) };
+    if code != 0 {
+        return Ok(Err(MainFailure { st, code, scalar }));
+    }
+    unsafe { free(out) };
+    Ok(Ok(()))
 }
 
 struct Inner {
@@ -235,6 +283,35 @@ impl Compiled {
             }
         };
         Some(if st.code == 0 { Ok(r) } else { Err(self.message(&st)) })
+    }
+
+    /// See `MainEntry`.
+    pub fn main_entry(&self) -> MainEntry {
+        if self.inner.ptrs.get("main").is_some_and(|p| p.1 == 0) {
+            return Some(true);
+        }
+        let f = self.inner.rich.get("main")?;
+        (f.params.is_empty() && matches!(&f.ret, Type::Con(n, a) if n == "Unit" && a.is_empty())).then_some(false)
+    }
+
+    /// The result `call` or `call_rich` would have given for the failed run `f` of this program's
+    /// `main`; `None` where `call_rich` gives `None`.
+    pub fn main_failure(&self, f: MainFailure) -> Option<NativeError> {
+        let st = &f.st;
+        if f.scalar {
+            return Some(NativeError::Trap(self.message(st)));
+        }
+        if f.code == T_RAISE {
+            let t = self.inner.err_types.get(&st.err_type)?;
+            let slice = unsafe { std::slice::from_raw_parts(st.rbuf, st.rlen as usize) };
+            let mut pos = 0;
+            let v = self.inner.layouts.decode(slice, &mut pos, t);
+            if let Some(free) = self.inner.free {
+                unsafe { free(st.rbuf) };
+            }
+            return Some(NativeError::Raise(v?));
+        }
+        Some(NativeError::Trap(self.message(st)))
     }
 
     pub fn has(&self, name: &str) -> bool {
@@ -548,6 +625,7 @@ pub(crate) fn assemble(defs: Vec<FnDef>, ptrs: HashMap<String, (*const u8, usize
         functions,
         skipped,
         fallback: None,
+        library: None,
         inner: Rc::new(Inner { _keep: keep, ptrs, defs, index, rich: HashMap::new(), layouts: Layouts::default(), refines: HashMap::new(), free: None, err_types: HashMap::new(), fids: HashMap::new() }),
     }
 }
@@ -573,6 +651,7 @@ pub(crate) fn assemble_rich(
         functions,
         skipped,
         fallback: None,
+        library: None,
         inner: Rc::new(Inner { _keep: keep, ptrs, defs, index, rich, layouts, refines, free: Some(free), err_types, fids }),
     }
 }

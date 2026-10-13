@@ -111,6 +111,7 @@
   - [ADR 0031: The language server](adr/0031-language-server.md)
   - [ADR 0032: e is p anywhere, guard clauses and long lines](adr/0032-pattern-tests-guards-and-long-lines.md)
   - [ADR 0033: Freeing at last use, in front of the collector](adr/0033-drops-at-last-use.md)
+  - [ADR 0034: Running an unchanged program from the cache](adr/0034-cached-run.md)
 - [Native performance versus C++](design/native-benchmarks.md)
 - [Agent benchmarks](design/agent-benchmarks.md)
 

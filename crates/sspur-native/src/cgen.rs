@@ -995,6 +995,7 @@ pub fn compile_release(m: &Module, check: &CheckOutput, opt: &str) -> Result<Com
     }
     let mut c = assemble_rich(defs, scalar, rich, plan.skipped, keep_library(library), Layouts::from_check(check), plan.refines.into_iter().collect(), free, plan.err_types.into_iter().collect(), fids);
     c.fallback = fallback;
+    c.library = Some(lib);
     Ok(c)
 }
 

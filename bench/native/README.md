@@ -2,24 +2,24 @@
 
 `sspur run` and `sspur test` compile to native code by default: generated C, optimized by clang/LLVM, and cached by content hash. `--interp` forces the interpreter. `--native` uses the Cranelift JIT dev tier.
 
-## Results (Apple M1 Pro, 2026-10-13, best of 5, wall time including SSPUR's parse, typecheck, and library load)
+## Results (Apple M1 Pro, 2026-10-13, best of 5, wall time of the whole process)
 
 | Workload | File | C++ clang -O2 | SSPUR | Ratio | Peak memory C++ / SSPUR |
 |---|---|---|---|---|---|
-| Compute-heavy: recursion, loops, primes, gcd | `compute_big` | 1.02s | 1.03s | **1.01x** | 1 MB / 7 MB |
-| Records, lists, persistent trees, float simulation | `typical` | 0.80s idiomatic, 0.26s hand-tuned (arena, never frees) | 0.11s | **0.14x** idiomatic, **0.43x** tuned | 70 MB / 16 MB (tuned: 212 MB) |
-| Strings: build 2M words, lowercase, split, count, sort | `strings_big` | 0.09s | 0.06s | **0.67x** | 23 MB / 29 MB |
-| App: generate CSV, parse with errors, aggregate in a map, report | `app` | 0.15s | 0.12s | **0.82x** | 24 MB / 22 MB |
-| Long-running loop: 200,000 iterations, about 400 MB of short-lived lists | `churn` | | 0.03s | | 7 MB |
-| Pure pipelines: Collatz, primes, hashed table, Mandelbrot (10 cores) | `parallel` | 2.12s (single-threaded) | 0.35s | **0.16x** | 17 MB / 23 MB |
-| Data-parallel numeric: checked Int map/filter/sum, squares, counts, mapped lists, F64 dot and saxpy over 1M-element lists | `simd` | 0.33s | 0.18s | **0.53x** | 40 MB / 39 MB |
-| GPU kernels (Metal): F32 saxpy over 4M elements, two 4M reductions (strided partial sums, shared-memory tree), naive and tiled 512 x 512 matmul, a 256-bin histogram with atomics | `gpu` | 0.82s (single-threaded CPU) | 0.29s | **0.35x** | 54 MB / 97 MB |
+| Compute-heavy: recursion, loops, primes, gcd | `compute_big` | 1.01s | 1.02s | **1.01x** | 1 MB / 3 MB |
+| Records, lists, persistent trees, float simulation | `typical` | 0.75s idiomatic, 0.21s hand-tuned (arena, never frees) | 0.11s | **0.15x** idiomatic, **0.52x** tuned | 70 MB / 11 MB (tuned: 212 MB) |
+| Strings: build 2M words, lowercase, split, count, sort | `strings_big` | 0.09s | 0.06s | **0.61x** | 23 MB / 25 MB |
+| App: generate CSV, parse with errors, aggregate in a map, report | `app` | 0.15s | 0.12s | **0.78x** | 24 MB / 17 MB |
+| Long-running loop: 200,000 iterations, about 400 MB of short-lived lists | `churn` | | 0.03s | | 3 MB |
+| Pure pipelines: Collatz, primes, hashed table, Mandelbrot (10 cores) | `parallel` | 2.09s (single-threaded) | 0.31s | **0.15x** | 17 MB / 18 MB |
+| Data-parallel numeric: checked Int map/filter/sum, squares, counts, mapped lists, F64 dot and saxpy over 1M-element lists | `simd` | 0.31s | 0.16s | **0.51x** | 40 MB / 34 MB |
+| GPU kernels (Metal): F32 saxpy over 4M elements, two 4M reductions (strided partial sums, shared-memory tree), naive and tiled 512 x 512 matmul, a 256-bin histogram with atomics | `gpu` | 0.82s (single-threaded CPU) | 0.28s | **0.34x** | 54 MB / 92 MB |
 
-The machine had background load during this run (an endpoint agent kept one core busy), and every column was measured in the same session, alternating runs. `compute_big` doesn't reproduce the 0.88x measured on 2026-10-03: 0.8.1 measured the same way today takes 1.03s too, and in-process its four functions together take 1.01s against C++'s 1.05s, so the difference is SSPUR's fixed startup on a scalar program this change doesn't touch.
+The machine had background load during this run (an endpoint agent kept one core busy), and every column was measured in the same session, alternating runs. `compute_big` doesn't reproduce the 0.88x measured on 2026-10-03: before the cached run path (ADR 0034) it took 1.03s, of which about 6 ms was SSPUR's startup; now it is within 1% of C++. Timed inside the process, its four functions take 1.01s, and a C++ build of the same functions with only timing calls added takes 1.03s to 1.06s, so what is left is code placement, not the code.
 
 Against C++ -O3 (same machine, 2026-10-03): compute 0.88x, typical 0.18x (hand-tuned C++ -O3 0.20s, so 0.60x), strings 0.54x, app 0.60x, parallel 0.15x. -O3 is no faster than -O2 on these workloads.
 
-SSPUR times include about 10 ms of fixed startup (parse, typecheck, load the cached library). When speed and memory trade off, SSPUR picks speed (ADR 0008).
+An unchanged program runs from the cache without parsing or checking it (ADR 0034): `sspur run` of hello world takes 10.3 ms against 8.0 ms for a C++ hello world (12.7 ms before), and the normal path, taken after any change or with any flag, adds 3 to 11 ms on these workloads. When speed and memory trade off, SSPUR picks speed (ADR 0008).
 
 - Checks the compiler proves can never fail are omitted (ADR 0007). The rest stay.
 - Every C++ version carries the same safety checks SSPUR always has (overflow, bounds, contracts) via `__builtin_*_overflow` and `abort()`.
@@ -40,20 +40,20 @@ Native code frees what the compiler can prove has one owner at its last use, and
 - freed small blocks go to a per-size LIFO list the allocator takes from, and freed pointer-free runs over 32 KB stay mapped (up to 64 MB) for the next allocation of the same size, so a loop that frees and allocates reuses the same memory
 - everything else (shared values, records, sums, maps, closures, `var` cells, anything that crosses a thread) is collected: mark-sweep over size-classed 64 KB pages in one reserved 8 GB region, conservative scanning of registers and the stack, bump allocation and lazy sweeping, a collection after max(256 MB, 4x live) of allocation
 
-Peak memory and time, C++ against 0.8.1 (collector only) and 0.8.2, same session, best of 5:
+Peak memory and time, C++ against 0.8.1 (collector only) and 0.8.2, best of 5 (the 0.8.1 column was measured earlier the same day):
 
 | Workload | C++ | 0.8.1 | 0.8.2 | 0.8.2 with `SSPUR_MEM=gc` | Blocks left for the collector at exit (0.8.2) |
 |---|---|---|---|---|---|
-| `compute_big` | 1.02s, 1 MB | 1.03s, 7 MB | 1.03s, 7 MB | 1.04s, 7 MB | 0 |
-| `typical` | 0.80s, 70 MB | 0.11s, 16 MB | 0.11s, 16 MB | 0.12s, 16 MB | 329,508 (8 MB): tree nodes and records, which are never freed early |
-| `strings_big` | 0.09s, 23 MB | 0.06s, 92 MB | 0.06s, 29 MB | 0.06s, 60 MB | 2 (11 MB): the lowered text and the sorted list, which the printed result points into |
-| `app` | 0.15s, 24 MB | 0.13s, 137 MB | 0.12s, 22 MB | 0.13s, 119 MB | 134 (10 MB): the generated CSV, which the split lines point into, and the map |
-| `churn` | | 0.08s, 268 MB | 0.03s, 7 MB | 0.08s, 268 MB | 0 |
-| `parallel` | 2.12s, 17 MB | 0.35s, 23 MB | 0.35s, 23 MB | 0.34s, 23 MB | 0 |
-| `simd` | 0.33s, 40 MB | 0.20s, 273 MB | 0.18s, 39 MB | 0.21s, 273 MB | 2 (16 MB): the two F64 inputs, which `dot` and `saxpy` read inside a lambda, so they aren't borrowed |
-| `gpu` | 0.82s, 54 MB | 0.31s, 344 MB | 0.29s, 97 MB | 0.29s, 97 MB | 0 |
+| `compute_big` | 1.01s, 1 MB | 1.03s, 7 MB | 1.02s, 3 MB | 1.04s, 3 MB | 0 |
+| `typical` | 0.75s, 70 MB | 0.11s, 16 MB | 0.11s, 11 MB | 0.10s, 11 MB | 329,508 (8 MB): tree nodes and records, which are never freed early |
+| `strings_big` | 0.09s, 23 MB | 0.06s, 92 MB | 0.06s, 25 MB | 0.05s, 55 MB | 2 (11 MB): the lowered text and the sorted list, which the printed result points into |
+| `app` | 0.15s, 24 MB | 0.13s, 137 MB | 0.12s, 17 MB | 0.12s, 114 MB | 134 (10 MB): the generated CSV, which the split lines point into, and the map |
+| `churn` | | 0.08s, 268 MB | 0.03s, 3 MB | 0.08s, 264 MB | 0 |
+| `parallel` | 2.09s, 17 MB | 0.35s, 23 MB | 0.31s, 18 MB | 0.32s, 18 MB | 0 |
+| `simd` | 0.31s, 40 MB | 0.20s, 273 MB | 0.16s, 34 MB | 0.18s, 268 MB | 2 (16 MB): the two F64 inputs, which `dot` and `saxpy` read inside a lambda, so they aren't borrowed |
+| `gpu` | 0.82s, 54 MB | 0.31s, 344 MB | 0.28s, 92 MB | 0.26s, 92 MB | 0 |
 
-Every benchmark is as fast as in 0.8.1 or faster. `gpu` is still above C++ in memory, for what a GPU program keeps that the CPU-only C++ version doesn't: 52 MB of device buffers (C++ keeps the same data in about 50 MB of vectors), 18 MB of host copies of the buffers kernels write (kept so a launch that flags a thread can be rerun exactly on the CPU), and 14 MB for Metal itself. It no longer builds a host list before each upload: `dev_f32((0..n).map(f))` writes each value straight into the device buffer and `d.to_list.sum` sums the buffer in place, and the per-launch masks of flagged threads are no longer cleared up front (a new Metal buffer is already zero), which kept 512 KB resident for each of up to 256 queued launches. `app` used to hold its 400,000 parsed sales (19 MB) next to the 10 MB CSV they point into; the parse and the aggregation now run as one fused fold, so the sales are never stored, and it peaks below the C++ version, which keeps a copy of every line. `strings_big` and `app` are also helped by two fixes outside ADR 0033 that `SSPUR_MEM=gc` keeps: `text.lower.words.counts` now counts while scanning instead of building the 2M-word list, and `split` no longer allocates a buffer it throws away.
+Every benchmark is as fast as in 0.8.1 or faster, and each one's peak is 4 to 5 MB lower since `sspur run` stopped holding the checked program while `main` runs. `gpu` is still above C++ in memory, for what a GPU program keeps that the CPU-only C++ version doesn't: 52 MB of device buffers (C++ keeps the same data in about 50 MB of vectors), 18 MB of host copies of the buffers kernels write (kept so a launch that flags a thread can be rerun exactly on the CPU), and 14 MB for Metal itself. It no longer builds a host list before each upload: `dev_f32((0..n).map(f))` writes each value straight into the device buffer and `d.to_list.sum` sums the buffer in place, and the per-launch masks of flagged threads are no longer cleared up front (a new Metal buffer is already zero), which kept 512 KB resident for each of up to 256 queued launches. `app` used to hold its 400,000 parsed sales (19 MB) next to the 10 MB CSV they point into; the parse and the aggregation now run as one fused fold, so the sales are never stored, and it peaks below the C++ version, which keeps a copy of every line. `strings_big` and `app` are also helped by two fixes outside ADR 0033 that `SSPUR_MEM=gc` keeps: `text.lower.words.counts` now counts while scanning instead of building the 2M-word list, and `split` no longer allocates a buffer it throws away.
 
 The whole heap is released when native code returns to the interpreter. `SSPUR_MEM=gc` turns the frees off for A/B runs; `SSPUR_MEM=check` poisons freed blocks instead of reusing them. Stress mode is `SSPUR_GC_STRESS=<bytes>`, which collects every N bytes. The suite (4 KB and 64 KB), the benchmarks (3 MB), and all 199 corpus programs produce identical results under it. `SSPUR_GC_STATS=1` prints per-collection statistics and, at exit, the blocks freed at last use and the blocks left for the collector.
 
@@ -89,4 +89,4 @@ The whole heap is released when native code returns to the interpreter. `SSPUR_M
 |---|---|---|---|
 | Interpreter | `--interp` | everything | reference semantics; also powers `fuzz` with step budgets |
 | Cranelift JIT | `--native` | Int/Bool functions | about 1.66x C++, compiles in about 10ms |
-| Native (default) | none | the whole language | 0.14x to 1.01x C++ (faster on every benchmark but `compute_big`, which is at parity; see Results) |
+| Native (default) | none | the whole language | 0.15x to 1.01x C++ (faster on every benchmark but `compute_big`, which is within 1%; see Results) |

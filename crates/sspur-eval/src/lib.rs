@@ -334,6 +334,28 @@ impl Interp {
         }
     }
 
+    /// `run_main` for a program whose native `main` already ran outside the interpreter (the
+    /// cached path of `sspur run`) and failed: the same error `run_main` would have reported.
+    #[cfg(feature = "native")]
+    pub fn run_main_failed(&self, failure: sspur_native::MainFailure) -> Result<(), String> {
+        let Some(main) = self.fns.get("main").cloned() else {
+            return Err("no 'main' function".into());
+        };
+        self.static_vals.borrow_mut().clear();
+        let r = match self.native.as_ref().and_then(|n| n.main_failure(failure)) {
+            Some(sspur_native::NativeError::Trap(msg)) => trap(msg),
+            Some(sspur_native::NativeError::Raise(v)) => Err(Ctrl::Raise(from_nval(v))),
+            None => {
+                let globals = self.globals.clone();
+                self.call_fn_in(&main, vec![], &globals)
+            }
+        };
+        match r.and_then(|_| kernel::sync()) {
+            Ok(_) => Ok(()),
+            Err(c) => Err(describe(c)),
+        }
+    }
+
     pub fn run_tests(&self) -> Vec<(String, Result<(), String>)> {
         self.test_cases().iter().map(|(name, body)| (name.clone(), self.run_case(body))).collect()
     }

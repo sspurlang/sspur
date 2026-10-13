@@ -7,7 +7,7 @@ None of these are needed for normal use. They exist for CI, for pinning toolchai
 | Variable | Effect |
 |---|---|
 | `SSPUR_STRICT_NATIVE=1` | Same as `--strict-native`: a function that can't be compiled natively is an error, not a warning and a fallback |
-| `SSPUR_CACHE` | Root of every cache, instead of `~/.cache/sspur`: native objects (`native/`), check results (`check`), packages (`pkgs/`) and deploy builds (`deploy/`) |
+| `SSPUR_CACHE` | Root of every cache, instead of `~/.cache/sspur`: native objects (`native/`), check results (`check`), unchanged programs for `sspur run` (`run/`), packages (`pkgs/`) and deploy builds (`deploy/`) |
 | `SSPUR_NO_CHECK_CACHE` | Set to any value to skip the shared check cache, like `check --no-cache` |
 | `SSPUR_JOBS` | Parallel C compiler jobs for per-definition objects, 1 to 4 (default 4) |
 | `SSPUR_OPT=0` | Turn off the proven-rewrite optimizer |

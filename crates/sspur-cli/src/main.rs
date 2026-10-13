@@ -7,6 +7,7 @@ mod genfuzz;
 mod lsp;
 mod mcp;
 mod pkgcmd;
+mod runcache;
 mod sync;
 mod verify;
 
@@ -367,6 +368,11 @@ fn edit(args: &Args) -> ExitCode {
 fn program_cmd(cmd: &str, args: &Args) -> ExitCode {
     if cmd == "run" {
         sspur_native::set_program_args(args.pos.iter().skip(2).cloned().collect());
+        if runcache::applies(cmd, &args.flags, args.pos.get(1))
+            && let Some(code) = runcache::try_run(&args.pos[1])
+        {
+            return code;
+        }
     }
     let json = args.has("--json");
     let manifest_src = if args.pos.get(1).is_none() && cwd_store().is_none() {
@@ -420,6 +426,7 @@ fn program_cmd(cmd: &str, args: &Args) -> ExitCode {
     } else {
         report(&loaded.src, &label, &loaded.check.diags, json);
     }
+    let quiet = loaded.check.diags.is_empty() && loaded.pkgs.is_empty() && manifest_src.is_none();
     if loaded.check.has_errors() {
         return ExitCode::FAILURE;
     }
@@ -536,13 +543,25 @@ fn program_cmd(cmd: &str, args: &Args) -> ExitCode {
             }
         }
         "explain-opt" => explain_opt(&loaded, args.has("--all")),
-        "run" => match native_interp(&loaded, args).run_main() {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(e) => {
-                eprintln!("runtime error: {}", loaded.show(&e.to_string()));
-                ExitCode::FAILURE
+        "run" => {
+            let failed = runcache::take_failure();
+            let cache = quiet && failed.is_none() && runcache::applies(cmd, &args.flags, args.pos.get(1));
+            let (it, entry) = native_interp_entry(&loaded, args, cache);
+            if let Some(e) = entry {
+                runcache::store(&label, &text, &e);
             }
-        },
+            let r = match failed {
+                Some(f) => it.run_main_failed(f),
+                None => it.run_main(),
+            };
+            match r {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("runtime error: {}", loaded.show(&e.to_string()));
+                    ExitCode::FAILURE
+                }
+            }
+        }
         "test" => {
             let (text, ok) = agent::tests_text(&native_interp(&loaded, args).run_tests(), args.has("--full"));
             println!("{}", loaded.show(&text));
@@ -782,11 +801,16 @@ pub(crate) fn exec_or<'a>(l: &'a Loaded, tmp: &'a mut Option<Loaded>) -> &'a Loa
 }
 
 fn native_interp(l: &Loaded, args: &Args) -> Interp {
+    native_interp_entry(l, args, false).0
+}
+
+/// `native_interp`, plus what the cached path of `run` needs when `want` is set and `main` runs natively.
+fn native_interp_entry(l: &Loaded, args: &Args, want: bool) -> (Interp, Option<runcache::Entry>) {
     let mut tmp = None;
     let l = exec_or(l, &mut tmp);
     let mut it = interp(l);
     if args.has("--interp") {
-        return it;
+        return (it, None);
     }
     if args.has("--native") {
         match sspur_native::compile(&l.module) {
@@ -796,20 +820,25 @@ fn native_interp(l: &Loaded, args: &Args) -> Interp {
             }
             Err(e) => native_failed(args, &format!("native compilation failed: {e}"), "interpreting"),
         }
-        return it;
+        return (it, None);
     }
     let opt = if args.has("--O3") { "-O3" } else { "-O2" };
-    match sspur_native::cgen::compile_release(&l.native_module(), &l.check, opt) {
+    let mut entry = None;
+    let m = l.native_module();
+    match sspur_native::cgen::compile_release(&m, &l.check, opt) {
         Ok(c) => {
             if let Some(e) = &c.fallback {
                 native_failed(args, &format!("per-definition native build failed {e}"), "using the whole-program build");
+            }
+            if want && c.fallback.is_none() {
+                entry = c.library.clone().zip(c.main_entry()).map(|(lib, scalar)| runcache::Entry { lib, scalar, profile: sspur_native::cgen::opt::profile_path(&m) });
             }
             c.set_max_depth(1_000_000);
             it.set_native(c);
         }
         Err(e) => native_failed(args, &format!("native build failed {e}"), "interpreting"),
     }
-    it
+    (it, entry)
 }
 
 pub fn default_interp(l: &Loaded) -> Interp {

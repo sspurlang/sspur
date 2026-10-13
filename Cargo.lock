@@ -538,6 +538,7 @@ dependencies = [
 name = "sspur-cli"
 version = "0.8.1"
 dependencies = [
+ "blake3",
  "crossbeam-channel",
  "lsp-server",
  "serde_json",
