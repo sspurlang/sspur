@@ -13,6 +13,8 @@ Each large cell's tokens come from RUN10_DIR/tokens.json or a --with DIR/tokens.
 languages run into a separate directory); s1_shop falls back to the reference cells of the
 17-cell report (Python of run 5, TypeScript and Go of run 9), marked *. Hidden-test counts come
 from scores-large.json in the same directories, when present. Old runs print exactly as before.
+--no-fallback leaves s1_shop without the reference cells (for runs with another model); when no
+task has all four languages, totals are given per language pair.
 """
 import json, os, re, statistics, sys
 
@@ -28,6 +30,7 @@ def load(p):
 args = sys.argv[1:]
 only_large = "--large" in args
 extra = [args[i + 1] for i, a in enumerate(args) if a == "--with"]
+no_fallback = "--no-fallback" in args
 pos = [a for i, a in enumerate(args) if not a.startswith("--") and (i == 0 or args[i - 1] != "--with")]
 r10_dir = pos[0] if pos else os.path.join(R, "2026-10-09-r10")
 r10 = json.load(open(os.path.join(r10_dir, "tokens.json")))
@@ -90,7 +93,7 @@ def large():
         if os.path.exists(f):
             for x in json.load(open(f)):
                 scores.setdefault(f"{x['lang']}/{x['task']}", f"{x['passed']}/{x['total']}")
-    fallback = {"python/s1_shop": py.get("s1_shop"), "ts/s1_shop": r9.get("ts/s1_shop"), "go/s1_shop": r9.get("go/s1_shop")}
+    fallback = {} if no_fallback else {"python/s1_shop": py.get("s1_shop"), "ts/s1_shop": r9.get("ts/s1_shop"), "go/s1_shop": r9.get("go/s1_shop")}
     langs = ("sspur", "python", "ts", "go")
     print(f"Large codebases ({os.path.basename(os.path.normpath(r10_dir))}; * = s1_shop reference cell of the 17-cell report)")
     print()
@@ -113,7 +116,17 @@ def large():
         rows.append((t, cells))
     full = [r for r in rows if all(r[1])]
     if not full:
-        print("\n(no large task has cells in all four languages)")
+        # Pairwise totals over the tasks where both SSPUR and the other language ran.
+        print()
+        for i, (n, name) in enumerate((("python", "Python"), ("ts", "TypeScript"), ("go", "Go")), 1):
+            pair = [r for r in rows if r[1][i]]
+            if not pair:
+                continue
+            a, b = sum(r[1][0]["total"] for r in pair), sum(r[1][i]["total"] for r in pair)
+            rs = [r[1][0]["total"] / r[1][i]["total"] for r in pair]
+            print(f"large vs {name} ({len(pair)} tasks): total {a / b:.2f}x, median {statistics.median(rs):.2f}x, "
+                  f"min {min(rs):.2f}x, max {max(rs):.2f}x, cheaper on {sum(1 for x in rs if x < 1)} of {len(rs)}, "
+                  f"calls {sum(r[1][0]['calls'] for r in pair)} / {sum(r[1][i]['calls'] for r in pair)}, tokens {a:,} / {b:,}")
         return
     tot = {lang: {k: sum(r[1][i][k] for r in full) for k in ("calls", "total", "net", "read", "wrote")} for i, lang in enumerate(langs)}
     c = lambda n: f"{tot[n]['calls']} / {tot[n]['total']:,}"

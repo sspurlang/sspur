@@ -38,7 +38,7 @@ $ sspur test cart.ssp
 
 Most languages are designed around a human at a keyboard. SSPUR starts from a different question: what does a language look like when the author is a model that reads every token, pays for every token, and never gets tired of writing contracts?
 
-- **Fewer tokens for agents.** On 17 multi-step coding tasks, agents writing SSPUR used 0.67x the tokens of the same agents writing Python, and were level with TypeScript and Go (0.98x and 0.89x in total, 1.0x per task at the median), with every hidden test passing in all four languages. SSPUR code is also the smallest of the four. [The full report](bench/agent/README.md) has every task, model and caveat.
+- **Fewer tokens for agents.** On 17 multi-step coding tasks, agents writing SSPUR used 0.67x the tokens of the same agents writing Python, and were level with TypeScript and Go (0.98x and 0.89x in total, 1.0x per task at the median), with every hidden test passing in all four languages. On six tasks in codebases of about 1,000 definitions the gap opens up: 0.68x Python, 0.59x TypeScript and 0.58x Go with Sonnet, and cheaper than TypeScript on every task with Opus and Haiku too. SSPUR code is also the smallest of the four. [The full report](bench/agent/README.md) has every task, model and caveat.
 - **Every side effect is in the signature.** `log`, `fail[E]`, `db.read[T]`, `fs`, `proc`, `ffi`, `conc` and user-defined effects are tracked by the checker, so a reviewer, or a deployer, can see exactly what a function is allowed to do.
 - **Contracts are checked, not just documented.** `pre`, `post`, and refinement types (`Int where _ > 0`) are enforced at runtime, proved with Z3 where possible, turned into property tests by the fuzzer, and used by the optimizer to remove checks it can prove unnecessary.
 - **Edits are atomic.** `sspur edit` replaces definitions by name, typechecks the whole codebase, and either applies everything or nothing. One call can edit and run the tests.
@@ -110,7 +110,7 @@ Downloads the release tarball for your platform, verifies its SHA-256 checksum a
 curl -fsSL https://raw.githubusercontent.com/utkarshavardhana/sspur/main/install.sh | sh
 ```
 
-Set `SSPUR_VERSION=0.8.0` to pin a version, or `SSPUR_INSTALL_DIR` to install somewhere else.
+Set `SSPUR_VERSION=0.8.1` to pin a version, or `SSPUR_INSTALL_DIR` to install somewhere else.
 
 ### Windows
 
@@ -128,8 +128,8 @@ Each [release](https://github.com/utkarshavardhana/sspur/releases) has tarballs 
 
 ```
 shasum -a 256 -c SHA256SUMS --ignore-missing
-tar -xzf sspur-v0.8.0-aarch64-apple-darwin.tar.gz
-sudo install sspur-v0.8.0-aarch64-apple-darwin/sspur /usr/local/bin/
+tar -xzf sspur-v0.8.1-aarch64-apple-darwin.tar.gz
+sudo install sspur-v0.8.1-aarch64-apple-darwin/sspur /usr/local/bin/
 ```
 
 ### From source

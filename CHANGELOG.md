@@ -4,6 +4,12 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-13
+
+### Added
+- Five more large-codebase tasks in the agent benchmark (s2 to s6), on the shop codebase and two new generated codebases of about 1,000 definitions (library and fleet), in SSPUR, Python, TypeScript and Go, with hidden tests and reference solutions. `bench/agent/large/` sets them up and scores them, and `report5.py --large` reports them.
+- Benchmark runs L1 to L3 on the six large tasks. Sonnet 5.5 used 0.68x Python's tokens, 0.59x TypeScript's and 0.58x Go's; Opus 5.5 0.85x TypeScript's and Haiku 5.5 0.68x, cheaper than TypeScript on every task for all three models, with every hidden test passing.
+
 ## [0.8.0] - 2026-10-13
 
 ### Added
@@ -278,7 +284,8 @@ This release covers Phases 3 to 7 of the roadmap and ADRs 0003 to 0024. SSPUR no
 - Language design spec, JSON schemas and the token benchmark.
 - Compiler core: parser, checker, content hashing, interpreter and the `sspur` CLI, with an 11-program suite.
 
-[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/utkarshavardhana/sspur/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/utkarshavardhana/sspur/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/utkarshavardhana/sspur/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/utkarshavardhana/sspur/compare/v0.6.0...v0.7.0

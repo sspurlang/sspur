@@ -1,0 +1,162 @@
+[
+ {
+  "lang": "sspur",
+  "task": "s2_shop",
+  "passed": 10,
+  "total": 10,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "sspur",
+  "task": "s3_library",
+  "passed": 11,
+  "total": 11,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "sspur",
+  "task": "s4_library",
+  "passed": 10,
+  "total": 10,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "sspur",
+  "task": "s5_fleet",
+  "passed": 10,
+  "total": 10,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "sspur",
+  "task": "s6_fleet",
+  "passed": 11,
+  "total": 11,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "python",
+  "task": "s2_shop",
+  "passed": 10,
+  "total": 10,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "python",
+  "task": "s3_library",
+  "passed": 11,
+  "total": 11,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "python",
+  "task": "s4_library",
+  "passed": 10,
+  "total": 10,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "python",
+  "task": "s5_fleet",
+  "passed": 10,
+  "total": 10,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "python",
+  "task": "s6_fleet",
+  "passed": 11,
+  "total": 11,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "ts",
+  "task": "s2_shop",
+  "passed": 10,
+  "total": 10,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "ts",
+  "task": "s3_library",
+  "passed": 11,
+  "total": 11,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "ts",
+  "task": "s4_library",
+  "passed": 10,
+  "total": 10,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "ts",
+  "task": "s5_fleet",
+  "passed": 10,
+  "total": 10,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "ts",
+  "task": "s6_fleet",
+  "passed": 11,
+  "total": 11,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "go",
+  "task": "s2_shop",
+  "passed": 10,
+  "total": 10,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "go",
+  "task": "s3_library",
+  "passed": 11,
+  "total": 11,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "go",
+  "task": "s4_library",
+  "passed": 10,
+  "total": 10,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "go",
+  "task": "s5_fleet",
+  "passed": 10,
+  "total": 10,
+  "ok": true,
+  "msg": ""
+ },
+ {
+  "lang": "go",
+  "task": "s6_fleet",
+  "passed": 11,
+  "total": 11,
+  "ok": true,
+  "msg": ""
+ }
+]

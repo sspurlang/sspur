@@ -2,6 +2,8 @@
 
 This measures the Phase 3 exit criterion: an agent completes multi-step feature tasks using SSPUR (CLI ops only) with fewer total tokens than the same agent using Python. Run 9 adds TypeScript and Go as controls, because beating Python alone does not show that the language is the reason.
 
+**Large codebases (runs L1 to L3, 2026-10-13): SSPUR is cheaper than every control on codebases of about 1,000 definitions, for all three models.** Six tasks on three generated codebases (shop, library, fleet). Sonnet 5.5: 0.68x Python's tokens, 0.59x TypeScript's and 0.58x Go's, in 24 calls against 34, 38 and 40, cheaper than TypeScript and Go on all 6 tasks. Opus 5.5: 0.85x TypeScript's (6 of 6 cheaper). Haiku 5.5: 0.68x TypeScript's (6 of 6 cheaper). Every hidden test passed in every cell. Details in [Results, large codebases](#results-large-codebases).
+
 **Latest result (run 15, 2026-10-12): the best since run 11. On the 17 cells, Sonnet 5.5 used 0.67x Python's tokens, 0.98x TypeScript's and 0.89x Go's (medians 0.62x, 1.02x, 1.01x), in 59 calls (run 11: 58), with 246/246 hidden tests passing in every language.** The medians against TypeScript and Go are still about 1.0x, so this is parity with them, not a win. Details in [Results, run 15](#results-run-15).
 
 **Run 14 (2026-10-12): 0.73x Python, 1.07x TypeScript, 0.97x Go**, 64 calls. The fixes aimed at run 13's misses worked, but six other cells took a call or two more. Details in [Results, run 14](#results-run-14).
@@ -136,6 +138,52 @@ All changes are in the CLI and the spec. The language is unchanged.
 - The MCP server gained `sspur_edit`, and its tools return the same compact text (`json: true` for the old format).
 
 Run 2 used a heredoc (`./sspur edit --test <<'EOF'`). The sandbox refused that command in 6 of 8 runs: it treats `{a, b}` inside the heredoc (any record literal with two fields) as possible brace expansion and won't verify the command. Each refusal cost a retry plus a Write call to put the input in a file. Run 3's spec recommends one single-quoted `-e` argument instead, which passed in 7 of 8 runs (a8 was refused once, apparently because of a `#` inside a string).
+
+## Results, large codebases
+
+Runs L1 to L3 measure the claim that SSPUR's advantage grows with the codebase, which until now rested on one task (s1_shop). Five new tasks were added (s2 to s6, see [Large-codebase tasks](#large-codebase-tasks)), on the shop codebase and two new ones of similar size. Same harness as the small tasks: one fresh `general-purpose` subagent per cell, strictly one at a time, no retries, the compiler frozen at 0.8.0 (`6a6f851`, `target/sspur-frozen-6a6f851`). No cell was excluded or repeated.
+
+- **L1** (`runs/2026-10-13-L1/`): Sonnet 5.5, s2 to s6 in all four languages (20 cells). s1_shop is taken from run 15 for SSPUR and from the reference cells of the 17-cell report for Python, TypeScript and Go, so the s1 row compares cells from different runs.
+- **L2** (`runs/2026-10-13-L2-opus/`): Opus 5.5, all six tasks, SSPUR and TypeScript (12 cells).
+- **L3** (`runs/2026-10-13-L3-haiku/`): Haiku 5.5, all six tasks, SSPUR and TypeScript (12 cells).
+
+TypeScript was chosen as the only control for Opus and Haiku because it was the hardest one to beat on the small tasks.
+
+Sonnet 5.5 (calls / total tokens):
+
+| Task | SSPUR | Python | TypeScript | Go | SSPUR/Py | SSPUR/TS | SSPUR/Go |
+|---|---|---|---|---|---|---|---|
+| s1_shop | 3 / 96,685 | 5 / 162,362 | 4 / 131,251 | 8 / 277,404 | 0.60x | 0.74x | 0.35x |
+| s2_shop | 4 / 134,234 | 5 / 164,061 | 6 / 215,211 | 6 / 197,845 | 0.82x | 0.62x | 0.68x |
+| s3_library | 5 / 172,552 | 5 / 171,069 | 9 / 322,831 | 7 / 256,124 | 1.01x | 0.53x | 0.67x |
+| s4_library | 4 / 135,302 | 6 / 224,228 | 6 / 222,688 | 8 / 282,003 | 0.60x | 0.61x | 0.48x |
+| s5_fleet | 3 / 99,139 | 5 / 171,329 | 5 / 175,034 | 5 / 174,290 | 0.58x | 0.57x | 0.57x |
+| s6_fleet | 5 / 180,380 | 8 / 315,439 | 8 / 320,570 | 6 / 221,224 | 0.57x | 0.56x | 0.82x |
+| **Total** | 24 / 818,292 | 34 / 1,208,488 | 38 / 1,387,585 | 40 / 1,408,890 | **0.68x** | **0.59x** | **0.58x** |
+
+Opus 5.5 and Haiku 5.5, SSPUR against TypeScript:
+
+| Task | Opus SSPUR | Opus TS | Opus SSPUR/TS | Haiku SSPUR | Haiku TS | Haiku SSPUR/TS |
+|---|---|---|---|---|---|---|
+| s1_shop | 4 / 133,588 | 5 / 170,646 | 0.78x | 8 / 288,073 | 10 / 417,247 | 0.69x |
+| s2_shop | 4 / 137,814 | 5 / 178,172 | 0.77x | 6 / 224,825 | 7 / 291,397 | 0.77x |
+| s3_library | 5 / 171,023 | 5 / 179,449 | 0.95x | 6 / 238,869 | 9 / 380,501 | 0.63x |
+| s4_library | 6 / 213,201 | 6 / 221,557 | 0.96x | 4 / 151,985 | 10 / 461,974 | 0.33x |
+| s5_fleet | 4 / 137,275 | 5 / 174,176 | 0.79x | 7 / 277,745 | 8 / 324,052 | 0.86x |
+| s6_fleet | 7 / 269,136 | 8 / 326,640 | 0.82x | 9 / 389,039 | 9 / 440,093 | 0.88x |
+| **Total** | 30 / 1,062,037 | 34 / 1,250,640 | **0.85x** | 40 / 1,570,536 | 53 / 2,315,264 | **0.68x** |
+
+Hidden tests: every cell passed all of its task's hidden tests (52 per language for s2 to s6 in L1; 62 per language in L2 and L3).
+
+What the numbers say, and what they don't:
+
+- On the small tasks SSPUR is level with TypeScript and Go because every language finishes most of them in the minimum 3 calls. On a large codebase the other languages spend calls finding and reading code (grep, then reading files), and SSPUR's `start NAME...` and `q pack` hand the agent the definitions it needs, their signatures, tests and callers in one call. That is where the difference comes from: the controls averaged 6 to 7 calls per large task with Sonnet, SSPUR 4.
+- The advantage is smallest with Opus (0.85x against TypeScript), which navigates TypeScript efficiently, and largest with Haiku, which needed up to 10 calls in TypeScript.
+- s3_library with Sonnet is the one cell where SSPUR was not cheaper (1.01x Python, both 5 calls).
+- The codebases are generated, with regular structure (many modules built from a few templates). Real codebases are less regular; this measures navigation and multi-site edits at size, not the full variety of real code.
+- In L2's s2_shop the SSPUR agent also fixed the `money` padding bug left in that codebase (it was the s1 task), unasked; the hidden tests still passed.
+
+Reproduce: `bench/agent/large/setup_large.py`, `score_large.py run`, `tokens.py`, then `report5.py RUN --large` (`--with runs/2026-10-12-r15` for L1, `--no-fallback` for L2 and L3).
 
 ## Results, run 15
 
