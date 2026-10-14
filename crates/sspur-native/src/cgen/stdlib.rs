@@ -434,6 +434,9 @@ impl Cx<'_> {
         if let Some(x) = self.file_global(n, args, &vals, t)? {
             return Ok(Some(x));
         }
+        if let Some(x) = self.net_global(n, args, &vals, t)? {
+            return Ok(Some(x));
+        }
         if let Some(x) = self.view_global(n, args, &vals, t)? {
             return Ok(Some(x));
         }

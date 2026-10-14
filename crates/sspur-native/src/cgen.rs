@@ -27,6 +27,7 @@ mod stdratio;
 mod stdlocale;
 mod stdfile;
 mod stdflat;
+mod stdnet;
 mod stdrng;
 mod stdtz;
 pub mod win;
@@ -1411,7 +1412,7 @@ fn iv_safe(op: BinOp, ra: Iv, rb: Iv) -> bool {
 }
 
 fn precheck(f: &FnDef, bare: bool) -> G<()> {
-    if let Some(e) = f.effects.iter().find(|e| !matches!(e.name.as_str(), "div" | "log" | "fail" | "ffi" | "conc" | "db.read" | "db.write" | "unsafe" | "fs" | "io" | "time" | "env" | "proc" | "dev") && !(bare && (e.name == "mmio" || e.name == "static")) && !f.tparams.iter().any(|p| p.name == e.name)) {
+    if let Some(e) = f.effects.iter().find(|e| !matches!(e.name.as_str(), "div" | "log" | "fail" | "ffi" | "conc" | "db.read" | "db.write" | "unsafe" | "fs" | "io" | "time" | "env" | "proc" | "dev" | "net") && !(bare && (e.name == "mmio" || e.name == "static")) && !f.tparams.iter().any(|p| p.name == e.name)) {
         return Err(format!("performs '{}'", printer::effect(e)));
     }
     Ok(())
@@ -3337,7 +3338,7 @@ impl<'a> Cx<'a> {
             ExprKind::Block(stmts) => self.block(stmts),
             ExprKind::Record { ctor, fields } => {
                 let owner = match ctor {
-                    Some(c) => c.clone(),
+                    Some(c) => self.check.record_types.get(&(e.span.start, e.span.end)).filter(|r| r.starts_with('#')).cloned().unwrap_or_else(|| c.clone()),
                     None => self.check.record_types.get(&(e.span.start, e.span.end)).cloned().ok_or("untyped record literal")?,
                 };
                 if self.layouts.records.contains_key(&owner) {
