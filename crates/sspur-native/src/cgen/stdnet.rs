@@ -17,7 +17,7 @@ typedef struct {
     int (*is_tls)(void*);
     SnCall* (*next)(void*, int64_t, int*);
     void (*reply)(SnCall*, int64_t, const SnHdr*, int64_t, const char*, int64_t);
-    void (*close)(void*);
+    void (*shut)(void*);
     int64_t (*fetch)(const SnReq*, SnResp*);
     void (*resp_free)(SnResp*);
 } SsNetApi;
@@ -46,7 +46,7 @@ static SsNetApi* ss_net(Status* st) {
         int ok = h != 0;
 #define SS_NS(f, n) if (ok) { *(void**)&ss_net_api.f = ss_dlsym(h, n); ok = ss_net_api.f != 0; }
         SS_NS(listen, "sn_listen") SS_NS(port, "sn_port") SS_NS(is_tls, "sn_is_tls") SS_NS(next, "sn_next") SS_NS(reply, "sn_reply")
-        SS_NS(close, "sn_close") SS_NS(fetch, "sn_fetch") SS_NS(resp_free, "sn_resp_free")
+        SS_NS(shut, "sn_close") SS_NS(fetch, "sn_fetch") SS_NS(resp_free, "sn_resp_free")
 #undef SS_NS
         __atomic_store_n(&ss_net_state, ok ? 1 : 2, __ATOMIC_RELEASE);
     }
@@ -113,7 +113,7 @@ static void ss_serve(const SnCfg* cfg, int64_t workers, SsSrvFn fn, void* clo, S
     if (n > 256) n = 256;
     SsSrv x; memset(&x, 0, sizeof x);
     x.srv = srv; x.fn = fn; x.clo = clo; x.depth = depth; x.limit = st->limit;
-    pthread_mutex_init(&x.mu, 0); pthread_cond_init(&x.cv, 0);
+    x.mu = (pthread_mutex_t)PTHREAD_MUTEX_INITIALIZER; x.cv = (pthread_cond_t)PTHREAD_COND_INITIALIZER;
     pthread_t* th = (pthread_t*)calloc((size_t)n, sizeof(pthread_t));
     pthread_mutex_lock(&ss_mu); ss_set_live(n); pthread_mutex_unlock(&ss_mu);
     pthread_attr_t at; pthread_attr_init(&at); pthread_attr_setstacksize(&at, (size_t)1 << 28);
@@ -141,7 +141,7 @@ static void ss_serve(const SnCfg* cfg, int64_t workers, SsSrvFn fn, void* clo, S
     for (long i = 0; i < started; i++) pthread_join(th[i], 0);
     free(th);
     pthread_mutex_lock(&ss_mu); ss_set_live(-started); pthread_mutex_unlock(&ss_mu);
-    api->close(srv);
+    api->shut(srv);
 }
 static const char* ss_trap_name(int64_t c) {
     static const char* names[] = {"trap", "integer overflow", "division by zero", "precondition failed", "postcondition failed", "bad argument", "negative exponent", "recursion too deep", "index out of range", "unwrapped none", "no match", "refinement violated", "", "bad repeat count", "confidence out of range", "out of memory", "deadlock", "send on a closed channel"};
