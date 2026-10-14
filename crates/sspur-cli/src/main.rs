@@ -1,5 +1,6 @@
 mod agent;
 mod bind;
+mod debugger;
 mod deploy;
 mod fill;
 mod genfuzz;
@@ -54,6 +55,9 @@ const USAGE: &str = "usage:
   sspur explain-opt file.ssp [--all]    show the proven rewrites applied before native codegen (--all adds rejected candidates)
   sspur run --profile file.ssp          run in the interpreter and record call counts that guide inlining (ADR 0022)
   sspur build --target riscv64-qemu|aarch64-qemu|thumbv7em-mps2 file.ssp [-o kernel.elf]  build a 'profile bare' kernel or Cortex-M4 firmware (freestanding C, clang, ld.lld)
+  run/test/build --debug (or SSPUR_DEBUG=1) build native code with DWARF (CodeView on Windows) mapped to the .ssp lines, at -O0
+  sspur debug [file.ssp] [args] [--debugger lldb|gdb]  build with --debug and start lldb (macOS) or gdb (Linux) on it, stopped at main
+  sspur debug-init [--install]          write the lldb and gdb formatters for Str, List, Opt, Bool and sums; --install loads them from ~/.lldbinit and ~/.gdbinit
   sspur gpu file.ssp [--emit metal|opencl|spirv|ptx] [-o out]  emit the kernel fns as Metal, OpenCL C, SPIR-V or PTX (ADR 0020)
   sspur deploy plan|local|migrate|replay|swap|promote|rollback|backfill|status   (sspur deploy for details; ADR 0016, 0019; never calls AWS)
   sspur sync serve [--port N] | push REMOTE | pull REMOTE | status | resolve ours|theirs [PATH]   replicate by hash (REMOTE: dir or tcp://host:port; ADR 0021)";
@@ -87,7 +91,7 @@ fn parse_args() -> Args {
     let mut it = std::env::args().skip(1).peekable();
     while let Some(a) = it.next() {
         if a.starts_with("--") || a == "-e" || a == "-o" {
-            let takes = matches!(a.as_str(), "--budget" | "--cases" | "--seed" | "-e" | "-o" | "--lib" | "--prefix" | "--out" | "--port" | "--target" | "--record" | "--weight" | "--store" | "--emit" | "--max" | "--agent" | "--backend" | "--lto" | "--gen" | "--group" | "--keep" | "--modes" | "--reduce" | "--want-skip" | "--want-build" | "--want-hang" | "--from" | "--pkg" | "--dir" | "--fill-ms");
+            let takes = matches!(a.as_str(), "--budget" | "--cases" | "--seed" | "-e" | "-o" | "--lib" | "--prefix" | "--out" | "--port" | "--target" | "--record" | "--weight" | "--store" | "--emit" | "--max" | "--agent" | "--backend" | "--lto" | "--gen" | "--group" | "--keep" | "--modes" | "--reduce" | "--want-skip" | "--want-build" | "--want-hang" | "--from" | "--pkg" | "--dir" | "--fill-ms" | "--debugger");
             flags.push(a);
             if takes
                 && let Some(v) = it.next() {
@@ -200,6 +204,8 @@ fn real_main() -> ExitCode {
                 }
             }
         }
+        "debug" => debugger::run(args.pos.get(1), args.pos.get(2..).unwrap_or(&[]), args.val("--debugger").map(String::as_str)),
+        "debug-init" => debugger::init(args.has("--install")),
         "fill" => fill::fill_cmd(&args),
         "suggest" => fill::suggest_cmd(&args),
         "deploy" => deploy::run(&args.pos[1..], &args.flags),
@@ -439,6 +445,21 @@ fn program_cmd(cmd: &str, args: &Args) -> ExitCode {
             Err(d) => return fail_diags(&text, &label, &d, json),
         }
     };
+    let debug = matches!(cmd, "run" | "test" | "build" | "native" | "fuzz") && (args.has("--debug") || sspur_native::cgen::debug::env_on()) && args.val("--target").is_none() && args.val("--backend").is_none();
+    let debug_src = if debug {
+        match debugger::enable(&loaded, &label) {
+            Ok(p) => Some(p),
+            Err(e) => {
+                eprintln!("{e}");
+                return ExitCode::FAILURE;
+            }
+        }
+    } else {
+        None
+    };
+    if let Some(src) = debug_src.as_ref().filter(|_| cmd == "build") {
+        return build_debug(&loaded, &label, src, args);
+    }
     if matches!(cmd, "run" | "test" | "build" | "native") && (args.has("--pgo") || args.val("--lto").is_some()) && !args.has("--target") {
         match host_build_opts(cmd, &label, &text, args) {
             Ok(o) => sspur_native::cgen::flags::set(o),
@@ -643,6 +664,25 @@ fn emit_gpu(l: &Loaded, label: &str, args: &Args) -> ExitCode {
         },
         Err(e) => {
             eprintln!("{e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn build_debug(l: &Loaded, label: &str, src: &std::path::Path, args: &Args) -> ExitCode {
+    match sspur_native::cgen::compile_release(&l.native_module(), &l.check, "-O0") {
+        Ok(c) => {
+            if let Some(e) = &c.fallback {
+                native_failed(args, &format!("per-definition native build failed {e}"), "using the whole-program build");
+            }
+            println!("built {} native functions with debug info into {}", c.functions.len(), c.library.as_ref().map_or_else(String::new, |p| p.display().to_string()));
+            println!("source lines refer to {}", src.display());
+            let file = if label == "HEAD" { String::new() } else { format!(" {label}") };
+            println!("debug with: sspur debug{file}   (or: lldb -- sspur run --debug{file})");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("debug build failed: {}", l.show(&e));
             ExitCode::FAILURE
         }
     }

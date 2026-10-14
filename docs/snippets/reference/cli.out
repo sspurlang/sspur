@@ -28,6 +28,9 @@ usage:
   sspur explain-opt file.ssp [--all]    show the proven rewrites applied before native codegen (--all adds rejected candidates)
   sspur run --profile file.ssp          run in the interpreter and record call counts that guide inlining (ADR 0022)
   sspur build --target riscv64-qemu|aarch64-qemu|thumbv7em-mps2 file.ssp [-o kernel.elf]  build a 'profile bare' kernel or Cortex-M4 firmware (freestanding C, clang, ld.lld)
+  run/test/build --debug (or SSPUR_DEBUG=1) build native code with DWARF (CodeView on Windows) mapped to the .ssp lines, at -O0
+  sspur debug [file.ssp] [args] [--debugger lldb|gdb]  build with --debug and start lldb (macOS) or gdb (Linux) on it, stopped at main
+  sspur debug-init [--install]          write the lldb and gdb formatters for Str, List, Opt, Bool and sums; --install loads them from ~/.lldbinit and ~/.gdbinit
   sspur gpu file.ssp [--emit metal|opencl|spirv|ptx] [-o out]  emit the kernel fns as Metal, OpenCL C, SPIR-V or PTX (ADR 0020)
   sspur deploy plan|local|migrate|replay|swap|promote|rollback|backfill|status   (sspur deploy for details; ADR 0016, 0019; never calls AWS)
   sspur sync serve [--port N] | push REMOTE | pull REMOTE | status | resolve ours|theirs [PATH]   replicate by hash (REMOTE: dir or tcp://host:port; ADR 0021)
