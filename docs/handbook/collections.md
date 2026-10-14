@@ -1,6 +1,6 @@
 # Collections and Pipelines
 
-Collections are values. Every method returns a new collection and leaves the old one alone, and the native compiler reuses memory in place when nothing else can see the old value, so this costs less than it sounds.
+Collections are values. Every method returns a new collection and leaves the old one alone, and the native compiler reuses memory in place when nothing else can see the old value, and frees a list or string at its last use when it has one owner, so this costs less than it sounds.
 
 ## Pipelines
 
@@ -10,7 +10,7 @@ Most list code is a chain of methods, each taking a lambda:
 {{#include ../snippets/handbook/collections.ssp:pipeline}}
 ```
 
-`group_by` gives `(key, items)` pairs in first-seen order. `sort_by` takes a key; a tuple key sorts by several fields, and negating a number sorts it descending. A chain can't continue on the next line, so bind the middle step to a name as above.
+`group_by` gives `(key, items)` pairs in first-seen order. `sort_by` takes a key; a tuple key sorts by several fields, and negating a number sorts it descending. A chain can continue on the next line when that line is indented deeper and starts with `.name`, as in `= orders` followed by `.map(_.cents)` and `.sum` on lines of their own; binding the middle step to a name, as above, works too.
 
 ```console
 {{#include ../snippets/handbook/collections.out}}
@@ -40,4 +40,4 @@ The methods you will use most are `map filter fold sum len sort sort_by find any
 {{#include ../snippets/handbook/collections.ssp:loops}}
 ```
 
-Loops over ranges, and `map`, `filter` and `sum` chains over them, run natively without building the list. Pure pipelines over large lists are also split across cores automatically, which [Concurrency](concurrency.md) explains. Next: [Concurrency](concurrency.md).
+Loops over ranges, and `map`, `filter` and `sum` chains over them, run natively without building the list, and so does a `map` or `filter` followed by a `fold` whose function has no effects and captures nothing. Pure pipelines over large lists are also split across cores automatically, which [Concurrency](concurrency.md) explains. Next: [Concurrency](concurrency.md).

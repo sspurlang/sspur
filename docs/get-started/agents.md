@@ -20,7 +20,7 @@ The examples below run on a small codebase. They are checked by CI like the rest
 {{#include ../snippets/get-started/agents/session.out:start}}
 ```
 
-When the source is at most 12,000 bytes, `start` prints all of it. For a larger codebase it prints the counts per kind, then `q pack` of every argument that names a definition and `q find` of the other arguments. So the right first call is `sspur start` followed by the names that appear in the task: on the 1,117-definition benchmark codebase, `start` with six names printed 2,407 tokens, and that was everything the change needed.
+When the source is at most 12,000 bytes, `start` prints all of it. For a larger codebase it prints the counts per kind, then `q pack` of every argument that names a definition and `q find` of the other arguments. So the right first call is `sspur start` followed by the names that appear in the task: on the 1,117-definition benchmark codebase, `start` with six names prints about 1,600 tokens, and that is everything the change needs.
 
 ### Queries
 
@@ -86,7 +86,7 @@ The committed `.mcp.json` looks like this, so everyone on the repository gets th
 }
 ```
 
-The tools are `start`, `spec`, `src`, `query`, `edit` (with `test: true`), `test`, `check`, `run`, `fuzz` and `apply`, and they return the same compact text as the CLI. The server's instructions tell the agent to call `start` first with the names from the task. They do not carry the spec itself, because Claude Code cuts server instructions at 2,048 characters and a silently cut spec is worse than one call. `verify` and `deploy local` are CLI only.
+The tools are `start`, `spec`, `src`, `query`, `edit` (with `test: true`), `test`, `check`, `run`, `fuzz`, `fill`, `suggest` and `apply`, and they return the same compact text as the CLI. The server's instructions tell the agent to call `start` first with the names from the task. They do not carry the spec itself, because Claude Code cuts server instructions at 2,048 characters and a silently cut spec is worse than one call. `verify` and `deploy local` are CLI only.
 
 Claude Desktop starts servers from its own directory and does not read your shell's `PATH`, so give it absolute paths:
 

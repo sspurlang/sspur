@@ -82,3 +82,5 @@ deps = []
 - Exports of `store`, `svc` and `static` definitions; `deploy` of a package with dependencies uses its own stores only.
 - Generic calls with explicit type arguments across packages (`lib.f[T](x)` is `E_PKG_TARGS`; annotate the result instead).
 - `profile sys` and `bare` dependencies of a different profile than the dependent (`E_PKG_PROFILE`).
+
+Update (after 0.8.2): `x.NAME` with an upper-case `NAME` is a field access when `x` is a local or any other value, so records decoded from JSON with upper-case keys (`g.OBJECT_NAME`) can be read directly. `lib.T` and `lib.Ctor` still name the dependency's definitions when `lib` is a dependency and not a local.

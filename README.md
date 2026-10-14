@@ -44,12 +44,12 @@ Most languages are designed around a human at a keyboard. SSPUR starts from a di
 - **Every side effect is in the signature.** `log`, `fail[E]`, `db.read[T]`, `fs`, `proc`, `ffi`, `conc` and user-defined effects are tracked by the checker, so a reviewer, or a deployer, can see exactly what a function is allowed to do.
 - **Contracts are checked, not just documented.** `pre`, `post`, and refinement types (`Int where _ > 0`) are enforced at runtime, proved with Z3 where possible, turned into property tests by the fuzzer, and used by the optimizer to remove checks it can prove unnecessary.
 - **Edits are atomic.** `sspur edit` replaces definitions by name, typechecks the whole codebase, and either applies everything or nothing. One call can edit and run the tests.
-- **Safe and fast by default.** Integer overflow, out-of-bounds access, and contract violations always trap. The native compiler proves most of those checks away, reuses memory in place when values are uniquely owned, fuses pipelines into single loops, vectorizes, and runs pure pipelines across cores.
+- **Safe and fast by default.** Integer overflow, out-of-bounds access, and contract violations always trap. The native compiler proves most of those checks away, reuses memory in place when values are uniquely owned, frees list buffers and strings at their last use, fuses pipelines into single loops, vectorizes, and runs pure pipelines across cores.
 
 ## Features
 
 **Language**
-- Records, sum types, generics, pattern matching (or-patterns, list patterns, `e is p` tests, `p = e else d` guards) checked for exhaustiveness, decision tables, and refinement types
+- Records, sum types, generics, pattern matching (or-patterns, list patterns, `e is p` tests, `while e is p` loops, `p = e else d` guards) checked for exhaustiveness, decision tables, and refinement types
 - Traits with default methods, bounds such as `[T: Ord + Show]`, operators as traits (`impl Add for Money`), and `derive Eq, Ord, Show, Hash, Json`, all resolved statically
 - Lambdas, `_` placeholders, and block lambdas (`xs.map(x => do` and an indented block)
 - Packages: `sspur.toml`, `pub` exports, `use lib.{f, T}`, and a lock that pins each dependency by the hash of its exports
@@ -77,20 +77,23 @@ Most languages are designed around a human at a keyboard. SSPUR starts from a di
 - `kernel fn` GPU kernels: Metal with exact `F32` and identical traps, queued launches, shared memory and barriers, deterministic atomics, 2D grids and inlined helper fns, plus OpenCL C, SPIR-V and PTX through `sspur gpu`
 - `sspur deploy` to generate infrastructure and least-privilege IAM policies from a service's effects, run the service locally, migrate data, hot swap versions, and replay recorded traffic
 - Concurrent editing by many agents with typechecked merges, replica sync, and a shared build cache
+- [SSPUR Pulse](https://utkarshavardhana.github.io/sspur/pulse/), a live dashboard of the world today, fetched, checked and rendered by SSPUR programs every 6 hours ([source](pulse/), [how it works](docs/pulse-how-it-works.md))
 
 ## Performance
 
 Benchmarks run on Apple Silicon against C++ compiled with clang `-O2` with the same safety checks (lower is faster for SSPUR). Full methodology and source are in [`bench/native/`](bench/native/README.md).
 
-| Workload | C++ | SSPUR | SSPUR / C++ |
-|---|---|---|---|
-| Records, lists, persistent trees, float simulation | 0.75s | 0.12s | 0.16x |
-| Pure data pipelines, 10 cores | 2.09s | 0.33s | 0.16x |
-| Strings: build, split, count, sort 2M words | 0.09s | 0.06s | 0.65x |
-| App: generate and parse CSV, aggregate, report | 0.15s | 0.11s | 0.71x |
-| Data-parallel numeric kernels | 0.29s | 0.25s | 0.86x |
-| GPU kernels on Metal: saxpy, reductions, naive and tiled matmul, atomic histogram (C++ single-threaded CPU) | 0.81s | 0.35s | 0.43x |
-| Recursion, loops, primes, gcd | 1.01s | 0.89s | 0.88x |
+| Workload | C++ | SSPUR | SSPUR / C++ | Peak memory, C++ / SSPUR |
+|---|---|---|---|---|
+| Records, lists, persistent trees, float simulation | 0.82s | 0.11s | 0.14x | 70 MB / 11 MB |
+| Pure data pipelines, 10 cores (C++ single-threaded) | 2.11s | 0.31s | 0.15x | 17 MB / 18 MB |
+| GPU kernels on Metal: saxpy, reductions, naive and tiled matmul, atomic histogram (C++ single-threaded CPU) | 0.84s | 0.32s | 0.38x | 54 MB / 92 MB |
+| Data-parallel numeric kernels | 0.33s | 0.16s | 0.48x | 40 MB / 34 MB |
+| Strings: build, split, count, sort 2M words | 0.10s | 0.06s | 0.57x | 22 MB / 24 MB |
+| App: generate and parse CSV, aggregate, report | 0.17s | 0.10s | 0.59x | 24 MB / 17 MB |
+| Recursion, loops, primes, gcd | 1.02s | 0.91s | 0.89x | 1 MB / 3 MB |
+
+Native code frees list buffers and strings at their last use when the compiler can prove they have one owner (ADR 0033) and a collector reclaims the rest, so peak memory is near or below C++ everywhere except `gpu`, which keeps device buffers and the host copies that make CPU reruns exact. An unchanged program runs from the cached native library without parsing or checking it (ADR 0034): hello world takes 9.6 ms, against 7.2 ms for C.
 
 Compiling C++ with `-O3` instead of `-O2` doesn't change these results.
 
@@ -156,8 +159,8 @@ export PATH="$PWD/target/release:$PATH"
 | Tool | Used for |
 |---|---|
 | `z3` | `sspur verify` and SMT-based check elimination |
-| `qemu`, `lld` | building and booting `profile bare` kernels; `lld` also for `--lto` on Linux |
-| libcurl headers (`libcurl4-openssl-dev` on Debian or Ubuntu) | `sspur deploy local` on Linux |
+| `qemu`, `lld` | building and booting `profile bare` kernels; `lld` also for `--lto` on Linux and Windows |
+| libcurl headers (`libcurl4-openssl-dev` on Debian or Ubuntu) | `sspur deploy local` on Linux (macOS has them; on Windows the local host needs none) |
 | Homebrew `llvm` | `sspur gpu --emit spirv` and `--emit ptx` (Apple's clang has neither backend) |
 
 On macOS: `brew install z3 qemu llvm lld`. On Ubuntu: `sudo apt install z3 qemu-system-misc qemu-system-arm lld llvm`. GPU kernels run on Metal on macOS and on the C fallback elsewhere.
@@ -221,7 +224,7 @@ More examples:
 | [`examples/ffi/`](examples/ffi) | Calling libc and libm, and calling SSPUR from C |
 | [`examples/packages/`](examples/packages) | A text library and an app that depends on it by path, with its lockfile |
 | [`examples/bare/`](examples/bare) | Bare-metal hello world on QEMU riscv64 and aarch64 and a Cortex-M4 (MPS2 AN386); [`tests/bare/`](tests/bare) adds a timer interrupt, inline asm, statics shared with an interrupt handler, floats and two cores |
-| [`tests/programs/`](tests/programs) | 15 runnable programs, one per area, covering every language feature and library area |
+| [`tests/programs/`](tests/programs) | 16 runnable programs, one per area, covering every language feature and library area |
 
 ## Using SSPUR with AI agents
 
@@ -257,7 +260,7 @@ The documentation is an mdBook in [`docs/`](docs/), published at [utkarshavardha
 
 ## Project status
 
-SSPUR is at version 0.7 and under active development. The language and tools are usable, but the syntax and standard library may still change between releases.
+SSPUR is at version 0.8 and under active development. The language and tools are usable, but the syntax and standard library may still change between releases.
 
 | Phase | Status |
 |---|---|
@@ -266,7 +269,7 @@ SSPUR is at version 0.7 and under active development. The language and tools are
 | 3. Agent loop: codebase, transactions, queries, MCP, effect handlers | Done |
 | 4. Native compiler, `sys` profile, ownership, concurrency, SMT contracts | Done |
 | 5. Bare-metal profile, SIMD, C interop, LLVM, PGO and LTO, inline asm, embedded | Done: C through clang stays the production path (a direct LLVM IR prototype was measured at 0.98x to 1.04x, ADR 0024), opt-in PGO and explicit LTO, inline asm, a Cortex-M4 firmware target, fixed arrays and static state shared with interrupt handlers; real boards beyond QEMU and a board description format remain |
-| 6. Deployment, migrations, hot swap, replay, GPU kernels, standard library | Mostly done: all 23 C++ library areas covered (locale for six bundled locales); first real AWS deploy verified end to end |
+| 6. Deployment, migrations, hot swap, replay, GPU kernels, standard library | Mostly done: all 23 C++ library areas covered (locale for six bundled locales); first real AWS deploy, canary, backfill and rollback verified end to end (ADR 0016, ADR 0019) |
 | 7. Multi-agent sync, replica sync, global build cache, proven rewrites, cost-driven optimization | Done: 100 concurrent agents with no lost work, per-definition native objects, proven rewrites with `sspur explain-opt`, cost-driven inlining and fusion; an authenticated sync server remains |
 
 See the [roadmap](docs/design/roadmap.md) for details and exit criteria.
@@ -290,7 +293,7 @@ See the [roadmap](docs/design/roadmap.md) for details and exit criteria.
 | `examples/` | Small complete programs: hello, a CRUD service, C interop, packages |
 | `tests/` | Suite programs, the ownership soundness suite, bare-metal, GPU and fuzz regression tests |
 | `bench/` | Benchmarks: `native/` against C++, `agent/` and `eval/` for agents, `incremental/`, `llvm/`, and `tokens/`, the Phase 1 token count |
-| `packaging/` | The Homebrew formula and Scoop manifest templates, the Claude Code plugin (`packaging/claude-code/`), the VS Code extension (`packaging/vscode/`) the LSP4IJ template for JetBrains IDEs (`packaging/jetbrains/`) and the Zed extension with its Tree-sitter grammar (`packaging/zed/`) |
+| `packaging/` | The Homebrew formula and Scoop manifest templates, the Claude Code plugin (`packaging/claude-code/`), the VS Code extension (`packaging/vscode/`), the LSP4IJ template for JetBrains IDEs (`packaging/jetbrains/`) and the Zed extension with its Tree-sitter grammar (`packaging/zed/`) |
 | `tools/` | The corpus differential check, the site link check, and the playground build and its smoke test, all run by CI |
 
 ## Contributing

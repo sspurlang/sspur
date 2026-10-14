@@ -33,3 +33,5 @@ All language features used by the suite and the evaluation corpus:
 
 - Programs need `clang` (or `$CC`) for full speed. Builds are cached by a BLAKE3 hash of the generated C.
 - The next performance step is erasing proven contracts and overflow checks with SMT (Phase 4), which hand-written C++ can't do safely.
+
+Update (0.8.2, ADR 0034): a plain `sspur run` of a program that hasn't changed since its last run skips parsing, checking and code generation and calls the cached library's `main` directly, so native by default no longer costs a check on every run.

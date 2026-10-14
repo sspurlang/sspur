@@ -24,7 +24,7 @@ Everything SSPUR does goes through one binary, `sspur`. This is its usage text, 
 
 ## Execution tiers
 
-`run` and `test` compile to native code through C and clang, cached by content hash under `~/.cache/sspur/native/`. `--interp` uses the reference interpreter and `--native` the Cranelift JIT. If a native build fails, SSPUR prints one warning and falls back to the interpreter; `--strict-native` or `SSPUR_STRICT_NATIVE=1` makes that an error, which is how CI runs.
+`run` and `test` compile to native code through C and clang, cached by content hash under `~/.cache/sspur/native/`. A plain `sspur run FILE` of a program that hasn't changed since its last run skips parsing and checking and calls the cached library's `main` directly (ADR 0034); `--no-cache` takes the normal path. `--interp` uses the reference interpreter and `--native` the Cranelift JIT. If a native build fails, SSPUR prints one warning and falls back to the interpreter; `--strict-native` or `SSPUR_STRICT_NATIVE=1` makes that an error, which is how CI runs.
 
 ## Queries
 

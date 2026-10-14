@@ -76,3 +76,5 @@ Launches are synchronous, about 0.25 ms of submit-and-wait each, and the CPU sha
 ## Not yet
 
 ADR 0023 adds asynchronous launches, threadgroup memory and barriers, atomics, 2D grids and helper calls. Still open from this list: 3D grids; float-to-int conversions; a resident subnormal-free bit on `DevBuf` to drop load checks; running SPIR-V and PTX (no Vulkan or CUDA runtime here) and an ahead-of-time `metallib`; `export-c` with kernels.
+
+Update (0.8.2): `dev_f32((a..b).map(f))` and the other `dev_*` constructors of a mapped range write each value straight into the device buffer, so the setup no longer builds host lists before the upload, and `d.to_list.sum` sums the buffer without building a list. `bench/native/gpu` now peaks at 92 MB instead of 344 MB; the current numbers are in `bench/native/README.md`.

@@ -6,7 +6,7 @@ The handbook teaches the language from the start. Read it in order: each page us
 2. [Everyday Types](everyday-types.md): numbers, strings, lists, options, tuples, refinements and newtypes.
 3. [Functions and Lambdas](functions.md): signatures, examples, method-call syntax, lambdas and block lambdas.
 4. [Records and Sum Types](records-and-sums.md): your own data, immutable updates and generic types.
-5. [Pattern Matching](pattern-matching.md): `match`, guards, exhaustiveness and decision tables.
+5. [Pattern Matching](pattern-matching.md): `match`, guards, or-patterns and list patterns, `e is p` tests and `while e is p` loops, guard clauses, exhaustiveness and decision tables.
 6. [Effects and Errors](effects-and-errors.md): effect rows, `raise` and `catch`, your own effects and handlers.
 7. [Contracts and Tests](contracts-and-tests.md): `pre`, `post`, `where`, tests, examples, `fuzz`, `verify`, filling holes and suggested contracts.
 8. [Generics and Traits](generics-and-traits.md): type parameters, traits, bounds, operators and `derive`.

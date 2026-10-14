@@ -2,7 +2,7 @@
 
 | Directory | What it measures |
 |---|---|
-| [`native/`](native/README.md) | Run time of SSPUR native code against idiomatic C++ with the same safety checks |
+| [`native/`](native/README.md) | Run time and peak memory of SSPUR native code against idiomatic C++ with the same safety checks |
 | [`agent/`](agent/README.md) | Tokens and pass rates of Claude agents doing multi-step feature tasks in SSPUR, Python, TypeScript and Go |
 | [`eval/`](eval/README.md) | Whether a model that has never seen SSPUR writes correct programs from the reference alone; `corpus.jsonl` is also the corpus that `tools/corpus_diff.py` checks |
 | `incremental/` | Timing scripts: `sspur test` after one edit on a large generated codebase, and A/B runs of the native programs |

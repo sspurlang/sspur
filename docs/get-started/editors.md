@@ -9,7 +9,7 @@ Install `sspur` first ([Installation](installation.md)) and check that `sspur --
 The extension in [`packaging/vscode/`](https://github.com/utkarshavardhana/sspur/tree/main/packaging/vscode) adds highlighting, the language server, and the commands *SSPUR: Run File*, *SSPUR: Test File* and *SSPUR: Fill Holes*. Each [release](https://github.com/utkarshavardhana/sspur/releases/latest) has it as `sspur-vX.Y.Z.vsix`, with its checksum in `SHA256SUMS`. Download it and install it, with no account or marketplace:
 
 ```sh
-code --install-extension sspur-v0.7.0.vsix
+code --install-extension sspur-v0.8.2.vsix
 ```
 
 or use *Extensions: Install from VSIX...* in the command palette. To update, install the file from a newer release. It needs `sspur` 0.7 or later.
@@ -18,7 +18,7 @@ or use *Extensions: Install from VSIX...* in the command palette. To update, ins
 
 ## Cursor, Windsurf, VSCodium and other VS Code forks
 
-The same `.vsix` works: run the fork's command line with `--install-extension` (`cursor --install-extension sspur-v0.7.0.vsix`, `codium --install-extension ...`), or use *Extensions: Install from VSIX...* in the command palette.
+The same `.vsix` works: run the fork's command line with `--install-extension` (`cursor --install-extension sspur-v0.8.2.vsix`, `codium --install-extension ...`), or use *Extensions: Install from VSIX...* in the command palette.
 
 ## Neovim
 
@@ -52,7 +52,7 @@ end
 require("lspconfig").sspur.setup({})
 ```
 
-Highlighting comes from the server's semantic tokens, since there is no Tree-sitter grammar for SSPUR yet. Neovim leaves inlay hints off; `vim.lsp.inlay_hint.enable(true)` turns them on.
+Highlighting comes from the server's semantic tokens: the Tree-sitter grammar in `packaging/zed/tree-sitter-sspur/` is only packaged for Zed so far. Neovim leaves inlay hints off; `vim.lsp.inlay_hint.enable(true)` turns them on.
 
 ## Vim
 
@@ -90,7 +90,7 @@ In `~/.config/helix/languages.toml`:
 {{#include ../snippets/get-started/helix-languages.toml}}
 ```
 
-Helix highlights only with Tree-sitter, so until SSPUR has a grammar you get everything but colors.
+Helix highlights only with Tree-sitter, and the SSPUR grammar (in `packaging/zed/tree-sitter-sspur/`) is only packaged for Zed so far, so you get everything but colors.
 
 ## Emacs
 
@@ -153,7 +153,7 @@ If `sspur` isn't on the `PATH` that the IDE sees, edit the server's *Command* to
 
 ## Zed
 
-The extension in [`packaging/zed/`](https://github.com/utkarshavardhana/sspur/tree/main/packaging/zed) adds a Tree-sitter grammar (highlighting, brackets, indentation, and an outline of the `fn`, `type`, `test`, `trait` and `impl` definitions) and starts `sspur lsp`. Each [release](https://github.com/utkarshavardhana/sspur/releases/latest) has it as `sspur-zed-vX.Y.Z.zip`, with its checksum in `SHA256SUMS`, and it installs as a dev extension, with no account or registry:
+The extension in [`packaging/zed/`](https://github.com/utkarshavardhana/sspur/tree/main/packaging/zed) adds a Tree-sitter grammar (highlighting, brackets, indentation, and an outline of the `fn`, `type`, `test`, `trait`, `impl`, `effect`, `rule`, `store` and `svc` definitions) and starts `sspur lsp`. Each [release](https://github.com/utkarshavardhana/sspur/releases/latest) has it as `sspur-zed-vX.Y.Z.zip`, with its checksum in `SHA256SUMS`, and it installs as a dev extension, with no account or registry:
 
 1. Unzip `sspur-zed-vX.Y.Z.zip`.
 2. In Zed, run **zed: install dev extension** from the command palette and pick the unzipped `sspur-zed` folder.

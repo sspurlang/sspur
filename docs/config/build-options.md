@@ -1,6 +1,6 @@
 # Build options
 
-`sspur run` and `sspur test` compile to native code by default: SSPUR emits C, compiles it with `clang`, and caches the result by content hash under `~/.cache/sspur/native/`. The first run of a program pays for the build; later runs load the cached library. Each definition is its own cached object, so after an edit only the changed definitions and their callers are rebuilt. A plain `sspur run file.ssp` of a program that hasn't changed since its last run (same source, same `sspur` binary, same `SSPUR_*`, `CC` and `PATH`) skips parsing, checking and code generation and runs the cached library's `main` directly (ADR 0034); anything else, any flag included, takes the normal path.
+`sspur run` and `sspur test` compile to native code by default: SSPUR emits C, compiles it with `clang`, and caches the result by content hash under `~/.cache/sspur/native/`. The first run of a program pays for the build; later runs load the cached library. Each definition is its own cached object, so after an edit only the changed definitions and their callers are rebuilt. A plain `sspur run file.ssp` of a program that hasn't changed since its last run (same source, same `sspur` binary, same `SSPUR_*`, `CC` and `PATH`) skips parsing, checking and code generation and runs the cached library's `main` directly (ADR 0034). Anything else takes the normal path: any flag, a program inside a package, or one with warnings to print.
 
 ```sspur
 {{#include ../snippets/config/build.ssp}}

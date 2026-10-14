@@ -42,8 +42,11 @@ The site is an mdBook in `docs/` (`docs/book.toml`). Build it and check its link
 
 ```
 mdbook build docs
+PULSE_FIXTURES=pulse/fixtures PULSE_OUT=docs/book/pulse PULSE_DATA=$(mktemp -d) pulse/run.sh
 python3 tools/check_site_links.py docs/book
 ```
+
+The second line builds [SSPUR Pulse](docs/pulse-how-it-works.md) into the site from its bundled samples, as CI does, so the links to `/pulse/` resolve; `pulse/test.sh` runs its tests.
 
 The playground (`docs/play/` and `crates/sspur-wasm`) is built into the site by `tools/build_playground.sh`, after `mdbook build docs`. It needs the `wasm32-unknown-unknown` target and `wasm-bindgen-cli` at the version in `Cargo.lock`, which the script installs if they're missing, and npm for the editor bundle; `wasm-opt` is used when it's on the `PATH`. `node tools/playground_test.mjs` runs every example through the wasm build, and with `SSPUR_BIN` set it compares the results with `sspur run --interp`. To try the page, serve `docs/book` with `python3 -m http.server` and open `/play/`.
 
@@ -70,8 +73,8 @@ Decisions with lasting impact get an ADR in `docs/adr/`. If your change alters b
 ## Releasing
 
 1. Bump `version` in the root `Cargo.toml`, run `cargo build --release` to refresh `Cargo.lock`, and move the `Unreleased` notes in `CHANGELOG.md` under the new version.
-2. Tag and push: `git tag -a v0.2.1 -m v0.2.1 && git push origin v0.2.1`.
-3. `release.yml` builds the four targets, writes `SHA256SUMS`, renders the Homebrew formula with `packaging/homebrew/render.sh VERSION SHA256SUMS`, and creates a draft release with all of them attached.
+2. Tag and push: `git tag -a v0.8.2 -m v0.8.2 && git push origin v0.8.2`.
+3. `release.yml` builds the six targets (macOS, Linux and Windows, each on arm64 and x86_64), packages the VS Code extension, the LSP4IJ template and the Zed extension, writes `SHA256SUMS`, renders the Homebrew formula with `packaging/homebrew/render.sh VERSION SHA256SUMS` and the Scoop manifest with `packaging/scoop/render.sh`, and creates a draft release with all of them attached.
 4. Review the draft and publish it, then copy the rendered `sspur.rb` into `Formula/sspur.rb` of the `utkarshavardhana/homebrew-sspur` tap.
 
 ## License

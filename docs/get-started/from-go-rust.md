@@ -65,6 +65,6 @@ As in Rust, trait calls resolve statically and bounded functions are compiled on
 
 ## Performance and systems code
 
-`sspur run` compiles to native code through C and clang. Bounds, overflow and contract checks are always on, and the compiler proves most of them away. On the [native benchmarks](../design/native-benchmarks.md) it runs in 0.16x to 0.88x the time of C++ with the same checks.
+`sspur run` compiles to native code through C and clang. Bounds, overflow and contract checks are always on, and the compiler proves most of them away. On the [native benchmarks](../design/native-benchmarks.md) it runs in 0.14x to 0.89x the time of C++ with the same checks, with peak memory near or below C++ on every benchmark but the GPU one.
 
 For code that owns file descriptors or raw memory, `profile sys` adds move-only resources with destructors, borrows (`&T`, `&mut T` as parameter types only), `Ptr[T]`, inline asm and fixed arrays. `profile bare` goes further, to kernels and firmware with no runtime. The [bare-metal tutorial](../tutorials/bare-metal.md) builds one, and [C interop](../tutorials/ffi.md) calls C both ways.

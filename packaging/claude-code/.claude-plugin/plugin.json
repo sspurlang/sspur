@@ -1,7 +1,7 @@
 {
   "name": "sspur",
   "version": "0.2.1",
-  "description": "Write and change SSPUR code: the workflow skill (spec, query, one atomic edit with tests, verify, deploy local) and the sspur MCP server.",
+  "description": "Write and change SSPUR code: the workflow skill (start, query, one atomic edit with tests, verify, deploy local) and the sspur MCP server.",
   "author": {
     "name": "Utkarsha Vardhana"
   },

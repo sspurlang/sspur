@@ -57,7 +57,7 @@ Every tool returns compact text, the same as the CLI (`json: true` on `query` an
 | Tool | CLI | What it does |
 |---|---|---|
 | `start` | `sspur start [NAME...]` | Call it first, with `names` from the task (`"a,b,c"`): the compact spec, then the codebase (all of it if small; otherwise counts, `pack` of the named definitions and `find` of other words) |
-| `spec` | `sspur spec [--more|--full]` | The core language spec alone (about 0.7k tokens); `more` the rest of the builtins |
+| `spec` | `sspur spec [--more|--full]` | The core language spec alone (about 0.6k tokens); `more` the rest of the builtins |
 | `src` | `sspur src` | The whole codebase as source; for small codebases |
 | `query` | `sspur q QUERY TARGET` | `list`, `find 'a\|b*'`, `grep TEXT`, `body A,B`, `sig`, `callers`, `callees`, `effects`, `impact`, `pack A,B`, `why`, `holes`, `diag`, `log` |
 | `edit` | `sspur edit --test -e SRC` | Add or replace definitions by name (plus `rename A B`, `remove A` lines), atomically; `test: true` runs every test after it |

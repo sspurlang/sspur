@@ -60,6 +60,10 @@ When only one case matters, `if e is p then a else b` tests it without a full `m
 
 A name a test binds is only usable in the `and ...` after it, and in the `then` branch when the test is an `if` condition. `ok = r is ok(v)` leaves `v` with nothing to use it, so it's the error `E_IS_BINDS`, with the hint to write `ok(_)`. `is` takes everything before it as the value, so `a and b is p` is `E_PARSE_IS`: put the test first (`b is p and a`) or parenthesize it (`a and (b is p)`). A test that always matches gets the warning `W_ARM_UNREACHABLE`, and one that can't match the value written there, like `none is some(_)`, gets `W_NEVER_MATCHES`.
 
+## Loops: `while e is p`
+
+`while e is p` repeats its body as long as `e` matches `p`, with the names `p` binds in scope in the body. `e` is evaluated and matched again before each pass, and the loop stops at the first value that doesn't match. Tests join with `and` as they do after `if`, so `while q.pop_front is some((x, rest)) and x > 0` stops at the end of the list or at the first element that isn't positive. Like any `while`, it performs `div` and its body is `Unit`; a pattern that always matches gets `W_ARM_UNREACHABLE`.
+
 ## Guard clauses: `p = e else b`
 
 A binding can take a pattern that might not match, if it says what happens when it doesn't. The rest of the block runs with the names bound; when the pattern doesn't match, the block stops there and its value is `b`:

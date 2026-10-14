@@ -59,7 +59,7 @@ The whole heap is released when native code returns to the interpreter. `SSPUR_M
 
 ## Coverage
 
-- Every function in `tests/programs/` (18 programs) and in the 199-program evaluation corpus written by other models (247 of 247 functions) compiles natively.
+- Every function in `tests/programs/` (16 programs) and in the 199-program evaluation corpus written by other models (270 of 270 functions) compiles natively.
 - Native results are identical to the interpreter on all of them, plus 300 random inputs per function (`sspur fuzz --differential`).
 
 ## Why it matches or beats C++

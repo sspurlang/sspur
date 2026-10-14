@@ -14,6 +14,8 @@
 
 [Try it in the playground](play/index.html): it checks and runs SSPUR in your browser, with nothing to install.
 
+[SSPUR Pulse](pulse/index.html) is a live dashboard of the world today, fetched, checked and rendered by SSPUR programs every 6 hours. [How it works](pulse-how-it-works.md) describes the programs behind it.
+
 <div class="sspur-cards">
 
 <div class="sspur-card">
@@ -27,6 +29,7 @@
 <li><a href="get-started/agents.html">For AI agents</a></li>
 <li><a href="get-started/installation.html">Installation</a></li>
 <li><a href="play/index.html">Playground</a></li>
+<li><a href="pulse/index.html">SSPUR Pulse</a></li>
 </ul>
 </div>
 
@@ -116,4 +119,4 @@
 
 </div>
 
-SSPUR is at version 0.3 and under active development. The language and tools are usable, but the syntax and standard library can still change between minor releases. It is designed, written and maintained by [Utkarsha Vardhana](https://github.com/utkarshavardhana), and dual-licensed under MIT and Apache 2.0.
+SSPUR is at version 0.8 and under active development. The language and tools are usable, but the syntax and standard library can still change between minor releases. It is designed, written and maintained by [Utkarsha Vardhana](https://github.com/utkarshavardhana), and dual-licensed under MIT and Apache 2.0.

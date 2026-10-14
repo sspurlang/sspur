@@ -10,6 +10,7 @@ The source is in [`pulse/`](https://github.com/utkarshavardhana/sspur/tree/main/
 |---|---|
 | `pulse/lib` | The shared library, a package named `pulse`: HTTP through `curl` with timeouts, retries and a User-Agent, file helpers, time and number formatting, HTML, XML, URL and iCalendar escaping, a small XML extractor, the page shell, chart and map renderers, and the RSS and ICS writers |
 | `pulse/<section>` | One package per board (`reading`, `launches`, `quakes`, `repos`, `hn`, `papers`, `weather`, `holidays`), each a single `main.ssp` that depends on `pulse` |
+| `pulse/orbit` | Fetches the orbital elements of the satellites in orbit for the globe on the launches page |
 | `pulse/overview` | Builds the front page from the eight `api/<section>.json` files, and the 404 page |
 | `pulse/web` | Static assets: the stylesheet, a small vanilla script, the display font, icons, the land outline for maps |
 | `pulse/fixtures` | Captured API responses, so tests and a first run work offline |
@@ -17,7 +18,7 @@ The source is in [`pulse/`](https://github.com/utkarshavardhana/sspur/tree/main/
 
 ## A run
 
-`pulse/run.sh` runs the eight section programs one after another, then the overview. Each section does the same five steps:
+`pulse/run.sh` runs the section programs one after another (the eight boards and `orbit`), then the overview. Each section does the same five steps:
 
 1. Load its last good state from the data directory (`PULSE_DATA`).
 2. Fetch, if it is due. Sections that change slowly wait: the space launch API is called at most once an hour, Hacker News history every six hours, and the holiday calendars once a week.

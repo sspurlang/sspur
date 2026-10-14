@@ -42,3 +42,5 @@ When speed and memory trade off, speed wins. The collector now waits for max(256
 ## Result (vs C++ clang -O2)
 
 `typical` 0.27s to 0.12s: 0.16x idiomatic C++, 0.58x hand-tuned C++. Its tree phase runs at 0.5x hand-tuned C++ with 7 MB of memory, since one node is allocated per insert instead of a path copy. `app` 1.17x to 0.72x, `strings_big` 0.97x to 0.80x, `compute_big` 0.95x to 0.88x (fib and gcd beat C++ once calls stop carrying error codes).
+
+Update (0.8.2): ADR 0033 adds frees at last use for list buffers and strings with one owner, in front of the collector, and `xs.map(f).fold(init, g)` and `xs.filter(p).fold(init, g)` with an effect-free `g` that captures nothing now fuse into one loop as well. `text.lower.words.counts` counts while it scans, as described above. The current numbers are in `bench/native/README.md`.
