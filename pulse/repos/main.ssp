@@ -65,7 +65,7 @@ fn add_snap(snaps: List[Snap], t: Str, repos: List[Repo], keep: List[Str]) -> Li
 fn prune(s: Snap, ks: Set[Str]) -> Snap
 = Snap{t: s.t, stars: s.stars.items.filter(p => ks.has(p.0)).fold(empty_map(), (m, p) => m.put(p.0, p.1))}
 
-fn fetch(cx: Ctx, prev: Opt[State], token: Str) -> Res[State, Str] ! proc, fs, time, log
+fn fetch(cx: Ctx, prev: Opt[State], token: Str) -> Res[State, Str] ! net, fs, time, log
 = do
   week = pulse.day(cx.now.add(days(-7)))
   month = pulse.day(cx.now.add(days(-30)))
@@ -158,7 +158,7 @@ fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
   pulse.publish(cx, "api/repos.json", json.encode(Api{meta: pulse.meta(cx, updated, g.stale, h), rising: shown, snapshots: s.snaps.len}))
   pulse.publish(cx, "og/repos.svg", pulse.og_svg(cx, "Fastest rising repos", "+{compact(top.vel)}/day", top.repo.name))
 
-fn main() -> Unit ! log, fs, proc, env, time
+fn main() -> Unit ! log, fs, net, env, time
 = do
   cx = pulse.ctx("repos")
   token = env_var("GITHUB_TOKEN").or("")

@@ -82,7 +82,7 @@ fn parse(s: Str, now: Time) -> Res[List[Sat], Str]
     ss = gs.map(g => sat(g, now)).filter(_.is_some).map(_.get)
     if ss.len < 20 then err("too few satellites") else if ss.len * 10 < gs.len * 9 then err("too many bad element sets: {gs.len - ss.len} of {gs.len}") else ok(ss)
 
-fn fetch(cx: Ctx) -> Res[State, Str] ! proc, fs, time, log
+fn fetch(cx: Ctx) -> Res[State, Str] ! net, fs, time, log
 = do
   ok(ss) = pulse.get(cx, "active.json", "https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=json", []).map(s => parse(s, pulse.stamp(cx))).or(err("CelesTrak fetch failed")) else err("CelesTrak unavailable")
   newest = ss.map(s => s.yy.to_f64 * 1000.0 + s.day).max.or(0.0)
@@ -119,7 +119,7 @@ fn publish(cx: Ctx, st: State) -> Index ! fs, log
   pulse.publish(cx, "api/orbit.json", json.encode(idx))
   idx
 
-fn main() -> Unit ! log, fs, proc, env, time
+fn main() -> Unit ! log, fs, net, env, time
 = do
   cx = pulse.ctx("orbit")
   prev = load(cx)

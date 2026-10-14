@@ -110,7 +110,7 @@ fn parse_hot(s: Str) -> Res[List[Hot], Str]
 fn pause(cx: Ctx) -> Unit ! time
 = if cx.fixtures == "" then sleep_ms(3500)
 
-fn backfill(cx: Ctx, old: List[DayCount], latest: Str) -> List[DayCount] ! proc, fs, time, log
+fn backfill(cx: Ctx, old: List[DayCount], latest: Str) -> List[DayCount] ! net, fs, time, log
 = do
   var got = []
   for d in missing_days(old.map(_.date), latest, cx.backfill)
@@ -120,7 +120,7 @@ fn backfill(cx: Ctx, old: List[DayCount], latest: Str) -> List[DayCount] ! proc,
     else if r is ok(xml) and total_results(xml) == some(0) then got := got.push(DayCount{date: d, total: 0, counts: (0..8).map(i => 0), est: false})
   merge_days(old, got)
 
-fn fetch(cx: Ctx, prev: Opt[State]) -> Res[State, Str] ! proc, fs, time, log
+fn fetch(cx: Ctx, prev: Opt[State]) -> Res[State, Str] ! net, fs, time, log
 = do
   ok(ps) = pulse.get(cx, "latest.xml", arxiv_url(main_query(), 200), []).map(parse_feed).or(err("arXiv fetch failed")) else err("arXiv unavailable")
   if ps.len < 10 then err("too few papers") else do
@@ -208,7 +208,7 @@ fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
   pulse.publish(cx, "feeds/papers.xml", pulse.rss(cx, "SSPUR Pulse: AI papers of the day", "The newest arXiv papers in cs.AI, cs.CL and cs.LG.", items))
   pulse.publish(cx, "og/papers.svg", pulse.og_svg(cx, "AI papers of the day", h.value, h.label))
 
-fn main() -> Unit ! log, fs, proc, env, time
+fn main() -> Unit ! log, fs, net, env, time
 = do
   cx = pulse.ctx("papers")
   prev = load(cx)

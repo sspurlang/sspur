@@ -48,7 +48,7 @@ fn parse(cs: List[City], s: Str) -> Res[List[Wx], Str]
     ws = cs.zip(ls).map(p => wx(p.0, p.1)).filter(_.is_some).map(_.get).filter(valid)
     if ls.len > cs.len then err("more locations than cities") else if ws.len < 20 or ws.len * 10 < ls.len * 9 then err("too few valid cities: {ws.len} of {ls.len}") else ok(ws)
 
-fn fetch(cx: Ctx) -> Res[State, Str] ! proc, fs, time, log
+fn fetch(cx: Ctx) -> Res[State, Str] ! net, fs, time, log
 = do
   cs = cities()
   ok(body) = pulse.get(cx, "forecast.json", api_url(cs), []) else err("forecast unavailable")
@@ -213,7 +213,7 @@ fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
   pulse.publish(cx, "api/weather.json", json.encode(Api{meta: pulse.meta(cx, updated, g.stale, h), cities: ws}))
   pulse.publish(cx, "og/weather.svg", pulse.og_svg(cx, "World weather, right now", deg(hot.temp), "hottest on the board, in {hot.c.name}"))
 
-fn main() -> Unit ! log, fs, proc, env, time
+fn main() -> Unit ! log, fs, net, env, time
 = do
   cx = pulse.ctx("weather")
   prev = load(cx)

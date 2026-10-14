@@ -1,4 +1,4 @@
-// SSPUR Pulse shared library: context, HTTP through curl, files, time,
+// SSPUR Pulse shared library: context, HTTP, files, time,
 // formatting, escaping, page shell, charts, maps, RSS and ICS writers.
 
 pub type Ctx = {sec: Str, root: Str, data: Str, out: Str, web: Str, fixtures: Str, record: Str, now: Time, base: Str, backfill: Int, force: Bool, skip: Bool}
@@ -14,31 +14,28 @@ pub fn ua() -> Str
 
 // HTTP
 
-fn status_split(out: Str) -> (Int, Str)
-= match out.split("\n").reverse
-  | [code, ..rest] => (code.trim.to_int.or(0), rest.reverse.join("\n"))
-  | [] => (0, "")
+fn header_pair(h: Str) -> (Str, Str)
+= match h.split_once(":")
+  | some((n, v)) => (n.trim, v.trim)
+  | none => (h.trim, "")
 
-fn curl_once(url: Str, headers: List[Str]) -> Res[Str, Str] ! proc
+fn http_once(url: Str, headers: List[Str]) -> Res[Str, Str] ! net
 = do
-  hs = headers.flat_map(h => ["-H", h])
-  args = ["-sS", "-L", "--compressed", "--connect-timeout", "10", "--max-time", "60", "-A", ua()] + hs + ["-w", "\n%\{http_code}", url]
-  match run_cmd("curl", args, "")
-  | err(e) => err("curl: {e}")
-  | ok((c, out, e)) => do
-    (code, body) = status_split(out)
-    if c != 0 then err("curl exit {c}: {e.trim}") else if code >= 200 and code < 300 then ok(body) else err("HTTP {code}")
+  r = http.req("GET", url) with headers := [("user-agent", ua())] + headers.map(header_pair), timeout_ms := 60000
+  match http.send(r)
+  | err(e) => err(e.str)
+  | ok(resp) => if resp.status >= 200 and resp.status < 300 then ok(resp.body) else err("HTTP {resp.status}")
 
 fn retryable(e: Str) -> Bool
 = not (e.starts_with("HTTP 4") and e != "HTTP 429")
 
-pub fn get(cx: Ctx, name: Str, url: Str, headers: List[Str]) -> Res[Str, Str] ! proc, fs, time, log
+pub fn get(cx: Ctx, name: Str, url: Str, headers: List[Str]) -> Res[Str, Str] ! net, fs, time, log
 = if cx.fixtures != "" then read_file("{cx.fixtures}/{cx.sec}/{name}") else do
-  var r = curl_once(url, headers)
+  var r = http_once(url, headers)
   for t in 1..3
     if r is err(e) and retryable(e) then do
       sleep_ms(2000 * t * t)
-      r := curl_once(url, headers)
+      r := http_once(url, headers)
   match r
   | ok(body) => do
     if cx.record != "" then save("{cx.record}/{cx.sec}/{name}", body)

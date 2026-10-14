@@ -90,7 +90,7 @@ test ics_parse = parse_ics(pulse.read("../fixtures/holidays/gcal-IN.ics").or("")
 test ics_unfold = parse_ics("BEGIN:VCALENDAR\nBEGIN:VEVENT\nDTSTART;VALUE=DATE:20260126\nSUMMARY:Republic\n  Day\nDESCRIPTION:Public holiday\nEND:VEVENT\nEND:VCALENDAR\n", "IN", [2026]) == ok([Hol{date: "2026-01-26", cc: "IN", name: "Republic Day", local: "", global: true, types: ["Public"], regions: 0}])
 test ics_rejects = parse_ics("<html>", "IN", [2026]).is_err
 
-fn fetch(cx: Ctx, prev: Opt[State]) -> Res[State, Str] ! proc, fs, time, log
+fn fetch(cx: Ctx, prev: Opt[State]) -> Res[State, Str] ! net, fs, time, log
 = do
   api = "https://date.nager.at/api/v3/"
   ok(body) = pulse.get(cx, "countries.json", api + "AvailableCountries", []) else err("country list unavailable")
@@ -263,7 +263,7 @@ fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
     pulse.publish(cx, "cal/holidays/{c.cc}.ics", pulse.ics("Public holidays in {c.name} (SSPUR Pulse)", evs, cx.now))
   pulse.publish(cx, "og/holidays.svg", pulse.og_svg(cx, "Public holidays today", "{n_today}", h.label))
 
-fn main() -> Unit ! log, fs, proc, env, time
+fn main() -> Unit ! log, fs, net, env, time
 = do
   cx = pulse.ctx("holidays")
   prev = load(cx)

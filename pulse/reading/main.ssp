@@ -39,7 +39,7 @@ fn parse(s: Str) -> Res[DayTop, Str]
 fn top_url(t: Time) -> Str
 = "https://wikimedia.org/api/rest_v1/metrics/pageviews/top/en.wikipedia/all-access/{t.format("%Y/%m/%d")}"
 
-fn fetch_back(cx: Ctx, k: Int) -> Res[DayTop, Str] ! proc, fs, time, log
+fn fetch_back(cx: Ctx, k: Int) -> Res[DayTop, Str] ! net, fs, time, log
 = pulse.get(cx, "top-{k}.json", top_url(cx.now.add(days(0 - k))), []).map(parse).or(err("fetch failed"))
 
 fn days_back(date: Str, n: Int) -> Str
@@ -48,7 +48,7 @@ fn days_back(date: Str, n: Int) -> Str
 fn merge(old: List[DayTop], new: List[DayTop]) -> List[DayTop]
 = cap((old.filter(d => not new.any(_.date == d.date)) + new).sort_by(_.date), 30)
 
-fn fetch(cx: Ctx, prev: Opt[State]) -> Res[State, Str] ! proc, fs, time, log
+fn fetch(cx: Ctx, prev: Opt[State]) -> Res[State, Str] ! net, fs, time, log
 = do
   old = prev.map(_.history).or([])
   first = fetch_back(cx, 1)
@@ -186,7 +186,7 @@ fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
   pulse.publish(cx, "feeds/reading.xml", pulse.rss(cx, "SSPUR Pulse: what the world is reading", "The 20 most read English Wikipedia articles of each day.", items))
   pulse.publish(cx, "og/reading.svg", pulse.og_svg(cx, "What the world is reading", compact(top.views.to_f64), "views for {top.title}"))
 
-fn main() -> Unit ! log, fs, proc, env, time
+fn main() -> Unit ! log, fs, net, env, time
 = do
   cx = pulse.ctx("reading")
   prev = load(cx)

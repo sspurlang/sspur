@@ -51,7 +51,7 @@ fn merge_days(old: List[Day], new: List[Day]) -> List[Day]
 fn near_india(q: Quake) -> Bool
 = (q.lat >= 5.0 and q.lat <= 39.0 and q.lon >= 60.0 and q.lon <= 98.0) or ["India", "Nepal", "Pakistan", "Bangladesh", "Bhutan", "Sri Lanka", "Myanmar", "Afghanistan", "Maldives"].any(n => q.place.contains(n))
 
-fn fetch(cx: Ctx, prev: Opt[State]) -> Res[State, Str] ! proc, fs, time, log
+fn fetch(cx: Ctx, prev: Opt[State]) -> Res[State, Str] ! net, fs, time, log
 = do
   base = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/"
   ok(qs) = pulse.get(cx, "all_day.json", base + "all_day.geojson", []).map(parse).or(err("fetch failed")) else err("all_day unavailable")
@@ -131,7 +131,7 @@ fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
   pulse.publish(cx, "feeds/quakes.xml", pulse.rss(cx, "SSPUR Pulse: earthquakes M4.5+", "Earthquakes of magnitude 4.5 and up, and significant ones, from USGS.", feed))
   pulse.publish(cx, "og/quakes.svg", pulse.og_svg(cx, "Earthquakes, last 24 hours", thousands(qs.len), "strongest M{f1(top.mag)}, {top.place}"))
 
-fn main() -> Unit ! log, fs, proc, env, time
+fn main() -> Unit ! log, fs, net, env, time
 = do
   cx = pulse.ctx("quakes")
   prev = load(cx)

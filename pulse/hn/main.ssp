@@ -41,13 +41,13 @@ fn window_url(start: Time) -> Str
 fn eras_of() -> List[(Str, Int)]
 = [("5y", 5), ("10y", 10), ("15y", 15)]
 
-fn fetch_era(cx: Ctx, key: Str, years: Int) -> Res[Era, Str] ! proc, fs, time, log
+fn fetch_era(cx: Ctx, key: Str, years: Int) -> Res[Era, Str] ! net, fs, time, log
 = do
   start = same_day(cx.now.date, years)
   ok(xs) = pulse.get(cx, "past-{years}.json", window_url(start), []).map(s => parse(s, 10)).or(err("fetch failed")) else err("era {years} failed")
   ok(Era{key, label: "{years} years ago", years, date: pulse.day(start), stories: xs})
 
-fn fetch(cx: Ctx, prev: Opt[State]) -> Res[State, Str] ! proc, fs, time, log
+fn fetch(cx: Ctx, prev: Opt[State]) -> Res[State, Str] ! net, fs, time, log
 = do
   target = pulse.day(same_day(cx.now.date, 5))
   old = prev.map(_.eras).or([])
@@ -139,7 +139,7 @@ fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
   pulse.publish(cx, "api/hn.json", json.encode(Api{meta: pulse.meta(cx, updated, g.stale, h), eras, today: s.today}))
   pulse.publish(cx, "og/hn.svg", pulse.og_svg(cx, "Hacker News, {e5.years} years ago today", "{thousands(t5.points)} points", t5.title))
 
-fn main() -> Unit ! log, fs, proc, env, time
+fn main() -> Unit ! log, fs, net, env, time
 = do
   cx = pulse.ctx("hn")
   prev = load(cx)

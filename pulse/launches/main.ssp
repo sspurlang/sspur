@@ -94,7 +94,7 @@ fn country(cc: Str) -> Str
   | "" => "Somewhere on Earth"
   | other => other
 
-fn fetch(cx: Ctx) -> Res[State, Str] ! proc, fs, time, log
+fn fetch(cx: Ctx) -> Res[State, Str] ! net, fs, time, log
 = do
   ok(body) = pulse.get(cx, "upcoming.json", "https://ll.thespacedevs.com/2.2.0/launch/upcoming/?limit=40&mode=normal", []) else err("launch list unavailable")
   ok(ls) = parse(body) else err("launch list did not parse")
@@ -260,7 +260,7 @@ fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
   pulse.publish(cx, "cal/launches.ics", pulse.ics("Rocket launches (SSPUR Pulse)", ics_events(ls), cx.now))
   pulse.publish(cx, "og/launches.svg", pulse.og_svg(cx, "Space launches this week", "{week}", nx.map(l => "next: {title(l)}").or("launches in the next 7 days")))
 
-fn main() -> Unit ! log, fs, proc, env, time
+fn main() -> Unit ! log, fs, net, env, time
 = do
   cx = pulse.ctx("launches")
   prev = load(cx)
