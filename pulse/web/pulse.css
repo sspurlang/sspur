@@ -267,3 +267,4 @@ html:not(.js) .orb-wait{position:static;color:var(--ink3)}
 .secrets button{font:inherit;font-size:.88rem;color:var(--ink3);background:none;border:0;min-height:44px;padding:0 10px;border-radius:12px;cursor:pointer;text-align:left}
 .secrets button:hover{color:var(--ink);background:var(--card2)}
 html:not(.js) .secrets{display:none}
+details.obs{margin-top:14px}details.obs summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-weight:600;color:var(--acc)}

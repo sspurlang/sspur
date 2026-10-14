@@ -50,6 +50,46 @@ fn match_list(r: Res[List[Hol], Str]) -> Opt[List[Hol]]
   | ok(l) => some(l)
   | err(_) => none
 
+// Countries Nager.Date does not cover come from Google's public holiday calendars (ICS).
+fn google_cals() -> List[(Str, Str, Str)]
+= [("IN", "India", "en.indian"), ("PK", "Pakistan", "en.pk"), ("LK", "Sri Lanka", "en.lk"), ("NP", "Nepal", "en.np"), ("IR", "Iran", "en.ir"), ("SA", "Saudi Arabia", "en.saudiarabian"), ("AE", "United Arab Emirates", "en.ae"), ("TH", "Thailand", "en.th"), ("MY", "Malaysia", "en.malaysia"), ("TW", "Taiwan", "en.taiwan"), ("IL", "Israel", "en.jewish"), ("AF", "Afghanistan", "en.af"), ("MM", "Myanmar", "en.mm"), ("UZ", "Uzbekistan", "en.uz")]
+
+fn gcal_url(id: Str) -> Str
+= "https://calendar.google.com/calendar/ical/{id}%23holiday%40group.v.calendar.google.com/public/basic.ics"
+
+// Long ICS lines continue on the next line after a leading space.
+fn unfold(s: Str) -> List[Str]
+= s.replace(pulse.cr(), "").replace("\n ", "").replace("\n\t", "").split("\n")
+
+fn ics_value(lines: List[Str], key: Str) -> Str
+= lines.find(l => l.starts_with(key + ":") or l.starts_with(key + ";")).map(l => l.split_once(":").map(_.1).or("")).or("")
+
+fn ics_text(v: Str) -> Str
+= v.replace("\\n", " ").replace("\\,", ",").replace("\\;", ";").replace("\\\\", "\\").trim
+
+fn ics_holiday(cc: Str, block: List[Str]) -> Opt[Hol]
+= do
+  d = ics_value(block, "DTSTART")
+  name = ics_text(ics_value(block, "SUMMARY"))
+  desc = ics_text(ics_value(block, "DESCRIPTION"))
+  date = "{d.take(4)}-{d.drop(4).take(2)}-{d.drop(6).take(2)}"
+  if d.len >= 8 and parse_time(date).is_some and not name.is_empty then some(Hol{date, cc, name, local: "", global: true, types: if desc.starts_with("Public holiday") then ["Public"] else ["Observance"], regions: 0}) else none
+
+pub fn parse_ics(s: Str, cc: Str, years: List[Int]) -> Res[List[Hol], Str]
+= do
+  lines = unfold(s)
+  if not lines.any(_.starts_with("BEGIN:VCALENDAR")) then err("not a calendar") else do
+    blocks = lines.join("\n").split("BEGIN:VEVENT").drop(1).map(b => b.split("END:VEVENT").first.or("").split("\n"))
+    hs = blocks.map(b => ics_holiday(cc, b)).filter(_.is_some).map(_.get)
+    if hs.len * 10 < blocks.len * 9 then err("too many unreadable events") else ok(pulse.uniq_by(hs.filter(h => years.any(y => h.date.starts_with("{y}-"))), h => "{h.date}|{h.name}").sort_by(_.date))
+
+fn public(h: Hol) -> Bool
+= not h.types.contains("Observance")
+
+test ics_parse = parse_ics(pulse.read("../fixtures/holidays/gcal-IN.ics").or(""), "IN", [2026, 2027]) is ok(hs) and hs.any(h => h.name == "Diwali" or h.name.contains("Diwali")) and hs.any(public) and hs.any(h => not public(h)) and hs.all(h => h.cc == "IN" and h.date.len == 10)
+test ics_unfold = parse_ics("BEGIN:VCALENDAR\nBEGIN:VEVENT\nDTSTART;VALUE=DATE:20260126\nSUMMARY:Republic\n  Day\nDESCRIPTION:Public holiday\nEND:VEVENT\nEND:VCALENDAR\n", "IN", [2026]) == ok([Hol{date: "2026-01-26", cc: "IN", name: "Republic Day", local: "", global: true, types: ["Public"], regions: 0}])
+test ics_rejects = parse_ics("<html>", "IN", [2026]).is_err
+
 fn fetch(cx: Ctx, prev: Opt[State]) -> Res[State, Str] ! proc, fs, time, log
 = do
   api = "https://date.nager.at/api/v3/"
@@ -68,7 +108,17 @@ fn fetch(cx: Ctx, prev: Opt[State]) -> Res[State, Str] ! proc, fs, time, log
       | none => do
         failed := failed + 1
         hs := hs + old.filter(h => h.cc == c.cc and h.date.starts_with("{y}-"))
-  if failed * 5 > cs.len * 2 then err("{failed} holiday lists failed") else if hs.is_empty then err("no holidays") else ok(State{updated: pulse.stamp(cx).iso, fetched: day(pulse.stamp(cx)), years: [yr, yr + 1], countries: cs, holidays: hs.sort_by(h => (h.date, h.cc))})
+  var gcs = []
+  for (cc, name, id) in google_cals().filter(g => not cs.any(_.cc == g.0))
+    if cx.fixtures == "" then sleep_ms(300)
+    got = pulse.get(cx, "gcal-{cc}.ics", gcal_url(id), []).map(b => parse_ics(b, cc, [yr, yr + 1])).or(err("fetch failed"))
+    if got is ok(list) and not list.is_empty then do
+      hs := hs + list
+      gcs := gcs.push(Country{cc, name})
+    else if old.any(_.cc == cc) then do
+      hs := hs + old.filter(_.cc == cc)
+      gcs := gcs.push(Country{cc, name})
+  if failed * 5 > cs.len * 2 then err("{failed} holiday lists failed") else if hs.is_empty then err("no holidays") else ok(State{updated: pulse.stamp(cx).iso, fetched: day(pulse.stamp(cx)), years: [yr, yr + 1], countries: (cs + gcs).sort_by(_.name), holidays: hs.sort_by(h => (h.date, h.cc))})
 
 fn decode_state(s: Str) -> Opt[State]
 = match json.decode[State](s)
@@ -163,7 +213,7 @@ fn months_group(hs: List[Hol], year: Int) -> Group
 fn ics_for(h: Hol) -> Ev
 = do
   t = pulse.day_time(h.date)
-  Ev{uid: uid(h, h.date, h.cc), start: t, end: t.add(days(1)), all_day: true, summary: if h.local != "" and h.local != h.name then "{h.name} ({h.local})" else h.name, desc: "{if h.global then "Nationwide" else "Regional, in {plural(h.regions, "region")}"}. {h.types.join(", ")}.", loc: "", url: ""}
+  Ev{uid: uid(h, h.date, h.cc), start: t, end: t.add(days(1)), all_day: true, summary: "{if h.local != "" and h.local != h.name then "{h.name} ({h.local})" else h.name}{if public(h) then "" else " (observance)"}", desc: "{if h.global then "Nationwide" else "Regional, in {plural(h.regions, "region")}"}. {h.types.join(", ")}.", loc: "", url: ""}
 
 fn headline(cs: List[Country], hs: List[Hol], today: Str) -> Headline
 = do
@@ -179,9 +229,11 @@ fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
   pre g.value.holidays.all(valid)
 = do
   s = g.value
-  cs = s.countries
-  hs = s.holidays
   today = day(cx.now)
+  cs = s.countries
+  every = s.holidays
+  hs = every.filter(public)
+  obs = upcoming(every.filter(h => not public(h)), today, 14)
   year = cx.now.year
   updated = parse_time(s.updated).or(cx.now)
   td = on_day(hs, today).sort_by(h => country_name(cs, h.cc))
@@ -193,7 +245,7 @@ fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
   mg = months_group(hs, year)
   stats = "<div class='stats'>{pulse.stat("{n_today}", "countries on holiday today", "{n_today}")}{pulse.stat(thousands(week), "country holidays in the next 7 days", "{week}")}{pulse.stat("{with_data.len}", "countries tracked", "{with_data.len}")}{busiest.map(p => pulse.stat(short_date(pulse.day_time(p.0)), "busiest day this year, {country_word(p.1)} off", "")).or("")}</div>"
   todayc = "<div class='card'><div class='sh'><h2>On holiday today</h2><p>{short_date(cx.now)}, by the UTC calendar.</p></div>{if td.is_empty then "<p class='muted'>No country has a public holiday today. {up.find(t => t.0 != today).map(t => "Next up: {esc(t.1)}, {when_word(offset(today, t.0))}.").or("")}</p>" else "<ol class='rows'>{td.enumerate.map(p => today_row(cs, p.0, p.1)).join("")}</ol>"}</div>"
-  upc = "<div class='card span2'><div class='sh'><h2>Coming up</h2><p>The next two weeks, around the world.</p></div>{pulse.chips("when", "Show holidays", "#hup", [("today", "Today"), ("d7", "Next 7 days"), ("all", "Next 14 days")])}<ol class='rows clamp' id='hup' style='margin-top:10px'>{up.take(60).map(t => up_row(cs, today, t)).join("")}<li class='empty muted' hidden>Nothing in this window.</li></ol>{pulse.more("hup")}</div>"
+  upc = "<div class='card span2'><div class='sh'><h2>Coming up</h2><p>The next two weeks, around the world.</p></div>{pulse.chips("when", "Show holidays", "#hup", [("today", "Today"), ("d7", "Next 7 days"), ("all", "Next 14 days")])}<ol class='rows clamp' id='hup' style='margin-top:10px'>{up.take(60).map(t => up_row(cs, today, t)).join("")}<li class='empty muted' hidden>Nothing in this window.</li></ol>{pulse.more("hup")}{if obs.is_empty then "" else "<details class='obs'><summary>Observances in the next two weeks ({obs.len})</summary><p class='muted small'>Days marked in some countries that are not public holidays, from Google's holiday calendars.</p><ol class='rows'>{obs.take(40).map(t => up_row(cs, today, t)).join("")}</ol></details>"}</div>"
   picker = pulse.picker("cc", "Highlight", "#hmap", "hl", [("all", "Every country")] + with_data.map(c => (c.cc, c.name)))
   calc = "<div class='card span2'><div class='sh'><h2>{year} at a glance</h2><p>Darker days have more countries on holiday. Pick a country to see its days.</p></div><div class='ctlrow'>{picker}</div>{heatmap(cs, hs, year, today)}<p class='legend' aria-hidden='true'>Fewer <i class='hc h0'></i><i class='hc h1'></i><i class='hc h2'></i><i class='hc h3'></i><i class='hc h4'></i> more</p></div>"
   chart = pulse.chart_block(mg, "Holidays by month, {year}", "Every country's public holidays added up, or only the nationwide ones.")
@@ -202,12 +254,12 @@ fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
   h = headline(cs, hs, today)
   h1 = if n_today == 0 then "Nobody has a public holiday <em>today</em>" else "<em class='num' data-count='{n_today}'>{n_today}</em> {if n_today == 1 then "country is" else "countries are"} on holiday today"
   lede = if td.is_empty then up.find(t => t.0 != today).map(t => "Next up: {esc(t.1)} in {esc(clip(names(cs, t.2), 90))}, {when_word(offset(today, t.0))}.").or("") else "Today is {esc(clip(td.map(h => "{h.name} in {country_name(cs, h.cc)}").unique.join(", "), 220))}."
-  p = Page{title: "Public holidays worldwide", desc: "{country_word(n_today)} on a public holiday today, and what is coming up in {with_data.len} countries. From Nager.Date, computed by SSPUR.", h1, lede, body, updated, stale: g.stale, note: g.note, snippet: pulse.snippet(cx, "upcoming"), data: pulse.charts_json([mg])}
+  p = Page{title: "Public holidays worldwide", desc: "{country_word(n_today)} on a public holiday today, and what is coming up in {with_data.len} countries. From Nager.Date and Google's public holiday calendars, computed by SSPUR.", h1, lede, body, updated, stale: g.stale, note: g.note, snippet: pulse.snippet(cx, "upcoming"), data: pulse.charts_json([mg])}
   pulse.publish(cx, "holidays/index.html", pulse.page(cx, p))
   api = Api{meta: pulse.meta(cx, updated, g.stale, h), today: td, upcoming: upcoming(hs, today, 30).flat_map(t => t.2), countries: with_data, per_month: per_month(hs, year, false)}
   pulse.publish(cx, "api/holidays.json", json.encode(api))
   for c in with_data
-    evs = hs.filter(_.cc == c.cc).map(ics_for)
+    evs = every.filter(_.cc == c.cc).map(ics_for)
     pulse.publish(cx, "cal/holidays/{c.cc}.ics", pulse.ics("Public holidays in {c.name} (SSPUR Pulse)", evs, cx.now))
   pulse.publish(cx, "og/holidays.svg", pulse.og_svg(cx, "Public holidays today", "{n_today}", h.label))
 
