@@ -230,7 +230,7 @@ fn header_names(src: &str) -> Arc<HeaderNames> {
     };
     let text = includes.join("\n") + "\n";
     let cc = super::flags::cc();
-    let key = blake3::hash(format!("{cc}\n{}\n{text}", super::win::on()).as_bytes()).to_hex()[..24].to_string();
+    let key = blake3::hash(format!("names 2\n{cc}\n{}\n{text}", super::win::on()).as_bytes()).to_hex()[..24].to_string();
     static MEMO: Mutex<Option<(String, Arc<HeaderNames>)>> = Mutex::new(None);
     if let Some((k, h)) = MEMO.lock().unwrap().as_ref()
         && *k == key
@@ -263,16 +263,23 @@ fn header_names(src: &str) -> Arc<HeaderNames> {
     names
 }
 
-fn scan_headers(cc: &str, text: &str) -> Option<HeaderNames> {
+fn preprocess(cc: &str, mode: &str, text: &str) -> Option<String> {
     use std::io::Write as _;
-    let mut child = std::process::Command::new(cc).args(["-E", "-dD", "-w", "-x", "c", "-"]).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null()).spawn().ok()?;
+    let mut child = std::process::Command::new(cc).args(["-E", mode, "-w", "-x", "c", "-"]).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null()).spawn().ok()?;
     child.stdin.take()?.write_all(text.as_bytes()).ok()?;
     let out = child.wait_with_output().ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let pre = String::from_utf8_lossy(&out.stdout);
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+fn scan_headers(cc: &str, text: &str) -> Option<HeaderNames> {
+    let pre = preprocess(cc, "-dD", text)?;
     let mut n = HeaderNames::default();
+    // -dD leaves out the compiler's own macros, such as `linux` and `unix` in GNU mode.
+    for line in preprocess(cc, "-dM", text)?.lines() {
+        if let Some(d) = line.trim_start().strip_prefix("#define") {
+            macro_ids(d, &mut n.macros);
+        }
+    }
     let mut code = String::with_capacity(pre.len());
     for line in pre.lines() {
         let t = line.trim_start();
