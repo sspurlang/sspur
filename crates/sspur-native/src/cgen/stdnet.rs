@@ -236,3 +236,36 @@ ss_net_api.reply(c, r_.v.f0, oh_, r_.v.f1.len, r_.v.f2.p, r_.v.f2.len); free(oh_
         Ok(name)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn compiles(cc: &[&str], src: &str, tag: &str) {
+        let path = std::env::temp_dir().join(format!("sspur_net_glue_{}_{tag}.c", std::process::id()));
+        std::fs::write(&path, src).unwrap();
+        let obj = path.with_extension("o");
+        let out = Command::new(cc[0]).args(&cc[1..]).args(["-c", "-w", "-Werror=implicit-function-declaration", "-Werror=implicit-int", "-o"]).arg(&obj).arg(&path).output().unwrap();
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&obj);
+        assert!(out.status.success(), "{}: {}", cc.join(" "), String::from_utf8_lossy(&out.stderr));
+    }
+
+    #[test]
+    fn network_glue_compiles_here_and_for_windows() {
+        let body = format!("static const char ss_net_path[] = \"libsspur_net.so\";\n{GLUE}");
+        let cc = flags::cc();
+        if Command::new(&cc).arg("--version").output().is_ok() && !cfg!(windows) {
+            compiles(&[&cc], &format!("{PRELUDE}{body}"), "host");
+        }
+        if cfg!(windows) || Command::new("zig").arg("version").output().is_err() {
+            return;
+        }
+        let src = win::adapt(&format!("{PRELUDE}{body}"));
+        for target in ["x86_64-windows-gnu", "aarch64-windows-gnu"] {
+            compiles(&["zig", "cc", "-target", target], &src, target);
+            compiles(&["zig", "cc", "-target", target], crate::net::SRC, &format!("rt_{target}"));
+        }
+        compiles(&["zig", "cc", "-target", "x86_64-linux-gnu"], crate::net::SRC, "rt_linux");
+    }
+}
