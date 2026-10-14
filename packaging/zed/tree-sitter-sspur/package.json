@@ -1,6 +1,6 @@
 {
   "name": "tree-sitter-sspur",
-  "version": "0.8.2",
+  "version": "0.9.0",
   "description": "SSPUR grammar for tree-sitter",
   "private": true,
   "license": "MIT OR Apache-2.0",

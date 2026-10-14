@@ -4,8 +4,13 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-14
+
 ### Added
 - SSPUR Pulse (`pulse/`), a live dashboard of the world today at `/pulse/` on the docs site: eight boards (Wikipedia reading, space launches with a globe of the satellites in orbit, earthquakes, rising GitHub repos, a Hacker News time machine, AI papers, world weather, public holidays) fetched, checked and rendered by SSPUR programs every 6 hours by the Pages workflow, with snapshots kept on a `pulse-data` branch. Every page works without JavaScript; a small script adds chart toggles, tooltips, keyboard reading, the weather where you are (from your IP or, if you allow it, your device) and a few hidden secrets. Each board falls back to its last good data when a fetch fails and publishes JSON; the quakes, papers and reading boards publish RSS, the launches and holidays boards ICS calendars. The docs page "SSPUR Pulse: how it works" describes the design, and CI runs the Pulse tests on bundled fixtures.
+
+### Changed
+- The docs, README and benchmark pages are current for 0.8 and 0.9: native speed and memory, the large-codebase agent results, Pulse, `while e is p`, the cached run and the Zed extension.
 
 ### Fixed
 - Native `json.decode` allocated every decoded string with room for the rest of the input, so decoding a large array was quadratic in memory: 1.3 MB of 20,000 small records hit the 8 GB heap ceiling and stopped with "out of memory". Each string now gets room for its own source text. The same decode takes 0.02s and 19 MB of heap (the interpreter 0.06s), and Pulse's section programs run natively again.
@@ -315,7 +320,8 @@ This release covers Phases 3 to 7 of the roadmap and ADRs 0003 to 0024. SSPUR no
 - Language design spec, JSON schemas and the token benchmark.
 - Compiler core: parser, checker, content hashing, interpreter and the `sspur` CLI, with an 11-program suite.
 
-[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.8.2...HEAD
+[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/utkarshavardhana/sspur/compare/v0.8.2...v0.9.0
 [0.8.2]: https://github.com/utkarshavardhana/sspur/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/utkarshavardhana/sspur/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/utkarshavardhana/sspur/compare/v0.7.1...v0.8.0
