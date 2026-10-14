@@ -9,12 +9,15 @@ SSPUR=${SSPUR:-./target/release/sspur}
 export PULSE_ROOT=pulse
 export PULSE_DATA=${PULSE_DATA:-pulse/data}
 export PULSE_OUT=${PULSE_OUT:-pulse/out}
-SECTIONS=${PULSE_SECTIONS:-"reading launches quakes repos hn papers weather holidays"}
+SECTIONS=${PULSE_SECTIONS:-"reading orbit launches quakes repos hn papers weather holidays"}
 TMO=""
 if command -v timeout >/dev/null 2>&1; then TMO="timeout 600"; fi
 
 mkdir -p "$PULSE_OUT/assets" "$PULSE_OUT/og" "$PULSE_DATA"
 cp pulse/web/pulse.js pulse/web/eggs.js pulse/web/here.js pulse/web/icon.svg pulse/web/icon-192.png pulse/web/icon-512.png pulse/web/fonts/pulse-display.woff2 "$PULSE_OUT/assets/"
+mkdir -p "$PULSE_OUT/assets/vendor"
+cp pulse/web/orbit.js pulse/web/orbit-worker.js pulse/web/land.path pulse/web/countries.json "$PULSE_OUT/assets/"
+cp pulse/web/vendor/satellite.min.js pulse/web/vendor/satellite.js-LICENSE.md "$PULSE_OUT/assets/vendor/"
 cp pulse/web/manifest.webmanifest "$PULSE_OUT/manifest.webmanifest"
 
 failed=""

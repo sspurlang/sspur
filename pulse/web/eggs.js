@@ -20,12 +20,14 @@
 .egg-fx{position:absolute;inset:0;overflow:hidden;pointer-events:none;border-radius:inherit;z-index:3}
 .egg-fx i{position:absolute;top:-10px;width:8px;height:8px;border-radius:50%;background:#fff;box-shadow:0 0 6px rgba(160,200,255,.9)}
 .egg-fx b{position:absolute;right:-60px;top:-60px;width:180px;height:180px;border-radius:50%;background:radial-gradient(circle,rgba(255,200,60,.55),rgba(255,140,0,0) 70%)}
-.egg-rocket{position:fixed;z-index:70;width:34px;height:34px;pointer-events:none}`;
+.egg-rocket{position:fixed;z-index:70;width:34px;height:34px;pointer-events:none}
+.egg-list{list-style:none;margin:10px 0;padding:0}.egg-list li{padding:7px 0;border-top:1px solid var(--line);color:var(--ink3)}.egg-list li.got{color:var(--ink);font-weight:600}.egg-list span{display:inline-block;width:1.4em;color:var(--acc)}
+.egg-sheet p{display:flex;gap:8px}.egg-reset{background:var(--card2)!important;color:var(--ink)!important}`;
   const style = D.createElement('style'); style.textContent = css; D.head.appendChild(style);
-  const toast = (msg) => {
-    const t = D.createElement('div'); t.className = 'egg-toast'; t.setAttribute('role', 'status'); t.textContent = msg; D.body.appendChild(t);
+  const toast = (msg, first, total) => {
+    const t = D.createElement('div'); t.className = 'egg-toast'; t.setAttribute('role', 'status'); t.textContent = msg + (first ? ` Secret ${first} of ${total} found.` : ''); D.body.appendChild(t);
     if (!calm()) t.animate([{ opacity: 0, transform: 'translate(-50%,12px)' }, { opacity: 1, transform: 'translate(-50%,0)' }], { duration: 260, easing: 'cubic-bezier(.34,1.56,.64,1)' });
-    setTimeout(() => t.remove(), 2600);
+    setTimeout(() => t.remove(), first ? 3600 : 2600);
   };
   const stars = () => {
     let s = D.querySelector('.egg-stars');
@@ -37,14 +39,33 @@
     D.body.prepend(s); return s;
   };
   window.PulseEggs = {
-    retro() {
+    iss(info, first, total) { toast('You found the space station.', first, total); },
+    lost(_, first, total) { if (first) toast('You found the lost page. Look where the ISS was.', first, total); },
+    sheet(btn, _f, _t, api) {
+      const names = { retro: 'Retro screens', source: 'The source', shake: 'Aftershock', liftoff: 'Liftoff', weather: 'Weather of its own', iss: 'The space station', lost: 'Lost in orbit' };
+      const hints = { retro: 'The logo remembers old computers.', source: 'Updated three times as fast?', shake: 'The biggest quake is sensitive.', liftoff: 'Some numbers count down to something.', weather: 'Very cold and very hot places have weather of their own.', iss: 'Someone is always awake up there.', lost: 'Even lost pages know where the ISS is.' };
+      const old = D.querySelector('.egg-sheet'); if (old) old.remove();
+      const f = api.found();
+      const box = D.createElement('div'); box.className = 'egg-src egg-sheet'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-labelledby', 'egg-sheet-h');
+      box.innerHTML = `<strong id="egg-sheet-h">${f.length} of ${api.secrets.length} secrets found</strong><ul class="egg-list">${api.secrets.map((k) => f.includes(k) ? `<li class="got"><span aria-hidden="true">★</span> ${names[k]}</li>` : `<li><span aria-hidden="true">☆</span> ${hints[k]}</li>`).join('')}</ul><p><button type="button" class="egg-reset">Reset</button> <button type="button" class="egg-close">Close</button></p>`;
+      D.body.appendChild(box);
+      const close = () => { box.remove(); D.removeEventListener('keydown', onKey); if (btn) btn.focus(); };
+      const onKey = (e) => { if (e.key === 'Escape') close(); if (e.key === 'Tab') { const bs = [...box.querySelectorAll('button')]; const i = bs.indexOf(D.activeElement); if (e.shiftKey && i <= 0) { e.preventDefault(); bs[bs.length - 1].focus(); } else if (!e.shiftKey && i === bs.length - 1) { e.preventDefault(); bs[0].focus(); } } };
+      box.querySelector('.egg-close').addEventListener('click', close);
+      box.querySelector('.egg-reset').addEventListener('click', () => { api.store('pulse-eggs', null); api.showFound(); close(); });
+      D.addEventListener('keydown', onKey);
+      box.querySelector('.egg-close').focus();
+      if (!calm()) box.animate([{ opacity: 0, transform: 'translateY(20px)' }, { opacity: 1, transform: 'none' }], { duration: 280, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    },
+    retro(_, first, total) {
       const next = { undefined: 'crt', crt: 'sky', sky: undefined }[R.dataset.egg];
       if (next) R.dataset.egg = next; else delete R.dataset.egg;
       const s = D.querySelector('.egg-stars');
       if (next === 'sky') stars(); else if (s) s.remove();
-      toast(next === 'crt' ? 'Retro terminal mode. Again for the night sky.' : next === 'sky' ? 'Night sky mode. Once more to go back.' : 'Back to normal.');
+      toast(next === 'crt' ? 'Retro terminal mode. Again for the night sky.' : next === 'sky' ? 'Night sky mode. Once more to go back.' : 'Back to normal.', first, total);
     },
-    source() {
+    source(_, first, total) {
+      if (first) toast('You found the source.', first, total);
       const old = D.querySelector('.egg-src'); if (old) { old.remove(); return; }
       const tpl = D.getElementById('sspur-src'); if (!tpl) return;
       const box = D.createElement('div'); box.className = 'egg-src'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', 'SSPUR source');
@@ -58,23 +79,24 @@
       box.querySelector('button').focus();
       if (!calm()) box.animate([{ opacity: 0, transform: 'translateY(20px)' }, { opacity: 1, transform: 'none' }], { duration: 300, easing: 'cubic-bezier(.2,.8,.2,1)' });
     },
-    shake(map) {
-      toast('That was the big one.');
+    shake(map, first, total) {
+      toast('That was the big one.', first, total);
       if (calm()) return;
       map.animate([0, -6, 5, -4, 3, -2, 1, 0].map((x, i) => ({ transform: `translate(${x}px,${i % 2 ? 1 : -1}px)` })), { duration: 600, easing: 'ease-out' });
     },
-    liftoff(el) {
+    liftoff(el, first, total) {
       const r = el.getBoundingClientRect();
       const rk = D.createElementNS('http://www.w3.org/2000/svg', 'svg'); rk.setAttribute('viewBox', '0 0 24 24'); rk.setAttribute('class', 'egg-rocket'); rk.setAttribute('aria-hidden', 'true');
       rk.innerHTML = '<path d="M12 2.5c3.2 2.3 4.8 6 4.2 11.2L14 16h-4l-2.2-2.3C7.2 8.5 8.8 4.8 12 2.5z" fill="currentColor"/><path d="M10 16.5l2 5 2-5z" fill="#ff7a2f"/>';
       rk.style.left = (r.left + r.width / 2 - 17) + 'px'; rk.style.top = (r.top - 40) + 'px'; rk.style.color = getComputedStyle(el).color;
       D.body.appendChild(rk);
-      toast('Liftoff!');
+      toast('Liftoff!', first, total);
       if (calm()) { setTimeout(() => rk.remove(), 1500); return; }
       rk.animate([{ transform: 'translateY(0) scale(1)', opacity: 1 }, { transform: 'translateY(-14px) scale(1.05)', opacity: 1, offset: 0.2 }, { transform: `translateY(${-r.top - 120}px) scale(.7)`, opacity: 0 }], { duration: 1800, easing: 'cubic-bezier(.5,0,.8,.4)' }).onfinish = () => rk.remove();
     },
-    weather(d) {
+    weather(d, first, total) {
       if (!d || !d.el) return;
+      toast(d.kind === 'sun' ? 'Hot enough for its own sun.' : 'Cold enough for snow.', first, total);
       const host = d.el; host.style.position = host.style.position || 'relative';
       const old = host.querySelector('.egg-fx'); if (old) old.remove();
       const fx = D.createElement('div'); fx.className = 'egg-fx'; fx.setAttribute('aria-hidden', 'true');

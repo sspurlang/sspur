@@ -29,11 +29,23 @@ If a section program fails outright, `run.sh` runs it again with `PULSE_SKIP=1`,
 
 History is part of each section's state and is capped, typically at 30 days: daily Wikipedia rankings for sparklines and rank changes, star counts per repository for star velocity, daily paper counts by topic, and so on.
 
+Here is part of the quakes board, the function that turns the USGS month feed into the daily counts of the 30 day chart. The [whole program](https://github.com/utkarshavardhana/sspur/blob/main/pulse/quakes/main.ssp) is about 160 lines.
+
+```sspur
+{{#include ../pulse/quakes/main.ssp:days}}
+```
+
 ## Pages
 
-Every page is complete without JavaScript: charts are drawn by SSPUR as HTML and SVG, with a visually hidden data table for screen readers. The script, about 7 KB compressed, only enhances them: it redraws a chart when you switch a metric or a time range, adds a crosshair and a tooltip that follow the pointer, a finger or the arrow keys, ticks countdowns and relative times, filters and sorts lists, and keeps each view in the URL so it can be shared. The chart specs it uses are the same records SSPUR rendered, embedded in the page as JSON.
+Every page is complete without JavaScript: charts are drawn by SSPUR as HTML and SVG, with a visually hidden data table for screen readers. The script, under 10 KB compressed, only enhances them: it redraws a chart when you switch a metric or a time range, adds a crosshair and a tooltip that follow the pointer, a finger or the arrow keys, ticks countdowns and relative times, filters and sorts lists, and keeps each view in the URL so it can be shared. Long lists show their first 10 rows on phones and 20 on larger screens behind a "Show all" toggle, which also works without JavaScript. Easter eggs (try the Konami code, or type "sspur") live in a separate file that loads only when one is found. The chart specs it uses are the same records SSPUR rendered, embedded in the page as JSON.
 
 The display face is Bricolage Grotesque (SIL Open Font License), cut down to one weight and the characters Pulse uses, about 18 KB.
+
+## Your weather
+
+The front page shows the weather where you are, next to your local time. Your approximate location comes from your IP via BigDataCloud's free client-side API; precise location is used only if you allow it and never leaves your browser except to fetch the weather from Open-Meteo. If neither works, Pulse uses the board city nearest to your browser's time zone. A place you choose is remembered in your browser's local storage, and the pin button next to the weather forgets it. Pulse has no analytics, no cookies and no server of its own, so nothing about your visit is stored anywhere else.
+
+The launches page also draws the satellites in orbit on a globe. The SSPUR orbit program fetches CelesTrak's orbital elements every 6 hours, checks their ranges and age, groups them by operator and writes them as compact files; your browser propagates them with SGP4 (satellite.js) in a Web Worker, so the Earth turns at its true rate and every satellite moves at its real speed.
 
 ## Hosting
 

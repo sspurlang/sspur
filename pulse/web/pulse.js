@@ -249,6 +249,11 @@
   $$('figure[data-group]').forEach(wireFig);
   // here.js adds charts it builds in the browser through this.
   W.PulseCharts = { add(g, fig) { groups[g.id] = g; wireFig(fig); draw(fig, false); } };
+  const orb = $('#orbit');
+  if (orb && 'IntersectionObserver' in W && 'Worker' in W) {
+    const io = new IntersectionObserver((es) => { if (!es[0].isIntersecting) return; io.disconnect(); const s = D.createElement('script'); s.src = base + 'assets/orbit.js'; D.head.appendChild(s); }, { rootMargin: '400px' });
+    io.observe(orb);
+  }
   if ($('[data-lwx], #here')) { const s = D.createElement('script'); s.src = base + 'assets/here.js'; s.defer = true; D.head.appendChild(s); }
 
   // A link can ask for a part of the page: #...&go=id
@@ -381,13 +386,21 @@
     requestAnimationFrame(step);
   }
 
-  // Easter eggs, loaded on demand
+  // Easter eggs, loaded on demand. Seven count as secrets; finds live in localStorage only.
+  const SECRETS = ['retro', 'source', 'shake', 'liftoff', 'weather', 'iss', 'lost'];
+  const found = () => { try { return JSON.parse(store('pulse-eggs') || '[]').filter((x) => SECRETS.includes(x)); } catch (e) { return []; } };
+  const showFound = () => $$('[data-found]').forEach((el) => { el.textContent = `You've found ${found().length}.`; });
+  showFound();
   let eggs = null;
   function egg(name, arg) {
+    let first = 0;
+    if (SECRETS.includes(name) && !found().includes(name)) { const f = found().concat(name); store('pulse-eggs', JSON.stringify(f)); first = f.length; showFound(); }
     if (!eggs) eggs = new Promise((ok) => { const s = D.createElement('script'); s.src = base + 'assets/eggs.js'; s.onload = () => ok(W.PulseEggs); s.onerror = () => ok(null); D.head.appendChild(s); });
-    eggs.then((E) => E && E[name] && E[name](arg));
+    eggs.then((E) => E && E[name] && E[name](arg, first, SECRETS.length, { secrets: SECRETS, found, store, showFound }));
   }
   W.PulseEgg = egg;
+  $$('[data-secrets]').forEach((b) => b.addEventListener('click', () => egg('sheet', b)));
+  if (R.classList.contains('s-404')) setTimeout(() => egg('lost'), 900);
   const seq = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
   let ki = 0, typed = '';
   D.addEventListener('keydown', (e) => {
@@ -397,13 +410,19 @@
     typed = (typed + (e.key.length === 1 ? e.key.toLowerCase() : '')).slice(-5);
     if (typed === 'sspur') { typed = ''; egg('source'); }
   });
+  // Three quick taps on the "Updated" badge open the source too, for touch screens.
+  const badgeEl = $('.badge');
+  if (badgeEl) { let taps = []; badgeEl.addEventListener('pointerup', () => { const now = performance.now(); taps = taps.filter((t) => now - t < 800).concat(now); if (taps.length >= 3) { taps = []; egg('source'); } }); }
+  // Hold the logo for 650 ms: a ring fills, then the retro screens. A tap still goes home.
   const logo = $('.logo');
   if (logo) {
-    let t = 0;
-    logo.addEventListener('pointerdown', () => { t = setTimeout(() => { t = -1; egg('retro'); }, 650); });
-    const end = (e) => { if (t === -1 && e.type === 'click') e.preventDefault(); clearTimeout(t); if (e.type === 'click') t = 0; };
-    ['pointerup', 'pointerleave', 'pointercancel', 'click'].forEach((ev) => logo.addEventListener(ev, end));
-    logo.addEventListener('contextmenu', (e) => e.preventDefault());
+    let t = 0, fired = false, at = null;
+    const stop = () => { clearTimeout(t); t = 0; logo.classList.remove('holding'); };
+    logo.addEventListener('pointerdown', (e) => { fired = false; at = [e.clientX, e.clientY]; logo.classList.add('holding'); t = setTimeout(() => { fired = true; stop(); egg('retro'); }, 650); });
+    logo.addEventListener('pointermove', (e) => { if (t && at && Math.hypot(e.clientX - at[0], e.clientY - at[1]) > 8) stop(); });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => logo.addEventListener(ev, stop));
+    logo.addEventListener('click', (e) => { if (fired) { e.preventDefault(); fired = false; } });
+    logo.addEventListener('contextmenu', (e) => { if (t || fired) e.preventDefault(); });
   }
   D.addEventListener('pulse:hot', (e) => egg('weather', e.detail));
   D.addEventListener('click', (e) => { const h = e.target.closest('[data-hot]'); if (h) egg('weather', { kind: h.dataset.hot, el: h.closest('.card') || h }); });
@@ -411,5 +430,5 @@
     const pv = el.dataset.pickview, gid = pv.slice(0, pv.indexOf(':')), v = pv.slice(pv.indexOf(':') + 1), sel = $(`select[data-vpart="0"][data-for="${gid}"]`);
     if (sel && [...sel.options].some((o) => o.value === v)) { sel.value = v; sel.dispatchEvent(new Event('change')); }
   }));
-  if (W.console) console.log('%cSSPUR Pulse%c\nEvery number here was computed by SSPUR programs, every 6 hours, for free.\nRead them: https://github.com/utkarshavardhana/sspur/tree/main/pulse\nTry the up up down down code, or type "sspur".', 'font:800 20px system-ui;color:#d9381e', 'font:13px system-ui');
+  if (W.console) console.log('%cSSPUR Pulse%c\nEvery number here was computed by SSPUR programs, every 6 hours, for free.\nRead them: https://github.com/utkarshavardhana/sspur/tree/main/pulse\nSeven secrets are hidden on these pages; the footer counts the ones you have found.\nOn a keyboard, try the up up down down code, or type "sspur". On a phone, hold the logo, or tap the Updated badge three times.', 'font:800 20px system-ui;color:#d9381e', 'font:13px system-ui');
 })();

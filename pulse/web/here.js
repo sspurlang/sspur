@@ -66,28 +66,47 @@
   const note = (p) => p.kind === 'precise' ? 'precise' : p.kind === 'approx' ? 'approximate' : 'nearest board city';
   const link = (r) => r.city ? `weather/#city-v=${encodeURIComponent(r.city.s)}~temp~48h&go=cityfig` : 'weather/#here=1&go=here';
 
-  // The overview card
+  // The overview card: one link, plus a pin button for the location settings
   const card = $('[data-lwx]');
+  const short = (t) => (t < 0 ? '−' : '') + Math.abs(Math.round(t)) + '°';
   const paint = async () => {
+    if (!card) return;
     const r = await resolve().catch(() => null);
-    if (!card || !r) return;
+    if (!r) {
+      $('.lwx-name', card).textContent = 'World weather'; $('.lwx-n', card).textContent = 'A hundred cities, right now'; $('.lwx-v', card).textContent = '';
+      D.documentElement.classList.add('lwx-ok'); return;
+    }
     card.href = link(r);
     $('.lwx-ic', card).innerHTML = icon(r.k);
-    $('.lwx-v', card).textContent = deg(r.t);
-    $('.lwx-l', card).textContent = `Your area: ${r.p.name}`;
-    $('.lwx-n', card).textContent = `${words[r.k]}, ${note(r.p)}`;
-    card.setAttribute('aria-label', `Weather in ${r.p.name}: ${deg(r.t)}, ${words[r.k]}. ${note(r.p)}. Open the weather board`);
-    const f = $('[data-lwx-forget]'); if (f) f.hidden = !get(ls, 'pulse-place');
+    $('.lwx-v', card).textContent = short(r.t);
+    $('.lwx-name', card).textContent = r.p.name;
+    $('.lwx-n', card).textContent = words[r.k];
+    const pin = $('.lwx-pinx', card), how = r.p.kind === 'precise' ? 'Precise, from your device' : r.p.kind === 'approx' ? 'Approximate, from your network' : 'The board city nearest your time zone';
+    pin.classList.toggle('precise', r.p.kind === 'precise'); pin.setAttribute('aria-hidden', 'true'); pin.parentElement.title = how;
+    card.setAttribute('aria-label', `${r.p.name}, ${deg(r.t)}, ${words[r.k]}. ${how}. Open the weather board`);
     D.documentElement.classList.add('lwx-ok');
   };
-  const wire = () => {
-    const pb = $('[data-lwx-precise]'), fb = $('[data-lwx-forget]');
-    if (pb) pb.addEventListener('click', async () => {
-      pb.disabled = true; pb.textContent = 'Finding you…';
-      try { put(ls, 'pulse-place', await precisePlace()); pb.textContent = 'Using your precise location'; } catch (e) { pb.textContent = 'Location not available'; }
-      pb.disabled = false; await paint(); if (D.documentElement.classList.contains('here')) await here();
+  const menu = () => {
+    const btn = $('[data-lwx-menu]'); if (!btn) return;
+    btn.addEventListener('click', () => {
+      const old = $('.psheet'); if (old) { old.remove(); return; }
+      const chosen = get(ls, 'pulse-place'), sh = D.createElement('div');
+      sh.className = 'psheet'; sh.setAttribute('role', 'dialog'); sh.setAttribute('aria-label', 'Location');
+      sh.innerHTML = `<strong>Your place</strong><p>Approximate place from your IP (BigDataCloud). Precise place only if you allow it, used just to fetch the weather (Open-Meteo).</p><div class="acts">${chosen && chosen.kind === 'precise' ? '' : '<button type="button" class="primary" data-act="precise">Use precise location</button>'}${chosen ? '<button type="button" data-act="forget">Forget my place</button>' : ''}<button type="button" data-act="close">Close</button></div>`;
+      btn.parentElement.parentElement.appendChild(sh);
+      const close = () => { sh.remove(); D.removeEventListener('keydown', onKey); btn.focus(); };
+      const onKey = (e) => { if (e.key === 'Escape') close(); };
+      D.addEventListener('keydown', onKey);
+      sh.addEventListener('click', async (e) => {
+        const a = e.target.closest('[data-act]'); if (!a) return;
+        if (a.dataset.act === 'close') { close(); return; }
+        if (a.dataset.act === 'precise') { a.disabled = true; a.textContent = 'Finding you…'; try { put(ls, 'pulse-place', await precisePlace()); } catch (er) { a.textContent = 'Location not available'; return; } }
+        if (a.dataset.act === 'forget') { put(ls, 'pulse-place', null); put(ss, 'pulse-ip', null); }
+        close(); await paint(); if (D.documentElement.classList.contains('here')) await here();
+      });
+      const first = sh.querySelector('button'); if (first) first.focus();
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) sh.animate([{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' });
     });
-    if (fb) fb.addEventListener('click', async () => { put(ls, 'pulse-place', null); put(ss, 'pulse-ip', null); fb.hidden = true; const p = $('[data-lwx-precise]'); if (p) p.textContent = 'Use precise location'; await paint(); if (D.documentElement.classList.contains('here')) await here(); });
   };
 
   // The weather page card: the same chart and toggles as "One city, up close"
@@ -109,10 +128,10 @@
       { key: 'wind~30d', label: 'Wind', chart: { kind: 'line', labels: dl, series: [s('w', 'Strongest wind', 6, f.daily.wind_speed_10m_max)], unit: 'km/h', digits: 0 } },
     ];
     const seg = (part, opts) => `<div class="seg ctl" role="radiogroup" aria-label="${part ? 'Span' : 'Metric'}" data-vpart="${part}" data-for="here">${opts.map(([v, l], i) => `<button type="button" role="radio" aria-checked="${i === 0}" data-v="${v}">${l}</button>`).join('')}</div>`;
-    box.innerHTML = `<figure class="card cv-fig" data-group="here"><figcaption class="cv-cap"><h2 class="ct">Your area: ${esc(r.p.name)} <span class="pill acc">${note(r.p)}</span></h2><p><span class="lwx-big">${icon(r.k)}<b>${deg(r.t)}</b></span> ${words[r.k]}. Today ${deg(r.lo)} to ${deg(r.hi)}. Live from Open-Meteo, in local time.</p></figcaption><div class="cv-ctl">${seg(0, [['temp', 'Temperature'], ['rain', 'Rain'], ['wind', 'Wind']])}${seg(1, [['48h', '48 hours'], ['30d', '30 days']])}</div><div class="cv" tabindex="0" role="group" aria-label="Your area, interactive chart. Use arrow keys to read values."></div><table class="sr-only"></table><p class="muted small lwx-priv">Your approximate location comes from your IP via BigDataCloud; precise location is used only if you allow it and never leaves your browser except to fetch the weather from Open-Meteo.</p></figure>`;
+    box.innerHTML = `<figure class="card cv-fig" data-group="here"><figcaption class="cv-cap"><h2 class="ct">Your area: ${esc(r.p.name)} <span class="pill acc">${note(r.p)}</span></h2><p><span class="lwx-big">${icon(r.k)}<b>${deg(r.t)}</b></span> ${words[r.k]}. Today ${deg(r.lo)} to ${deg(r.hi)}. Live from Open-Meteo, in local time.</p></figcaption><div class="cv-ctl">${seg(0, [['temp', 'Temperature'], ['rain', 'Rain'], ['wind', 'Wind']])}${seg(1, [['48h', '48 hours'], ['30d', '30 days']])}</div><div class="cv" tabindex="0" role="group" aria-label="Your area, interactive chart. Use arrow keys to read values."></div><table class="sr-only"></table><p class="muted small">Approximate place from your IP (BigDataCloud). Precise place only if you allow it, used just to fetch the weather (Open-Meteo).</p></figure>`;
     W.PulseCharts.add({ id: 'here', views, ranges: [], view: 'temp~48h', range: '' }, $('figure', box));
   };
-  wire();
+  menu();
   if (card) paint();
   if (D.documentElement.classList.contains('here')) here();
 })();

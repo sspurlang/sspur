@@ -164,10 +164,10 @@ fn in_days(cx: Ctx, l: Launch, n: Int) -> Bool
   ms = when(l.net).unix_ms - cx.now.unix_ms
   dated(l) and not done(l) and ms > 0 and ms < n * 86400000
 
-fn headline(cx: Ctx, ls: List[Launch]) -> Headline
+fn headline(cx: Ctx, ls: List[Launch]) -> Headline ! fs
 = do
   week = ls.filter(l => in_days(cx, l, 7)).len
-  Headline{value: "{week}", label: "rocket launches in the next 7 days", detail: next_launch(cx, ls).map(l => "Next: {title(l)}, {until(cx.now, when(l.net))}").or(""), count: "{week}", spark: (0..7).map(i => some(ls.filter(l => dated(l) and not done(l) and pulse.day(when(l.net)) == pulse.day(cx.now.add(days(i)))).len.to_f64)), spark_kind: "bar"}
+  Headline{value: "{week}", label: "rocket launches in the next 7 days", detail: next_launch(cx, ls).map(l => "Next: {title(l)}, {until(cx.now, when(l.net))}.").or("") + orbit_index(cx).map(o => " {thousands(o.total)} satellites in orbit right now.").or(""), count: "{week}", spark: (0..7).map(i => some(ls.filter(l => dated(l) and not done(l) and pulse.day(when(l.net)) == pulse.day(cx.now.add(days(i)))).len.to_f64)), spark_kind: "bar"}
 
 fn hero_card(cx: Ctx, l: Launch) -> Str
 = do
@@ -180,6 +180,23 @@ fn ics_events(ls: List[Launch]) -> List[Ev]
   s = when(l.net)
   e = when(l.end)
   Ev{uid: "{l.id}@sspur-pulse", start: s, end: if e.unix_ms - s.unix_ms < 3600000 then s.add(hours(1)) else e, all_day: false, summary: if exact(l) then l.name else "{l.name} (date not final)", desc: "{l.provider}, {l.rocket}. {l.desc}", loc: [l.pad, l.location].filter(x => not x.is_empty).join(", "), url: ""})
+
+// The satellites already up there, from the orbit program's index (api/orbit.json).
+type OPart = {file: Str, count: Int}
+type OGroup = {key: Str, name: Str, color: Str, count: Int, leo: Int, meo: Int, geo: Int, parts: List[OPart]}
+type OIndex = {updated: Str, epoch: Str, total: Int, leo: Int, meo: Int, geo: Int, groups: List[OGroup]}
+
+fn orbit_index(cx: Ctx) -> Opt[OIndex] ! fs
+= match pulse.read("{cx.out}/api/orbit.json").map(s => json.decode[OIndex](s))
+  | some(ok(i)) if i.total > 0 => some(i)
+  | _ => none
+
+fn orbit_card(cx: Ctx, o: OIndex) -> Str
+= do
+  chips = o.groups.map(g => "<button type='button' aria-pressed='true' data-og='{g.key}'><i style='background:{g.color}'></i>{esc(g.name)} <span class='muted'>{thousands(g.count)}</span></button>").join("")
+  rows = o.groups.map(g => "<tr><th scope='row'>{esc(g.name)}</th><td>{thousands(g.count)}</td><td>{thousands(g.leo)}</td><td>{thousands(g.meo)}</td><td>{thousands(g.geo)}</td></tr>").join("")
+  updated = parse_time(o.updated).or(cx.now)
+  "<section class='wrap band'><div class='card orbit' id='orbit'><div class='sh'><h2>Satellites in orbit right now</h2><p><span class='num' data-count='{o.total}'>{thousands(o.total)}</span> active satellites, elements from CelesTrak <time datetime='{updated.iso}' data-rel>{pulse.ago(cx.now, updated)}</time>.</p></div><div class='orb-ctl ctl'><div class='seg' role='radiogroup' aria-label='Speed'><button type='button' role='radio' aria-checked='true' data-speed='1'>Live</button><button type='button' role='radio' aria-checked='false' data-speed='60'>60×</button><button type='button' role='radio' aria-checked='false' data-speed='600'>600×</button><button type='button' role='radio' aria-checked='false' data-speed='0'>Pause</button></div><div class='fchips orb-bands' role='group' aria-label='Orbits'><button type='button' aria-pressed='true' data-band='0'>Low ({thousands(o.leo)})</button><button type='button' aria-pressed='true' data-band='1'>Medium ({thousands(o.meo)})</button><button type='button' aria-pressed='true' data-band='2'>Geostationary ({thousands(o.geo)})</button></div></div><div class='orb-chips ctl' role='group' aria-label='Operators'>{chips}</div><div class='orb-stage'><p class='orb-wait muted'>The globe appears here with JavaScript. The counts are in the table below.</p><div class='orb-tip' role='status' hidden></div></div><p class='orb-live sr-only' aria-live='polite'></p><p class='small muted orb-note'>Drag to turn the Earth, pinch or scroll to zoom, double tap to reset, tap a dot for its name. <span class='orb-sl'></span> <button type='button' class='orb-all' data-orb-all hidden>Show all Starlink</button></p><p class='small muted'>Positions computed in your browser from CelesTrak orbital elements, refreshed every 6 hours; accuracy is a few kilometres and decreases with the age of the elements.</p><details class='orb-table'><summary>Counts by operator and orbit</summary><div class='table-wrap'><table><thead><tr><th scope='col'>Operator</th><th scope='col'>All</th><th scope='col'>Low</th><th scope='col'>Medium</th><th scope='col'>Geostationary</th></tr></thead><tbody>{rows}</tbody></table></div></details></div></section>"
 
 fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
   pre g.value.launches.all(valid)
@@ -204,7 +221,7 @@ fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
   chart = pulse.chart_block(sg, "Launches by day", "Every launch with a date known to the day, stacked by provider.")
   list = "<div class='card span2'><div class='sh'><h2>Coming up</h2><p>{count_word(up.len)} on the books, {firm.len} with a date.</p></div>{pulse.chips("prov", "Filter by provider", "#llist,#llater", [("all", "Everyone")] + present.map(k => (k, group_name(k))))}<ol class='rows clamp' id='llist' style='margin-top:10px'>{firm.enumerate.map(p => row(cx, p.0, p.1)).join("")}<li class='empty muted' hidden>No dated launches from this provider right now.</li></ol>{pulse.more("llist")}{if later.is_empty then "" else "<details class='more'><summary>{count_word(later.len)} more without a firm date</summary><ol class='rows' id='llater'>{later.enumerate.map(p => row(cx, p.0, p.1)).join("")}</ol></details>"}</div>"
   style = "<style>.nextl h2{font-size:clamp(1.7rem,4.6vw,2.6rem);margin:6px 0 4px}.nextl .big{margin:18px 0 10px;color:var(--acc)}.nextl .m{display:flex;flex-wrap:wrap;gap:8px;align-items:center;color:var(--ink2)}.nextl .desc{margin-top:12px;color:var(--ink2);max-width:70ch}.kick{font-weight:700;font-size:.85rem;text-transform:uppercase;letter-spacing:.08em}.row .v small{margin-top:4px;font-variant-numeric:tabular-nums}</style>"
-  body = "{style}<section class='wrap band'><div class='grid2'>{hero}{justc}</div></section><section class='wrap band'>{stats}</section><section class='wrap band'><div class='grid2'><div class='span2'>{chart}</div></div></section><section class='wrap band'><div class='grid2'>{list}</div></section><section class='wrap band'>{pulse.links_row([("cal", "../cal/launches.ics", "Add launches to your calendar"), ("data", "../api/launches.json", "JSON for developers")])}</section>"
+  body = "{style}<section class='wrap band'><div class='grid2'>{hero}{justc}</div></section><section class='wrap band'>{stats}</section><section class='wrap band'><div class='grid2'><div class='span2'>{chart}</div></div></section><section class='wrap band'><div class='grid2'>{list}</div></section>{orbit_index(cx).map(o => orbit_card(cx, o)).or("")}<section class='wrap band'>{pulse.links_row([("cal", "../cal/launches.ics", "Add launches to your calendar"), ("data", "../api/launches.json", "JSON for developers")])}</section>"
   h = headline(cx, ls)
   lede = nx.map(l => "Next up: <strong>{esc(title(l))}</strong>, {when_text(cx, l)}, from {esc(country(l.cc))}.").or("No launch has a firm date yet.")
   p = Page{title: "Space launches", desc: "{week} rocket launches in the next 7 days, with live countdowns and a calendar. From The Space Devs, computed by SSPUR.", h1: "<em class='num' data-count='{week}'>{week}</em> rockets heading to space this week", lede, body, updated, stale: g.stale, note: g.note, snippet: pulse.snippet(cx, "strip"), data: pulse.charts_json([sg])}

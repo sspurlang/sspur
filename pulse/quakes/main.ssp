@@ -36,12 +36,14 @@ fn parse(s: Str) -> Res[List[Quake], Str]
     qs = f.features.map(quake).filter(_.is_some).map(_.get).filter(valid)
     if qs.len * 10 < f.features.len * 9 then err("too many malformed quakes") else ok(qs.sort_by(q => (-q.mag, -q.time)))
 
+// ANCHOR: days
 // The magnitude bands of the 30 day chart: 2.5 to 4, 4 to 5, 5 to 6, 6 and up.
 fn band(m: F64) -> Int
 = if m >= 6.0 then 3 else if m >= 5.0 then 2 else if m >= 4.0 then 1 else 0
 
 fn days_of(qs: List[Quake], today: Str) -> List[Day]
 = qs.filter(_.mag >= 2.5).group_by(q => day(time_ms(q.time))).filter(p => p.0 < today).map(p => Day{date: p.0, counts: (0..4).map(b => p.1.filter(q => band(q.mag) == b).len), max: p.1.map(_.mag).max.or(0.0)}).sort_by(_.date)
+// ANCHOR_END: days
 
 fn merge_days(old: List[Day], new: List[Day]) -> List[Day]
 = cap((old.filter(d => not new.any(_.date == d.date)) + new).sort_by(_.date), 30)
