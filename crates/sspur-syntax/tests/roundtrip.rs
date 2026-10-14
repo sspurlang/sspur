@@ -245,3 +245,17 @@ fn is_tests_and_guards_print_canonically() {
         assert_eq!(parse(src).unwrap_err().code, code, "{src}");
     }
 }
+
+#[test]
+fn upper_case_field_access_is_a_field() {
+    let src = "type Omm = {OBJECT_NAME: Str, MEAN_MOTION: F64}\nfn f(g: Omm) -> Str = g.OBJECT_NAME.trim + \"{g.MEAN_MOTION * 2.0}\"\nfn h(gs: List[Omm]) -> List[Str] = gs.map(g => g.OBJECT_NAME)\nfn k(x: Int) -> Int = lib.f(x) + lib.N\nfn c() -> lib.T = lib.Box{w: lib.W}\n";
+    let m = parse(src).unwrap();
+    let Def::Fn(f) = &m.defs[1] else { panic!() };
+    let ExprKind::Binary(_, l, _) = &f.body.kind else { panic!("{:?}", f.body.kind) };
+    let ExprKind::Field(recv, t) = &l.kind else { panic!("{:?}", l.kind) };
+    assert_eq!(t, "trim");
+    assert!(matches!(&recv.kind, ExprKind::Field(x, n) if n == "OBJECT_NAME" && matches!(&x.kind, ExprKind::Name(g) if g == "g")), "{:?}", recv.kind);
+    let printed = print_module(&m);
+    assert!(printed.contains("= g.OBJECT_NAME.trim + \"{g.MEAN_MOTION * 2.0}\"") && printed.contains("lib.f(x) + lib.N") && printed.contains("lib.Box{w: lib.W}"), "{printed}");
+    roundtrip(src);
+}

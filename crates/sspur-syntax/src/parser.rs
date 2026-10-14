@@ -1966,6 +1966,10 @@ impl Parser {
                 if is_upper(&name) && self.is_sym("{") {
                     let fields = self.record_fields()?;
                     ExprKind::Record { ctor: Some(name), fields }
+                } else if let Some((p, f)) = name.split_once('.') {
+                    // `x.UPPER` is a field access; the resolver turns `pkg.Name` into the package's name.
+                    let ps = Span::new(start.start as usize, start.start as usize + p.len());
+                    ExprKind::Field(Box::new(Expr::new(ExprKind::Name(p.to_string()), ps)), f.to_string())
                 } else {
                     ExprKind::Name(name)
                 }

@@ -384,3 +384,14 @@ fn guards_need_else_exactly_when_the_pattern_can_fail() {
     assert_eq!((d[0].code.as_str(), d[0].msg.as_str()), ("W_ARM_UNREACHABLE", "the pattern always matches, so 'else' never runs"));
     assert!(codes("type P = {x: Int, y: Int}\nfn f(p: P) -> Int\n= do\n  P{x, y} = p\n  x + y").is_empty(), "a record pattern can't fail");
 }
+
+#[test]
+fn upper_case_fields_are_field_accesses() {
+    let ty = "type Omm = {OBJECT_NAME: Str, MEAN_MOTION: F64}\n";
+    let ok = format!("{ty}fn f(g: Omm) -> Str\n= g.OBJECT_NAME\nfn h(o: Opt[Omm]) -> F64\n= match o\n  | some(g) => g.MEAN_MOTION * 2.0\n  | none => 0.0\nfn k(s: Str) -> Res[List[Str], Str]\n= json.decode[List[Omm]](s).map(gs => gs.map(g => g.OBJECT_NAME.trim))\nfn m() -> F64\n= do\n  o = Omm{{OBJECT_NAME: \"ISS\", MEAN_MOTION: 15.5}}\n  o.MEAN_MOTION\n");
+    assert!(codes(&ok).is_empty(), "{:?}", diags(&ok));
+    let d = diags(&format!("{ty}fn f(g: Omm) -> Int\n= g.OBJECT_NAMEX"));
+    assert_eq!(d[0].code, "E_UNKNOWN_METHOD");
+    assert_eq!(d[0].hint.as_deref(), Some("did you mean 'OBJECT_NAME'?"));
+    assert_eq!(codes(&format!("{ty}fn f(g: Omm) -> Int\n= g.OBJECT_NAME")), vec!["E_TYPE_MISMATCH"]);
+}

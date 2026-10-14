@@ -9,6 +9,7 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ### Fixed
 - Native `json.decode` allocated every decoded string with room for the rest of the input, so decoding a large array was quadratic in memory: 1.3 MB of 20,000 small records hit the 8 GB heap ceiling and stopped with "out of memory". Each string now gets room for its own source text. The same decode takes 0.02s and 19 MB of heap (the interpreter 0.06s), and Pulse's section programs run natively again.
+- `g.OBJECT_NAME`, a field whose name starts with a capital, parsed as the package-qualified name `g.OBJECT_NAME` and failed with `unknown name`, so records decoded from JSON with upper-case keys could only be read by destructuring. `x.NAME` in an expression is now a field access, and `pkg.Name` still resolves to the package's name when `pkg` is a dependency and not a local.
 
 ## [0.8.2] - 2026-10-14
 

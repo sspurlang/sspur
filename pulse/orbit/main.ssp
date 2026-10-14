@@ -64,9 +64,7 @@ fn fresh(e: Str, now: Time) -> Bool
   | none => false
 
 fn sat(g: Gp, now: Time) -> Opt[Sat]
-= do
-  Gp{OBJECT_NAME: name, NORAD_CAT_ID: id, EPOCH: epoch, MEAN_MOTION: mm, ECCENTRICITY: ecc, INCLINATION: inc, RA_OF_ASC_NODE: raan, ARG_OF_PERICENTER: argp, MEAN_ANOMALY: ma, BSTAR: bstar} = g
-  if epoch_parts(epoch) is some((yy, day)) and fresh(epoch, now) and checked(inc, mm) and ecc >= 0.0 and ecc < 1.0 then some(Sat{id, name: name.trim, group: classify(name, mm, inc, ecc), yy, day, bstar, inc, raan, ecc, argp, ma, mm}) else none
+= if epoch_parts(g.EPOCH) is some((yy, day)) and fresh(g.EPOCH, now) and checked(g.INCLINATION, g.MEAN_MOTION) and g.ECCENTRICITY >= 0.0 and g.ECCENTRICITY < 1.0 then some(Sat{id: g.NORAD_CAT_ID, name: g.OBJECT_NAME.trim, group: classify(g.OBJECT_NAME, g.MEAN_MOTION, g.INCLINATION, g.ECCENTRICITY), yy, day, bstar: g.BSTAR, inc: g.INCLINATION, raan: g.RA_OF_ASC_NODE, ecc: g.ECCENTRICITY, argp: g.ARG_OF_PERICENTER, ma: g.MEAN_ANOMALY, mm: g.MEAN_MOTION}) else none
 
 fn in_range(inc: F64, mm: F64) -> Bool
 = inc >= 0.0 and inc <= 180.0 and mm > 0.0 and mm < 20.0

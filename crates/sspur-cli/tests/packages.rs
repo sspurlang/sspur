@@ -245,6 +245,14 @@ fn git_dependencies_come_from_a_local_bare_repository() {
 }
 
 #[test]
+fn upper_case_fields_are_fields_and_packages_stay_qualified() {
+    let w = Ws::new("upper");
+    lib_and_app(&w, "type G = {W: Int, NAME: Str}\n\nfn a(g: G) -> Int = g.W + geo.area(geo.Box{w: g.W}) + geo.area(geo.Dot)\n\nfn shadow(geo: G) -> Str = geo.NAME\n\nfn d() -> geo.Shape = geo.Dot\n\ntest t = a(G{W: 2, NAME: \"n\"}) == 6 and shadow(G{W: 1, NAME: \"x\"}) == \"x\" and geo.area(d()) == 0\n");
+    assert_eq!(w.ok("app", &["test", "--interp", "lib.ssp"]), "1 passed, 0 failed");
+    assert_eq!(w.ok("app", &["test", "--strict-native", "lib.ssp"]), "1 passed, 0 failed");
+}
+
+#[test]
 fn dependency_objects_are_reused_from_the_native_cache() {
     let w = Ws::new("native");
     lib_and_app(&w, "fn a(n: Int) -> Int = geo.area(geo.Box{w: n}) + geo.bump(n)\n\ntest t = a(2) == 7\n");
