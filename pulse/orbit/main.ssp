@@ -17,7 +17,7 @@ type MeanMotion = F64 where _ > 0.0 and _ < 20.0
 
 // Operators and constellations, in display order: key, name, colour on the dark globe.
 fn groups() -> List[(Str, Str, Str)]
-= [("starlink", "SpaceX Starlink", "#5b9bff"), ("oneweb", "OneWeb", "#2fd2c4"), ("kuiper", "Amazon Kuiper", "#ffb020"), ("china", "Qianfan and Guowang", "#ff6b81"), ("iridium", "Iridium", "#b794ff"), ("planet", "Planet and Spire", "#7bdc65"), ("gps", "GPS", "#ff8a3d"), ("glonass", "GLONASS", "#e36bff"), ("galileo", "Galileo", "#55d8ff"), ("beidou", "BeiDou", "#ff5050"), ("isro", "ISRO", "#ffa31a"), ("crewed", "ISS and Tiangong", "#ffffff"), ("weather", "Weather", "#a8ecff"), ("geo", "Geostationary comms", "#ffd84d"), ("other", "Other", "#8f9bb3")]
+= [("starlink", "SpaceX Starlink", "#5b9bff"), ("oneweb", "OneWeb", "#2fd2c4"), ("kuiper", "Amazon Kuiper", "#ffb020"), ("china", "Qianfan and Guowang", "#ff6b81"), ("iridium", "Iridium", "#b794ff"), ("planet", "Planet and Spire", "#7bdc65"), ("gps", "GPS", "#ff8a3d"), ("glonass", "GLONASS", "#e36bff"), ("galileo", "Galileo", "#55d8ff"), ("beidou", "BeiDou", "#ff5050"), ("isro", "NavIC and ISRO", "#ffa31a"), ("crewed", "ISS and Tiangong", "#ffffff"), ("weather", "Weather", "#a8ecff"), ("geo", "Geostationary comms", "#ffd84d"), ("other", "Other", "#8f9bb3")]
 
 fn starts(n: Str, ps: List[Str]) -> Bool
 = ps.any(p => n.starts_with(p))

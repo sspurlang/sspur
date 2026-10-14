@@ -54,6 +54,26 @@
   const key = 'pulse:' + location.pathname;
   const state = new URLSearchParams(location.hash.slice(1) || store(key) || '');
   const save = () => { const s = state.toString(); store(key, s || null); history.replaceState(null, '', s ? '#' + s : location.pathname + location.search); };
+  // orbit.js keeps the globe's view here too
+  W.PulseState = { get: (k) => state.get(k), set: (k, v) => { if (v == null) state.delete(k); else state.set(k, v); save(); } };
+
+  // A tap that lands while a scroller still glides (the section chips after a swipe, a chip row,
+  // or the page under the sticky header) only stops the glide: iOS WebKit and Chrome on Android
+  // send no click for it. So a short, still touch on a control that gets no click within 250 ms
+  // is clicked here, and a late native click after that is dropped.
+  const TAPPABLE = 'a[href],button,summary,[role=radio],[role=checkbox],[role=switch]';
+  let touch = null, rescued = null;
+  D.addEventListener('pointerdown', (e) => { touch = e.pointerType === 'touch' && e.isPrimary ? { el: e.target.closest(TAPPABLE), x: e.clientX, y: e.clientY, t: e.timeStamp } : null; }, { passive: true, capture: true });
+  D.addEventListener('pointercancel', () => { touch = null; }, { passive: true, capture: true });
+  D.addEventListener('pointerup', (e) => {
+    const t = touch; touch = null;
+    if (!t || !t.el || e.pointerType !== 'touch' || t.el.closest('[disabled],[aria-disabled=true]') || e.timeStamp - t.t > 500 || Math.hypot(e.clientX - t.x, e.clientY - t.y) > 10) return;
+    let clicked = false;
+    const saw = (c) => { if (c.isTrusted) clicked = true; };
+    D.addEventListener('click', saw, { capture: true });
+    setTimeout(() => { D.removeEventListener('click', saw, { capture: true }); if (!clicked && t.el.isConnected) { rescued = { el: t.el, at: performance.now() }; t.el.click(); } }, 250);
+  }, { passive: true, capture: true });
+  D.addEventListener('click', (e) => { if (rescued && e.isTrusted && performance.now() - rescued.at < 800 && rescued.el.contains(e.target)) { e.preventDefault(); e.stopImmediatePropagation(); rescued = null; } }, { capture: true });
 
   // Tooltip
   const showTip = (html, x, y) => {

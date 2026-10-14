@@ -13,7 +13,8 @@
   // State
   let idx = null, sats = [], frames = [], pending = false, speed = calm ? 0 : 1, sim = Date.now(), last = performance.now();
   let yaw = 0, pitch = 20 * rad, zoom = 1, drag = null, pinch = null, visible = false, dirty = true, sel = -1, track = null, info = null;
-  const shown = {}, bands = { 0: true, 1: true, 2: true };
+  const shown = {}, ST = W.PulseState || { get: () => null, set: () => {} };
+  let band = -1, allSl = false;
   let countries = null, land = [];
 
   // Canvases: the globe below, points above
@@ -108,7 +109,7 @@
     const c = Math.cos(yaw), s = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch), f = P.f;
     for (let i = 0; i < sats.length; i++) {
       const o = sats[i]; proj2[3 * i] = NaN;
-      const ax = P.a[3 * i]; if (!(ax === ax) || !shown[o.g] || !bands[o.band]) continue;
+      const ax = P.a[3 * i]; if (!(ax === ax) || !shown[o.g] || (band >= 0 && o.band !== band) || (o.x && !allSl)) continue;
       const bx = P.b[3 * i]; const x = ax + (bx === bx ? (bx - ax) * f : 0), y = P.a[3 * i + 1] + ((P.b[3 * i + 1] - P.a[3 * i + 1]) || 0) * f, z = P.a[3 * i + 2] + ((P.b[3 * i + 2] - P.a[3 * i + 2]) || 0) * f;
       const x1 = x * c - y * s, y1 = x * s + y * c, y2 = y1 * cp - z * sp, z2 = y1 * sp + z * cp;
       const sx = cx + S * x1, sy = cy - S * z2;
@@ -142,10 +143,10 @@
 
   // Loading
   const fetchJson = (u) => fetch(u, { credentials: 'omit' }).then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); });
-  const loadPart = async (g, file) => {
+  const loadPart = async (g, file, k) => {
     const j = await fetchJson(base + 'sats/' + file + '.json');
     const gi = idx.groups.findIndex((x) => x.key === j.g);
-    const add = j.s.map((s) => { const mm = s[10], a = Math.cbrt(398600.4418 / (mm * 2 * Math.PI / 86400) ** 2) - RE; return { name: s[1], g: gi, mm, alt: a, big: j.g === 'crewed', band: a < 2000 ? 0 : a > 35000 && a < 36600 ? 2 : 1 }; });
+    const add = j.s.map((s) => { const mm = s[10], a = Math.cbrt(398600.4418 / (mm * 2 * Math.PI / 86400) ** 2) - RE; return { name: s[1], g: gi, mm, alt: a, big: j.g === 'crewed', x: j.g === 'starlink' && k > 0, band: a < 2000 ? 0 : a > 35000 && a < 36600 ? 2 : 1 }; });
     sats.push(...add); worker.postMessage({ op: 'add', sats: j.s }); frames = []; pending = false;
   };
   const loadedParts = new Set();
@@ -153,10 +154,14 @@
     for (const g of idx.groups) for (const [k, p] of g.parts.entries()) {
       if (loadedParts.has(p.file)) continue;
       if (g.key === 'starlink' && k > 0 && !all) continue;
-      loadedParts.add(p.file); await loadPart(g, p.file);
+      loadedParts.add(p.file); await loadPart(g, p.file, k);
     }
-    const sl = idx.groups.find((g) => g.key === 'starlink'), more = $('[data-orb-all]', box);
-    if (more && sl) { const n = sats.filter((s) => idx.groups[s.g].key === 'starlink').length; more.hidden = n >= sl.count; more.textContent = `Show all ${sl.count.toLocaleString('en-US')} Starlink`; $('.orb-sl', box) && ($('.orb-sl', box).textContent = n < sl.count ? `Showing ${n.toLocaleString('en-US')} of them for speed.` : ''); }
+  };
+  // Without "Draw all", Starlink is a quarter sample: say how many are drawn
+  const slNote = () => {
+    const sl = idx.groups.find((g) => g.key === 'starlink'), el = $('.orb-sl', box); if (!sl || !el) return;
+    const n = sats.filter((s) => idx.groups[s.g].key === 'starlink' && (allSl || !s.x)).length;
+    el.textContent = n < sl.count ? `(${n.toLocaleString('en-US')} drawn now)` : '';
   };
   const loadLand = async () => {
     const t = await fetch(base + 'assets/land.path').then((r) => r.text());
@@ -223,15 +228,58 @@
     e.preventDefault(); dirty = true;
   });
 
-  // Controls
+  // Controls: speed and orbit band on the globe, operators in the legend (a sheet on phones)
+  const legend = $('.orb-legend', box), lbtn = $('[data-orb-layers]', box), scrim = $('.orb-scrim', box);
+  const gi = (key) => idx.groups.findIndex((x) => x.key === key);
+  const persist = () => {
+    const off = idx.groups.filter((g, i) => !shown[i]).map((g) => g.key);
+    ST.set('o-off', off.length ? off.join(',') : null); ST.set('o-band', band >= 0 ? String(band) : null);
+    ST.set('o-speed', speed === (calm ? 0 : 1) ? null : String(speed)); ST.set('o-all', allSl ? '1' : null);
+  };
+  const sync = () => {
+    $$('[data-og]', box).forEach((b) => b.setAttribute('aria-checked', String(!!shown[gi(b.dataset.og)])));
+    $$('[data-ofam]', box).forEach((f) => { const on = $$('[data-og]', f.parentElement).map((b) => b.getAttribute('aria-checked') === 'true'); f.setAttribute('aria-checked', on.every(Boolean) ? 'true' : on.some(Boolean) ? 'mixed' : 'false'); });
+    $$('[data-band]', box).forEach((b) => b.setAttribute('aria-checked', String(+b.dataset.band === band)));
+    $$('.orb-legend .n', box).forEach((n) => { const v = +(band < 0 ? n.dataset.n : n.dataset['n' + band]); n.textContent = v.toLocaleString('en-US'); n.parentElement.classList.toggle('none', !v); });
+    const sw = $('[data-orb-all]', box); if (sw) sw.setAttribute('aria-checked', String(allSl));
+    if (sel >= 0 && (!shown[sats[sel].g] || (band >= 0 && sats[sel].band !== band) || (sats[sel].x && !allSl))) choose(-1);
+    if (lbtn) lbtn.classList.toggle('off', band >= 0 || idx.groups.some((g, i) => !shown[i]));
+    slNote(); dirty = true;
+  };
   const setSpeed = (v) => { speed = v; frames = frames.filter((f) => f.t <= sim + 1); $$('[data-speed]', box).forEach((b) => b.setAttribute('aria-checked', String(+b.dataset.speed === v))); };
-  $$('[data-speed]', box).forEach((b) => b.addEventListener('click', () => { if (+b.dataset.speed === 1 && speed !== 1) sim = Date.now(); setSpeed(+b.dataset.speed); }));
+  const setAll = async (on) => {
+    const sw = $('[data-orb-all]', box); allSl = on; sync();
+    if (on && sw) { sw.setAttribute('aria-busy', 'true'); await load(true); sw.removeAttribute('aria-busy'); sync(); }
+  };
   box.addEventListener('click', (e) => {
-    const g = e.target.closest('[data-og]'), b = e.target.closest('[data-band]');
-    if (g) { const i = idx.groups.findIndex((x) => x.key === g.dataset.og); shown[i] = !shown[i]; g.setAttribute('aria-pressed', String(shown[i])); if (sel >= 0 && !shown[sats[sel].g]) choose(-1); }
-    if (b) { const k = +b.dataset.band; bands[k] = !bands[k]; b.setAttribute('aria-pressed', String(bands[k])); }
-    if (e.target.closest('[data-orb-all]')) { e.target.disabled = true; load(true).then(() => { e.target.disabled = false; }); }
+    const t = e.target.closest('button,[data-orb-close]'); if (!t || !idx) return;
+    if (t.dataset.speed != null) { const v = +t.dataset.speed; if (v === 1 && speed !== 1) sim = Date.now(); setSpeed(v); persist(); return; }
+    if (t.dataset.band != null) { band = +t.dataset.band; sync(); persist(); return; }
+    if (t.dataset.og) { const i = gi(t.dataset.og); shown[i] = !shown[i]; sync(); persist(); return; }
+    if (t.dataset.ofam) { const on = t.getAttribute('aria-checked') !== 'true'; $$('[data-og]', t.parentElement).forEach((b) => { shown[gi(b.dataset.og)] = on; }); sync(); persist(); return; }
+    if (t.hasAttribute('data-orb-all')) { if (!t.hasAttribute('aria-busy')) setAll(!allSl).then(persist); return; }
+    if (t.hasAttribute('data-orb-layers')) { if (legend.classList.contains('open')) closeSheet(); else openSheet(); return; }
+    if (t.hasAttribute('data-orb-close')) closeSheet();
   });
+  // The Layers sheet on phones: a modal bottom sheet with the same legend
+  const onSheetKey = (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); closeSheet(); return; }
+    if (e.key !== 'Tab') return;
+    const bs = $$('button', legend).filter((b) => b.offsetParent), i = bs.indexOf(D.activeElement);
+    if (e.shiftKey && i <= 0) { e.preventDefault(); bs[bs.length - 1].focus(); } else if (!e.shiftKey && i === bs.length - 1) { e.preventDefault(); bs[0].focus(); }
+  };
+  const openSheet = () => {
+    legend.classList.add('open'); legend.setAttribute('role', 'dialog'); legend.setAttribute('aria-modal', 'true'); legend.setAttribute('aria-label', 'Layers');
+    scrim.hidden = false; lbtn.setAttribute('aria-expanded', 'true'); D.addEventListener('keydown', onSheetKey);
+    requestAnimationFrame(() => { const f = $('.orb-fh', legend); if (f) f.focus({ preventScroll: true }); });
+  };
+  const closeSheet = () => {
+    if (!legend.classList.contains('open')) return;
+    legend.classList.remove('open'); legend.setAttribute('role', 'group'); legend.removeAttribute('aria-modal'); legend.setAttribute('aria-label', 'Operators');
+    scrim.hidden = true; lbtn.setAttribute('aria-expanded', 'false'); D.removeEventListener('keydown', onSheetKey);
+    if (lbtn.offsetParent) lbtn.focus({ preventScroll: true });
+  };
+  W.matchMedia('(min-width: 700px)').addEventListener('change', (m) => { if (m.matches) closeSheet(); });
 
   // The loop: pause when hidden or off-screen
   let home = 78, fpsN = 0, fpsT = performance.now(), fps = 0;
@@ -270,7 +318,14 @@
       idx = await fetchJson(base + 'api/orbit.json');
       idx.groups.forEach((g, i) => { shown[i] = true; colors[i] = rgba(g.color, 255); });
       faceLon(home);
-      await Promise.all([loadLand(), load(false)]);
+      // Views from the URL: o-off=starlink,geo&o-band=0&o-speed=600&o-all=1
+      const off = (ST.get('o-off') || '').split(','), b0 = +ST.get('o-band'), s0 = ST.get('o-speed');
+      idx.groups.forEach((g, i) => { if (off.includes(g.key)) shown[i] = false; });
+      if ([0, 1, 2].includes(b0) && ST.get('o-band') !== null) band = b0;
+      if (['0', '1', '60', '600'].includes(s0)) speed = +s0;
+      allSl = ST.get('o-all') === '1';
+      await Promise.all([loadLand(), load(allSl)]);
+      sync();
       fetchJson(base + 'assets/countries.json').then((c) => { const runs = c.grid.split(',').map((x) => { const [v, n] = x.split('x'); return [+v, n ? +n : 1]; }); countries = { names: c.names, runs }; }).catch(() => {});
       setSpeed(speed);
       box.classList.add('orb-on');

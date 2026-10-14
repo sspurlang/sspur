@@ -191,12 +191,42 @@ fn orbit_index(cx: Ctx) -> Opt[OIndex] ! fs
   | some(ok(i)) if i.total > 0 => some(i)
   | _ => none
 
+// Operator families for the globe's legend: key, name and the orbit program's group keys.
+fn families() -> List[(Str, Str, List[Str])]
+= [("broadband", "Broadband constellations", ["starlink", "oneweb", "kuiper", "china"]), ("nav", "Navigation", ["gps", "glonass", "galileo", "beidou", "isro"]), ("eo", "Earth observation and weather", ["planet", "weather"]), ("comms", "Communications", ["geo", "iridium"]), ("crewed", "Crewed stations", ["crewed"]), ("other", "Other", ["other"])]
+
+fn family_of(key: Str) -> Str
+= families().filter(f => f.2.any(k => k == key)).map(f => f.0).first.or("other")
+
+test family_keys = family_of("starlink") == "broadband" and family_of("isro") == "nav" and family_of("weather") == "eo" and family_of("unknown") == "other"
+
+// Counts per orbit band, for the legend to show the band picked on the globe.
+fn counts(n: Int, leo: Int, meo: Int, geo: Int) -> Str
+= "<span class='n' data-n='{n}' data-n0='{leo}' data-n1='{meo}' data-n2='{geo}'>{thousands(n)}</span>"
+
+fn op_row(g: OGroup) -> Str
+= do
+  more = if g.key == "starlink" and g.parts.len > 1 then "<button type='button' class='orb-sw' role='switch' aria-checked='false' data-orb-all><span class='orb-swl'>Draw all {thousands(g.count)} <small class='orb-sl'></small></span><span class='sw' aria-hidden='true'></span></button>" else ""
+  "<li><button type='button' class='orb-op' role='checkbox' aria-checked='true' data-og='{g.key}'><span class='cb' aria-hidden='true'></span><i class='dot' style='--c:{g.color}' aria-hidden='true'></i><span class='nm'>{esc(g.name)}</span>{counts(g.count, g.leo, g.meo, g.geo)}</button>{more}</li>"
+
+fn family_block(o: OIndex, f: (Str, Str, List[Str])) -> Str
+= do
+  gs = o.groups.filter(g => family_of(g.key) == f.0)
+  if gs.len == 1 then "<div class='orb-fam solo'><ul>{gs.map(op_row).join("")}</ul></div>" else if gs.is_empty then "" else "<div class='orb-fam' role='group' aria-label='{f.1}'><button type='button' class='orb-fh' role='checkbox' aria-checked='true' data-ofam='{f.0}'><span class='cb' aria-hidden='true'></span><span class='nm'>{f.1}</span>{counts(gs.map(_.count).sum, gs.map(_.leo).sum, gs.map(_.meo).sum, gs.map(_.geo).sum)}</button><ul>{gs.map(op_row).join("")}</ul></div>"
+
+fn radio(attr: Str, v: Str, on: Bool, body: Str) -> Str
+= "<button type='button' role='radio' aria-checked='{if on then "true" else "false"}' {attr}='{v}'>{body}</button>"
+
 fn orbit_card(cx: Ctx, o: OIndex) -> Str
 = do
-  chips = o.groups.map(g => "<button type='button' aria-pressed='true' data-og='{g.key}'><i style='background:{g.color}'></i>{esc(g.name)} <span class='muted'>{thousands(g.count)}</span></button>").join("")
   rows = o.groups.map(g => "<tr><th scope='row'>{esc(g.name)}</th><td>{thousands(g.count)}</td><td>{thousands(g.leo)}</td><td>{thousands(g.meo)}</td><td>{thousands(g.geo)}</td></tr>").join("")
   updated = parse_time(o.updated).or(cx.now)
-  "<section class='wrap band'><div class='card orbit' id='orbit'><div class='sh'><h2>Satellites in orbit right now</h2><p><span class='num' data-count='{o.total}'>{thousands(o.total)}</span> active satellites, elements from CelesTrak <time datetime='{updated.iso}' data-rel>{pulse.ago(cx.now, updated)}</time>.</p></div><div class='orb-ctl ctl'><div class='seg' role='radiogroup' aria-label='Speed'><button type='button' role='radio' aria-checked='true' data-speed='1'>Live</button><button type='button' role='radio' aria-checked='false' data-speed='60'>60×</button><button type='button' role='radio' aria-checked='false' data-speed='600'>600×</button><button type='button' role='radio' aria-checked='false' data-speed='0'>Pause</button></div><div class='fchips orb-bands' role='group' aria-label='Orbits'><button type='button' aria-pressed='true' data-band='0'>Low ({thousands(o.leo)})</button><button type='button' aria-pressed='true' data-band='1'>Medium ({thousands(o.meo)})</button><button type='button' aria-pressed='true' data-band='2'>Geostationary ({thousands(o.geo)})</button></div></div><div class='orb-chips ctl' role='group' aria-label='Operators'>{chips}</div><div class='orb-stage'><p class='orb-wait muted'>The globe appears here with JavaScript. The counts are in the table below.</p><div class='orb-tip' role='status' hidden></div></div><p class='orb-live sr-only' aria-live='polite'></p><p class='small muted orb-note'>Drag to turn the Earth, pinch or scroll to zoom, double tap to reset, tap a dot for its name. <span class='orb-sl'></span> <button type='button' class='orb-all' data-orb-all hidden>Show all Starlink</button></p><p class='small muted'>Positions computed in your browser from CelesTrak orbital elements, refreshed every 6 hours; accuracy is a few kilometres and decreases with the age of the elements.</p><details class='orb-table'><summary>Counts by operator and orbit</summary><div class='table-wrap'><table><thead><tr><th scope='col'>Operator</th><th scope='col'>All</th><th scope='col'>Low</th><th scope='col'>Medium</th><th scope='col'>Geostationary</th></tr></thead><tbody>{rows}</tbody></table></div></details></div></section>"
+  pause = "<svg class='ic' viewBox='0 0 24 24' aria-hidden='true' focusable='false'><path d='M9 6v12M15 6v12'/></svg>"
+  layers = "<svg class='ic' viewBox='0 0 24 24' aria-hidden='true' focusable='false'><path d='M12 3 3 7.8l9 4.8 9-4.8L12 3zM3 12.2l9 4.8 9-4.8M3 16.4l9 4.8 9-4.8'/></svg>"
+  speed = "<div class='orb-seg orb-speed ctl' role='radiogroup' aria-label='Speed'>{radio("data-speed", "1", true, "Live")}{radio("data-speed", "60", false, "60×")}{radio("data-speed", "600", false, "600×")}<button type='button' role='radio' aria-checked='false' data-speed='0' aria-label='Pause' title='Pause'>{pause}</button></div>"
+  bands = "<div class='orb-seg orb-band ctl' role='radiogroup' aria-label='Orbit'>{radio("data-band", "-1", true, "<span>All</span><small>{thousands(o.total)}</small>")}{radio("data-band", "0", false, "<span>Low</span><small>{thousands(o.leo)}</small>")}{radio("data-band", "1", false, "<span>Medium</span><small>{thousands(o.meo)}</small>")}{radio("data-band", "2", false, "<span>Geo</span><small>{thousands(o.geo)}</small>")}</div>"
+  legend = "<div class='orb-legend' id='orb-legend' role='group' aria-label='Operators'><div class='orb-lh'><h3 class='ct'>Operators</h3><p class='small muted orb-lhint'>Tap a name to show or hide it, or a heading for the whole family.</p><button type='button' class='orb-done' data-orb-close>Done</button></div>{families().map(f => family_block(o, f)).join("")}</div>"
+  "<section class='wrap band'><div class='card orbit' id='orbit'><div class='sh'><h2>Satellites in orbit right now</h2><p><span class='num' data-count='{o.total}'>{thousands(o.total)}</span> active satellites, elements from CelesTrak <time datetime='{updated.iso}' data-rel>{pulse.ago(cx.now, updated)}</time>.</p></div><div class='orb-view'><div class='orb-stage'><p class='orb-wait muted'>The globe appears here with JavaScript. The counts are in the table below.</p><div class='orb-tip' role='status' hidden></div>{speed}<button type='button' class='orb-lbtn' data-orb-layers aria-controls='orb-legend' aria-expanded='false'>{layers}<span>Layers</span></button></div>{bands}</div><div class='orb-scrim' data-orb-close hidden></div>{legend}<p class='orb-live sr-only' aria-live='polite'></p><p class='small muted orb-note'>Drag to turn the Earth, pinch or scroll to zoom, double tap to reset, tap a dot for its name.</p><p class='small muted'>Positions computed in your browser from CelesTrak orbital elements, refreshed every 6 hours; accuracy is a few kilometres and decreases with the age of the elements.</p><details class='orb-table'><summary>Counts by operator and orbit</summary><div class='table-wrap'><table><thead><tr><th scope='col'>Operator</th><th scope='col'>All</th><th scope='col'>Low</th><th scope='col'>Medium</th><th scope='col'>Geostationary</th></tr></thead><tbody>{rows}</tbody></table></div></details></div></section>"
 
 fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
   pre g.value.launches.all(valid)
