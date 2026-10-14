@@ -1,0 +1,215 @@
+// What the world is reading: the most viewed English Wikipedia articles of the
+// latest full day, with rank changes and 30 days of history for sparklines.
+
+use pulse.{Ctx, Got, Group, View, Range, Chart, Series, Item, Headline, Page, esc, thousands, compact, short_date, cap}
+
+type RArt = {article: Str, views: Int, rank: Int}
+type RItem = {year: Str, month: Str, day: Str, articles: List[RArt]}
+type RTop = {items: List[RItem]}
+
+type Entry = {a: Str, v: Int}
+type DayTop = {date: Str, top: List[Entry]}
+type State = {updated: Str, history: List[DayTop]}
+type Api = {meta: pulse.Meta, date: Str, articles: List[Row]}
+type Row = {rank: Int, article: Str, title: Str, views: Int, prev_rank: Opt[Int], url: Str}
+
+type Views = Int where _ >= 0
+
+fn views(v: Views) -> Int
+= v
+
+fn skip_prefixes() -> List[Str]
+= ["Special:", "Wikipedia:", "File:", "Portal:", "Help:", "Talk:", "User:", "User_talk:", "Template:", "Category:", "Draft:", "Module:", "MediaWiki:", "Wikipedia_talk:", "Book:", "TimedText:"]
+
+fn is_article(a: Str) -> Bool
+= not (a == "Main_Page" or a == "-" or a == "Undefined" or a.ends_with(".php") or a.contains("XHamster") or skip_prefixes().any(p => a.starts_with(p)))
+
+fn valid_day(d: DayTop) -> Bool
+= d.top.len >= 20 and d.top.all(e => e.v > 0 and not e.a.is_empty) and pulse.day_time(d.date).unix_ms > 0
+
+fn parse(s: Str) -> Res[DayTop, Str]
+= match json.decode[RTop](s)
+  | err(e) => err("bad top list: {e}")
+  | ok(t) => match t.items
+    | [it, ..] => do
+      d = DayTop{date: "{it.year}-{it.month}-{it.day}", top: it.articles.filter(x => is_article(x.article) and x.views >= 0).sort_by(x => -x.views).take(200).map(x => Entry{a: x.article, v: views(x.views)})}
+      if valid_day(d) then ok(d) else err("too few articles")
+    | [] => err("empty top list")
+
+fn top_url(t: Time) -> Str
+= "https://wikimedia.org/api/rest_v1/metrics/pageviews/top/en.wikipedia/all-access/{t.format("%Y/%m/%d")}"
+
+fn fetch_back(cx: Ctx, k: Int) -> Res[DayTop, Str] ! proc, fs, time, log
+= pulse.get(cx, "top-{k}.json", top_url(cx.now.add(days(0 - k))), []).map(parse).or(err("fetch failed"))
+
+fn days_back(date: Str, n: Int) -> Str
+= pulse.day(pulse.day_time(date).add(days(0 - n)))
+
+fn merge(old: List[DayTop], new: List[DayTop]) -> List[DayTop]
+= cap((old.filter(d => not new.any(_.date == d.date)) + new).sort_by(_.date), 30)
+
+fn fetch(cx: Ctx, prev: Opt[State]) -> Res[State, Str] ! proc, fs, time, log
+= do
+  old = prev.map(_.history).or([])
+  first = fetch_back(cx, 1)
+  (latest, k0) = if first is ok(d) then (ok(d), 1) else (fetch_back(cx, 2), 2)
+  ok(d) = latest else err("no top list for the last two days")
+  have = (old + [d]).map(_.date)
+  missing = (1..30).filter(n => not have.contains(days_back(d.date, n))).take(max(1, cx.backfill))
+  var got = [d]
+  for n in missing
+    sleep_ms(if cx.fixtures == "" then 300 else 0)
+    if fetch_back(cx, k0 + n) is ok(x) then got := got.push(x)
+  ok(State{updated: pulse.stamp(cx).iso, history: merge(old, got)})
+
+fn decode_state(s: Str) -> Opt[State]
+= match json.decode[State](s)
+  | ok(st) if not st.history.is_empty => some(st)
+  | _ => none
+
+fn load(cx: Ctx) -> Opt[State] ! fs
+= pulse.read(pulse.state_path(cx, "state.json")).map(decode_state).or(none)
+
+// Ranking
+
+fn title(a: Str) -> Str
+= a.replace("_", " ")
+
+fn wiki_url(a: Str) -> Str
+= "https://en.wikipedia.org/wiki/{pulse.url_enc(a)}"
+
+fn rank_of(d: DayTop, a: Str) -> Opt[Int]
+= d.top.find_index(_.a == a).map(_ + 1)
+
+// Positive when an article climbed since the day before; new entries count as a climb of 100.
+fn climb(prev: Opt[DayTop], a: Str, rank: Int) -> Int
+= match prev.map(p => rank_of(p, a)).or(none)
+  | some(r) => r - rank
+  | none => if prev.is_some then 100 else 0
+
+fn rows(s: State) -> List[Row]
+= do
+  d = s.history.last.get
+  prev = s.history.find(_.date == days_back(d.date, 1))
+  d.top.take(50).enumerate.map(p => Row{rank: p.0 + 1, article: p.1.a, title: title(p.1.a), views: p.1.v, prev_rank: prev.map(x => rank_of(x, p.1.a)).or(none), url: wiki_url(p.1.a)})
+
+fn series_of(h: List[DayTop], a: Str, rank: Bool) -> List[Opt[F64]]
+= h.map(d => if rank then rank_of(d, a).map(_.to_f64) else d.top.find(_.a == a).map(_.v.to_f64))
+
+// Rendering
+
+fn change(r: Row, has_prev: Bool) -> Str
+= match r.prev_rank
+  | some(p) if p > r.rank => "<span class='up'>↑ {p - r.rank}</span>"
+  | some(p) if p < r.rank => "<span class='down'>↓ {r.rank - p}</span>"
+  | some(_) => "<span class='muted'>same rank</span>"
+  | none => if has_prev then "<span class='pill acc'>new</span>" else ""
+
+fn tags(r: Row, has_prev: Bool) -> Str
+= (["all"] + (if has_prev and r.prev_rank.is_none then ["new"] else []) + (if r.prev_rank.map(p => p > r.rank).or(false) then ["up"] else [])).join(" ")
+
+fn row_html(s: State, r: Row, top: Int, has_prev: Bool) -> Str
+= do
+  c = if has_prev then r.prev_rank.map(p => p - r.rank).or(100) else 0
+  sp = pulse.spark(cap(series_of(s.history, r.article, false), 30), "")
+  "<li class='row withsp' data-tags='{tags(r, has_prev)}' data-kviews='{r.views}' data-kclimb='{c}'><span class='rk'>{r.rank}</span><div class='main'><p class='t'><a href='{esc(r.url)}'>{esc(r.title)}</a></p><p class='m'>{change(r, has_prev)}</p><span class='bar' style='--w:{(r.views.to_f64 / max(1, top).to_f64).fmt(3)}'></span></div><span class='v'>{compact(r.views.to_f64)}<small>views</small></span>{sp}</li>"
+
+// The days from an article's first appearance in the top list (at least two).
+fn since_first(h: List[DayTop], a: Str) -> List[DayTop]
+= do
+  i = h.find_index(d => d.top.any(_.a == a)).or(0)
+  h.drop(min(i, max(0, h.len - 2)))
+
+// Open the chart on the most read article with a week of history, if there is one.
+fn default_pick(h: List[DayTop], rs: List[Row]) -> Str
+= rs.take(25).find(r => h.filter(d => d.top.any(_.a == r.article)).len >= 7).or(rs.first.get).article
+
+// The article picker replaces the long list of view buttons.
+fn drop_view_seg(html: Str) -> Str
+= match html.split_once("<div class='seg ctl' role='radiogroup' aria-label='Metric' data-ctl='view'>")
+  | some((a, b)) => a + b.split_once("</div>").map(_.1).or(b)
+  | none => html
+
+fn trend_group(s: State, rs: List[Row]) -> Group
+= do
+  h = cap(s.history, 30)
+  views = rs.take(25).flat_map(r => do
+    hs = since_first(h, r.article)
+    ls = hs.map(d => short_date(pulse.day_time(d.date)))
+    [View{key: "{r.article}~views", label: r.title, chart: Chart{kind: "line", labels: ls, series: [Series{key: "v", name: "Views", color: 1, values: series_of(hs, r.article, false)}], unit: "views", digits: 0}}, View{key: "{r.article}~rank", label: r.title, chart: Chart{kind: "line", labels: ls, series: [Series{key: "r", name: "Rank", color: 5, values: series_of(hs, r.article, true)}], unit: "rank (1 is the top)", digits: 0}}])
+  Group{id: "trend", views, ranges: [Range{key: "7d", label: "7 days", n: 7}, Range{key: "30d", label: "30 days", n: 30}], view: "{default_pick(h, rs)}~views", range: "30d"}
+
+fn daily_group(s: State) -> Group
+= do
+  h = cap(s.history, 30)
+  labels = h.map(d => short_date(pulse.day_time(d.date)))
+  total = Chart{kind: "bar", labels, series: [Series{key: "t", name: "Top 50", color: 1, values: h.map(d => some(d.top.take(50).map(_.v).sum.to_f64))}], unit: "views", digits: 0}
+  first = Chart{kind: "bar", labels, series: [Series{key: "f", name: "Number one", color: 5, values: h.map(d => d.top.first.map(_.v.to_f64))}], unit: "views", digits: 0}
+  Group{id: "daily", views: [View{key: "total", label: "Top 50 total", chart: total}, View{key: "first", label: "Number one", chart: first}], ranges: [Range{key: "7d", label: "7 days", n: 7}, Range{key: "30d", label: "30 days", n: 30}], view: "total", range: "30d"}
+
+fn headline(s: State) -> Headline
+= do
+  r = rows(s).first.get
+  Headline{value: compact(r.views.to_f64), label: "views for {r.title}, the most read article", detail: "English Wikipedia, {short_date(pulse.day_time(s.history.last.get.date))}", count: ""}
+
+fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
+  pre g.value.history.all(valid_day)
+= do
+  s = g.value
+  d = s.history.last.get
+  rs = rows(s)
+  top = rs.first.get
+  has_prev = s.history.any(_.date == days_back(d.date, 1))
+  fresh = rs.filter(r => has_prev and r.prev_rank.is_none)
+  climbers = rs.filter(r => r.prev_rank.is_some).sort_by(r => r.rank - r.prev_rank.or(r.rank))
+  best = climbers.filter(r => r.prev_rank.or(0) > r.rank).first
+  when = pulse.day_time(d.date)
+  updated = parse_time(s.updated).or(cx.now)
+  tg = trend_group(s, rs)
+  dg = daily_group(s)
+  pick = pulse.part_pick("trend", 0, "Article", rs.take(25).map(r => (r.article, r.title)), default_pick(cap(s.history, 30), rs)) + pulse.part_seg("trend", 1, "Metric", [("views", "Views"), ("rank", "Rank")], "views")
+  trend = drop_view_seg(pulse.chart_block(tg, "One article over time", "Pick any of the top 25. Rank 1 is the most read; gaps mean it was outside the top 1000 that day.")).replace("<div class='cv-ctl'>", "<div class='cv-ctl'>{pick}")
+  daily = pulse.chart_block(dg, "How much the top 50 were read", "Daily views of the 50 most read articles, or of the number one alone.")
+  bignum = (top.views.to_f64 / 1000000.0)
+  hero_num = if top.views >= 1000000 then "<em class='num' data-count='{bignum.fmt(1)}'>{bignum.fmt(1)}M</em>" else "<em class='num' data-count='{top.views}'>{thousands(top.views)}</em>"
+  stats = "<div class='stats'>{pulse.stat(compact(rs.map(_.views).sum.to_f64), "views of the top 50", "")}{pulse.stat("{fresh.len}", "new in the top 50 today", "{fresh.len}")}{pulse.stat(best.map(r => "↑ {r.prev_rank.or(0) - r.rank}").or("none"), best.map(r => "biggest climb, {esc(pulse.clip(r.title, 36))}").or("biggest climb"), "")}{pulse.stat("{s.history.len}", "days of history", "{s.history.len}")}</div>"
+  filters = pulse.chips("r", "Filter articles", "#rlist", [("all", "All 50")] + (if has_prev then [("new", "New today"), ("up", "Climbing")] else []))
+  sorts = pulse.sort_seg("#rlist", "Sort articles", [("views", "Most read")] + (if has_prev then [("climb", "Biggest climb")] else []), "views")
+  list = "<div class='card'><div class='sh'><h2>The top 50</h2><p>{esc(when.format("%A, %B "))}{when.format("%d").to_int.or(0)}, all of English Wikipedia</p></div><div class='cv-ctl'>{filters}{sorts}</div><ol class='rows' id='rlist'>{rs.map(r => row_html(s, r, top.views, has_prev)).join("")}<li class='empty muted' hidden>Nothing matches this filter today.</li></ol></div>"
+  charts = [tg, dg]
+  body = "<section class='wrap band'>{stats}</section><section class='wrap band'><div class='grid2'>{trend}{daily}</div></section><section class='wrap band'>{list}</section><section class='wrap band'>{pulse.links_row([("feed", "../feeds/reading.xml", "RSS of the daily top 20"), ("data", "../api/reading.json", "JSON for developers")])}</section>"
+  h = headline(s)
+  p = Page{title: "What the world is reading", desc: "{top.title} was the most read article on English Wikipedia, with {thousands(top.views)} views. The top 50, live, computed by SSPUR.", h1: "{hero_num} views for <a href='{esc(top.url)}'>{esc(top.title)}</a>", lede: "The most read article on English Wikipedia on {esc(when.format("%A, %B "))}{when.format("%d").to_int.or(0)}. {if fresh.is_empty then "" else "{fresh.len} of the top 50 were not there the day before."}", body, updated, stale: g.stale, note: g.note, snippet: pulse.snippet(cx, "climb"), data: pulse.charts_json(charts)}
+  pulse.publish(cx, "reading/index.html", pulse.page(cx, p))
+  pulse.publish(cx, "api/reading.json", json.encode(Api{meta: pulse.meta(cx, updated, g.stale, h), date: d.date, articles: rs}))
+  items = rs.take(20).map(r => Item{title: "#{r.rank} {r.title}", link: r.url, desc: "{thousands(r.views)} views on {d.date}.", date: when.add(hours(23)), guid: "{d.date}-{r.article}"})
+  pulse.publish(cx, "feeds/reading.xml", pulse.rss(cx, "SSPUR Pulse: what the world is reading", "The 20 most read English Wikipedia articles of each day.", items))
+  pulse.publish(cx, "og/reading.svg", pulse.og_svg(cx, "What the world is reading", compact(top.views.to_f64), "views for {top.title}"))
+
+fn main() -> Unit ! log, fs, proc, env, time
+= do
+  cx = pulse.ctx("reading")
+  prev = load(cx)
+  fresh = if pulse.due(cx, prev.map(_.updated).or(""), 120) then fetch(cx, prev) else err("skip")
+  match pulse.settle(fresh, prev, () => fetch(pulse.seed_ctx(cx), none))
+  | none => log("reading: no data at all")
+  | some(g) => do
+    if not g.stale then pulse.save(pulse.state_path(cx, "state.json"), json.encode(g.value))
+    render(cx, g)
+    log("reading: {g.value.history.len} days{if g.stale then " (stale)" else ""}")
+
+// Tests run on the bundled fixtures, offline.
+
+fn fixture(name: Str) -> Str ! fs
+= pulse.read("../fixtures/reading/{name}").or("")
+
+test parses_top = parse(fixture("top-1.json")) is ok(d) and d.top.len >= 20 and d.top.all(e => is_article(e.a))
+test drops_non_articles = not is_article("Main_Page") and not is_article("Special:Search") and not is_article("Wikipedia:Featured_pictures") and is_article("Selma_Blair")
+test sorted_by_views = parse(fixture("top-1.json")) is ok(d) and d.top.map(_.v) == d.top.map(_.v).sort.reverse
+test rejects_bad = parse("\{\"items\": []}").is_err and parse("nope").is_err
+test rank_changes = climb(some(DayTop{date: "2026-01-01", top: [Entry{a: "A", v: 9}, Entry{a: "B", v: 5}]}), "B", 1) == 1 and climb(some(DayTop{date: "2026-01-01", top: []}), "C", 3) == 100 and climb(none, "C", 3) == 0
+test history_merge = merge([DayTop{date: "2026-01-02", top: []}], [DayTop{date: "2026-01-01", top: []}, DayTop{date: "2026-01-02", top: [Entry{a: "x", v: 1}]}]).map(d => (d.date, d.top.len)) == [("2026-01-01", 0), ("2026-01-02", 1)]
+test sparkline_series = series_of([DayTop{date: "a", top: [Entry{a: "X", v: 3}]}, DayTop{date: "b", top: []}], "X", false) == [some(3.0), none]
+test day_arithmetic = days_back("2026-03-01", 1) == "2026-02-28"
+test first_appearance = since_first([DayTop{date: "a", top: []}, DayTop{date: "b", top: [Entry{a: "X", v: 1}]}, DayTop{date: "c", top: []}], "X").map(_.date) == ["b", "c"] and drop_view_seg("x<div class='seg ctl' role='radiogroup' aria-label='Metric' data-ctl='view'><b>1</b></div>y") == "xy"
+test titles = title("Carrie_(miniseries)") == "Carrie (miniseries)" and wiki_url("Carrie_(miniseries)") == "https://en.wikipedia.org/wiki/Carrie_%28miniseries%29"

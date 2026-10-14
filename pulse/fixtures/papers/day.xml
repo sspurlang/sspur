@@ -1,0 +1,368 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns="http://www.w3.org/2005/Atom">
+  <id>https://arxiv.org/api/S+KvTEaQs+2K8+0yhpeLdq083mc</id>
+  <title>arXiv Query: search_query=(cat:cs.AI OR cat:cs.CL OR cat:cs.LG) AND submittedDate:"202610080000 TO 202610082359"&amp;id_list=&amp;start=0&amp;max_results=100</title>
+  <updated>2026-10-13T21:15:27Z</updated>
+  <link href="https://arxiv.org/api/query?search_query=(cat:cs.AI+OR+(cat:cs.CL+OR+cat:cs.LG))+AND+submittedDate:%22202610080000+TO+202610082359%22&amp;start=0&amp;max_results=100&amp;id_list=" type="application/atom+xml"/>
+  <opensearch:itemsPerPage>100</opensearch:itemsPerPage>
+  <opensearch:totalResults>553</opensearch:totalResults>
+  <opensearch:startIndex>0</opensearch:startIndex>
+  <entry>
+    <id>http://arxiv.org/abs/2610.12818v1</id>
+    <title>LeWAM: End-to-End World and Action Modeling with JEPAs</title>
+    <updated>2026-10-08T23:58:36Z</updated>
+    <link href="https://arxiv.org/abs/2610.12818v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.12818v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Joint-embedding predictive architectures (JEPAs) learn compact latent world models without pixel reconstruction. Existing JEPA pipelines typically train visual representations and action-conditioned dynamics before adding a control policy or solver. We introduce LeWAM, an end-to-end JEPA for control with: (1) a joint training objective over next latent state prediction and action flow matching, and (2) an isotropic Gaussian constraint on the latent state, enabling a single model to support direct policy execution and efficient planning by evaluating sampled actions with its learned latent dynamics. Compared with prior JEPAs in visual planning, LeWAM improves success rate from 28.6% to 89.7% on contact-rich tasks and from 10.9% to 46.2% on long-horizon tasks, and plans 32.3 times faster. On behavior cloning tasks in simulation and physical robots, LeWAM is also competitive with established methods. Interpretability analyses show that LeWAM learns control-relevant representations and action distributions effectively guiding test-time planning and control.</summary>
+    <category term="cs.RO" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-08T23:58:36Z</published>
+    <arxiv:comment>Project website: https://le-wam.github.io/</arxiv:comment>
+    <arxiv:primary_category term="cs.RO"/>
+    <author>
+      <name>Minghao Fu</name>
+    </author>
+    <author>
+      <name>Tavis Siebert</name>
+    </author>
+    <author>
+      <name>Eryk Halicki</name>
+    </author>
+    <author>
+      <name>Randall Balestriero</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.12815v1</id>
+    <title>Deploying RDMA for Large-Scale Inference and Training Workloads</title>
+    <updated>2026-10-08T23:57:00Z</updated>
+    <link href="https://arxiv.org/abs/2610.12815v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.12815v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>RDMA can reduce communication overhead in distributed machine learning systems, but realizing these benefits in production requires more than replacing TCP. Variable-size messages, concurrent connections, bursty incasts, and service failures introduce challenges that hardware offload alone cannot address. This paper reports our experience deploying ByteExpress, a software communication layer over hardware RDMA, in ByteDance's parameter-server-based inference and training systems. We present three lessons from the deployment: efficient RDMA requires buffer management across application and transport layers; scalable communication requires coordinated management of connections, receive capacity, and outstanding data; and service availability requires recovery above the transport layer. ByteExpress combines an RDMA-aware allocator, zero-copy transfers, QP multiplexing, receive-credit flow control, a software send window, and RPC-assisted recovery. In production inference, ByteExpress reduces mean and P99 model parameter fetch latency by 35.7% and 43.7%, respectively, and total CPU usage by 10.69% compared with kernel TCP. In training, ByteExpress reduces P99 model parameter push latency by up to 74.0% compared with TCP, with no PFC pauses observed at runtime.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.DC" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.NI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="eess.SY" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-08T23:57:00Z</published>
+    <arxiv:comment>14 pages, 16 figures</arxiv:comment>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Yibo Huang</name>
+    </author>
+    <author>
+      <name>Yi Cui</name>
+    </author>
+    <author>
+      <name>Yukai Huang</name>
+    </author>
+    <author>
+      <name>Huaping Zhou</name>
+    </author>
+    <author>
+      <name>Jiancong Tong</name>
+    </author>
+    <author>
+      <name>Zhaoyu Wu</name>
+    </author>
+    <author>
+      <name>Gen Miao</name>
+    </author>
+    <author>
+      <name>Haoran Wei</name>
+    </author>
+    <author>
+      <name>Boyan Ding</name>
+    </author>
+    <author>
+      <name>Zhuo Jiang</name>
+    </author>
+    <author>
+      <name>Jianxi Ye</name>
+    </author>
+    <author>
+      <name>Yibo Zhu</name>
+    </author>
+    <author>
+      <name>Chuanxiong Guo</name>
+    </author>
+    <author>
+      <name>Yang Xu</name>
+    </author>
+    <author>
+      <name>Jie Wu</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.12813v1</id>
+    <title>VEPA: Verified Evolving Formal Policy for Lifelong LLM Agent Guardrails</title>
+    <updated>2026-10-08T23:49:50Z</updated>
+    <link href="https://arxiv.org/abs/2610.12813v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.12813v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>LLM agents increasingly operate over sensitive resources, such as private documents and mutable system states, which can create serious safety and security risks. Runtime guardrails should therefore make inspectable, reproducible, and deterministic allow or refuse decisions before potentially irreversible agent actions are executed. However, safety and security requirements are rarely complete before deployment, so guardrails need to keep adapting as new risks emerge. Existing adaptive guardrails learn from deployment experience, but they usually apply safety policies through LLM inference, which can lead to inconsistent decisions and ambiguous policy interpretations. Formal guardrails, on the other hand, enforce policies deterministically, but they usually rely on pre-deployment or task-specific policies and have no mechanism to adapt to newly observed risks. We introduce VEPA, a framework for the verified evolution of formal agent guardrails. VEPA represents the guardrail as a formal policy of executable symbolic rules over typed agent events. During deployment, we use an LLM guided by deployment feedback to propose policy patches that fix newly observed failures while preserving previously correct behavior. Then, a deterministic verifier only accepts policies that are structurally valid and conflict-free. Finally, an evidence-aware authority layer activates a verified rule only when it has enough supporting evidence, so uncertain updates cannot directly affect guardrail decisions. Across ASSEBench-Safety, ASSEBench-Security, and ATBench, VEPA consistently outperforms baselines while expanding the scope of deterministic formal-policy enforcement. These gains also hold under more challenging deployment conditions, including mixed streams, corrupted feedback, and longer horizons.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CR" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-08T23:49:50Z</published>
+    <arxiv:comment>33 pages, 14 figures</arxiv:comment>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Duy Nguyen</name>
+    </author>
+    <author>
+      <name>Lesly Miculicich</name>
+    </author>
+    <author>
+      <name>Bhavana Dalvi Mishra</name>
+    </author>
+    <author>
+      <name>Shuo Li</name>
+    </author>
+    <author>
+      <name>Krishnamurthy Dj Dvijotham</name>
+    </author>
+    <author>
+      <name>Mohit Bansal</name>
+    </author>
+    <author>
+      <name>Tomas Pfister</name>
+    </author>
+    <author>
+      <name>Long T. Le</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.12809v1</id>
+    <title>The Expressive Power of Random-Feature MPNNs Across Graph Sizes</title>
+    <updated>2026-10-08T23:38:47Z</updated>
+    <link href="https://arxiv.org/abs/2610.12809v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.12809v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Continuous random node features increase the expressivity of message-passing neural networks (MPNNs), but existing theoretical analyses are not fine-grained enough to capture their limitations, particularly in approximating functions across graph sizes or under a fixed number of random bits. We develop a population-level framework for size-uniform approximation. For MPNNs with a graph-size-independent Lipschitz bound in their initial features, including standard mean, max, and order-normalized sum architectures, we show that continuous random features can be quantized to finitely many colors with arbitrarily small uniform error in expected output. This reduction lets us transfer limitations on finite-color distinguishability to limitations on size-uniform approximation with continuous random features. We use this framework to prove that these MPNNs are not size-uniformly universal, analyze the expressivity gains from colors and independent trials, and establish incomparability between random-color MPNNs and higher-order Weisfeiler-Leman methods. We also give finite-color MPNN constructions for tree subgraph isomorphism via color coding and a local MST task.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-08T23:38:47Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Robert R. Nerem</name>
+    </author>
+    <author>
+      <name>Mitchell Black</name>
+    </author>
+    <author>
+      <name>Antonis Vasileiou</name>
+    </author>
+    <author>
+      <name>Christopher Morris</name>
+    </author>
+    <author>
+      <name>Yusu Wang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.12806v1</id>
+    <title>Trainable Quantum-Native Language Models: Dissipative Memory, Capacity Limits, and Hardware Validation</title>
+    <updated>2026-10-08T23:29:36Z</updated>
+    <link href="https://arxiv.org/abs/2610.12806v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.12806v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>We study byte-level autoregressive language models whose hidden state is a small quantum register, whose transitions are learned token-conditioned quantum channels, and whose next-byte probabilities come directly from Born-rule measurements without a learned classical vocabulary projection or softmax. In the fixed-width recurrent setting, unitary dynamics cannot contract or reset stored distinctions; experimentally, unitary recurrence loses to its retrained one-token control in every tested variant. Introducing learned dissipation, then token-conditioned dissipative gating, yields useful memory beyond one token. The gated model improves test negative log-likelihood by 0.20 +/- 0.03 nats/byte over retrained parameter-matched one-token controls at context length 12, and by 0.29-0.33 at longer contexts, but never beats retrained two-token controls. A key-value recall benchmark shows a width-dependent threshold: one stored pair meets the pre-registered accuracy bar at 4-5 memory qubits, two pairs at 6-7, and three pairs remain unsolved. This is consistent with, but does not establish, a capacity explanation for the short effective memory horizon. As a secondary result, one-qubit models reach lower stationary memory entropy than a heuristically optimized classical predictive frontier at matched error in 9/9 seeds. On IBM Heron hardware, computational-basis memory-register distributions show signal against a uniform null in 12/12 circuits across prefixes of up to 12 tokens, next-bit probabilities pass pre-registered accuracy bars at four-token prefixes, and bytes are generated autoregressively by sampling physically measured bit probabilities. The tested models are classically simulable and substantially worse than classical n-gram baselines. We claim no computational quantum advantage.</summary>
+    <category term="quant-ph" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-08T23:29:36Z</published>
+    <arxiv:comment>22 pages, 6 figures, 1 supplementary figure</arxiv:comment>
+    <arxiv:primary_category term="quant-ph"/>
+    <author>
+      <name>Deniz Yunus Göğüş</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.12802v1</id>
+    <title>People Making Conversation: Evaluating How Naturally Speech Models Converse</title>
+    <updated>2026-10-08T23:18:20Z</updated>
+    <link href="https://arxiv.org/abs/2610.12802v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.12802v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>A conversational speech model has to decide, at every pause, whether to speak. Existing evaluations test boundary detection, policy adherence, or aggregate statistics, not this decision. We place real-time speech systems at 427 pauses and 482 turn ends from 176 unscripted conversations in Seamless Interaction, give each the conversation so far, and score what it generates against what the person did: whether and how soon it speaks at a pause; its latency, length, and wording at a turn end; and whether it can answer a question about the preceding 30 to 120 seconds. Across six systems, the hosted APIs (GPT Realtime, Gemini 3.1 Flash Live, Grok Voice) respond at almost every pause whichever endpointer they use; only their latency, about 1 to 4 s with silence-based endpointers and about 8 s with semantic turn detection, decides whether the words land inside the pause. The full-duplex models (PersonaPlex, Moshi) are the only systems that regularly stay silent and the only ones that interrupt within a human reaction time. Hosted systems reply longer than the person. Given the history as text, hosted systems recall 41 to 60% of conversation facts under a Claude Opus 5.5 judge and 19 to 26% under a strict word matcher; hearing it as audio, full-duplex models recall 17 to 22% and 12 to 15%. We release the labels, points, harness, and every output.</summary>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-08T23:18:20Z</published>
+    <arxiv:comment>Accepted at the NeurIPS 2026 Workshop on Real-Time Conversational Agents</arxiv:comment>
+    <arxiv:primary_category term="cs.CL"/>
+    <author>
+      <name>Arya Bastani</name>
+    </author>
+    <author>
+      <name>Iman Modarressi</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.12801v1</id>
+    <title>Polyconvex neural-network surrogates with learned paired directional features for anisotropic hyperelastic homogenization</title>
+    <updated>2026-10-08T23:15:04Z</updated>
+    <link href="https://arxiv.org/abs/2610.12801v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.12801v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Approximating the effective anisotropic hyperelastic response of a representative volume element (RVE) requires constitutive expressiveness, mechanical consistency, and computational efficiency. This work develops a polyconvex physics-augmented neural network (PANN) construction based on paired directional features whose orientations, stretch powers, and determinant exponents adapt to the RVE response. The features are composed with convex, componentwise nondecreasing cores, realized as an input-convex neural network (ICNN) or an input-convex Kolmogorov-Arnold network (ICKAN). The complete energies satisfy objectivity, an exactly stress-free reference, two-dimensional polyconvexity, and prescribed growth conditions by construction, and nonnegative energy is certified separately for the selected models. On a multicavity and a single-cavity periodic cell, these energies are compared with an Unconstrained energy, trained identically without the curvature and growth constraints, and with three hyperreduced projection-based reduced-order models (HPROMs), which serve as physics-based references. On the first cell, learning the features lowers the stress error sevenfold, and six features suffice on both. The constrained energies remain below one percent in stress error and in the displacement error of a tensile-coupon FE$^2$ application with a full-order reference, whereas the Unconstrained energy and the HPROMs are more accurate inside the data. Beyond the data, however, the Unconstrained energy loses rank-one convexity, and under confined compression it stops below half of the 500 MPa that the constrained energies reach. These results quantify what the guarantees cost in accuracy and what they secure beyond the data.</summary>
+    <category term="physics.comp-ph" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="math.NA" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-08T23:15:04Z</published>
+    <arxiv:comment>38 pages, 15 figures</arxiv:comment>
+    <arxiv:primary_category term="physics.comp-ph"/>
+    <author>
+      <name>S. Ares de Parga</name>
+    </author>
+    <author>
+      <name>A. Cornejo</name>
+    </author>
+    <author>
+      <name>J. A. Hernández</name>
+    </author>
+    <author>
+      <name>R. Rossi</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.12796v1</id>
+    <title>Efficient Audio-Visual Speech Enhancement via Reinforcement Learning-Based Neural Architecture Search</title>
+    <updated>2026-10-08T23:03:32Z</updated>
+    <link href="https://arxiv.org/abs/2610.12796v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.12796v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Audio-visual speech enhancement (AVSE) improves speech intelligibility in noisy environments but often relies on computationally expensive models unsuitable for resource-constrained edge devices. This paper introduces a reinforcement learning-driven neural architecture search (RL-NAS) framework to discover compact, efficient AVSE architectures. The search space preserves temporal alignment between audio and visual streams, while a novel reward function jointly optimises speech enhancement performance, measured by SI-SNR improvement, and model compactness. Using proximal policy optimisation with constraint-aware action masking, the framework evaluates only 35 candidate architectures and identifies a model with 2.9 million parameters, compared with 22 million in the baseline. The proposed architecture achieves a 14.5 dB SI-SNR improvement, only 0.7 dB below the baseline, while reducing model size by approximately nine-fold. Evaluation on commercial mobile CPUs demonstrates a 4.3-fold reduction in real-time factor, supporting practical on-device deployment. Compared with random search, RL-NAS achieves 92% higher search efficiency. Architectural analysis reveals that shallower but wider temporal convolutional blocks and aggressive visual pathway pruning can maintain enhancement performance while substantially reducing computational requirements. These findings demonstrate the potential of reinforcement learning-guided architecture search for developing lightweight, efficient and deployable multimodal speech enhancement systems.</summary>
+    <category term="cs.SD" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="eess.AS" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-08T23:03:32Z</published>
+    <arxiv:primary_category term="cs.SD"/>
+    <author>
+      <name>Khubaib Ahmed</name>
+    </author>
+    <author>
+      <name>Ahsan Adeel</name>
+    </author>
+    <author>
+      <name>Nasir Saleem</name>
+    </author>
+    <author>
+      <name>Kia Dashtipour</name>
+    </author>
+    <author>
+      <name>Ahsan Ulhaq</name>
+    </author>
+    <author>
+      <name>Amir Hussain</name>
+    </author>
+    <arxiv:doi>10.21437/AVSEC.2025-14</arxiv:doi>
+    <link rel="related" href="https://doi.org/10.21437/AVSEC.2025-14" title="doi"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.12794v1</id>
+    <title>Meta-Reflective Evolution Effectively Improves Production AI Systems</title>
+    <updated>2026-10-08T23:00:44Z</updated>
+    <link href="https://arxiv.org/abs/2610.12794v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.12794v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Large Language Model (LLM)-guided evolutionary optimization has successfully improved prompts, programs, and even entire AI systems. Most optimization methods select a candidate from the search frontier, then mutate it in one LLM pass based only on its failures. This focus on the frontier can stall on production AI systems, where isolated failures reveal little about complex, hidden interactions. We introduce CoCoEvolve (Cortex Code Evolve), an evolutionary optimizer built around what we call meta-reflection, wherein an agentic mutator (Cortex Code) selectively retrieves evidence from the entire evolutionary history and probes the live system before verifying and proposing mutations. We apply CoCoEvolve to optimize three classes of production AI systems: data agents, LLM-powered data pipelines, and data engineering workflows. On DABStep, CoCoEvolve tops the public leaderboard, reaching 92.8% held-out hard accuracy compared to 78.4% for Meta-Harness and 30.4% for GEPA under matched conditions. Across six LLM data pipeline workloads, it outperforms every evaluated baseline. On data-eng-bench, CoCoEvolve lifts test-set solve rate from 59.1% to 77.4%, past the best baseline of 73.6%. It also has 11 percentage points higher accuracy than GEPA on HotpotQA while remaining competitive with specialized optimizers on established mathematical and systems benchmarks. Matched ablations confirm that each component of CoCoEvolve contributes to these gains, demonstrating the value of meta-reflection for optimizing production AI systems.</summary>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.SE" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-08T23:00:44Z</published>
+    <arxiv:primary_category term="cs.LG"/>
+    <author>
+      <name>Seung Won Wilson Yoo</name>
+    </author>
+    <author>
+      <name>Chang Zeng</name>
+    </author>
+    <author>
+      <name>Aditi Somayajula</name>
+    </author>
+    <author>
+      <name>Sahithi Ankireddy</name>
+    </author>
+    <author>
+      <name>Rohan Kosalge</name>
+    </author>
+    <author>
+      <name>Avishree Khare</name>
+    </author>
+    <author>
+      <name>John Mitchell</name>
+    </author>
+    <author>
+      <name>Aditya G. Parameswaran</name>
+    </author>
+    <author>
+      <name>Rajhans Samdani</name>
+    </author>
+    <author>
+      <name>Anupam Datta</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.12792v1</id>
+    <title>Large Language Models, Machine-Assisted Cultural Analytics, and the Agentic Turn</title>
+    <updated>2026-10-08T22:54:57Z</updated>
+    <link href="https://arxiv.org/abs/2610.12792v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.12792v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Technologies like large language models make it easier to convert cultural material into analyzable variables, while LLM-driven agentic systems extend machine assistance to other parts of the research workflow. Rather than a full how-to guide or an exhaustive review of recent LLM use cases, this chapter looks at some crucial aspects of this new paradigm as well as the bigger picture. I argue that these technologies expand the scale, methodological range, and scope for delegation, while the basic logic by which those measurements support cultural claims remains mostly unchanged.</summary>
+    <category term="cs.CY" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-08T22:54:57Z</published>
+    <arxiv:primary_category term="cs.CY"/>
+    <author>
+      <name>Andres Karjus</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.12789v1</id>
+    <title>EvoBelief: Falsifiable World Models for Self-Improving LLM Agents</title>
+    <updated>2026-10-08T22:46:14Z</updated>
+    <link href="https://arxiv.org/abs/2610.12789v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.12789v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Self-evolving LLM agents typically improve how they act through accumulated experience, reflection, or skills. Yet even procedurally capable agents can fail when their beliefs about environment dynamics are incomplete, incorrect, or outdated. We study a complementary axis of self-evolution: evolving those beliefs during deployment. Such beliefs can support multiple tasks, but incorrect ones can also propagate across them. We introduce EvoBelief, a self-evolving world model that represents environment knowledge as falsifiable hypotheses. Unexpected outcomes and decision-relevant unknowns trigger hypothesis formation. Later observations and controlled experiments provide independent validation before a rule can guide predictions or plans within its supported scope. Counterexamples narrow or retire rules as the environment changes. The language model remains frozen, and each rule remains linked to its evidence and the decisions it changes. Across four benchmarks spanning static dynamics, hidden drift, and scientific discovery, EvoBelief improves task performance and reuses learned rules across tasks. On ALFWorld without actor-side transition memory, it improves success over the matched Frozen World Model by 23.9% and 31.3% with Claude Haiku 4.5 and GPT-5.4, respectively. On MiniGrid, it revises stale rules and recovers after unannounced dynamics changes. In DiscoveryWorld's Reactor Lab, it discovers and validates quantitative laws, completing 83.3% of Normal-tier and 58.3% of Challenge-tier instances, versus 0% for each evaluated baseline. These results demonstrate self-improvement through testable, revisable environment knowledge rather than model-parameter updates.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-08T22:46:14Z</published>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Janet Wang</name>
+    </author>
+    <author>
+      <name>Jiang Guo</name>
+    </author>
+    <author>
+      <name>Yi Xiang</name>
+    </author>
+    <author>
+      <name>Jiaqing Yuan</name>
+    </author>
+    <author>
+      <name>Mingwen Dong</name>
+    </author>
+    <author>
+      <name>Hideo Kobayashi</name>
+    </author>
+    <author>
+      <name>Shuaichen Chang</name>
+    </author>
+    <author>
+      <name>Chandan K. Reddy</name>
+    </author>
+    <author>
+      <name>Jiarong Jiang</name>
+    </author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2610.12781v1</id>
+    <title>Representation Alignment from a Few Paired Data via Distilled Optimal Transport</title>
+    <updated>2026-10-08T22:38:46Z</updated>
+    <link href="https://arxiv.org/abs/2610.12781v1" rel="alternate" type="text/html"/>
+    <link href="https://arxiv.org/pdf/2610.12781v1" rel="related" type="application/pdf" title="pdf"/>
+    <summary>Aligning two independently pretrained unimodal encoders typically demands millions of paired examples. In this paper, we study the regime where only $N \sim 100$--$500$ pairs are available, while unpaired data on either side is abundant. Our method expresses every representation by its similarities to the $N$ paired anchors, which places both modalities in a common coordinate system; matches the two point clouds with a single entropic optimal transport problem solved over the entire pool, whose marginal constraints counteract the hubness that defeats nearest-neighbor matching; and distills the resulting plan into two lightweight encoders, so that the correspondence becomes inductive. We additionally put this marginal constraint in relation with the one-step hub corrections of the bilingual lexicon induction literature. Pairing is required only for the anchors: the unpaired collections may be drawn independently from the two marginals, so that no item outside the anchor set needs to have both of its modalities observed. We evaluate on image-text and molecule-text alignment, where our method outperforms existing approaches at the same anchor budget on Flickr30k, MS-COCO and ChEBI-20.</summary>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <published>2026-10-08T22:38:46Z</published>
+    <arxiv:comment>Preprint</arxiv:comment>
+    <arxiv:primary_category term="cs.AI"/>
+    <author>
+      <name>Julien Kordes</name>
+    </author>
+    <author>
+      <name>Reuben Dorent</name>
+    </author>
+  </entry>
+</feed>

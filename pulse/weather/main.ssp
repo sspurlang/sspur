@@ -1,0 +1,241 @@
+// World weather board: one Open-Meteo call for a hundred cities, with the current
+// hour, 48 hours of hourly values and 30 days of daily values for each.
+
+use pulse.{Ctx, Got, Group, View, Range, Chart, Series, Dot, Headline, Page, esc, f1, short_date}
+
+type Cur = {time: Opt[Str], temperature_2m: Opt[F64], apparent_temperature: Opt[F64], relative_humidity_2m: Opt[F64], precipitation: Opt[F64], wind_speed_10m: Opt[F64], weather_code: Opt[F64], is_day: Opt[F64]}
+type Hourly = {time: List[Str], temperature_2m: List[Opt[F64]], precipitation: List[Opt[F64]], wind_speed_10m: List[Opt[F64]]}
+type Daily = {time: List[Str], temperature_2m_max: List[Opt[F64]], temperature_2m_min: List[Opt[F64]], precipitation_sum: List[Opt[F64]], wind_speed_10m_max: List[Opt[F64]]}
+type Loc = {current: Opt[Cur], hourly: Opt[Hourly], daily: Opt[Daily]}
+type Resp = List[Loc]
+
+type City = {name: Str, slug: Str, cc: Str, cont: Str, lat: F64, lon: F64}
+type Wx = {c: City, local: Str, temp: F64, feels: F64, hum: F64, rain: F64, wind: F64, code: Int, isday: Bool, tmax: F64, tmin: F64, rsum: F64, wmax: F64, hours: List[Str], ht: List[Opt[F64]], hr: List[Opt[F64]], hw: List[Opt[F64]], dates: List[Str], dmax: List[Opt[F64]], dmin: List[Opt[F64]], dsum: List[Opt[F64]], dwind: List[Opt[F64]]}
+type State = {updated: Str, cities: List[Wx]}
+type Api = {meta: pulse.Meta, cities: List[Wx]}
+
+type Celsius = F64 where _ >= -90.0 and _ <= 60.0
+
+// Name, ISO country, continent, latitude, longitude. The first thirty are the fixture.
+fn table() -> List[Str]
+= ["Delhi|IN|as|28.61|77.21", "Mumbai|IN|as|19.08|72.88", "Bengaluru|IN|as|12.97|77.59", "Kolkata|IN|as|22.57|88.36", "Chennai|IN|as|13.08|80.27", "Hyderabad|IN|as|17.39|78.49", "Ahmedabad|IN|as|23.02|72.57", "Pune|IN|as|18.52|73.86", "Jaipur|IN|as|26.91|75.79", "Lucknow|IN|as|26.85|80.95", "Kuwait City|KW|as|29.38|47.98", "Riyadh|SA|as|24.71|46.68", "Yakutsk|RU|as|62.04|129.73", "Reykjavik|IS|eu|64.15|-21.94", "Ushuaia|AR|sa|-54.80|-68.30", "Singapore|SG|as|1.35|103.82", "London|GB|eu|51.51|-0.13", "New York|US|na|40.71|-74.01", "Tokyo|JP|as|35.68|139.69", "Sydney|AU|oc|-33.87|151.21", "Lagos|NG|af|6.52|3.38", "São Paulo|BR|sa|-23.55|-46.63", "Cairo|EG|af|30.04|31.24", "Moscow|RU|eu|55.76|37.62", "Los Angeles|US|na|34.05|-118.24", "Mexico City|MX|na|19.43|-99.13", "Beijing|CN|as|39.90|116.41", "Dubai|AE|as|25.20|55.27", "Nairobi|KE|af|-1.29|36.82", "Anchorage|US|na|61.22|-149.90", "Mawsynram|IN|as|25.30|91.58", "Leh|IN|as|34.16|77.58", "Srinagar|IN|as|34.08|74.80", "Thiruvananthapuram|IN|as|8.52|76.94", "Karachi|PK|as|24.86|67.01", "Dhaka|BD|as|23.81|90.41", "Kathmandu|NP|as|27.72|85.32", "Colombo|LK|as|6.93|79.86", "Kabul|AF|as|34.56|69.21", "Tehran|IR|as|35.69|51.39", "Baghdad|IQ|as|33.31|44.36", "Istanbul|TR|eu|41.01|28.98", "Osaka|JP|as|34.69|135.50", "Seoul|KR|as|37.57|126.98", "Shanghai|CN|as|31.23|121.47", "Hong Kong|HK|as|22.32|114.17", "Taipei|TW|as|25.03|121.57", "Ulaanbaatar|MN|as|47.89|106.91", "Harbin|CN|as|45.80|126.53", "Bangkok|TH|as|13.76|100.50", "Jakarta|ID|as|-6.21|106.85", "Manila|PH|as|14.60|120.98", "Hanoi|VN|as|21.03|105.85", "Yangon|MM|as|16.87|96.20", "Norilsk|RU|as|69.35|88.20", "Almaty|KZ|as|43.24|76.89", "Paris|FR|eu|48.86|2.35", "Berlin|DE|eu|52.52|13.40", "Madrid|ES|eu|40.42|-3.70", "Rome|IT|eu|41.90|12.50", "Athens|GR|eu|37.98|23.73", "Stockholm|SE|eu|59.33|18.07", "Oslo|NO|eu|59.91|10.75", "Helsinki|FI|eu|60.17|24.94", "Kyiv|UA|eu|50.45|30.52", "Lisbon|PT|eu|38.72|-9.14", "Dublin|IE|eu|53.35|-6.26", "Tromsø|NO|eu|69.65|18.96", "Kinshasa|CD|af|-4.44|15.27", "Johannesburg|ZA|af|-26.20|28.05", "Cape Town|ZA|af|-33.92|18.42", "Addis Ababa|ET|af|9.03|38.74", "Casablanca|MA|af|33.57|-7.59", "Dakar|SN|af|14.72|-17.47", "Khartoum|SD|af|15.50|32.56", "Timbuktu|ML|af|16.77|-3.01", "Antananarivo|MG|af|-18.88|47.51", "Chicago|US|na|41.88|-87.63", "Phoenix|US|na|33.45|-112.07", "Miami|US|na|25.76|-80.19", "Seattle|US|na|47.61|-122.33", "Toronto|CA|na|43.65|-79.38", "Vancouver|CA|na|49.28|-123.12", "Death Valley|US|na|36.46|-116.87", "Honolulu|US|oc|21.31|-157.86", "Nuuk|GL|na|64.18|-51.72", "Yellowknife|CA|na|62.45|-114.37", "Buenos Aires|AR|sa|-34.60|-58.38", "Lima|PE|sa|-12.05|-77.04", "Bogotá|CO|sa|4.71|-74.07", "Santiago|CL|sa|-33.45|-70.67", "Quito|EC|sa|-0.18|-78.47", "Manaus|BR|sa|-3.12|-60.02", "La Paz|BO|sa|-16.50|-68.15", "Melbourne|AU|oc|-37.81|144.96", "Perth|AU|oc|-31.95|115.86", "Darwin|AU|oc|-12.46|130.84", "Alice Springs|AU|oc|-23.70|133.88", "Auckland|NZ|oc|-36.85|174.76", "Suva|FJ|oc|-18.14|178.44"]
+
+fn city(line: Str) -> Opt[City]
+= if line.split("|") is [name, cc, cont, la, lo] and la.to_f64 is some(lat) and lo.to_f64 is some(lon) then some(City{name, slug: name.lower.replace(" ", "-"), cc, cont, lat, lon}) else none
+
+fn cities() -> List[City]
+= table().map(city).filter(_.is_some).map(_.get)
+
+fn api_url(cs: List[City]) -> Str
+= "https://api.open-meteo.com/v1/forecast?latitude={cs.map(c => c.lat.fmt(2)).join(",")}&longitude={cs.map(c => c.lon.fmt(2)).join(",")}&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,wind_speed_10m,weather_code,is_day&hourly=temperature_2m,precipitation,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max&timezone=auto&past_days=30&forecast_days=1&past_hours=24&forecast_hours=24"
+
+fn today(xs: List[Opt[F64]]) -> Opt[F64]
+= xs.last.or(none)
+
+fn wx(c: City, l: Loc) -> Opt[Wx]
+= if l.current is some(cur) and cur.temperature_2m is some(t) and l.daily is some(d) and l.hourly is some(h) then some(Wx{c, local: cur.time.or(""), temp: t, feels: cur.apparent_temperature.or(t), hum: cur.relative_humidity_2m.or(0.0), rain: cur.precipitation.or(0.0), wind: cur.wind_speed_10m.or(0.0), code: cur.weather_code.or(0.0).round, isday: cur.is_day.or(1.0) > 0.5, tmax: max(today(d.temperature_2m_max).or(t), t), tmin: min(today(d.temperature_2m_min).or(t), t), rsum: today(d.precipitation_sum).or(0.0), wmax: max(today(d.wind_speed_10m_max).or(0.0), cur.wind_speed_10m.or(0.0)), hours: h.time, ht: h.temperature_2m, hr: h.precipitation, hw: h.wind_speed_10m, dates: d.time, dmax: d.temperature_2m_max, dmin: d.temperature_2m_min, dsum: d.precipitation_sum, dwind: d.wind_speed_10m_max}) else none
+
+fn in_range(x: F64, lo: F64, hi: F64) -> Bool
+= x >= lo and x <= hi
+
+fn valid(w: Wx) -> Bool
+= in_range(w.temp, -90.0, 60.0) and in_range(w.tmax, -90.0, 60.0) and in_range(w.tmin, -90.0, 60.0) and in_range(w.feels, -110.0, 80.0) and in_range(w.wind, 0.0, 500.0) and in_range(w.wmax, 0.0, 500.0) and in_range(w.rain, 0.0, 500.0) and in_range(w.rsum, 0.0, 2000.0) and in_range(w.hum, 0.0, 100.0) and w.tmin <= w.tmax
+
+fn parse(cs: List[City], s: Str) -> Res[List[Wx], Str]
+= match json.decode[Resp](s)
+  | err(e) => err("bad weather: {e}")
+  | ok(ls) => do
+    ws = cs.zip(ls).map(p => wx(p.0, p.1)).filter(_.is_some).map(_.get).filter(valid)
+    if ls.len > cs.len then err("more locations than cities") else if ws.len < 20 or ws.len * 10 < ls.len * 9 then err("too few valid cities: {ws.len} of {ls.len}") else ok(ws)
+
+fn fetch(cx: Ctx) -> Res[State, Str] ! proc, fs, time, log
+= do
+  cs = cities()
+  ok(body) = pulse.get(cx, "forecast.json", api_url(cs), []) else err("forecast unavailable")
+  ok(ws) = parse(cs, body) else err("forecast did not parse")
+  ok(State{updated: pulse.stamp(cx).iso, cities: ws})
+
+fn decode_state(s: Str) -> Opt[State]
+= match json.decode[State](s)
+  | ok(st) if not st.cities.is_empty => some(st)
+  | _ => none
+
+fn load(cx: Ctx) -> Opt[State] ! fs
+= pulse.read(pulse.state_path(cx, "state.json")).map(decode_state).or(none)
+
+// Words and colours
+
+fn deg(t: F64) -> Str
+= if t.abs < 0.05 then "0.0°C" else "{f1(t).replace("-", "−")}°C"
+
+fn sky(code: Int) -> Str
+= if code == 0 then "Clear" else if code <= 2 then "Partly cloudy" else if code == 3 then "Overcast" else if code == 45 or code == 48 then "Fog" else if code >= 51 and code <= 57 then "Drizzle" else if code >= 61 and code <= 67 then "Rain" else if code >= 71 and code <= 77 then "Snow" else if code >= 80 and code <= 82 then "Showers" else if code == 85 or code == 86 then "Snow showers" else if code >= 95 then "Thunderstorm" else "Cloudy"
+
+fn hex2(n: Int) -> Str
+= clamp(n, 0, 255).format("02x")
+
+fn mix(a: Int, b: Int, f: F64) -> Int
+= (a.to_f64 + (b - a).to_f64 * f).round
+
+// A diverging scale from deep blue at -30 to deep red at 48.
+fn temp_color(t: Celsius) -> Str
+= do
+  stops = [(-30.0, (49, 54, 149)), (-15.0, (69, 117, 180)), (0.0, (116, 173, 209)), (10.0, (171, 217, 233)), (18.0, (254, 224, 144)), (25.0, (253, 174, 97)), (32.0, (244, 109, 67)), (40.0, (215, 48, 39)), (48.0, (165, 0, 38))]
+  i = stops.find_index(s => s.0 >= t).or(stops.len - 1)
+  (a, b) = if i == 0 then (stops[0], stops[0]) else (stops[i - 1], stops[i])
+  f = if b.0 == a.0 then 0.0 else clamp((t - a.0) / (b.0 - a.0), 0.0, 1.0)
+  (r1, g1, b1) = a.1
+  (r2, g2, b2) = b.1
+  "#" + hex2(mix(r1, r2, f)) + hex2(mix(g1, g2, f)) + hex2(mix(b1, b2, f))
+
+fn hot_kind(t: F64) -> Str
+= if t <= 0.0 then "snow" else if t >= 35.0 then "sun" else ""
+
+fn local_hm(w: Wx) -> Str
+= w.local.split("T").get(1).or("")
+
+fn hour_label(s: Str) -> Str
+= parse_time(s).map(t => t.format("%a %H:%M")).or(s)
+
+fn top_by(ws: List[Wx], key: Wx -> F64) -> Wx
+= ws.sort_by(w => -key(w)).first.get
+
+// Rendering
+
+fn sup(title: Str, w: Wx, value: Str, sub: Str, hot: Str) -> Str
+= "<div class='stat card sup'{if hot == "" then "" else " data-hot='{hot}'"}><p class='stat-l'>{esc(title)}</p><p class='stat-v'>{value}</p><p class='sup-c'>{esc(w.c.name)} <span class='muted'>{w.c.cc}</span></p><p class='stat-l'>{esc(sub)}</p></div>"
+
+fn sups_now(ws: List[Wx]) -> Str
+= do
+  hot = top_by(ws, _.temp)
+  cold = top_by(ws, w => -w.temp)
+  wet = top_by(ws, _.rain)
+  humid = top_by(ws, _.hum)
+  windy = top_by(ws, _.wind)
+  wetcard = if wet.rain > 0.0 then sup("Wettest now", wet, "{f1(wet.rain)} mm", "in the last hour, {local_hm(wet)} local", "") else sup("Most humid now", humid, "{humid.hum.round}%", "no rain anywhere on the board this hour", "")
+  "<div class='stats'>{sup("Hottest now", hot, deg(hot.temp), "{sky(hot.code)}, {local_hm(hot)} local", hot_kind(hot.temp))}{sup("Coldest now", cold, deg(cold.temp), "{sky(cold.code)}, {local_hm(cold)} local", hot_kind(cold.temp))}{wetcard}{sup("Windiest now", windy, "{windy.wind.round} km/h", "{sky(windy.code)}, {local_hm(windy)} local", "")}</div>"
+
+fn sups_today(ws: List[Wx]) -> Str
+= do
+  hot = top_by(ws, _.tmax)
+  cold = top_by(ws, w => -w.tmin)
+  wet = top_by(ws, _.rsum)
+  windy = top_by(ws, _.wmax)
+  "<div class='stats'>{sup("Hottest today", hot, deg(hot.tmax), "the high of the local day", hot_kind(hot.tmax))}{sup("Coldest today", cold, deg(cold.tmin), "the low of the local day", hot_kind(cold.tmin))}{sup("Wettest today", wet, "{f1(wet.rsum)} mm", "rain so far and forecast", "")}{sup("Windiest today", windy, "{windy.wmax.round} km/h", "the strongest wind of the day", "")}</div>"
+
+fn tags(w: Wx) -> Str
+= if w.c.cc == "IN" then "{w.c.cont} in" else w.c.cont
+
+fn row(w: Wx) -> Str
+= do
+  bar = clamp((w.temp + 30.0) / 80.0, 0.02, 1.0)
+  "<li class='row' data-tags='{tags(w)}' data-ktemp='{w.temp}' data-kmax='{w.tmax}' data-krain='{w.rsum}' data-kwind='{w.wind}'><span class='rk' aria-hidden='true'></span><div class='main'><p class='t'>{esc(w.c.name)} <span class='muted small'>{w.c.cc}</span></p><p class='m'>{sky(w.code)}, {local_hm(w)} local · high {deg(w.tmax)} · low {deg(w.tmin)} · {f1(w.rsum)} mm · {w.wind.round} km/h</p><span class='bar' style='--w:{bar.fmt(3)};background:{temp_color(w.temp)}'></span></div><span class='v'>{deg(w.temp)}<small>feels {deg(w.feels)}</small></span></li>"
+
+fn dot(w: Wx) -> Dot
+= Dot{lat: w.c.lat, lon: w.c.lon, r: 7.0, cls: "", tip: "{w.c.name}, {w.c.cc} | {deg(w.temp)} now, high {deg(w.tmax)} | {sky(w.code)}, {local_hm(w)} local", id: w.c.slug, fill: temp_color(w.temp)}
+
+fn legend() -> Str
+= "<div class='wlegend' aria-hidden='true'><span style='background:linear-gradient(90deg,{(0..13).map(i => temp_color(-20.0 + i.to_f64 * 5.0)).join(",")})'></span><p><b>−20°C</b><b>0</b><b>20</b><b>40°C</b></p></div>"
+
+fn small(w: Wx) -> Str
+= do
+  hot = hot_kind(w.temp)
+  "<button type='button' class='card sm' data-pickview='city:{w.c.slug}'{if hot == "" then "" else " data-hot='{hot}'"} aria-label='{esc(w.c.name)}, {deg(w.temp)}. Show it in the chart'><span class='sm-h'><b>{esc(w.c.name)}</b><span class='muted small'>{local_hm(w)}</span></span><span class='stat-v'>{deg(w.temp)}</span>{pulse.spark(w.ht, "")}<span class='muted small'>Today {deg(w.tmin)} to {deg(w.tmax)}</span></button>"
+
+fn city_views(w: Wx) -> List[View]
+= do
+  hl = w.hours.map(hour_label)
+  dl = w.dates.map(d => short_date(pulse.day_time(d)))
+  k = w.c.slug
+  n = w.c.name
+  [View{key: "{k}~temp~48h", label: n, chart: Chart{kind: "line", labels: hl, series: [Series{key: "t", name: "Temperature", color: 2, values: w.ht}], unit: "°C", digits: 1}}, View{key: "{k}~rain~48h", label: n, chart: Chart{kind: "bar", labels: hl, series: [Series{key: "r", name: "Rain", color: 1, values: w.hr}], unit: "mm", digits: 1}}, View{key: "{k}~wind~48h", label: n, chart: Chart{kind: "line", labels: hl, series: [Series{key: "w", name: "Wind", color: 6, values: w.hw}], unit: "km/h", digits: 0}}, View{key: "{k}~temp~30d", label: n, chart: Chart{kind: "line", labels: dl, series: [Series{key: "hi", name: "High", color: 2, values: w.dmax}, Series{key: "lo", name: "Low", color: 1, values: w.dmin}], unit: "°C", digits: 1}}, View{key: "{k}~rain~30d", label: n, chart: Chart{kind: "bar", labels: dl, series: [Series{key: "r", name: "Rain", color: 1, values: w.dsum}], unit: "mm", digits: 1}}, View{key: "{k}~wind~30d", label: n, chart: Chart{kind: "line", labels: dl, series: [Series{key: "w", name: "Strongest wind", color: 6, values: w.dwind}], unit: "km/h", digits: 0}}]
+
+fn featured(ws: List[Wx]) -> List[Wx]
+= do
+  names = ["Delhi", "Mumbai", "Bengaluru", "Kolkata", "London", "New York", "Tokyo", "Sydney"]
+  picks = names.map(n => ws.find(_.c.name == n)).filter(_.is_some).map(_.get)
+  pulse.uniq_by(picks + [top_by(ws, _.temp), top_by(ws, w => -w.temp), top_by(ws, _.rsum), top_by(ws, _.wmax)], _.c.slug)
+
+fn city_block(g: Group, fs: List[Wx]) -> Str
+= do
+  c = pulse.chart_view(g)
+  cur = fs.first.map(_.c.slug).or("")
+  ctl = pulse.part_pick("city", 0, "City", fs.map(w => (w.c.slug, w.c.name)), cur) + pulse.part_seg("city", 1, "Metric", [("temp", "Temperature"), ("rain", "Rain"), ("wind", "Wind")], "temp") + pulse.part_seg("city", 2, "Span", [("48h", "48 hours"), ("30d", "30 days")], "48h")
+  "<figure class='card cv-fig span2' id='cityfig' data-group='city'><figcaption class='cv-cap'><h2 class='ct'>One city, up close</h2><p>Hour by hour from yesterday into tomorrow, or day by day over the last 30 days, in local time.</p></figcaption><div class='cv-ctl'>{ctl}</div><div class='cv' tabindex='0' role='group' aria-label='Weather in one city, interactive chart. Use arrow keys to read values.'>{pulse.plot(c)}</div>{pulse.data_table(c, "One city, up close")}</figure>"
+
+fn hot15(ws: List[Wx]) -> Group
+= do
+  now = ws.sort_by(w => -w.temp).take(15)
+  day = ws.sort_by(w => -w.tmax).take(15)
+  Group{id: "hot", views: [View{key: "now", label: "Now", chart: Chart{kind: "hbar", labels: now.map(_.c.name), series: [Series{key: "t", name: "Temperature", color: 2, values: now.map(w => some(w.temp))}], unit: "°C", digits: 1}}, View{key: "max", label: "High today", chart: Chart{kind: "hbar", labels: day.map(_.c.name), series: [Series{key: "t", name: "High", color: 4, values: day.map(w => some(w.tmax))}], unit: "°C", digits: 1}}], ranges: [], view: "now", range: ""}
+
+fn avg_at(ws: List[Wx], pick: Wx -> List[Opt[F64]], i: Int) -> Opt[F64]
+= do
+  xs = ws.map(w => pick(w).get(i).or(none)).filter(_.is_some).map(_.or(0.0))
+  if xs.is_empty then none else some(((xs.sum / xs.len.to_f64) * 10.0).round.to_f64 / 10.0)
+
+fn top_at(ws: List[Wx], i: Int) -> Opt[F64]
+= ws.map(w => w.dmax.get(i).or(none)).filter(_.is_some).map(_.or(0.0)).max
+
+fn month(ws: List[Wx]) -> Group
+= do
+  dates = ws.first.map(_.dates).or([])
+  idx = (0..dates.len).map(i => i)
+  c = Chart{kind: "line", labels: dates.map(d => short_date(pulse.day_time(d))), series: [Series{key: "top", name: "Hottest high", color: 4, values: idx.map(i => top_at(ws, i))}, Series{key: "hi", name: "Average high", color: 2, values: idx.map(i => avg_at(ws, _.dmax, i))}, Series{key: "lo", name: "Average low", color: 1, values: idx.map(i => avg_at(ws, _.dmin, i))}], unit: "°C", digits: 1}
+  Group{id: "month", views: [View{key: "t", label: "Temperature", chart: c}], ranges: [Range{key: "7d", label: "7 days", n: 7}, Range{key: "30d", label: "30 days", n: 31}], view: "t", range: "30d"}
+
+fn style() -> Str
+= "<style>.ctr\{counter-reset:r}.ctr .row:not(.off) .rk::before\{counter-increment:r;content:counter(r)}.sup-c\{font-weight:700;margin-top:6px}.sm\{display:flex;flex-direction:column;gap:6px;width:100%;text-align:left;font:inherit;color:inherit;border:0;cursor:pointer;transition:transform .25s var(--spring)}.sm:active\{transform:scale(.97)}.sm-h\{display:flex;justify-content:space-between;gap:8px}.sm .sp\{width:100%;height:44px;margin:4px 0}.wlegend\{margin-top:12px;max-width:360px}.wlegend span\{display:block;height:10px;border-radius:5px}.wlegend p\{display:flex;justify-content:space-between;font-size:12px;color:var(--ink3);margin-top:4px}.wlegend b\{font-weight:500}.wctl\{display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 8px}.smg\{display:grid;gap:12px;grid-template-columns:repeat(2,minmax(0,1fr))}.smg .stat-v\{font-size:clamp(1.4rem,5.5vw,2.2rem)}table.sr-only\{display:block}@media (min-width:760px)\{.smg\{grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}}@media (min-width:1100px)\{.smg\{grid-template-columns:repeat(4,minmax(0,1fr))}.ctr\{columns:2;column-gap:40px}.ctr .row\{break-inside:avoid}}</style>"
+
+fn headline(ws: List[Wx]) -> Headline
+= do
+  hot = top_by(ws, _.temp)
+  cold = top_by(ws, w => -w.temp)
+  Headline{value: deg(hot.temp), label: "hottest right now, in {hot.c.name}", detail: "Coldest: {cold.c.name}, {deg(cold.temp)}", count: f1(hot.temp)}
+
+fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
+  pre g.value.cities.all(valid)
+= do
+  ws = g.value.cities
+  updated = parse_time(g.value.updated).or(cx.now)
+  hot = top_by(ws, _.temp)
+  cold = top_by(ws, w => -w.temp)
+  fs = featured(ws)
+  cityg = Group{id: "city", views: fs.flat_map(city_views), ranges: [], view: fs.first.map(w => "{w.c.slug}~temp~48h").or(""), range: ""}
+  charts = [cityg, hot15(ws), month(ws)]
+  smalls = fs.take(12)
+  mapcard = "<div class='card span2'><div class='sh'><h2>The board on a map</h2><p>Each dot is a city, coloured by its temperature right now.</p></div>{pulse.world_map(cx, ws.map(dot), "Map of temperatures in {ws.len} cities")}{legend()}</div>"
+  list = "<div class='card span2'><div class='sh'><h2>Heat ranking</h2><p>All {ws.len} cities. Sort and filter them.</p></div><div class='wctl'>{pulse.sort_seg("#wlist", "Sort cities", [("temp", "Hottest now"), ("temp:asc", "Coldest now"), ("max", "Hottest today"), ("rain", "Wettest"), ("wind", "Windiest")], "temp")}</div><div class='wctl'>{pulse.chips("w", "Filter by region", "#wlist", [("all", "World"), ("in", "India"), ("as", "Asia"), ("eu", "Europe"), ("af", "Africa"), ("na", "North America"), ("sa", "South America"), ("oc", "Oceania")])}</div><ol class='rows ctr' id='wlist'>{ws.sort_by(w => -w.temp).map(row).join("")}<li class='empty muted' hidden>No cities here.</li></ol></div>"
+  body = "{style()}<section class='wrap band'>{pulse.section_head("Right now", "")}{sups_now(ws)}</section><section class='wrap band'>{pulse.section_head("Today", "Local days, so some are just starting and some are nearly over.")}{sups_today(ws)}</section><section class='wrap band'><div class='grid2'>{mapcard}</div></section><section class='wrap band'>{pulse.section_head("Cities at a glance", "Yesterday into tomorrow, hour by hour. Tap one to chart it.")}<div class='smg'>{smalls.map(small).join("")}</div></section><section class='wrap band'><div class='grid2'>{city_block(cityg, fs)}{pulse.chart_block(charts[1], "The fifteen hottest", "Right now, or the high of the local day.")}{pulse.chart_block(charts[2], "Thirty days on the board", "Average daily high and low across every city, and the hottest high anywhere.")}</div></section><section class='wrap band'><div class='grid2'>{list}</div></section><section class='wrap band'>{pulse.links_row([("data", "../api/weather.json", "JSON for developers")])}</section>"
+  h = headline(ws)
+  p = Page{title: "World weather board", desc: "Hottest right now: {hot.c.name} at {deg(hot.temp)}. Coldest: {cold.c.name} at {deg(cold.temp)}. {ws.len} cities from Open-Meteo, computed by SSPUR.", h1: "It is <em class='num' data-count='{f1(hot.temp)}'>{deg(hot.temp)}</em> in {esc(hot.c.name)} right now", lede: "The hottest of {ws.len} cities on the board. The coldest is {esc(cold.c.name)} at {deg(cold.temp)}, a gap of {f1(hot.temp - cold.temp)} degrees.", body, updated, stale: g.stale, note: g.note, snippet: pulse.snippet(cx, "temp_color"), data: pulse.charts_json(charts)}
+  pulse.publish(cx, "weather/index.html", pulse.page(cx, p))
+  pulse.publish(cx, "api/weather.json", json.encode(Api{meta: pulse.meta(cx, updated, g.stale, h), cities: ws}))
+  pulse.publish(cx, "og/weather.svg", pulse.og_svg(cx, "World weather, right now", deg(hot.temp), "hottest on the board, in {hot.c.name}"))
+
+fn main() -> Unit ! log, fs, proc, env, time
+= do
+  cx = pulse.ctx("weather")
+  prev = load(cx)
+  fresh = if pulse.due(cx, prev.map(_.updated).or(""), 60) then fetch(cx) else err("skip")
+  match pulse.settle(fresh, prev, () => fetch(pulse.seed_ctx(cx)))
+  | none => log("weather: no data at all")
+  | some(g) => do
+    if not g.stale then pulse.save(pulse.state_path(cx, "state.json"), json.encode(g.value))
+    render(cx, g)
+    log("weather: {g.value.cities.len} cities{if g.stale then " (stale)" else ""}")
+
+// Tests run on the bundled fixture (the first thirty cities), offline.
+
+fn fixture() -> Str ! fs
+= pulse.read("../fixtures/weather/forecast.json").or("")
+
+test city_table = cities().len == table().len and cities().len >= 95 and cities().map(_.slug).unique.len == cities().len and cities().all(c => in_range(c.lat, -60.0, 85.0) and in_range(c.lon, -180.0, 180.0))
+test indian_cities = ["Delhi", "Mumbai", "Bengaluru", "Kolkata", "Chennai", "Hyderabad", "Ahmedabad", "Pune", "Jaipur", "Lucknow"].all(n => cities().any(c => c.name == n and c.cc == "IN"))
+test parses_fixture = parse(cities(), fixture()) is ok(ws) and ws.len >= 20 and ws.all(valid) and ws.all(w => w.ht.len == 48 and w.dates.len == 31)
+test rejects_garbage = parse(cities(), "\{\"error\": true}").is_err and parse(cities(), "[]").is_err
+test url_batches = api_url(cities().take(2)) == "https://api.open-meteo.com/v1/forecast?latitude=28.61,19.08&longitude=77.21,72.88&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,wind_speed_10m,weather_code,is_day&hourly=temperature_2m,precipitation,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max&timezone=auto&past_days=30&forecast_days=1&past_hours=24&forecast_hours=24"
+test colours = temp_color(-40.0) == "#313695" and temp_color(48.0) == "#a50026" and temp_color(0.0) == "#74add1" and temp_color(5.0) == "#90c3dd"
+test superlatives = parse(cities(), fixture()) is ok(ws) and top_by(ws, _.temp).temp == ws.map(_.temp).max.or(0.0) and top_by(ws, w => -w.temp).temp == ws.map(_.temp).min.or(0.0)
+test words = deg(-3.25) == "−3.2°C" and deg(0.01) == "0.0°C" and sky(0) == "Clear" and sky(63) == "Rain" and hot_kind(-1.0) == "snow" and hot_kind(36.0) == "sun" and hot_kind(20.0) == ""
+test month_averages = parse(cities(), fixture()) is ok(ws) and month(ws).views[0].chart.labels.len == 31 and avg_at([], _.dmax, 0).is_none

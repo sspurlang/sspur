@@ -1,0 +1,98 @@
+// The overview: one tile per section from each section's api/<sec>.json, and the 404 page.
+
+use pulse.{Ctx, Meta, Headline, Page, Sec, Dot, esc, ago, f1, thousands}
+
+type Envelope = {meta: Meta}
+type Tile = {sec: Sec, meta: Opt[Meta]}
+
+type Iss = {latitude: F64, longitude: F64, altitude: F64, velocity: F64, timestamp: Int}
+type Lat = F64 where _ >= -90.0 and _ <= 90.0
+type Lon = F64 where _ >= -180.0 and _ <= 180.0
+
+fn read_meta(cx: Ctx, slug: Str) -> Opt[Meta] ! fs
+= match pulse.read("{cx.out}/api/{slug}.json").map(s => json.decode[Envelope](s))
+  | some(ok(e)) if e.meta.section == slug => some(e.meta)
+  | _ => none
+
+fn latest(ms: List[Meta]) -> Opt[Time]
+= ms.map(m => parse_time(m.updated)).filter(_.is_some).map(_.get).max
+
+fn tile(cx: Ctx, t: Tile) -> Str
+= match t.meta
+  | some(m) => "<a class='tile s-{t.sec.slug}' href='{t.sec.slug}/'><span class='tk'>{pulse.icon(t.sec.slug)}{esc(t.sec.name)}</span><span class='tv'>{if m.headline.count == "" then esc(m.headline.value) else "<span class='num' data-count='{esc(m.headline.count)}'>{esc(m.headline.value)}</span>"}</span><span class='tl'>{esc(m.headline.label)}</span><span class='td'>{esc(m.headline.detail)}</span><span class='td'>{if m.stale then "Last good data, " else ""}updated <time datetime='{esc(m.updated)}' data-rel>{ago(cx.now, parse_time(m.updated).or(cx.now))}</time></span></a>"
+  | none => "<a class='tile s-{t.sec.slug}' href='{t.sec.slug}/'><span class='tk'>{pulse.icon(t.sec.slug)}{esc(t.sec.name)}</span><span class='tv'>Soon</span><span class='tl'>{esc(t.sec.blurb)}</span><span class='td'>Warming up: the first update has not finished yet.</span></a>"
+
+// The workflow runs at minute 17 of every sixth hour, UTC.
+fn next_run(now: Time) -> Str
+= do
+  m = now.hour * 60 + now.minute
+  next = ((m - 17) / 360 + 1) * 360 + 17
+  left = if m < 17 then 17 - m else next - m
+  if left >= 90 then pulse.plural((left + 30) / 60, "hour") else pulse.plural(left, "minute")
+
+test next_runs = next_run(parse_time("2026-10-13T06:00:00Z").get) == "17 minutes" and next_run(parse_time("2026-10-13T06:30:00Z").get) == "6 hours" and next_run(parse_time("2026-10-13T00:05:00Z").get) == "12 minutes"
+
+fn summary(ts: List[Tile]) -> Str
+= do
+  live = ts.filter(_.meta.is_some).len
+  if live == ts.len then "All eight boards are live." else "{live} of {ts.len} boards are live."
+
+fn overview(cx: Ctx) -> Unit ! fs, log
+= do
+  tiles = pulse.sections().map(s => Tile{sec: s, meta: read_meta(cx, s.slug)})
+  metas = tiles.map(_.meta).filter(_.is_some).map(_.get)
+  updated = latest(metas).or(cx.now)
+  stale = metas.any(_.stale)
+  clock = "<div class='card nowbar'><p class='big clock'><span data-clock>{pulse.hm(cx.now)}</span></p><div class='nb-t'><p class='muted small'>Your local time, <span data-tz>UTC</span></p><p class='small'>Last board update <time datetime='{updated.iso}' data-rel>{ago(cx.now, updated)}</time>. Next run in about {next_run(cx.now)}.</p></div></div>"
+  how = "<section class='wrap band'>{pulse.section_head("How this page is made", "")}<div class='grid'><div class='card'><h3>Fetched</h3><p class='muted'>Every six hours a GitHub Actions job runs one small SSPUR program per board. Each calls a free public API through curl, with timeouts and retries.</p></div><div class='card'><h3>Checked</h3><p class='muted'>Contracts check the shape and the ranges of the data. A board whose fetch fails keeps its last good data and says how old it is.</p></div><div class='card'><h3>Published</h3><p class='muted'>The programs write static HTML, SVG charts, JSON, RSS and calendars. No server, no keys, no cost. <a href='https://utkarshavardhana.github.io/sspur/pulse-how-it-works.html'>Read how it works</a>.</p></div></div></section>"
+  body = "<section class='wrap band'>{clock}<div class='tiles'>{tiles.map(t => tile(cx, t)).join("")}</div></section>{how}"
+  top = metas.find(_.section == "quakes").map(m => "{m.headline.value} {m.headline.label}").or("Eight live boards")
+  p = Page{title: "SSPUR Pulse: the world right now", desc: "What the world is reading, launching, shaking, starring and celebrating today. Eight live boards computed every 6 hours by SSPUR programs.", h1: "The world, <em>right now</em>", lede: "{summary(tiles)} What people read, what is about to fly, where the ground shook, and who has the day off. Recomputed every six hours by SSPUR programs.", body, updated, stale, note: "", snippet: pulse.snippet(cx, "tile"), data: ""}
+  pulse.publish(cx, "index.html", pulse.page(cx, p))
+  pulse.publish(cx, "og/overview.svg", pulse.og_svg(cx, "The world, right now", "Pulse", top))
+
+// The 404 page shows where the International Space Station was when the site was built.
+
+fn iss_valid(i: Iss) -> Bool
+= i.latitude >= -90.0 and i.latitude <= 90.0 and i.longitude >= -180.0 and i.longitude <= 180.0 and i.altitude > 150.0 and i.altitude < 1000.0
+
+fn parse_iss(s: Str) -> Res[Iss, Str]
+= match json.decode[Iss](s)
+  | ok(i) if iss_valid(i) => ok(i)
+  | ok(_) => err("ISS position out of range")
+  | err(e) => err(e)
+
+fn iss_dot(lat: Lat, lon: Lon) -> Dot
+= Dot{lat, lon, r: 7.0, cls: "iss", tip: "The ISS | {f1(lat)}, {f1(lon)}", id: "iss", fill: ""}
+
+fn hemi(v: F64, pos: Str, neg: Str) -> Str
+= "{f1(v.abs)}° {if v >= 0.0 then pos else neg}"
+
+fn lost(cx: Ctx) -> Unit ! fs, proc, time, log
+= do
+  path = "{cx.data}/404/iss.json"
+  fresh = pulse.get(cx with sec := "overview", "iss.json", "https://api.wheretheiss.at/v1/satellites/25544", []).map(parse_iss).or(err("fetch failed"))
+  iss = if fresh is ok(i) then some(i) else pulse.read(path).map(parse_iss).or(err("none")).map(i => some(i)).or(none)
+  if fresh is ok(i) then pulse.save(path, json.encode(i))
+  c404 = cx with sec := "404"
+  orbit = match iss
+    | some(i) => "<div class='card'><div class='sh'><h2>Meanwhile, in orbit</h2><p>When this page was built, the International Space Station was here.</p></div>{pulse.world_map(cx, [iss_dot(i.latitude, i.longitude)], "Where the ISS was")}<p class='muted' style='margin-top:12px'>{hemi(i.latitude, "N", "S")}, {hemi(i.longitude, "E", "W")}, {thousands(i.altitude.round)} km up, moving at {thousands(i.velocity.round)} km/h. It goes around the Earth about every 93 minutes, so it is somewhere else by now.</p></div>"
+    | none => ""
+  body = "<section class='wrap band'><div class='grid2'>{orbit}<div class='card'><h2>Try one of these</h2><ul class='rows'>{pulse.sections().map(s => "<li class='row'><span class='rk'>{pulse.icon(s.slug)}</span><div class='main'><p class='t'><a href='{s.slug}/'>{esc(s.name)}</a></p><p class='m'>{esc(s.blurb)}</p></div><span></span></li>").join("")}</ul></div></div></section>"
+  p = Page{title: "Lost in orbit", desc: "This page does not exist.", h1: "This page is <em>lost in orbit</em>", lede: "The link you followed leads nowhere. The rest of the world is still right here: <a href='./'>back to Pulse</a>.", body, updated: cx.now, stale: false, note: "", snippet: "", data: ""}
+  pulse.publish(c404, "404.html", pulse.page(c404, p))
+
+fn main() -> Unit ! log, fs, proc, env, time
+= do
+  cx = pulse.ctx("overview")
+  overview(cx)
+  lost(cx)
+  log("overview: done")
+
+fn fixture(name: Str) -> Str ! fs
+= pulse.read("../fixtures/overview/{name}").or("")
+
+test iss_parses = parse_iss(fixture("iss.json")) is ok(i) and i.altitude > 300.0
+test iss_rejects = parse_iss("\{\"latitude\": 120.0, \"longitude\": 0.0, \"altitude\": 400.0, \"velocity\": 1.0, \"timestamp\": 1}").is_err and parse_iss("nope").is_err
+test hemispheres = hemi(-48.5, "N", "S") == "48.5° S" and hemi(33.0, "E", "W") == "33.0° E"
+test newest_update = latest([Meta{section: "a", title: "", updated: "2026-01-01T00:00:00Z", stale: false, headline: Headline{value: "", label: "", detail: "", count: ""}, generated: ""}, Meta{section: "b", title: "", updated: "2026-02-01T00:00:00Z", stale: false, headline: Headline{value: "", label: "", detail: "", count: ""}, generated: ""}]) == parse_time("2026-02-01T00:00:00Z")

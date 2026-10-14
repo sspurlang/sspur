@@ -1,0 +1,7 @@
+[package]
+name = "launches"
+version = "0.1.0"
+src = "main.ssp"
+
+[deps]
+pulse = { path = "../lib" }

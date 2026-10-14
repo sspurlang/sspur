@@ -1,0 +1,166 @@
+// Hacker News time machine: the top stories of this calendar date 5, 10 and 15
+// years ago (HN Search by Algolia), next to today's front page.
+
+use pulse.{Ctx, Got, Group, View, Chart, Series, Headline, Page, esc, safe_url, thousands, plural, cap}
+
+type Hit = {objectID: Str, title: Opt[Str], url: Opt[Str], points: Opt[Int], num_comments: Opt[Int], created_at_i: Opt[Int], author: Opt[Str]}
+type Search = {hits: List[Hit]}
+
+type Story = {id: Str, title: Str, url: Str, points: Int, comments: Int, time: Int, author: Str}
+type Era = {key: Str, label: Str, years: Int, date: Str, stories: List[Story]}
+type State = {updated: Str, past_at: Str, eras: List[Era], today: List[Story]}
+type Api = {meta: pulse.Meta, eras: List[Era], today: List[Story]}
+
+type Points = Int where _ >= 0
+
+fn points(p: Points) -> Int
+= p
+
+fn story(h: Hit) -> Opt[Story]
+= if h.title is some(t) and h.created_at_i is some(at) and not t.trim.is_empty then some(Story{id: h.objectID, title: t.trim, url: h.url.or(""), points: points(max(0, h.points.or(0))), comments: max(0, h.num_comments.or(0)), time: at, author: h.author.or("")}) else none
+
+fn valid(s: Story) -> Bool
+= s.points >= 0 and s.comments >= 0 and s.time > 0 and not s.id.is_empty
+
+fn parse(s: Str, n: Int) -> Res[List[Story], Str]
+= match json.decode[Search](s)
+  | err(e) => err("bad search: {e}")
+  | ok(r) => do
+    xs = r.hits.map(story).filter(_.is_some).map(_.get).filter(valid)
+    if xs.is_empty then err("no stories") else ok(xs.sort_by(x => (-x.points, x.id)).take(n))
+
+// The same calendar date some years back; Feb 29 falls back to Feb 28.
+fn same_day(t: Time, years: Int) -> Time
+= date(t.year - years, t.month, t.format("%d").to_int.or(1)).or(date(t.year - years, t.month, 28).or(t))
+
+fn window_url(start: Time) -> Str
+= do
+  a = start.unix_ms / 1000
+  "https://hn.algolia.com/api/v1/search?tags=story&numericFilters=created_at_i%3E{a},created_at_i%3C{a + 86400}&hitsPerPage=30"
+
+fn eras_of() -> List[(Str, Int)]
+= [("5y", 5), ("10y", 10), ("15y", 15)]
+
+fn fetch_era(cx: Ctx, key: Str, years: Int) -> Res[Era, Str] ! proc, fs, time, log
+= do
+  start = same_day(cx.now.date, years)
+  ok(xs) = pulse.get(cx, "past-{years}.json", window_url(start), []).map(s => parse(s, 10)).or(err("fetch failed")) else err("era {years} failed")
+  ok(Era{key, label: "{years} years ago", years, date: pulse.day(start), stories: xs})
+
+fn fetch(cx: Ctx, prev: Opt[State]) -> Res[State, Str] ! proc, fs, time, log
+= do
+  target = pulse.day(same_day(cx.now.date, 5))
+  old = prev.map(_.eras).or([])
+  past_due = old.len < 3 or old.first.map(_.date).or("") != target or pulse.due(cx, prev.map(_.past_at).or(""), 360)
+  var eras = old
+  var past_ok = false
+  if past_due then do
+    var got = []
+    for (key, y) in eras_of()
+      sleep_ms(if cx.fixtures == "" then 400 else 0)
+      if fetch_era(cx, key, y) is ok(e) then got := got.push(e)
+    if got.len == 3 then do
+      eras := got
+      past_ok := true
+  front = pulse.get(cx, "front.json", "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=30", []).map(s => parse(s, 30)).or(err("fetch failed"))
+  today = front.or(prev.map(_.today).or([]))
+  if eras.len < 3 then err("past eras unavailable") else if today.is_empty and front.is_err then err("front page unavailable") else ok(State{updated: pulse.stamp(cx).iso, past_at: if past_ok then pulse.stamp(cx).iso else prev.map(_.past_at).or(""), eras, today})
+
+fn decode_state(s: Str) -> Opt[State]
+= match json.decode[State](s)
+  | ok(st) if st.eras.len == 3 => some(st)
+  | _ => none
+
+fn load(cx: Ctx) -> Opt[State] ! fs
+= pulse.read(pulse.state_path(cx, "state.json")).map(decode_state).or(none)
+
+// Rendering
+
+fn host(u: Str) -> Str
+= u.split("://").get(1).or("").split("/").first.or("").replace("www.", "")
+
+fn item_url(s: Story) -> Str
+= "https://news.ycombinator.com/item?id={pulse.url_enc(s.id)}"
+
+fn row(s: Story, i: Int) -> Str
+= do
+  link = if s.url == "" then item_url(s) else s.url
+  "<li class='row'><span class='rk'>{i + 1}</span><div class='main'><p class='t'><a href='{safe_url(link)}'>{esc(s.title)}</a></p><p class='m'>{if s.url == "" then "Ask or Show HN" else esc(host(s.url))} · by {esc(s.author)} · <a href='{safe_url(item_url(s))}'>{plural(s.comments, "comment")}</a></p></div><span class='v'>{thousands(s.points)}<small>points</small></span></li>"
+
+fn era_card(e: Era) -> Str
+= do
+  y = pulse.day_time(e.date)
+  "<div class='card' data-tags='{e.key}'><div class='sh'><h2>{y.year}</h2><p>{esc(e.label)}, {esc(y.format("%B "))}{y.format("%d").to_int.or(0)}</p></div><ol class='rows'>{e.stories.enumerate.map(p => row(p.1, p.0)).join("")}</ol></div>"
+
+fn today_card(xs: List[Story]) -> Str
+= "<div class='card' data-tags='today'><div class='sh'><h2>Today</h2><p>The front page right now, by points</p></div><ol class='rows'>{xs.take(10).enumerate.map(p => row(p.1, p.0)).join("")}</ol></div>"
+
+fn curve(xs: List[Story], comments: Bool) -> List[Opt[F64]]
+= (0..10).map(i => xs.sort_by(s => if comments then -s.comments else -s.points).get(i).map(s => if comments then s.comments.to_f64 else s.points.to_f64))
+
+fn compare_group(s: State) -> Group
+= do
+  labels = (1..11).map(i => "#{i}")
+  eras = s.eras.sort_by(_.years)
+  colors = [2, 1, 5]
+  fn mk(comments: Bool) -> Chart
+  = Chart{kind: "line", labels, series: [Series{key: "today", name: "Today", color: 3, values: curve(s.today, comments)}] + eras.enumerate.map(p => Series{key: p.1.key, name: "{pulse.day_time(p.1.date).year}", color: colors.get(p.0).or(0), values: curve(p.1.stories, comments)}), unit: if comments then "comments" else "points", digits: 0}
+  Group{id: "compare", views: [View{key: "points", label: "Points", chart: mk(false)}, View{key: "comments", label: "Comments", chart: mk(true)}], ranges: [], view: "points", range: ""}
+
+fn top_past(s: State) -> Story
+= s.eras.flat_map(_.stories).sort_by(x => -x.points).first.get
+
+fn headline(s: State) -> Headline
+= do
+  e = s.eras.sort_by(_.years).first.get
+  t = e.stories.first.get
+  Headline{value: thousands(t.points), label: "points for the top story {e.years} years ago today", detail: pulse.clip(t.title, 80), count: "{t.points}"}
+
+fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
+  pre g.value.eras.all(e => e.stories.all(valid))
+= do
+  s = g.value
+  eras = s.eras.sort_by(_.years)
+  e5 = eras.first.get
+  t5 = e5.stories.first.get
+  best = top_past(s)
+  today_top = s.today.first
+  updated = parse_time(s.updated).or(cx.now)
+  cg = compare_group(s)
+  when = same_day(cx.now.date, 0)
+  stats = "<div class='stats'>{pulse.stat(today_top.map(t => thousands(t.points)).or("none"), "points for today's top story", today_top.map(t => "{t.points}").or(""))}{eras.map(e => pulse.stat(thousands(e.stories.first.map(_.points).or(0)), "top story in {pulse.day_time(e.date).year}", "{e.stories.first.map(_.points).or(0)}")).join("")}</div>"
+  chart = pulse.chart_block(cg, "Then and now, rank by rank", "Points of the top 10 stories on this date in each year. Tap a year to hide it.")
+  filters = pulse.chips("era", "Pick a year", "#eras", [("all", "All years"), ("today", "Today")] + eras.map(e => (e.key, "{pulse.day_time(e.date).year}")))
+  cards = "<div class='grid2' id='eras'>{today_card(s.today)}{eras.map(era_card).join("")}</div>"
+  body = "<section class='wrap band'>{stats}</section><section class='wrap band'>{chart}</section><section class='wrap band'><div class='sh'><h2>The stories</h2></div>{filters}<div style='margin-top:16px'>{cards}</div></section><section class='wrap band'>{pulse.links_row([("data", "../api/hn.json", "JSON for developers")])}</section>"
+  h = headline(s)
+  p = Page{title: "Hacker News time machine", desc: "The top Hacker News stories on {when.format("%B ")}{when.format("%d").to_int.or(0)}, 5, 10 and 15 years ago, next to today's front page. Computed by SSPUR.", h1: "<em class='num' data-count='{t5.points}'>{thousands(t5.points)}</em> points on this day in {pulse.day_time(e5.date).year}", lede: "<a href='{safe_url(if t5.url == "" then item_url(t5) else t5.url)}'>{esc(t5.title)}</a> led Hacker News {e5.years} years ago today. The biggest of all three years: {esc(best.title)}, with {thousands(best.points)} points.", body, updated, stale: g.stale, note: g.note, snippet: pulse.snippet(cx, "same_day"), data: pulse.charts_json([cg])}
+  pulse.publish(cx, "hn/index.html", pulse.page(cx, p))
+  pulse.publish(cx, "api/hn.json", json.encode(Api{meta: pulse.meta(cx, updated, g.stale, h), eras, today: s.today}))
+  pulse.publish(cx, "og/hn.svg", pulse.og_svg(cx, "Hacker News, {e5.years} years ago today", "{thousands(t5.points)} points", t5.title))
+
+fn main() -> Unit ! log, fs, proc, env, time
+= do
+  cx = pulse.ctx("hn")
+  prev = load(cx)
+  fresh = if pulse.due(cx, prev.map(_.updated).or(""), 30) then fetch(cx, prev) else err("skip")
+  match pulse.settle(fresh, prev, () => fetch(pulse.seed_ctx(cx), none))
+  | none => log("hn: no data at all")
+  | some(g) => do
+    if not g.stale then pulse.save(pulse.state_path(cx, "state.json"), json.encode(g.value))
+    render(cx, g)
+    log("hn: {g.value.today.len} stories today{if g.stale then " (stale)" else ""}")
+
+// Tests run on the bundled fixtures, offline.
+
+fn fixture(name: Str) -> Str ! fs
+= pulse.read("../fixtures/hn/{name}").or("")
+
+test parses_past = parse(fixture("past-5.json"), 10) is ok(xs) and xs.len == 10 and xs.all(valid)
+test ranked_by_points = parse(fixture("past-10.json"), 10) is ok(xs) and xs.map(_.points) == xs.map(_.points).sort.reverse
+test parses_front = parse(fixture("front.json"), 30) is ok(xs) and xs.len >= 10
+test rejects_bad = parse("\{\"hits\": []}", 10).is_err and parse("<html>", 10).is_err
+test leap_day = same_day(date(2028, 2, 29).get, 5) == date(2023, 2, 28).get and same_day(date(2026, 10, 14).get, 10) == date(2016, 10, 14).get
+test window = window_url(date(2020, 10, 14).get) == "https://hn.algolia.com/api/v1/search?tags=story&numericFilters=created_at_i%3E1602633600,created_at_i%3C1602720000&hitsPerPage=30"
+test hosts = host("https://www.quantamagazine.org/x/y") == "quantamagazine.org" and host("") == ""
+test curves = curve([Story{id: "1", title: "a", url: "", points: 5, comments: 9, time: 1, author: ""}, Story{id: "2", title: "b", url: "", points: 7, comments: 1, time: 1, author: ""}], false).take(3) == [some(7.0), some(5.0), none]

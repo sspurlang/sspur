@@ -1,0 +1,235 @@
+// AI papers of the day: the newest arXiv submissions in cs.AI, cs.CL and cs.LG,
+// grouped by topic, with an attention signal from arXiv links on Hacker News.
+
+use pulse.{Ctx, Got, Group, View, Range, Chart, Series, Item, Headline, Page, esc, safe_url, thousands, plural, ago, short_date, cap, clip}
+
+type Paper = {id: Str, title: Str, summary: Str, authors: List[Str], cats: List[Str], primary: Str, published: Str, topic: Int}
+type DayCount = {date: Str, total: Int, counts: List[Int], est: Bool}
+type Hit = {objectID: Str, title: Opt[Str], url: Opt[Str], points: Opt[Int], num_comments: Opt[Int], created_at_i: Int}
+type Hits = {hits: List[Hit]}
+type Hot = {id: Str, title: Str, hn: Str, points: Int, comments: Int}
+type State = {updated: Str, papers: List[Paper], days: List[DayCount], hot: List[Hot]}
+type Api = {meta: pulse.Meta, topics: List[Str], papers: List[Paper], days: List[DayCount], attention: List[Hot]}
+
+type ArxivId = Str where _.len >= 9 and _.len <= 10
+
+fn checked_id(id: ArxivId) -> Str
+= id
+
+// Topics, in priority order: the first one whose keywords appear wins.
+
+fn topics() -> List[Str]
+= ["Agents", "Safety and alignment", "Robotics and RL", "Vision and multimodal", "Efficiency", "Reasoning", "Language models", "Other"]
+
+fn topic_color(i: Int) -> Int
+= [5, 4, 3, 6, 2, 7, 1, 0].get(i).or(0)
+
+fn keywords() -> List[List[Str]]
+= [[" agent", " agentic", " tool use", " tool calling", " multi agent", " web navigation", " computer use"], [" safety", " alignment", " jailbreak", " harmful", " red team", " privacy", " fairness", " bias ", " toxic", " adversarial", " unlearning", " watermark", " interpretab"], [" robot", " embodied", " manipulation", " reinforcement", " reward", " policy optimization", " rl ", " bandit", " autonomous driving"], [" image", " vision", " visual", " video", " multimodal", " multi modal", " diffusion", " 3d ", " segmentation", " speech", " audio"], [" efficient", " efficiency", " quantiz", " pruning", " compression", " distillation", " kv cache", " sparse", " low rank", " lora ", " speculative decoding", " latency"], [" reasoning", " chain of thought", " math", " theorem", " planning", " logic", " proof"], [" language model", " llm", " transformer", " token", " nlp", " translation", " question answering", " text ", " retrieval", " rag "]]
+
+fn norm(s: Str) -> Str
+= " " + s.lower.words.join(" ") + " "
+
+fn match_topic(text: Str) -> Opt[Int]
+= do
+  t = norm(text)
+  keywords().enumerate.find(p => p.1.any(k => t.contains(k))).map(_.0)
+
+fn classify(title: Str, summary: Str) -> Int
+= match_topic(title).or(match_topic(summary).or(7))
+
+// Atom parsing
+
+fn bare_id(s: Str) -> Str
+= do
+  tail = s.split("/abs/").last.or(s).split("/pdf/").last.or(s)
+  tail.split("v").first.or(tail).trim
+
+fn id_ok(id: Str) -> Bool
+= regex("^\\d\{4}\\.\\d\{4,5}$").map(r => r.is_match(id)).or(false)
+
+fn entry(e: Str) -> Paper
+= do
+  title = pulse.xml_text(e, "title")
+  summary = pulse.xml_text(e, "summary")
+  Paper{id: bare_id(pulse.xml_text(e, "id")), title, summary, authors: pulse.xml_blocks(e, "author").map(a => pulse.xml_text(a, "name")).filter(n => not n.is_empty), cats: pulse.xml_attrs(e, "category", "term"), primary: pulse.xml_attrs(e, "arxiv:primary_category", "term").first.or(""), published: pulse.xml_text(e, "published"), topic: classify(title, summary)}
+
+fn valid(p: Paper) -> Bool
+= id_ok(p.id) and not p.title.is_empty and parse_time(p.published).is_some and p.topic >= 0 and p.topic < 8
+
+fn parse_feed(s: Str) -> Res[List[Paper], Str]
+= do
+  es = pulse.xml_blocks(s, "entry")
+  ps = es.map(entry).filter(valid)
+  if es.is_empty then err("no entries") else if ps.len * 10 < es.len * 9 then err("too many malformed entries") else ok(ps)
+
+fn total_results(s: Str) -> Opt[Int]
+= pulse.xml_text(s, "opensearch:totalResults").to_int
+
+// One estimated day: the total is exact, the topic split comes from a sample of 100.
+fn day_count(date: Str, total: Int, sample: List[Paper]) -> DayCount
+= do
+  n = max(1, sample.len)
+  counts = (0..8).map(t => (sample.filter(_.topic == t).len * total).to_f64 / n.to_f64).map(_.round)
+  DayCount{date, total, counts, est: total > sample.len}
+
+fn arxiv_url(q: Str, n: Int) -> Str
+= "https://export.arxiv.org/api/query?search_query={q}&sortBy=submittedDate&sortOrder=descending&max_results={n}"
+
+fn main_query() -> Str
+= "cat:cs.AI+OR+cat:cs.CL+OR+cat:cs.LG"
+
+fn day_query(date: Str) -> Str
+= do
+  ymd = date.replace("-", "")
+  "%28cat:cs.AI+OR+cat:cs.CL+OR+cat:cs.LG%29+AND+submittedDate:%5B{ymd}0000+TO+{ymd}2359%5D"
+
+// Past days that are complete (before the newest published day) and not yet counted.
+fn missing_days(have: List[Str], latest: Str, n: Int) -> List[Str]
+= do
+  t = pulse.day_time(latest)
+  (1..31).map(i => pulse.day(t.add(days(-i)))).filter(d => not have.contains(d)).take(n)
+
+fn merge_days(old: List[DayCount], new: List[DayCount]) -> List[DayCount]
+= cap((old.filter(d => not new.any(_.date == d.date)) + new).sort_by(_.date), 30)
+
+// Hacker News attention
+
+fn hit_id(h: Hit) -> Str
+= do
+  u = h.url.or("")
+  if not u.contains("arxiv.org/") then "" else regex("\\d\{4}\\.\\d\{4,5}").map(r => r.find(u).or("")).or("")
+
+fn parse_hot(s: Str) -> Res[List[Hot], Str]
+= match json.decode[Hits](s)
+  | err(e) => err("bad HN response: {e}")
+  | ok(hs) => ok(hs.hits.filter(h => hit_id(h) != "").group_by(hit_id).map(p => do
+    best = p.1.sort_by(h => -h.points.or(0)).first.get
+    Hot{id: p.0, title: best.title.or(p.0), hn: best.objectID, points: p.1.map(_.points.or(0)).sum, comments: p.1.map(_.num_comments.or(0)).sum}).sort_by(h => (-h.points, h.id)).take(20))
+
+fn pause(cx: Ctx) -> Unit ! time
+= if cx.fixtures == "" then sleep_ms(3500)
+
+fn backfill(cx: Ctx, old: List[DayCount], latest: Str) -> List[DayCount] ! proc, fs, time, log
+= do
+  var got = []
+  for d in missing_days(old.map(_.date), latest, cx.backfill)
+    pause(cx)
+    r = pulse.get(cx, "day-{d}.xml", arxiv_url(day_query(d), 100), [])
+    if r is ok(xml) and total_results(xml) is some(total) and parse_feed(xml) is ok(ps) then got := got.push(day_count(d, total, ps))
+    else if r is ok(xml) and total_results(xml) == some(0) then got := got.push(DayCount{date: d, total: 0, counts: (0..8).map(i => 0), est: false})
+  merge_days(old, got)
+
+fn fetch(cx: Ctx, prev: Opt[State]) -> Res[State, Str] ! proc, fs, time, log
+= do
+  ok(ps) = pulse.get(cx, "latest.xml", arxiv_url(main_query(), 200), []).map(parse_feed).or(err("arXiv fetch failed")) else err("arXiv unavailable")
+  if ps.len < 10 then err("too few papers") else do
+    since = cx.now.unix_ms / 1000 - 7 * 86400
+    hot = pulse.get(cx, "hn.json", "https://hn.algolia.com/api/v1/search?query=arxiv.org&restrictSearchableAttributes=url&tags=story&numericFilters=created_at_i%3E{since}&hitsPerPage=100", []).map(parse_hot).or(err("")).or(prev.map(_.hot).or([]))
+    latest = ps.map(p => p.published.take(10)).sort.last.or(pulse.day(cx.now))
+    days = backfill(cx, prev.map(_.days).or([]), latest)
+    ok(State{updated: pulse.stamp(cx).iso, papers: ps, days, hot})
+
+fn decode_state(s: Str) -> Opt[State]
+= match json.decode[State](s)
+  | ok(st) if not st.papers.is_empty => some(st)
+  | _ => none
+
+fn load(cx: Ctx) -> Opt[State] ! fs
+= pulse.read(pulse.state_path(cx, "state.json")).map(decode_state).or(none)
+
+// Rendering
+
+fn tslug(i: Int) -> Str
+= "t{i}"
+
+fn authors(p: Paper) -> Str
+= if p.authors.len > 3 then p.authors.take(3).join(", ") + " et al." else p.authors.join(", ")
+
+fn points_of(hot: List[Hot], id: Str) -> Int
+= hot.find(_.id == id).map(_.points).or(0)
+
+fn row(cx: Ctx, i: Int, p: Paper, hot: List[Hot]) -> Str
+= do
+  pts = points_of(hot, checked_id(p.id))
+  name = topics().get(p.topic).or("Other")
+  "<li class='row' data-tags='all {tslug(p.topic)}{if pts > 0 then " hn" else ""}' data-kpts='{pts}' data-knew='{pulse.day_time(p.published).unix_ms / 1000}'><span class='rk'>{i + 1}</span><div class='main'><p class='t'><a href='https://arxiv.org/abs/{esc(p.id)}'>{esc(p.title)}</a></p><p class='m'>{esc(authors(p))} · <time datetime='{esc(p.published)}' data-rel>{ago(cx.now, pulse.day_time(p.published))}</time></p><p class='m'><span class='pill k{topic_color(p.topic)}'>{esc(name)}</span> {p.cats.take(4).map(c => "<span class='pill'>{esc(c)}</span>").join(" ")}</p><details class='more'><summary>Abstract</summary><p class='small muted'>{esc(clip(p.summary, 450))}</p></details></div><span class='v'>{if pts > 0 then "<a class='pill acc' href='https://news.ycombinator.com/item?id={esc(hot.find(_.id == p.id).map(_.hn).or(""))}'>{pts} HN points</a>" else ""}</span></li>"
+
+fn hot_row(i: Int, h: Hot, top: Int) -> Str
+= "<li class='row'><span class='rk'>{i + 1}</span><div class='main'><p class='t'><a href='https://arxiv.org/abs/{esc(h.id)}'>{esc(h.title)}</a></p><p class='m'><a href='https://news.ycombinator.com/item?id={esc(h.hn)}'>{plural(h.comments, "comment")} on Hacker News</a> · arXiv {esc(h.id)}</p><span class='bar' style='--w:{(if top <= 0 then 0.0 else h.points.to_f64 / top.to_f64).fmt(3)}'></span></div><span class='v'>{thousands(h.points)}<small>points</small></span></li>"
+
+fn day_group(ds: List[DayCount]) -> Group
+= do
+  labels = ds.map(d => short_date(pulse.day_time(d.date)))
+  count = Chart{kind: "stack", labels, series: topics().enumerate.map(p => Series{key: tslug(p.0), name: p.1, color: topic_color(p.0), values: ds.map(d => some(d.counts.get(p.0).or(0).to_f64))}), unit: "papers", digits: 0}
+  share = Chart{kind: "stack", labels, series: topics().enumerate.map(p => Series{key: tslug(p.0), name: p.1, color: topic_color(p.0), values: ds.map(d => some(if d.counts.sum == 0 then 0.0 else d.counts.get(p.0).or(0).to_f64 * 100.0 / d.counts.sum.to_f64))}), unit: "% of the day", digits: 1}
+  Group{id: "days", views: [View{key: "count", label: "Papers", chart: count}, View{key: "share", label: "Share", chart: share}], ranges: [Range{key: "7d", label: "7 days", n: 7}, Range{key: "30d", label: "30 days", n: 30}], view: "count", range: "30d"}
+
+fn mix_group(ps: List[Paper]) -> Group
+= do
+  order = (0..8).sort_by(t => -ps.filter(_.topic == t).len)
+  c = Chart{kind: "hbar", labels: order.map(t => topics()[t]), series: [Series{key: "n", name: "Papers", color: 1, values: order.map(t => some(ps.filter(_.topic == t).len.to_f64))}], unit: "papers", digits: 0}
+  Group{id: "mix", views: [View{key: "n", label: "Papers", chart: c}], ranges: [], view: "n", range: ""}
+
+fn top_topic(ps: List[Paper]) -> Int
+= (0..7).sort_by(t => -ps.filter(_.topic == t).len).first.or(7)
+
+fn headline(s: State) -> Headline
+= do
+  ps = s.papers
+  latest = s.days.last
+  t = top_topic(ps)
+  Headline{value: latest.map(d => thousands(d.total)).or("{ps.len}"), label: latest.map(d => "AI papers submitted on {short_date(pulse.day_time(d.date))}").or("newest AI papers"), detail: "Most common topic: {topics().get(t).or("Other")}", count: latest.map(d => "{d.total}").or("{ps.len}")}
+
+fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
+  pre g.value.papers.all(valid)
+= do
+  s = g.value
+  ps = s.papers
+  updated = pulse.day_time(s.updated)
+  t = top_topic(ps)
+  share = ps.filter(_.topic == t).len * 100 / max(1, ps.len)
+  noticed = ps.filter(p => points_of(s.hot, p.id) > 0)
+  h = headline(s)
+  hottest = s.hot.first
+  charts = [mix_group(ps)] + (if s.days.is_empty then [] else [day_group(s.days)])
+  est = s.days.any(_.est)
+  stats = "<div class='stats'>{pulse.stat(h.value, h.label, h.count)}{pulse.stat("{share}%", "of the newest {ps.len} are about {esc(topics().get(t).or("Other").lower)}", "")}{pulse.stat(hottest.map(x => thousands(x.points)).or("0"), "points for the most discussed arXiv link on HN this week", "")}{pulse.stat("{noticed.len}", "of today's papers already on Hacker News", "{noticed.len}")}</div>"
+  daychart = if charts.len > 1 then pulse.chart_block(charts[1], if s.days.len >= 30 then "Thirty days of AI papers" else "The last {plural(s.days.len, "day")} of AI papers", if est then "Submissions per day by topic. Each day's total is exact; the topic split is estimated from a sample of 100 papers." else "Submissions per day by topic.") else "<div class='card'><h2 class='ct'>Daily history arrives soon</h2><p class='muted' style='margin-top:8px'>Pulse counts a few past days on each run, politely, until it has thirty.</p></div>"
+  chartrow = "<div class='grid2'>{pulse.chart_block(charts[0], "What the newest {ps.len} are about", "Topics come from keywords in each title, then the abstract.")}{daychart}</div>"
+  hotcard = if s.hot.is_empty then "" else "<div class='card'><div class='sh'><h2>Most discussed this week</h2><p>arXiv links on Hacker News, by points.</p></div><ol class='rows'>{s.hot.take(10).enumerate.map(p => hot_row(p.0, p.1, s.hot.first.map(_.points).or(1))).join("")}</ol></div>"
+  chips = pulse.chips("topic", "Filter by topic", "#plist", [("all", "All")] + topics().enumerate.filter(p => ps.any(x => x.topic == p.0)).map(p => (tslug(p.0), p.1)) + (if noticed.is_empty then [] else [("hn", "On Hacker News")]))
+  list = "<div class='card'><div class='sh'><h2>The newest papers</h2>{pulse.sort_seg("#plist", "Sort papers", [("new", "Newest"), ("pts", "Most discussed")], "new")}</div>{chips}<ol class='rows' id='plist' style='margin-top:10px'>{ps.take(40).enumerate.map(p => row(cx, p.0, p.1, s.hot)).join("")}<li class='empty muted' hidden>No papers on this topic in the newest batch.</li></ol></div>"
+  body = "<section class='wrap band'>{stats}</section><section class='wrap band'>{chartrow}</section>{if hotcard == "" then "" else "<section class='wrap band'>{hotcard}</section>"}<section class='wrap band'>{list}</section><section class='wrap band'>{pulse.links_row([("feed", "../feeds/papers.xml", "RSS of the newest 50"), ("data", "../api/papers.json", "JSON for developers")])}</section>"
+  p = Page{title: "AI papers of the day", desc: "The newest arXiv papers in AI, language and machine learning, grouped by topic, with what Hacker News is reading. Computed by SSPUR.", h1: "<em class='num' data-count='{h.count}'>{h.value}</em> new AI papers", lede: "{esc(h.label.take(1).upper + h.label.drop(1))}, across cs.AI, cs.CL and cs.LG. {esc(topics().get(t).or("Other"))} leads the newest batch{hottest.map(x => ", and Hacker News is talking about “{esc(clip(x.title, 80))}”").or("")}.", body, updated, stale: g.stale, note: g.note, snippet: pulse.snippet(cx, "classify"), data: pulse.charts_json(charts)}
+  pulse.publish(cx, "papers/index.html", pulse.page(cx, p))
+  pulse.publish(cx, "api/papers.json", json.encode(Api{meta: pulse.meta(cx, updated, g.stale, h), topics: topics(), papers: ps, days: s.days, attention: s.hot}))
+  items = ps.take(50).map(x => Item{title: x.title, link: "https://arxiv.org/abs/{x.id}", desc: "{authors(x)}. {clip(x.summary, 400)}", date: pulse.day_time(x.published), guid: "arxiv:{x.id}"})
+  pulse.publish(cx, "feeds/papers.xml", pulse.rss(cx, "SSPUR Pulse: AI papers of the day", "The newest arXiv papers in cs.AI, cs.CL and cs.LG.", items))
+  pulse.publish(cx, "og/papers.svg", pulse.og_svg(cx, "AI papers of the day", h.value, h.label))
+
+fn main() -> Unit ! log, fs, proc, env, time
+= do
+  cx = pulse.ctx("papers")
+  prev = load(cx)
+  fresh = if pulse.due(cx, prev.map(_.updated).or(""), 180) then fetch(cx, prev) else err("skip")
+  match pulse.settle(fresh, prev, () => fetch(pulse.seed_ctx(cx), none))
+  | none => log("papers: no data at all")
+  | some(g) => do
+    if not g.stale then pulse.save(pulse.state_path(cx, "state.json"), json.encode(g.value))
+    render(cx, g)
+    log("papers: {g.value.papers.len} papers, {g.value.days.len} days, {g.value.hot.len} on HN{if g.stale then " (stale)" else ""}")
+
+// Tests run on the bundled fixtures, offline.
+
+fn fixture(name: Str) -> Str ! fs
+= pulse.read("../fixtures/papers/{name}").or("")
+
+test parses_atom = parse_feed(fixture("latest.xml")) is ok(ps) and ps.len >= 15 and ps.all(valid) and ps.all(p => not p.authors.is_empty and not p.cats.is_empty)
+test rejects_errors = parse_feed("<feed><title>Error</title></feed>").is_err and parse_feed("not xml").is_err
+test ids = bare_id("http://arxiv.org/abs/2610.13948v1") == "2610.13948" and id_ok("2610.13948") and not id_ok("hep-th/9901001")
+test topics_by_keyword = classify("Tool-using LLM agents for the web", "") == 0 and classify("Jailbreak attacks on chatbots", "") == 1 and classify("A study", "We train a small language model.") == 6 and classify("On manifolds", "Nothing here.") == 7
+test day_estimate = day_count("2026-10-01", 500, [Paper{id: "2610.00001", title: "a", summary: "", authors: [], cats: [], primary: "", published: "2026-10-01T00:00:00Z", topic: 0}, Paper{id: "2610.00002", title: "b", summary: "", authors: [], cats: [], primary: "", published: "2026-10-01T00:00:00Z", topic: 6}]) == DayCount{date: "2026-10-01", total: 500, counts: [250, 0, 0, 0, 0, 0, 250, 0], est: true}
+test missing_skips_known = missing_days(["2026-10-08"], "2026-10-09", 2) == ["2026-10-07", "2026-10-06"]
+test hn_attention = parse_hot(fixture("hn.json")) is ok(hs) and hs.len > 0 and hs.all(h => id_ok(h.id)) and hs.map(_.points) == hs.map(_.points).sort.reverse
+test total_count = total_results(fixture("day.xml")).or(0) > 0 and parse_feed(fixture("day.xml")).is_ok

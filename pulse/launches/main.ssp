@@ -1,0 +1,244 @@
+// Space launches: The Space Devs Launch Library 2, one call per run at most once an hour
+// (the free tier allows about 15 calls an hour), plus an ICS calendar of what is coming.
+
+use pulse.{Ctx, Got, Group, View, Range, Chart, Series, Ev, Headline, Page, esc, safe_url, thousands, plural, short_date, day, hm, until}
+
+type Status = {name: Opt[Str], abbrev: Opt[Str]}
+type Precision = {abbrev: Opt[Str]}
+type Provider = {name: Opt[Str]}
+type Config = {name: Opt[Str], full_name: Opt[Str]}
+type Rocket = {configuration: Opt[Config]}
+type Orbit = {abbrev: Opt[Str], name: Opt[Str]}
+type Mission = {name: Opt[Str], description: Opt[Str], orbit: Opt[Orbit]}
+type Location = {name: Opt[Str], country_code: Opt[Str]}
+type Pad = {name: Opt[Str], country_code: Opt[Str], location: Opt[Location]}
+type Raw = {id: Str, name: Opt[Str], status: Opt[Status], net: Opt[Str], window_end: Opt[Str], net_precision: Opt[Precision], launch_service_provider: Opt[Provider], rocket: Opt[Rocket], mission: Opt[Mission], pad: Opt[Pad], webcast_live: Opt[Bool]}
+type Upcoming = {results: List[Raw]}
+
+type Launch = {id: Str, name: Str, mission: Str, status: Str, status_name: Str, net: Str, end: Str, precision: Str, provider: Str, rocket: Str, pad: Str, location: Str, cc: Str, orbit: Str, kind: Str, desc: Str, webcast: Bool}
+type State = {updated: Str, launches: List[Launch]}
+type Api = {meta: pulse.Meta, launches: List[Launch]}
+
+// Dates that must parse before anything is published.
+type Iso = Str where parse_time(_).is_some
+
+fn when(s: Iso) -> Time
+= parse_time(s).or(time_ms(0))
+
+fn launch(r: Raw) -> Opt[Launch]
+= do
+  m = r.mission
+  p = r.pad
+  loc = p.map(x => x.location).or(none)
+  cfg = r.rocket.map(x => x.configuration).or(none)
+  if r.net is some(net) and parse_time(net).is_some then some(Launch{id: r.id, name: r.name.or("Unnamed launch"), mission: m.map(x => x.name).or(none).or(r.name.or("").split(" | ").last.or("")), status: r.status.map(x => x.abbrev).or(none).or("TBD"), status_name: r.status.map(x => x.name).or(none).or(""), net, end: r.window_end.or(net), precision: r.net_precision.map(x => x.abbrev).or(none).or(""), provider: r.launch_service_provider.map(x => x.name).or(none).or("Unknown provider"), rocket: cfg.map(c => c.full_name.or(c.name.or(""))).or(""), pad: p.map(x => x.name).or(none).or(""), location: loc.map(x => x.name).or(none).or(""), cc: p.map(x => x.country_code).or(none).or(loc.map(x => x.country_code).or(none).or("")), orbit: m.map(x => x.orbit).or(none).map(o => o.name.or("")).or(""), kind: "", desc: m.map(x => x.description).or(none).or(""), webcast: r.webcast_live.or(false)}) else none
+
+fn valid(l: Launch) -> Bool
+= parse_time(l.net).is_some and parse_time(l.end).is_some and not l.name.is_empty
+
+fn parse(s: Str) -> Res[List[Launch], Str]
+= match json.decode[Upcoming](s)
+  | err(e) => err("bad launch list: {e}")
+  | ok(u) => do
+    ls = u.results.map(launch).filter(_.is_some).map(_.get).filter(valid)
+    if ls.is_empty or ls.len * 10 < u.results.len * 9 then err("too many malformed launches") else ok(ls.sort_by(l => when(l.net).unix_ms))
+
+fn count_word(n: Int) -> Str
+= if n == 1 then "1 launch" else "{n} launches"
+
+fn title(l: Launch) -> Str
+= if l.mission.is_empty or l.mission.lower.contains("unknown") then "{l.name.split(" | ").first.or(l.rocket)}, payload not announced" else l.mission
+
+fn done(l: Launch) -> Bool
+= ["Success", "Failure", "Partial Failure"].contains(l.status)
+
+// A countdown only means something when the time is known to the hour or better.
+fn exact(l: Launch) -> Bool
+= ["SEC", "MIN", "HR"].contains(l.precision)
+
+fn dated(l: Launch) -> Bool
+= exact(l) or l.precision == "DAY"
+
+fn group(l: Launch) -> Str
+= if l.provider.contains("SpaceX") then "spacex" else if l.cc == "CHN" or l.provider.contains("China") then "china" else if l.provider.contains("Rocket Lab") then "rocketlab" else if l.provider.contains("Indian Space") then "isro" else "other"
+
+fn group_name(g: Str) -> Str
+= match g
+  | "spacex" => "SpaceX"
+  | "china" => "China"
+  | "rocketlab" => "Rocket Lab"
+  | "isro" => "ISRO"
+  | _ => "Others"
+
+fn country(cc: Str) -> Str
+= match cc
+  | "USA" => "United States"
+  | "CHN" => "China"
+  | "IND" => "India"
+  | "NZL" => "New Zealand"
+  | "KAZ" => "Kazakhstan"
+  | "GUF" => "French Guiana"
+  | "FRA" => "France"
+  | "JPN" => "Japan"
+  | "RUS" => "Russia"
+  | "KOR" => "South Korea"
+  | "PRK" => "North Korea"
+  | "IRN" => "Iran"
+  | "ISR" => "Israel"
+  | "AUS" => "Australia"
+  | "GBR" => "United Kingdom"
+  | "NOR" => "Norway"
+  | "SWE" => "Sweden"
+  | "BRA" => "Brazil"
+  | "MHL" => "Marshall Islands"
+  | "" => "Somewhere on Earth"
+  | other => other
+
+fn fetch(cx: Ctx) -> Res[State, Str] ! proc, fs, time, log
+= do
+  ok(body) = pulse.get(cx, "upcoming.json", "https://ll.thespacedevs.com/2.2.0/launch/upcoming/?limit=40&mode=normal", []) else err("launch list unavailable")
+  ok(ls) = parse(body) else err("launch list did not parse")
+  ok(State{updated: pulse.stamp(cx).iso, launches: ls})
+
+fn decode_state(s: Str) -> Opt[State]
+= match json.decode[State](s)
+  | ok(st) if not st.launches.is_empty => some(st)
+  | _ => none
+
+fn load(cx: Ctx) -> Opt[State] ! fs
+= pulse.read(pulse.state_path(cx, "state.json")).map(decode_state).or(none)
+
+// Rendering
+
+fn status_pill(l: Launch) -> Str
+= do
+  cls = match l.status
+    | "Go" | "Success" => "go"
+    | "Hold" | "TBC" => "warn"
+    | "Failure" | "Partial Failure" => "bad"
+    | "In Flight" => "acc"
+    | _ => ""
+  label = match l.status
+    | "Go" => "Go"
+    | "TBD" => "Date to be set"
+    | "TBC" => "To be confirmed"
+    | "Success" => "Success"
+    | other => other
+  "<span class='pill {cls}' title='{esc(l.status_name)}'>{esc(label)}</span>"
+
+fn when_text(cx: Ctx, l: Launch) -> Str
+= do
+  t = when(l.net)
+  if exact(l) then "{t.format("%a")} {short_date(t)}, {hm(t)} UTC" else if l.precision == "DAY" then "{t.format("%a")} {short_date(t)}, time to be set" else "No earlier than {t.format("%B %Y")}"
+
+fn meta_line(l: Launch) -> Str
+= [l.rocket, l.provider, l.pad, country(l.cc)].filter(s => not s.is_empty).map(esc).join(" · ")
+
+fn row(cx: Ctx, i: Int, l: Launch) -> Str
+= do
+  t = when(l.net)
+  soon = if exact(l) and not done(l) and t.unix_ms - cx.now.unix_ms < 7 * 86400000 then "<small data-countdown='{t.iso}'>{until(cx.now, t)}</small>" else if done(l) then "" else "<small>{if exact(l) then until(cx.now, t) else ""}</small>"
+  "<li class='row' data-tags='all {group(l)}' data-ktime='{t.unix_ms}'><span class='rk'>{if dated(l) then t.format("%d").to_int.or(0).str else ""}</span><div class='main'><p class='t'>{esc(title(l))}</p><p class='m'>{when_text(cx, l)}</p><p class='m'>{meta_line(l)}</p></div><span class='v'>{status_pill(l)}{soon}</span></li>"
+
+fn upcoming(cx: Ctx, ls: List[Launch]) -> List[Launch]
+= ls.filter(l => not done(l) and when(l.net).unix_ms > cx.now.unix_ms - 3 * 3600000)
+
+fn strip(cx: Ctx, ls: List[Launch], only_go: Bool) -> Chart
+= do
+  start = pulse.day_time(day(cx.now))
+  ds = (0..30).map(i => start.add(days(i)))
+  groups = ["spacex", "china", "rocketlab", "isro", "other"]
+  pool = ls.filter(l => dated(l) and not done(l) and (not only_go or l.status == "Go"))
+  Chart{kind: "stack", labels: ds.map(short_date), series: groups.enumerate.map(p => Series{key: p.1, name: group_name(p.1), color: [1, 4, 6, 7, 0][p.0], values: ds.map(d => some(pool.filter(l => group(l) == p.1 and day(when(l.net)) == day(d)).len.to_f64))}), unit: "launches", digits: 0}
+
+fn strip_group(cx: Ctx, ls: List[Launch]) -> Group
+= Group{id: "strip", views: [View{key: "all", label: "Every launch", chart: strip(cx, ls, false)}, View{key: "go", label: "Go for launch", chart: strip(cx, ls, true)}], ranges: [Range{key: "7d", label: "7 days", n: 7}, Range{key: "30d", label: "30 days", n: 30}], view: "all", range: "30d"}
+
+fn next_launch(cx: Ctx, ls: List[Launch]) -> Opt[Launch]
+= do
+  future = ls.filter(l => not done(l) and when(l.net).unix_ms > cx.now.unix_ms)
+  if future.find(exact) is some(l) then some(l) else future.first
+
+fn in_days(cx: Ctx, l: Launch, n: Int) -> Bool
+= do
+  ms = when(l.net).unix_ms - cx.now.unix_ms
+  dated(l) and not done(l) and ms > 0 and ms < n * 86400000
+
+fn headline(cx: Ctx, ls: List[Launch]) -> Headline
+= do
+  week = ls.filter(l => in_days(cx, l, 7)).len
+  Headline{value: "{week}", label: "rocket launches in the next 7 days", detail: next_launch(cx, ls).map(l => "Next: {title(l)}, {until(cx.now, when(l.net))}").or(""), count: "{week}"}
+
+fn hero_card(cx: Ctx, l: Launch) -> Str
+= do
+  t = when(l.net)
+  clock = if exact(l) then "<p class='big' data-countdown='{t.iso}' aria-live='off'>{until(cx.now, t)}</p>" else "<p class='big'>{t.format("%b %Y")}</p>"
+  "<div class='card nextl'><p class='kick muted'>Next launch</p><h2>{esc(title(l))}</h2><p class='muted'>{meta_line(l)}</p>{clock}<p class='m'>{when_text(cx, l)} {status_pill(l)}{if l.webcast then " <span class='pill acc'>Webcast live</span>" else ""}</p>{if l.desc.is_empty then "" else "<p class='desc'>{esc(pulse.clip(l.desc, 260))}</p>"}</div>"
+
+fn ics_events(ls: List[Launch]) -> List[Ev]
+= ls.filter(l => not done(l)).map(l => do
+  s = when(l.net)
+  e = when(l.end)
+  Ev{uid: "{l.id}@sspur-pulse", start: s, end: if e.unix_ms - s.unix_ms < 3600000 then s.add(hours(1)) else e, all_day: false, summary: if exact(l) then l.name else "{l.name} (date not final)", desc: "{l.provider}, {l.rocket}. {l.desc}", loc: [l.pad, l.location].filter(x => not x.is_empty).join(", "), url: ""})
+
+fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
+  pre g.value.launches.all(valid)
+= do
+  ls = g.value.launches
+  updated = parse_time(g.value.updated).or(cx.now)
+  up = upcoming(cx, ls)
+  firm = up.filter(dated)
+  later = up.filter(l => not dated(l))
+  just = ls.filter(l => done(l)).reverse.take(4)
+  nx = next_launch(cx, ls)
+  week = ls.filter(l => in_days(cx, l, 7)).len
+  month = ls.filter(l => in_days(cx, l, 30)).len
+  nations = up.filter(l => in_days(cx, l, 30)).map(_.cc).unique.filter(c => not c.is_empty).len
+  india = up.filter(_.cc == "IND").len
+  sg = strip_group(cx, ls)
+  present = ["spacex", "china", "rocketlab", "isro", "other"].filter(k => up.any(l => group(l) == k))
+  stats = "<div class='stats'>{pulse.stat("{week}", "launches in the next 7 days", "{week}")}{pulse.stat("{month}", "dated in the next 30 days", "{month}")}{pulse.stat("{nations}", "countries launching this month", "{nations}")}{pulse.stat("{india}", "upcoming from India", "{india}")}</div>"
+  hero = nx.map(l => hero_card(cx, l)).or("")
+    .replace("class='card nextl'", if just.is_empty then "class='card nextl span2'" else "class='card nextl'")
+  justc = if just.is_empty then "" else "<div class='card'><div class='sh'><h2>Just launched</h2><p>The latest results.</p></div><ol class='rows'>{just.enumerate.map(p => row(cx, p.0, p.1)).join("")}</ol></div>"
+  chart = pulse.chart_block(sg, "Launches by day", "Every launch with a date known to the day, stacked by provider.")
+  list = "<div class='card span2'><div class='sh'><h2>Coming up</h2><p>{count_word(up.len)} on the books, {firm.len} with a date.</p></div>{pulse.chips("prov", "Filter by provider", "#llist,#llater", [("all", "Everyone")] + present.map(k => (k, group_name(k))))}<ol class='rows' id='llist' style='margin-top:10px'>{firm.enumerate.map(p => row(cx, p.0, p.1)).join("")}<li class='empty muted' hidden>No dated launches from this provider right now.</li></ol>{if later.is_empty then "" else "<details class='more'><summary>{count_word(later.len)} more without a firm date</summary><ol class='rows' id='llater'>{later.enumerate.map(p => row(cx, p.0, p.1)).join("")}</ol></details>"}</div>"
+  style = "<style>.nextl h2{font-size:clamp(1.7rem,4.6vw,2.6rem);margin:6px 0 4px}.nextl .big{margin:18px 0 10px;color:var(--acc)}.nextl .m{display:flex;flex-wrap:wrap;gap:8px;align-items:center;color:var(--ink2)}.nextl .desc{margin-top:12px;color:var(--ink2);max-width:70ch}.kick{font-weight:700;font-size:.85rem;text-transform:uppercase;letter-spacing:.08em}.row .v small{margin-top:4px;font-variant-numeric:tabular-nums}</style>"
+  body = "{style}<section class='wrap band'><div class='grid2'>{hero}{justc}</div></section><section class='wrap band'>{stats}</section><section class='wrap band'><div class='grid2'><div class='span2'>{chart}</div></div></section><section class='wrap band'><div class='grid2'>{list}</div></section><section class='wrap band'>{pulse.links_row([("cal", "../cal/launches.ics", "Add launches to your calendar"), ("data", "../api/launches.json", "JSON for developers")])}</section>"
+  h = headline(cx, ls)
+  lede = nx.map(l => "Next up: <strong>{esc(title(l))}</strong>, {when_text(cx, l)}, from {esc(country(l.cc))}.").or("No launch has a firm date yet.")
+  p = Page{title: "Space launches", desc: "{week} rocket launches in the next 7 days, with live countdowns and a calendar. From The Space Devs, computed by SSPUR.", h1: "<em class='num' data-count='{week}'>{week}</em> rockets heading to space this week", lede, body, updated, stale: g.stale, note: g.note, snippet: pulse.snippet(cx, "strip"), data: pulse.charts_json([sg])}
+  pulse.publish(cx, "launches/index.html", pulse.page(cx, p))
+  pulse.publish(cx, "api/launches.json", json.encode(Api{meta: pulse.meta(cx, updated, g.stale, h), launches: ls}))
+  pulse.publish(cx, "cal/launches.ics", pulse.ics("Rocket launches (SSPUR Pulse)", ics_events(ls), cx.now))
+  pulse.publish(cx, "og/launches.svg", pulse.og_svg(cx, "Space launches this week", "{week}", nx.map(l => "next: {title(l)}").or("launches in the next 7 days")))
+
+fn main() -> Unit ! log, fs, proc, env, time
+= do
+  cx = pulse.ctx("launches")
+  prev = load(cx)
+  fresh = if pulse.due(cx, prev.map(_.updated).or(""), 60) then fetch(cx) else err("skip")
+  match pulse.settle(fresh, prev, () => fetch(pulse.seed_ctx(cx)))
+  | none => log("launches: no data at all")
+  | some(g) => do
+    if not g.stale then pulse.save(pulse.state_path(cx, "state.json"), json.encode(g.value))
+    render(cx, g)
+    log("launches: {g.value.launches.len} launches{if g.stale then " (stale)" else ""}")
+
+// Tests run on the bundled fixtures, offline.
+
+fn fixture(name: Str) -> Str ! fs
+= pulse.read("../fixtures/launches/{name}").or("")
+
+fn sample(net: Str, status: Str, precision: Str, provider: Str, cc: Str) -> Launch
+= Launch{id: net, name: "Rocket | Payload", mission: "Payload", status, status_name: "", net, end: net, precision, provider, rocket: "Rocket", pad: "Pad", location: "Site", cc, orbit: "", kind: "", desc: "", webcast: false}
+
+test parses_upcoming = parse(fixture("upcoming.json")) is ok(ls) and ls.len >= 20 and ls.all(valid)
+test sorted_by_time = parse(fixture("upcoming.json")) is ok(ls) and ls.map(l => when(l.net).unix_ms) == ls.map(l => when(l.net).unix_ms).sort
+test rejects_garbage = parse("\{\"results\": []}").is_err and parse("<html>").is_err and parse("\{\"results\": [\{\"id\": \"x\", \"net\": \"soon\"}]}").is_err
+test provider_groups = group(sample("2026-10-14T00:00:00Z", "Go", "SEC", "SpaceX", "USA")) == "spacex" and group(sample("2026-10-14T00:00:00Z", "Go", "SEC", "LandSpace", "CHN")) == "china" and group(sample("2026-10-14T00:00:00Z", "Go", "SEC", "Indian Space Research Organization", "IND")) == "isro" and group(sample("2026-10-14T00:00:00Z", "Go", "SEC", "Arianespace", "GUF")) == "other"
+test next_is_exact_and_future = next_launch(Ctx{sec: "launches", root: "", data: "", out: "", web: "", fixtures: "", record: "", now: parse_time("2026-10-14T00:00:00Z").get, base: "", backfill: 0, force: false, skip: false}, [sample("2026-10-13T00:00:00Z", "Success", "SEC", "SpaceX", "USA"), sample("2026-10-20T00:00:00Z", "TBD", "M", "SpaceX", "USA"), sample("2026-10-21T00:00:00Z", "Go", "MIN", "SpaceX", "USA")]).map(_.net) == some("2026-10-21T00:00:00Z")
+test strip_counts_by_day = strip(Ctx{sec: "launches", root: "", data: "", out: "", web: "", fixtures: "", record: "", now: parse_time("2026-10-14T05:00:00Z").get, base: "", backfill: 0, force: false, skip: false}, [sample("2026-10-14T09:00:00Z", "Go", "SEC", "SpaceX", "USA"), sample("2026-10-15T09:00:00Z", "Go", "DAY", "Rocket Lab", "NZL"), sample("2026-10-16T09:00:00Z", "TBD", "M", "SpaceX", "USA")], false) is c and c.series[0].values.take(3) == [some(1.0), some(0.0), some(0.0)] and c.series[2].values.take(2) == [some(0.0), some(1.0)]
+test titles = title(sample("2026-10-14T00:00:00Z", "Go", "SEC", "SpaceX", "USA") with mission := "Unknown Payload", name := "Zhuque-2E | Unknown Payload") == "Zhuque-2E, payload not announced"
+test words = count_word(1) == "1 launch" and count_word(3) == "3 launches"
+test ics_is_valid = pulse.ics("t", ics_events([sample("2026-10-14T09:00:00Z", "Go", "SEC", "SpaceX", "USA")]), time_ms(0)) is s and s.contains("DTSTART:20261014T090000Z") and s.contains("DTEND:20261014T100000Z") and s.contains("END:VCALENDAR")

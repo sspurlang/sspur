@@ -1,0 +1,156 @@
+// Earthquakes: the USGS feeds for the last day, the significant ones of the week,
+// and M2.5+ for the month (once a day) for the 30 day chart.
+
+use pulse.{Ctx, Got, Group, View, Range, Chart, Series, Dot, Item, Headline, Page, esc, safe_url, f1, thousands, plural, ago, short_date, day, cap}
+
+type Props = {mag: Opt[F64], place: Opt[Str], time: Opt[Int], url: Opt[Str], tsunami: Opt[Int], alert: Opt[Str], felt: Opt[Int]}
+type Geom = {coordinates: List[F64]}
+type Feat = {id: Str, properties: Props, geometry: Opt[Geom]}
+type Feed = {features: List[Feat]}
+
+type Quake = {id: Str, mag: F64, place: Str, time: Int, lat: F64, lon: F64, depth: F64, url: Str, tsunami: Bool, alert: Str, felt: Int}
+type Day = {date: Str, counts: List[Int], max: F64}
+type State = {updated: Str, month_day: Str, quakes: List[Quake], week: List[Quake], days: List[Day]}
+
+type Mag = F64 where _ >= -2.0 and _ <= 10.0
+type Lat = F64 where _ >= -90.0 and _ <= 90.0
+type Lon = F64 where _ >= -180.0 and _ <= 180.0
+type Api = {meta: pulse.Meta, quakes: List[Quake], significant: List[Quake], days: List[Day]}
+
+fn radius(m: Mag) -> F64
+= max(2.0, 1.5.pow(m) * 0.62)
+
+fn pin(q: Quake, lat: Lat, lon: Lon, r: F64, top: Str) -> Dot
+= Dot{lat, lon, r, cls: if q.id == top then "top1" else "", tip: "M{f1(q.mag)} | {q.place} | {pulse.hm(time_ms(q.time))} UTC, {f1(q.depth)} km deep", id: q.id, fill: ""}
+
+fn quake(f: Feat) -> Opt[Quake]
+= if f.properties.mag is some(m) and f.geometry is some(g) and g.coordinates is [lon, lat, depth, ..] and f.properties.time is some(t) then some(Quake{id: f.id, mag: m, place: f.properties.place.or("Unknown place"), time: t, lat, lon, depth, url: f.properties.url.or(""), tsunami: f.properties.tsunami.or(0) == 1, alert: f.properties.alert.or(""), felt: f.properties.felt.or(0)}) else none
+
+fn valid(q: Quake) -> Bool
+= q.mag >= -2.0 and q.mag <= 10.0 and q.lat >= -90.0 and q.lat <= 90.0 and q.lon >= -180.0 and q.lon <= 180.0 and q.time > 0
+
+fn parse(s: Str) -> Res[List[Quake], Str]
+= match json.decode[Feed](s)
+  | err(e) => err("bad feed: {e}")
+  | ok(f) => do
+    qs = f.features.map(quake).filter(_.is_some).map(_.get).filter(valid)
+    if qs.len * 10 < f.features.len * 9 then err("too many malformed quakes") else ok(qs.sort_by(q => (-q.mag, -q.time)))
+
+// The magnitude bands of the 30 day chart: 2.5 to 4, 4 to 5, 5 to 6, 6 and up.
+fn band(m: F64) -> Int
+= if m >= 6.0 then 3 else if m >= 5.0 then 2 else if m >= 4.0 then 1 else 0
+
+fn days_of(qs: List[Quake], today: Str) -> List[Day]
+= qs.filter(_.mag >= 2.5).group_by(q => day(time_ms(q.time))).filter(p => p.0 < today).map(p => Day{date: p.0, counts: (0..4).map(b => p.1.filter(q => band(q.mag) == b).len), max: p.1.map(_.mag).max.or(0.0)}).sort_by(_.date)
+
+fn merge_days(old: List[Day], new: List[Day]) -> List[Day]
+= cap((old.filter(d => not new.any(_.date == d.date)) + new).sort_by(_.date), 30)
+
+fn near_india(q: Quake) -> Bool
+= (q.lat >= 5.0 and q.lat <= 39.0 and q.lon >= 60.0 and q.lon <= 98.0) or ["India", "Nepal", "Pakistan", "Bangladesh", "Bhutan", "Sri Lanka", "Myanmar", "Afghanistan", "Maldives"].any(n => q.place.contains(n))
+
+fn fetch(cx: Ctx, prev: Opt[State]) -> Res[State, Str] ! proc, fs, time, log
+= do
+  base = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/"
+  ok(qs) = pulse.get(cx, "all_day.json", base + "all_day.geojson", []).map(parse).or(err("fetch failed")) else err("all_day unavailable")
+  week = pulse.get(cx, "significant_week.json", base + "significant_week.geojson", []).map(parse).or(err("")).or(prev.map(_.week).or([]))
+  today = day(cx.now)
+  old = prev.map(_.days).or([])
+  month_due = prev.map(_.month_day).or("") != today or cx.fixtures != ""
+  month = if month_due then pulse.get(cx, "2.5_month.json", base + "2.5_month.geojson", []).map(parse).or(err("")) else err("skip")
+  days = if month is ok(ms) then merge_days(old, days_of(ms, today)) else old
+  if qs.is_empty then err("no quakes") else ok(State{updated: pulse.stamp(cx).iso, month_day: if month.is_ok then today else prev.map(_.month_day).or(""), quakes: qs, week, days})
+
+fn decode_state(s: Str) -> Opt[State]
+= match json.decode[State](s)
+  | ok(st) if not st.quakes.is_empty => some(st)
+  | _ => none
+
+fn load(cx: Ctx) -> Opt[State] ! fs
+= pulse.read(pulse.state_path(cx, "state.json")).map(decode_state).or(none)
+
+// Rendering
+
+fn mag_class(m: F64) -> Str
+= if m >= 6.0 then "bad" else if m >= 4.5 then "warn" else ""
+
+fn dot(q: Quake, top: Str) -> Dot
+= pin(q, q.lat, q.lon, radius(q.mag), top)
+
+fn tags(q: Quake) -> Str
+= (["all"] + (if near_india(q) then ["in"] else []) + (if q.mag >= 4.5 then ["m45"] else []) + (if q.tsunami then ["ts"] else [])).join(" ")
+
+fn row(cx: Ctx, i: Int, q: Quake) -> Str
+= "<li class='row' data-tags='{tags(q)}' data-kmag='{q.mag}' data-ktime='{q.time}'><span class='rk'>{i + 1}</span><div class='main'><p class='t'><a href='{safe_url(q.url)}'>{esc(q.place)}</a></p><p class='m'><time datetime='{time_ms(q.time).iso}' data-rel>{ago(cx.now, time_ms(q.time))}</time> · {f1(q.depth)} km deep{if q.felt > 0 then " · felt by {thousands(q.felt)}" else ""}{if q.tsunami then " · tsunami flag" else ""}</p></div><span class='v'><span class='pill {mag_class(q.mag)}'>M{f1(q.mag)}</span></span></li>"
+
+fn bands24(qs: List[Quake]) -> Chart
+= do
+  names = ["<1", "1", "2", "3", "4", "5", "6+"]
+  counts = (0..7).map(b => qs.filter(q => min(6, max(0, q.mag.floor)) == b).len.to_f64)
+  Chart{kind: "bar", labels: names, series: [Series{key: "n", name: "Quakes", color: 0, values: counts.map(some)}], unit: "quakes", digits: 0}
+
+fn month_group(ds: List[Day]) -> Group
+= do
+  labels = ds.map(d => short_date(pulse.day_time(d.date)))
+  names = ["M2.5–4", "M4–5", "M5–6", "M6+"]
+  stack = Chart{kind: "stack", labels, series: (0..4).map(b => Series{key: "b{b}", name: names[b], color: [6, 1, 7, 4][b], values: ds.map(d => some(d.counts.get(b).or(0).to_f64))}), unit: "quakes", digits: 0}
+  maxl = Chart{kind: "line", labels, series: [Series{key: "max", name: "Strongest", color: 4, values: ds.map(d => some(d.max))}], unit: "magnitude", digits: 1}
+  Group{id: "month", views: [View{key: "count", label: "Count", chart: stack}, View{key: "max", label: "Strongest", chart: maxl}], ranges: [Range{key: "7d", label: "7 days", n: 7}, Range{key: "30d", label: "30 days", n: 30}], view: "count", range: "30d"}
+
+fn headline(s: State) -> Headline
+= do
+  top = s.quakes.first
+  Headline{value: "{s.quakes.len}", label: "earthquakes in the last 24 hours", detail: top.map(q => "Strongest M{f1(q.mag)}, {q.place}").or(""), count: "{s.quakes.len}"}
+
+fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
+  pre g.value.quakes.all(valid)
+= do
+  s = g.value
+  qs = s.quakes
+  top = qs.first.get
+  m45 = qs.filter(_.mag >= 4.5).len
+  india = qs.filter(near_india)
+  updated = parse_time(s.updated).or(cx.now)
+  map_dots = qs.sort_by(_.mag).reverse.map(q => dot(q, top.id))
+  mapcard = "<div class='card span2'><div class='sh'><h2>Where the ground moved</h2><p>Dot size grows with magnitude. Tap the biggest one.</p></div>{pulse.chips("q", "Filter quakes", "#qmap,#qlist", [("all", "Everywhere"), ("in", "India and neighbours"), ("m45", "M4.5 and up")])}<div id='qmap' style='margin-top:14px'>{pulse.world_map(cx, map_dots, "Map of {qs.len} earthquakes in the last 24 hours")}</div></div>"
+  charts = [Group{id: "bands", views: [View{key: "n", label: "Count", chart: bands24(qs)}], ranges: [], view: "n", range: ""}, month_group(s.days)]
+  stats = "<div class='stats'>{pulse.stat(thousands(qs.len), "quakes in 24 hours", "{qs.len}")}{pulse.stat("M{f1(top.mag)}", "strongest, {esc(pulse.clip(top.place, 40))}", "")}{pulse.stat("{m45}", "at magnitude 4.5 or more", "{m45}")}{pulse.stat("{india.len}", "in India and its neighbours", "{india.len}")}</div>"
+  chartrow = "<div class='grid2'>{pulse.chart_block(charts[0], "Magnitude bands, last 24 hours", "Quakes by whole magnitude. Most are too small to feel.")}{if s.days.is_empty then "" else pulse.chart_block(charts[1], "Thirty days of shaking", "Daily M2.5+ quakes by band, or the strongest of each day.")}</div>"
+  list = "<div class='card'><div class='sh'><h2>Strongest first</h2>{pulse.seg("sort", "Sort quakes", [("mag", "Magnitude"), ("time", "Newest")], "mag").replace("data-ctl='sort'", "data-ctl='sort' data-sort='#qlist'")}</div><ol class='rows' id='qlist'>{qs.take(30).enumerate.map(p => row(cx, p.0, p.1)).join("")}<li class='empty muted' hidden>Nothing here in the last 24 hours. Good news.</li></ol></div>"
+  sig = if s.week.is_empty then "" else "<div class='card'><div class='sh'><h2>Significant this week</h2><p>Picked by USGS from magnitude, felt reports and impact.</p></div><ol class='rows'>{s.week.take(12).enumerate.map(p => row(cx, p.0, p.1)).join("")}</ol></div>"
+  body = "<section class='wrap band'>{stats}</section><section class='wrap band'><div class='grid2'>{mapcard}</div></section><section class='wrap band'>{chartrow}</section><section class='wrap band'><div class='grid2'>{list}{sig}</div></section><section class='wrap band'>{pulse.links_row([("feed", "../feeds/quakes.xml", "RSS of M4.5+ quakes"), ("data", "../api/quakes.json", "JSON for developers")])}</section>"
+  h = headline(s)
+  p = Page{title: "Earthquakes right now", desc: "{qs.len} earthquakes in the last 24 hours. Strongest M{f1(top.mag)}, {top.place}. Live from USGS, computed by SSPUR.", h1: "<em class='num' data-count='{qs.len}'>{thousands(qs.len)}</em> earthquakes in the last 24 hours", lede: "The strongest was M{f1(top.mag)}, {esc(top.place)}, <time datetime='{time_ms(top.time).iso}' data-rel>{ago(cx.now, time_ms(top.time))}</time>. {if india.is_empty then "None near India." else "{plural(india.len, "quake")} in India and its neighbours."}", body, updated, stale: g.stale, note: g.note, snippet: pulse.snippet(cx, "days_of"), data: pulse.charts_json(charts)}
+  pulse.publish(cx, "quakes/index.html", pulse.page(cx, p))
+  api = json.encode(Api{meta: pulse.meta(cx, updated, g.stale, h), quakes: qs.take(200), significant: s.week, days: s.days})
+  pulse.publish(cx, "api/quakes.json", api)
+  items = (s.week + qs.filter(_.mag >= 4.5)).filter(q => q.mag >= 4.5 or q.tsunami)
+  feed = pulse.uniq_by(items, _.id).sort_by(q => -q.time).take(50).map(q => Item{title: "M{f1(q.mag)}, {q.place}", link: q.url, desc: "Magnitude {f1(q.mag)} at {f1(q.depth)} km depth, {time_ms(q.time).iso}.", date: time_ms(q.time), guid: q.id})
+  pulse.publish(cx, "feeds/quakes.xml", pulse.rss(cx, "SSPUR Pulse: earthquakes M4.5+", "Earthquakes of magnitude 4.5 and up, and significant ones, from USGS.", feed))
+  pulse.publish(cx, "og/quakes.svg", pulse.og_svg(cx, "Earthquakes, last 24 hours", thousands(qs.len), "strongest M{f1(top.mag)}, {top.place}"))
+
+fn main() -> Unit ! log, fs, proc, env, time
+= do
+  cx = pulse.ctx("quakes")
+  prev = load(cx)
+  fresh = if pulse.due(cx, prev.map(_.updated).or(""), 30) then fetch(cx, prev) else err("skip")
+  match pulse.settle(fresh, prev, () => fetch(pulse.seed_ctx(cx), none))
+  | none => log("quakes: no data at all")
+  | some(g) => do
+    if not g.stale then pulse.save(pulse.state_path(cx, "state.json"), json.encode(g.value))
+    render(cx, g)
+    log("quakes: {g.value.quakes.len} quakes{if g.stale then " (stale)" else ""}")
+
+// Tests run on the bundled fixtures, offline.
+
+fn fixture(name: Str) -> Str ! fs
+= pulse.read("../fixtures/quakes/{name}").or("")
+
+test parses_day_feed = parse(fixture("all_day.json")) is ok(qs) and qs.len > 20 and qs.all(valid)
+test strongest_first = parse(fixture("all_day.json")) is ok(qs) and qs.first.map(_.mag).or(0.0) == qs.map(_.mag).max.or(-1.0)
+test rejects_garbage = parse("not json").is_err and parse("\{\"features\": [\{\"id\": \"a\", \"properties\": \{}, \"geometry\": null}]}").is_err
+test bands = band(2.5) == 0 and band(4.0) == 1 and band(5.9) == 2 and band(7.1) == 3
+test month_days = parse(fixture("2.5_month.json")) is ok(qs) and days_of(qs, "2999-01-01") is [d, ..] and d.counts.sum > 0 and d.max >= 2.5
+test merge_keeps_latest = merge_days([Day{date: "2026-01-01", counts: [1], max: 3.0}], [Day{date: "2026-01-01", counts: [2], max: 4.0}, Day{date: "2026-01-02", counts: [1], max: 2.6}]).map(_.counts) == [[2], [1]]
+test india_filter = near_india(Quake{id: "x", mag: 4.0, place: "10 km N of Kathmandu, Nepal", time: 1, lat: 27.8, lon: 85.3, depth: 10.0, url: "", tsunami: false, alert: "", felt: 0}) and not near_india(Quake{id: "y", mag: 4.0, place: "Alaska", time: 1, lat: 61.0, lon: -150.0, depth: 10.0, url: "", tsunami: false, alert: "", felt: 0})
+test magnitude_contract = parse(fixture("all_day.json")) is ok(qs) and qs.all(q => q.mag >= -2.0 and q.mag <= 10.0)
