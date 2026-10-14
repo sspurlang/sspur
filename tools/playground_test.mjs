@@ -101,6 +101,10 @@ const fresh = call("run", `fn main() -> Unit ! log, fs\n= log("{exists("${base}/
 same("host: every run starts with an empty file system", stdoutOf(fresh), ["false"]);
 const proc = call("run", 'fn main() -> Unit ! log, proc\n= log("{run_cmd("ls", [], "")}")\n');
 expect(/not available in the playground/.test(stdoutOf(proc)[0] || ""), "host: run_cmd reports that it is unavailable", stdoutOf(proc));
+const net = call("run", 'fn main() -> Unit ! log, net\n= log("{http.get("https://example.com")}")\n');
+same("host: the HTTP client gives a typed error", stdoutOf(net), ['err(Io{msg: "networking is not available in the playground"})']);
+const serve = call("run", 'fn main() -> Unit ! log, net\n= http.serve(8080, r => http.text(200, "hi"))\n');
+expect(serve.status === "trap" && /not available in the playground/.test(serve.message), "host: http.serve reports that it is unavailable", serve.message);
 const exit = call("run", 'fn main() -> Unit ! log, proc\n= do\n  log("a")\n  exit(3)\n  log("b")\n');
 same("host: exit", [exit.status, exit.code, stdoutOf(exit)], ["exit", 3, ["a"]]);
 const ffi = call("run", 'extern fn abs(x: Int) -> Int ! ffi\n\nfn main() -> Unit ! log, ffi\n= log("{abs(-3)}")\n');
