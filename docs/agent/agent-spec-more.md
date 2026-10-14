@@ -6,7 +6,7 @@ The rest of what `./sspur spec` leaves out; `./sspur spec --full` is the whole r
 `Int` (i64) `F64 Bool Str Unit List[T] Opt[T] Res[T, E] Map[K, V] Set HashMap Time BigInt Dec Regex (A, B)` (`t.0`) `(A, B) -> C ! e`. Records `{f: T}`; sums `A | B{f: T}`; `where` refinements (`_` = value); `new Str` (`Id("a")`, `.raw`). No implicit conversions (`n.to_f64`). `==` is structural; `<` orders numbers, Str, Time.
 
 ## Functions
-Return type required unless Unit. Effects after `!` are declared (`! fail[E], log`): `fail[E]` (raise or call a failing fn), `log`, `div` (while), `conc fs io time env proc`. Optional `pre`, `post` (`r` = result). Body: expression or `do` + block (last line is the value). `x.f(a)` is `f(x, a)`; `x.f` is a field or a zero-arg call; a bare fn name is a value.
+Return type required unless Unit. Effects after `!` are declared (`! fail[E], log`): `fail[E]` (raise or call a failing fn), `log`, `div` (while), `conc fs io time env proc net`. Optional `pre`, `post` (`r` = result). Body: expression or `do` + block (last line is the value). `x.f(a)` is `f(x, a)`; `x.f` is a field or a zero-arg call; a bare fn name is a value.
 
 Block lines: `x = e`, `(a, b) = e`, `var x = e`, `x := e`, `for x in xs`, `while c` or `while e is p` (names in scope in the body) + body (`0..n` excludes n), `return e`, local `fn`. `if` without `else` is for Unit or `raise`.
 
@@ -43,6 +43,11 @@ Leave `?name` where you don't know the expression yet: `./sspur check` lists up 
 
 ## Edit
 `./sspur edit --test change.ssp` is one atomic, typechecked transaction. Spellings from other languages that have one meaning (`&&`, `len(x)`, `None`, `s.slice(a, b)`, `! a ! b`, a missing effect) are stored in SSPUR form and listed after `stored as:`. A failing test prints the values it compared (`left 7, right 8`). An impl is the definition `impl Sh for P` (`remove impl Sh for P`).
+
+## HTTP, config, logs
+- `! net`. `http.get(url) post(url, json) send(req)` give `Res[Response, HttpErr]` (a 404 is `ok`; `HttpErr` `Dns Connect Tls Timeout Io{msg}`, `HttpStatus{code, body}`); `http.fetch(url)` is the body, raising `HttpErr` unless 2xx. `http.req("PUT", url) with headers := [("a", "b")], body := s, timeout_ms := 5000, retries := 2, redirects := 0`. `r.status r.body r.header("x") r.json[T]`.
+- Server: a `svc` is the handler: `{id}` path params, GET/DELETE query params (`Opt` if optional), one JSON body param, a `Request` param for the raw request; a value is 200 (201 POST), `Unit` 204, `none` 404, a raised `NotFound` 404 (`Invalid` 400, else 422). `http.serve(8080, api)`, or any `req => resp` fn: `http.text(200, s) html json(200, v)`, `req.path query("q") header("h") json[T]`. `http.serve_with(http.server(port) with host := "0.0.0.0", cors := ["*"], gzip := true, files := [("/static", "public")], health := "/healthz", cert := c, key := k, workers := 8, max_body := n, timeout_ms := n, max_requests := n, access_log := false, h)`. Handlers can't assign outer `var`s.
+- `config.load(Config{port: 8080}, "app.json", "APP_")` is `Res[Config, Str] ! fs, env` (env `APP_PORT`, then the file, then the default). `log.debug/info/warn/error(m)`; `SSPUR_LOG=json`, `SSPUR_LOG_LEVEL=warn`.
 
 ## Elsewhere
 `./sspur spec --full` covers concurrency (`! conc`, `par`, `atomic`, `chan`), services (`store`, `db.get`, `svc`, `ep`, `migrate_S`), packages (`./sspur add`, `pub`, `use lib.{f}`) and C, sys, bare and GPU (`extern fn`, `profile`, `kernel fn`).
