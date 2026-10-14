@@ -1,0 +1,63 @@
+// The client of tests/net.rs: every result printed in a form that is the same in both tiers.
+
+type Item = {id: Int, name: Str, tags: List[Str]}
+
+fn show(r: Res[Response, HttpErr]) -> Str
+= match r
+  | ok(x) => "{x.status} {x.header("content-type").or("-")} {x.body}"
+  | err(e) => "error {e}"
+
+fn kind(r: Res[Response, HttpErr]) -> Str
+= match r
+  | ok(x) => "{x.status}"
+  | err(Dns{msg}) => "dns"
+  | err(Connect{msg}) => "connect"
+  | err(Tls{msg}) => "tls"
+  | err(Timeout{msg}) => "timeout"
+  | err(HttpStatus{code, body}) => "status {code}"
+  | err(Io{msg}) => "io {msg}"
+
+fn fetched(url: Str) -> Str ! net
+= catch http.fetch(url)
+  | HttpStatus{code, body} => "raised {code} {body}"
+  | e => "raised {e}"
+
+fn main() -> Unit ! net, log, env, fs
+= do
+  b = env_var("BASE").or("http://127.0.0.1:8080")
+  log(show(http.get(b + "/items/3")))
+  log(show(http.get(b + "/items/0")))
+  log(show(http.get(b + "/items?limit=3&tag=x%20y")))
+  log(show(http.get(b + "/items?limit=bad")))
+  log(show(http.post(b + "/items", "\{\"id\": 1, \"name\": \"new\", \"tags\": []}")))
+  log(show(http.post(b + "/items", "\{\"id\": 1, \"name\": 5, \"tags\": []}")))
+  log(show(http.post(b + "/items", "not json")))
+  log(show(http.post(b + "/items", "\{\"id\": 1, \"name\": \"\", \"tags\": []}")))
+  log(show(http.send(http.req("DELETE", b + "/items/5"))))
+  log(show(http.get(b + "/find/1")))
+  log(show(http.get(b + "/find/2")))
+  log(show(http.send(http.req("POST", b + "/echo?x=a%20b+c") with headers := [("X-Test", "yes")], body := "payload")))
+  log(show(http.get(b + "/echo")))
+  log(show(http.send(http.req("PUT", b + "/echo"))))
+  log(show(http.get(b + "/nowhere")))
+  big = http.get(b + "/big")
+  log(big.map(x => "{x.status} {x.body.len}").or("big failed"))
+  log(show(http.get(b + "/redirect")))
+  log(http.send(http.req("GET", b + "/redirect") with redirects := 0).map(x => "{x.status} {x.header("Location")}").or("no redirect"))
+  log(kind(http.get(b + "/flaky")))
+  log(show(http.send(http.req("GET", b + "/flaky") with retries := 3)))
+  log(kind(http.send(http.req("GET", b + "/slow") with timeout_ms := 300)))
+  log(show(http.get(b + "/slow")))
+  log(show(http.get(b + "/trap")))
+  log(show(http.get(b + "/html")))
+  log(show(http.get(b + "/healthz")))
+  log(fetched(b + "/items/2"))
+  log(fetched(b + "/items/0"))
+  path = env_var("DOWNLOAD").or("download.txt")
+  d = http.download(http.req("GET", b + "/big"), path)
+  log(d.map(x => "{x.status} {x.body.len} {file_size(path).or(-1)}").or("download failed"))
+  log(kind(http.get("http://127.0.0.1:1/")))
+  log(kind(http.get("http://nonexistent.invalid/")))
+  log(kind(http.get("ftp://example.com/")))
+  log(show(http.get(b + "/static/hello.txt")))
+  log(kind(http.get(b + "/static/../server.ssp")))

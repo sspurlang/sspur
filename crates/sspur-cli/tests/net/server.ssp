@@ -1,0 +1,63 @@
+// The server of tests/net.rs: a svc with typed endpoints behind a raw handler with a few test routes.
+
+type Cfg = {port: Int, cert: Str, key: Str, gzip: Bool, files: Str, timeout_ms: Int, max_body: Int, workers: Int}
+
+type Item = {id: Int, name: Str, tags: List[Str]}
+
+type ApiErr = NotFound{id: Int} | Invalid{why: Str}
+
+fn get_item(id: Int) -> Item ! fail[ApiErr]
+= if id <= 0 then raise NotFound{id} else Item{id, name: "item {id}", tags: ["t{id}"]}
+
+fn list_items(limit: Opt[Int], tag: Opt[Str]) -> List[Item]
+= (1..limit.or(2) + 1).map(i => Item{id: i, name: "item {i}", tags: [tag.or("none")]})
+
+fn create_item(it: Item) -> Item ! fail[ApiErr]
+= if it.name == "" then raise Invalid{why: "empty name"} else it with id := it.id + 1000
+
+fn remove_item(id: Int) -> Unit ! log
+= log.info("removed {id}")
+
+fn find(id: Int) -> Opt[Item]
+= if id == 1 then some(Item{id, name: "one", tags: []}) else none
+
+fn echo(req: Request) -> Response
+= http.json(200, (req.method, req.path, req.query("x"), req.header("X-Test"), req.body))
+
+svc api
+  ep get "/items/{id}" = get_item
+  ep get "/items" = list_items
+  ep post "/items" = create_item
+  ep delete "/items/{id}" = remove_item
+  ep get "/find/{id}" = find
+  ep post "/echo" = echo
+  ep get "/echo" = echo
+
+fn slow() -> Response ! time
+= do
+  sleep_ms(1500)
+  http.text(200, "late")
+
+fn flaky(hits: Atomic[Int]) -> Response ! conc
+= do
+  hits.add(1)
+  n = hits.load
+  if n % 3 == 0 then http.text(200, "ok after {n}") else http.text(503, "busy {n}")
+
+fn app(req: Request, hits: Atomic[Int]) -> Response ! log, time, conc
+= match req.path
+  | "/big" => http.text(200, "abcdefghij".repeat(2000))
+  | "/slow" => slow()
+  | "/flaky" => flaky(hits)
+  | "/redirect" => Response{status: 302, headers: [("location", "/items/1")], body: ""}
+  | "/trap" => http.text(200, [1, 2][req.body.len + 5].str)
+  | "/html" => http.html(200, "<p>hi</p>")
+  | _ => api(req)
+
+fn main() -> Unit ! net, log, fs, env, time, conc
+= do
+  d = Cfg{port: 0, cert: "", key: "", gzip: true, files: "", timeout_ms: 1000, max_body: 4096, workers: 0}
+  c = config.load(d, "", "NETTEST_").or(d)
+  hits = atomic(0)
+  srv = http.server(c.port) with cert := c.cert, key := c.key, gzip := c.gzip, cors := ["https://ok.example"], health := "/healthz", timeout_ms := c.timeout_ms, max_body := c.max_body, workers := c.workers, files := if c.files == "" then [] else [("/static", c.files)]
+  http.serve_with(srv, req => app(req, hits))
