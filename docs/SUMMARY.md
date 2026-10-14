@@ -54,6 +54,7 @@
   - [Bare-metal hello](tutorials/bare-metal.md)
   - [GPU kernels](tutorials/gpu-kernels.md)
   - [A multi-agent codebase](tutorials/multi-agent.md)
+- [SSPUR Pulse: how it works](pulse-how-it-works.md)
 
 # Project Configuration
 

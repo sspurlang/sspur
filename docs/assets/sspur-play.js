@@ -1,4 +1,4 @@
-// Adds a Playground link to the header and a Run button to complete SSPUR examples.
+// Adds Pulse and Playground links to the header and a Run button to complete SSPUR examples.
 (function () {
   const root = typeof path_to_root === "string" ? path_to_root : "/sspur/";
   const play = root + "play/";
@@ -12,6 +12,12 @@
     a.title = "Open the SSPUR playground";
     a.textContent = "Playground";
     right.prepend(a);
+    const pulse = document.createElement("a");
+    pulse.href = root + "pulse/";
+    pulse.className = "sspur-play-link";
+    pulse.title = "SSPUR Pulse: a live dashboard computed by SSPUR programs";
+    pulse.textContent = "Pulse";
+    right.prepend(pulse);
   }
 
   if (typeof CompressionStream === "undefined") return;
