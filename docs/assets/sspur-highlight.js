@@ -13,7 +13,7 @@
     built_in: "table",
   };
 
-  var EFFECTS = "log fail div conc fs io time env proc ffi db yield gpu mmio irq";
+  var EFFECTS = "log fail div conc fs io time env proc net ffi db yield gpu mmio irq";
 
   hljs.registerLanguage("sspur", function () {
     var braces = { begin: /\{/, end: /\}/, keywords: KEYWORDS };
