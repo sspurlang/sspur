@@ -4,8 +4,9 @@
 // in the transcript's own folder. A transcript is `$ command` lines, each followed by its
 // expected output. `...` matches any number of lines; lines with `ANCHOR:` or `ANCHOR_END:`
 // are mdBook markers and are skipped. Commands: `sspur ...`, `cd DIR`, `cat FILE`, and
-// `curl` against the server started by `sspur deploy local ... --port 8080` earlier in the
-// same transcript; later commands that say `8080` get that server's real port.
+// `curl` against the server started by `sspur deploy local ... --port 8080` or by a
+// `sspur run server.ssp &` (with PORT=0) earlier in the same transcript; later commands that say
+// `8080` get that server's real port. `NAME=value` before a command sets its environment.
 //
 // Pages may only show code that is a file under docs/snippets (see doc_code_blocks_are_checked_files),
 // and every diagnostic code the compiler can emit is listed in docs/reference/errors.md.
@@ -187,7 +188,16 @@ fn run_transcript(file: &Path) {
     let mut cwd = work.join(file.parent().unwrap().strip_prefix(snippets()).unwrap());
     let mut server: Option<(Kill, u16)> = None;
     for step in parse(&std::fs::read_to_string(file).unwrap()) {
-        let args = split(&step.cmd);
+        let mut args = split(&step.cmd);
+        let mut env: Vec<(String, String)> = Vec::new();
+        while args.len() > 1 && args[0].contains('=') && args[0].chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+            let (k, v) = args.remove(0).split_once('=').map(|(k, v)| (k.to_string(), v.to_string())).unwrap();
+            env.push((k, v));
+        }
+        let background = args.last().is_some_and(|a| a == "&");
+        if background {
+            args.pop();
+        }
         let got = match args[0].as_str() {
             "cd" => {
                 cwd = cwd.join(&args[1]);
@@ -195,9 +205,9 @@ fn run_transcript(file: &Path) {
             }
             "cat" => std::fs::read_to_string(cwd.join(&args[1])).unwrap(),
             "curl" => curl(&args[1..], server.as_ref().unwrap_or_else(|| panic!("{rel}: curl before sspur deploy local")).1),
-            "sspur" if args.get(1).map(String::as_str) == Some("deploy") && args.get(2).map(String::as_str) == Some("local") => {
+            "sspur" if background || (args.get(1).map(String::as_str) == Some("deploy") && args.get(2).map(String::as_str) == Some("local")) => {
                 let a: Vec<&str> = args[1..].iter().map(|a| if a == PORT { "0" } else { a.as_str() }).collect();
-                let child = Command::new(env!("CARGO_BIN_EXE_sspur")).args(&a).current_dir(&cwd).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+                let child = Command::new(env!("CARGO_BIN_EXE_sspur")).args(&a).envs(env.iter().cloned()).env("PORT", "0").current_dir(&cwd).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
                 let mut child = Kill(child);
                 drain(child.0.stderr.take().unwrap());
                 let mut out = BufReader::new(child.0.stdout.take().unwrap());
@@ -224,7 +234,7 @@ fn run_transcript(file: &Path) {
                     _ => a.as_str(),
                 }).collect();
                 let stdin = input.map_or_else(Stdio::null, |f| Stdio::from(std::fs::File::open(&f).unwrap_or_else(|e| panic!("{rel}: {}: {e}", f.display()))));
-                let r = Command::new(env!("CARGO_BIN_EXE_sspur")).args(&a).current_dir(&cwd).stdin(stdin).output().unwrap();
+                let r = Command::new(env!("CARGO_BIN_EXE_sspur")).args(&a).envs(env.iter().cloned()).current_dir(&cwd).stdin(stdin).output().unwrap();
                 let out = format!("{}{}", String::from_utf8_lossy(&r.stdout), String::from_utf8_lossy(&r.stderr));
                 match &port {
                     Some(p) => out.replace(p.as_str(), PORT),
