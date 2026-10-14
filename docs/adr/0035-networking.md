@@ -47,4 +47,4 @@ On an Apple M1 Pro, a native handler that returns a 200-byte text answers 27,000
 
 ## Not yet
 
-HTTP/2 and WebSocket, streaming request and response bodies (bodies are in memory, up to `max_body`), refined body types in `http.serve` endpoints (`E_SERVE_TYPE`; `sspur deploy local` validates them), per-handler timeouts that stop the handler (a slow one is answered with `503` and its result dropped), and a native-only build that doesn't need the cache (`sspur build` executables load the runtime from the cache of the machine that built them).
+HTTP/2 and WebSocket, streaming request and response bodies (bodies are in memory, up to `max_body`), refined body types in `http.serve` endpoints (`E_SERVE_TYPE`; `sspur deploy local` validates them), per-handler timeouts that stop the handler (a slow one is answered with `503` and its result dropped), and `sspur export-c` of networking functions (the library would load the runtime from the cache of the machine that built it).

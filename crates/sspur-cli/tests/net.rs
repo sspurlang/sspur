@@ -3,7 +3,7 @@
 //! the request parser under a mutation fuzzer with AddressSanitizer.
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
@@ -260,7 +260,7 @@ fn protocol(tier: &str) -> String {
         out.push_str(&format!("{name}:\n{}\n", raw(p, req, show)));
     }
     let _ = s.stop();
-    out.replace(|c: char| c == '\u{fffd}', "?")
+    out.replace('\u{fffd}', "?")
 }
 
 #[test]
@@ -528,5 +528,4 @@ fn request_parser_survives_the_fuzzer() {
     assert_eq!(parse(&format!("GET /{} HTTP/1.1\r\nHost: a\r\n\r\n", "a".repeat(9000))), -414);
     assert_eq!(sspur_native::net::dechunk(b"5\r\nhello\r\n0\r\n\r\n", 100).unwrap(), (15, b"hello".to_vec()));
     assert_eq!(sspur_native::net::dechunk(b"5\r\nhello\r\n0\r\n\r\n", 3).unwrap().0, -413);
-    let _ = Path::new("");
 }
