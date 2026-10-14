@@ -2,7 +2,7 @@
   "name": "sspur",
   "displayName": "SSPUR",
   "description": "SSPUR language support: diagnostics with quick fixes, typed-hole filling, completion, hover, signature help, inlay hints, formatting, navigation and highlighting, through sspur lsp",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "publisher": "utkarshavardhana",
   "author": "Utkarsha Vardhana",
   "license": "MIT OR Apache-2.0",

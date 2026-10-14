@@ -51,5 +51,5 @@ None of these are needed for normal use. They exist for CI, for pinning toolchai
 
 | Variable | Effect |
 |---|---|
-| `SSPUR_VERSION` | The release `install.sh` installs, such as `0.9.0` (default: the latest) |
+| `SSPUR_VERSION` | The release `install.sh` installs, such as `0.10.0` (default: the latest) |
 | `SSPUR_INSTALL_DIR` | Where `install.sh` puts the binary (default `~/.local/bin`) |

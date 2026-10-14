@@ -4,6 +4,8 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-15
+
 ### Added
 - Source-level debugging with lldb and gdb (ADR 0036). `sspur build --debug`, `run --debug`, `test --debug` or `SSPUR_DEBUG=1` build native code with DWARF (CodeView on Windows) at `-O0` whose lines are the `.ssp` lines: breakpoints by `prog.ssp:12` and by function name work, the backtrace shows SSPUR functions and lines, and parameters and locals have their SSPUR names (`acc`, not `v_acc_$6`), with the generated temporaries hidden. `sspur debug prog.ssp [args]` builds and starts lldb (macOS) or gdb (Linux) with breakpoints on `main` and on `sspur_trap`, which every trap and contract failure calls. `sspur debug-init` writes lldb and gdb formatters that show `Str` as text, `Bool` as `true` or `false`, `List` elements, `Opt` as `some(3)` or `none` and sum values as `Circle{r: 2}`, plus a `sspur-locals` command. A codebase's projected source is written to the cache so the debugger can show it. Normal builds are unchanged: the same generated C and the same speed. The new Debugging page covers lldb, gdb, VS Code with CodeLLDB and Windows, and the VS Code extension allows breakpoints in `.ssp` files.
 - Networking (ADR 0035): an HTTP client and an HTTP/1.1 server with TLS, behind a new `net` effect, the same in native code and the interpreter. `http.get(url)`, `http.post(url, body)` and `http.send(req)` return `Res[Response, HttpErr]` (`Dns`, `Connect`, `Tls`, `Timeout`, `HttpStatus`, `Io`); `http.fetch(url)` returns the body and raises for anything but a 2xx; `http.req(method, url)` gives a `Request` whose timeout, retries (with backoff and `Retry-After`) and redirects `with` changes; `http.download(req, path)` streams to a file; `r.header(name)` and `r.json[T]` read responses. Certificates are verified by default (`SSL_CERT_FILE` adds roots), proxies come from the environment and gzip is decoded. The client is libcurl on macOS and Linux and WinHTTP on Windows.
@@ -334,7 +336,8 @@ This release covers Phases 3 to 7 of the roadmap and ADRs 0003 to 0024. SSPUR no
 - Language design spec, JSON schemas and the token benchmark.
 - Compiler core: parser, checker, content hashing, interpreter and the `sspur` CLI, with an 11-program suite.
 
-[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/utkarshavardhana/sspur/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/utkarshavardhana/sspur/compare/v0.8.2...v0.9.0
 [0.8.2]: https://github.com/utkarshavardhana/sspur/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/utkarshavardhana/sspur/compare/v0.8.0...v0.8.1

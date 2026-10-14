@@ -116,7 +116,7 @@ Downloads the release tarball for your platform, verifies its SHA-256 checksum a
 curl -fsSL https://raw.githubusercontent.com/utkarshavardhana/sspur/main/install.sh | sh
 ```
 
-Set `SSPUR_VERSION=0.9.0` to pin a version, or `SSPUR_INSTALL_DIR` to install somewhere else.
+Set `SSPUR_VERSION=0.10.0` to pin a version, or `SSPUR_INSTALL_DIR` to install somewhere else.
 
 ### Windows
 
@@ -134,8 +134,8 @@ Each [release](https://github.com/utkarshavardhana/sspur/releases) has tarballs 
 
 ```
 shasum -a 256 -c SHA256SUMS --ignore-missing
-tar -xzf sspur-v0.9.0-aarch64-apple-darwin.tar.gz
-sudo install sspur-v0.9.0-aarch64-apple-darwin/sspur /usr/local/bin/
+tar -xzf sspur-v0.10.0-aarch64-apple-darwin.tar.gz
+sudo install sspur-v0.10.0-aarch64-apple-darwin/sspur /usr/local/bin/
 ```
 
 ### From source
@@ -262,7 +262,7 @@ The documentation is an mdBook in [`docs/`](docs/), published at [utkarshavardha
 
 ## Project status
 
-SSPUR is at version 0.9 and under active development. The language and tools are usable, but the syntax and standard library may still change between releases.
+SSPUR is at version 0.10 and under active development. The language and tools are usable, but the syntax and standard library may still change between releases.
 
 | Phase | Status |
 |---|---|

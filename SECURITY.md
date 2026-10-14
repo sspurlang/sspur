@@ -15,8 +15,8 @@ SSPUR is pre-1.0. Fixes go into the latest release only.
 
 | Version | Supported |
 |---|---|
-| 0.9.x | Yes |
-| < 0.9 | No |
+| 0.10.x | Yes |
+| < 0.10 | No |
 
 ## Scope
 
