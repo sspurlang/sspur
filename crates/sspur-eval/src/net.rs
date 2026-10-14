@@ -1,6 +1,7 @@
 //! The interpreter's two network primitives (ADR 0035): `__net_fetch` and `__net_serve`, over
 //! the same runtime library native code loads, so both tiers share its parser and its client.
 //! Everything else in `http.*` is the network prelude, which both tiers run as SSPUR.
+#![cfg_attr(not(feature = "native"), allow(dead_code))]
 use crate::value::Value;
 use crate::{trap, Interp, R};
 use std::rc::Rc;

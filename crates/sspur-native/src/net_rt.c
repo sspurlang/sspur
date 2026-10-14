@@ -553,10 +553,10 @@ static uint64_t sn_id_seed;
 static void sn_log(SnServer* s, const char* line, int64_t n) { if (s->cfg.log) s->cfg.log(s->cfg.log_ctx, line, n); }
 
 #ifdef _WIN32
-static BOOL WINAPI sn_ctrl(DWORD t) { if (t == CTRL_C_EVENT || t == CTRL_BREAK_EVENT || t == CTRL_CLOSE_EVENT) { sn_sig_stop = 1; return TRUE; } return FALSE; }
+static BOOL WINAPI sn_ctrl(DWORD t) { if (t == CTRL_C_EVENT || t == CTRL_BREAK_EVENT || t == CTRL_CLOSE_EVENT) { if (sn_sig_stop) ExitProcess(130); sn_sig_stop = 1; return TRUE; } return FALSE; }
 #else
 static struct sigaction sn_old_int, sn_old_term, sn_old_pipe;
-static void sn_on_signal(int sig) { (void)sig; sn_sig_stop = 1; }
+static void sn_on_signal(int sig) { if (sn_sig_stop) _exit(128 + sig); sn_sig_stop = 1; }
 #endif
 static int sn_signals_installed;
 
