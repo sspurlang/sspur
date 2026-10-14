@@ -1,0 +1,13 @@
+// ANCHOR: config
+type Config = {port: Int where _ > 0 and _ < 65536, greeting: Str, workers: Int}
+
+fn load() -> Res[Config, Str] ! fs, env
+= config.load(Config{port: 8080, greeting: "hello", workers: 4}, "app.json", "APP_")
+
+fn main() -> Unit ! fs, env, log
+= match load()
+  | ok(c) => do
+    log.info("port {c.port}, {c.workers} workers, greeting {c.greeting}")
+    log.warn("this is a warning")
+  | err(e) => log.error(e)
+// ANCHOR_END: config

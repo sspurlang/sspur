@@ -23,7 +23,7 @@ Everything that touches the outside world is behind an effect: `fs` for files, `
 | `run_cmd(prog, args, input)` | `Res[(Int, Str, Str), Str] ! proc`: runs `prog` (searched in `PATH`) with `input` on stdin and gives the exit status (128 + signal when killed), stdout and stderr; `"prog: not found"` style errors |
 | `exit(code)` | `Unit ! proc`: ends the program with that status |
 
-Errors are `"{path}: not found"`, `permission denied`, `is a directory`, `not a directory`, `already exists`, `directory not empty`, `invalid UTF-8`, `invalid path`, `byte out of range`, `not a symlink`, `same file`, `mode out of range` or `os error N`. Service endpoints may perform `time` and `env` but not `fs`, `io` or `proc`.
+Errors are `"{path}: not found"`, `permission denied`, `is a directory`, `not a directory`, `already exists`, `directory not empty`, `invalid UTF-8`, `invalid path`, `byte out of range`, `not a symlink`, `same file`, `mode out of range` or `os error N`. Deployed service endpoints may perform `time` and `env` but not `fs`, `io`, `proc` or `net`; HTTP is on the [Networking](network.md) page.
 
 ## On Windows
 

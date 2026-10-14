@@ -52,4 +52,4 @@ A task also can't use a function value from outside it (`E_PAR_SHARE`; call top-
 
 You often don't need `par` at all. A pure `map` or `filter` pipeline over a large list is split across cores by the native compiler, because a pure lambda can't observe the order it runs in. `SSPUR_THREADS=1` turns that off. Native code runs each `par` task on its own thread; the interpreter runs one task at a time and switches when a task blocks, with the same results.
 
-Next: [Packages](packages.md).
+Next: [Networking](networking.md).

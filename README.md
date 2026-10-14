@@ -41,7 +41,7 @@ $ sspur test cart.ssp
 Most languages are designed around a human at a keyboard. SSPUR starts from a different question: what does a language look like when the author is a model that reads every token, pays for every token, and never gets tired of writing contracts?
 
 - **Fewer tokens for agents.** On 17 multi-step coding tasks, agents writing SSPUR used 0.67x the tokens of the same agents writing Python, and were level with TypeScript and Go (0.98x and 0.89x in total, 1.0x per task at the median), with every hidden test passing in all four languages. On six tasks in codebases of about 1,000 definitions the gap opens up: 0.68x Python, 0.59x TypeScript and 0.58x Go with Sonnet, and cheaper than TypeScript on every task with Opus and Haiku too. SSPUR code is also the smallest of the four. [The full report](bench/agent/README.md) has every task, model and caveat.
-- **Every side effect is in the signature.** `log`, `fail[E]`, `db.read[T]`, `fs`, `proc`, `ffi`, `conc` and user-defined effects are tracked by the checker, so a reviewer, or a deployer, can see exactly what a function is allowed to do.
+- **Every side effect is in the signature.** `log`, `fail[E]`, `db.read[T]`, `fs`, `proc`, `net`, `ffi`, `conc` and user-defined effects are tracked by the checker, so a reviewer, or a deployer, can see exactly what a function is allowed to do.
 - **Contracts are checked, not just documented.** `pre`, `post`, and refinement types (`Int where _ > 0`) are enforced at runtime, proved with Z3 where possible, turned into property tests by the fuzzer, and used by the optimizer to remove checks it can prove unnecessary.
 - **Edits are atomic.** `sspur edit` replaces definitions by name, typechecks the whole codebase, and either applies everything or nothing. One call can edit and run the tests.
 - **Safe and fast by default.** Integer overflow, out-of-bounds access, and contract violations always trap. The native compiler proves most of those checks away, reuses memory in place when values are uniquely owned, frees list buffers and strings at their last use, fuses pipelines into single loops, vectorizes, and runs pure pipelines across cores.
@@ -65,6 +65,7 @@ Most languages are designed around a human at a keyboard. SSPUR starts from a di
 - Numbers: checked and wrapping integer arithmetic, the full `<cmath>` set, `BigInt`, fixed-point `Dec`, `Complex`, seeded random distributions and a splittable `Rng`
 - System: files, streaming `File` handles and directories, stdin, time, calendars and IANA time zones (`Time`, `Duration`, `Zone`), environment, and child processes, each behind its own effect
 - `json.encode` and `json.decode[T]` for any data type
+- Networking: an HTTP client and an HTTP/1.1 server with TLS behind the `net` effect, where a `svc` is the typed router, with keep-alive, CORS, gzip, static files, health checks, request ids, graceful shutdown, typed `config.load` from files and the environment, and levelled logs with JSON output
 
 **Tooling**
 - An interpreter, a Cranelift JIT, and an optimizing native compiler (via C and clang) that is the default for `run` and `test`
@@ -161,6 +162,7 @@ export PATH="$PWD/target/release:$PATH"
 | `z3` | `sspur verify` and SMT-based check elimination |
 | `qemu`, `lld` | building and booting `profile bare` kernels; `lld` also for `--lto` on Linux and Windows |
 | libcurl headers (`libcurl4-openssl-dev` on Debian or Ubuntu) | `sspur deploy local` on Linux (macOS has them; on Windows the local host needs none) |
+| libcurl (`libcurl4` on Debian or Ubuntu) and OpenSSL 3 | The HTTP client on Linux (macOS ships libcurl; Windows uses WinHTTP), and HTTPS in `http.serve` (`brew install openssl@3` on macOS; Linux has it) |
 | Homebrew `llvm` | `sspur gpu --emit spirv` and `--emit ptx` (Apple's clang has neither backend) |
 
 On macOS: `brew install z3 qemu llvm lld`. On Ubuntu: `sudo apt install z3 qemu-system-misc qemu-system-arm lld llvm`. GPU kernels run on Metal on macOS and on the C fallback elsewhere.

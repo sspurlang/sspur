@@ -12,7 +12,8 @@ The handbook teaches the language from the start. Read it in order: each page us
 8. [Generics and Traits](generics-and-traits.md): type parameters, traits, bounds, operators and `derive`.
 9. [Collections and Pipelines](collections.md): list methods, maps and sets, loops and ranges.
 10. [Concurrency](concurrency.md): `par`, atomics and channels, and the race checks.
-11. [Packages](packages.md): `sspur.toml`, `pub`, `use` and the lock file.
+11. [Networking](networking.md): HTTP servers and clients, TLS, configuration and structured logs.
+12. [Packages](packages.md): `sspur.toml`, `pub`, `use` and the lock file.
 
 Every code block in the handbook is a file in [`docs/snippets/handbook/`](https://github.com/utkarshavardhana/sspur/tree/main/docs/snippets/handbook), and every terminal session is run by the test suite against the current compiler. If a page and the compiler disagree, CI fails.
 

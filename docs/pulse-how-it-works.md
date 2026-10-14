@@ -8,7 +8,7 @@ The source is in [`pulse/`](https://github.com/utkarshavardhana/sspur/tree/main/
 
 | Path | What it is |
 |---|---|
-| `pulse/lib` | The shared library, a package named `pulse`: HTTP through `curl` with timeouts, retries and a User-Agent, file helpers, time and number formatting, HTML, XML, URL and iCalendar escaping, a small XML extractor, the page shell, chart and map renderers, and the RSS and ICS writers |
+| `pulse/lib` | The shared library, a package named `pulse`: HTTP through SSPUR's own client (`http.send`) with timeouts, retries and a User-Agent, file helpers, time and number formatting, HTML, XML, URL and iCalendar escaping, a small XML extractor, the page shell, chart and map renderers, and the RSS and ICS writers |
 | `pulse/<section>` | One package per board (`reading`, `launches`, `quakes`, `repos`, `hn`, `papers`, `weather`, `holidays`), each a single `main.ssp` that depends on `pulse` |
 | `pulse/orbit` | Fetches the orbital elements of the satellites in orbit for the globe on the launches page |
 | `pulse/overview` | Builds the front page from the eight `api/<section>.json` files, and the 404 page |

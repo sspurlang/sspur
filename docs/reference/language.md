@@ -193,6 +193,7 @@ Every function declares what it does after `!`. Undeclared effects are compile e
 | `proc` | `run_cmd exit` |
 | `time` | `now_ms mono_ns sleep_ms now` |
 | `env` | `env_var args` |
+| `net` | `http.get post send fetch download serve serve_with` |
 
 Effects flow through lambdas: `xs.map(x => noisy(x))` performs `noisy`'s effects.
 
@@ -494,9 +495,10 @@ svc items
 ```
 
 - `store S = table[K, V]`: K is `Str`, `Int`, or a newtype over them. `db.get(S, k)` returns `Opt[V]` and `db.scan(S)` returns `List[V]`; both need `db.read[S]`. `db.put(S, k, v)` and `db.del(S, k)` (returns whether the key existed) need `db.write[S]`.
-- `svc name` followed by `ep METHOD "path" = fname` lines (`get post put patch delete`). Each `{x}` path segment binds the parameter named `x` (`Str`, `Int`, or a newtype). At most one other parameter is the JSON request body, and GET and DELETE take none. A handler may only perform `db.*`, `log`, `div`, and `fail`.
+- `svc name` followed by `ep METHOD "path" = fname` lines (`get post put patch delete`). Each `{x}` path segment binds the parameter named `x` (`Str`, `Int`, or a newtype). At most one other parameter of POST, PUT or PATCH is the JSON request body; other parameters of GET and DELETE come from the query string (`Str`, `Int`, `F64`, `Bool` or an `Opt` of them) when the svc is served with `http.serve`. A parameter of type `Request` gets the raw request, and a `Response` result is sent as it is. A deployed handler may only perform `db.*`, `log`, `div`, `time`, `env` and `fail`; under `http.serve`, anything but `db.*` and user-defined effects.
 - Responses: `Opt` none is 404, `Unit` is 204, POST success is 201, other success is 200. `raise` returns `{"error": value}`, with the status chosen by variant name: `NotFound` or `Missing` 404, `Conflict`, `Exists` or `AlreadyExists` 409, `Forbidden` or `Denied` 403, `Unauthorized` 401, `BadRequest` or `Invalid` 400, `TooMany` or `RateLimited` 429, others 422. A request that fails a refinement or doesn't decode gets 400.
 - JSON: records are objects, lists and tuples are arrays, `Opt` is the value or `null`, newtypes are their inner value, and a variant is `"Name"` or `{"tag": "Name", ...fields}`.
+- `http.serve(port, svc)` serves a svc in the process (see [Networking](stdlib/network.md)).
 - `sspur deploy plan file [--out DIR]` writes a CloudFormation template, per-handler IAM policies derived from the effects (only the DynamoDB actions the handler can reach, on its table), and the native Lambda `bootstrap.c`. `sspur deploy local file [--port N]` serves the service on 127.0.0.1 with emulated Lambda and DynamoDB that enforce those policies. Neither command calls AWS. See ADR 0016.
 
 ### Schema changes, hot swap and replay
@@ -637,7 +639,7 @@ Regex syntax: literals, `.` (not newline), `[a-z]`, `[^...]`, `\d \w \s` (ASCII)
 | `run_cmd(prog, args, input)` | `Res[(Int, Str, Str), Str] ! proc`: runs `prog` (searched in `PATH`) with `input` on stdin and gives the exit status (128 + signal when killed), stdout and stderr; `"prog: not found"` style errors |
 | `exit(code)` | `Unit ! proc`: ends the program with that status |
 
-Errors are `"{path}: not found"`, `permission denied`, `is a directory`, `not a directory`, `already exists`, `directory not empty`, `invalid UTF-8`, `invalid path`, `byte out of range`, `not a symlink`, `same file`, `mode out of range` or `os error N`. Service endpoints may perform `time` and `env` but not `fs`, `io` or `proc`.
+Errors are `"{path}: not found"`, `permission denied`, `is a directory`, `not a directory`, `already exists`, `directory not empty`, `invalid UTF-8`, `invalid path`, `byte out of range`, `not a symlink`, `same file`, `mode out of range` or `os error N`. Deployed service endpoints may perform `time` and `env` but not `fs`, `io`, `proc` or `net`.
 
 ### JSON
 

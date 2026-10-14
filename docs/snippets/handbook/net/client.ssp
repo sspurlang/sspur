@@ -1,0 +1,22 @@
+type Todo = {id: Int, title: Str, done: Bool}
+
+// ANCHOR: title
+fn title(base: Str, id: Int) -> Str ! net, fail[HttpErr]
+= do
+  body = http.fetch("{base}/todos/{id}")
+  json.decode[Todo](body).map(t => t.title).or("?")
+// ANCHOR_END: title
+
+// ANCHOR: main
+fn main() -> Unit ! net, log, env
+= do
+  base = "http://127.0.0.1:{args().first.or("8080")}"
+  match http.get(base + "/todos/1")
+  | ok(r) => log("{r.status} {r.header("content-type").or("")} {r.json[Todo]}")
+  | err(e) => log("failed: {e}")
+  r = http.send(http.req("GET", base + "/todos?done=false") with timeout_ms := 5000, retries := 2)
+  log(r.map(x => x.body).or("failed"))
+  log(catch title(base, 2)
+    | HttpStatus{code, body} => "HTTP {code}: {body}"
+    | e => "failed: {e}")
+// ANCHOR_END: main

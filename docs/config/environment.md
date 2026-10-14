@@ -8,6 +8,12 @@ None of these are needed for normal use. They exist for CI, for pinning toolchai
 |---|---|
 | `SSPUR_STRICT_NATIVE=1` | Same as `--strict-native`: a function that can't be compiled natively is an error, not a warning and a fallback |
 | `SSPUR_CACHE` | Root of every cache, instead of `~/.cache/sspur`: native objects (`native/`), check results (`check`), unchanged programs for `sspur run` (`run/`), packages (`pkgs/`) and deploy builds (`deploy/`) |
+| `SSPUR_LOG=json` | Print each log line as a JSON object with the time, the level and the message |
+| `SSPUR_LOG_LEVEL` | `debug`, `info`, `warn` or `error`: drop log lines below that level (a line without a level prefix is `info`) |
+| `SSL_CERT_FILE` | A PEM file of certificates the HTTP client trusts instead of the system's roots |
+| `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`, `NO_PROXY` | Proxies for the HTTP client (lowercase forms too) |
+| `SSPUR_LIBCURL` | Path of libcurl, if the HTTP client doesn't find it (macOS and Linux) |
+| `SSPUR_OPENSSL` | Directory of OpenSSL 3's libraries, if `http.serve` with TLS doesn't find them |
 | `SSPUR_NO_CHECK_CACHE` | Set to any value to skip the shared check cache, like `check --no-cache` |
 | `SSPUR_JOBS` | Parallel C compiler jobs for per-definition objects, 1 to 4 (default 4) |
 | `SSPUR_OPT=0` | Turn off the proven-rewrite optimizer |

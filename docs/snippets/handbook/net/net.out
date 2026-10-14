@@ -1,0 +1,31 @@
+// ANCHOR: serve
+$ sspur run server.ssp &
+info: listening on http://127.0.0.1:8080
+$ curl -s -w ' %{http_code}\n' localhost:8080/todos/1
+{"id":1,"title":"write the docs","done":false} 200
+$ curl -s -w ' %{http_code}\n' localhost:8080/todos/9
+{"error":{"tag":"NotFound","id":9}} 404
+$ curl -s -w ' %{http_code}\n' localhost:8080/todos/x
+{"error":"invalid request","detail":"path parameter id: expected Int"} 400
+$ curl -s -w ' %{http_code}\n' -X POST -d '{"id": 2, "title": "ship it", "done": true}' localhost:8080/todos
+{"id":2,"title":"ship it","done":false} 201
+$ curl -s -w ' %{http_code}\n' localhost:8080/hello/ada
+hello ada, you asked for /hello/ada 200
+// ANCHOR_END: serve
+// ANCHOR: client
+$ sspur run client.ssp 8080
+200 application/json ok(Todo{id: 1, title: "write the docs", done: false})
+[{"id":1,"title":"write the docs","done":false}]
+HTTP 404: {"error":{"tag":"NotFound","id":2}}
+// ANCHOR_END: client
+// ANCHOR: config
+$ sspur run config.ssp
+info: port 8080, 4 workers, greeting hi there
+warn: this is a warning
+$ APP_WORKERS=x sspur run config.ssp
+error: APP_WORKERS: expected Int, found x
+$ APP_PORT=0 sspur run config.ssp
+runtime error: contract violated: field 'port' of Config where _ > 0 and _ < 65536 (value = 0)
+$ SSPUR_LOG_LEVEL=warn sspur run config.ssp
+warn: this is a warning
+// ANCHOR_END: config

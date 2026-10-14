@@ -1,0 +1,30 @@
+// ANCHOR: svc
+type Todo = {id: Int, title: Str, done: Bool}
+
+type TodoErr = NotFound{id: Int}
+
+fn todo(id: Int) -> Todo ! fail[TodoErr]
+= if id == 1 then Todo{id, title: "write the docs", done: false} else raise NotFound{id}
+
+fn todos(done: Opt[Bool]) -> List[Todo]
+= [Todo{id: 1, title: "write the docs", done: false}].filter(t => done.is_none or done == some(t.done))
+
+fn add(t: Todo) -> Todo
+= t with done := false
+
+fn hello(req: Request, name: Str) -> Response
+= http.text(200, "hello {name}, you asked for {req.path}")
+
+svc api
+  ep get "/todos/{id}" = todo
+  ep get "/todos" = todos
+  ep post "/todos" = add
+  ep get "/hello/{name}" = hello
+// ANCHOR_END: svc
+
+// ANCHOR: main
+fn main() -> Unit ! net, log, env
+= do
+  port = env_var("PORT").or("8080").to_int.or(8080)
+  http.serve_with(http.server(port) with gzip := true, health := "/healthz", api)
+// ANCHOR_END: main

@@ -25,6 +25,7 @@
   - [Generics and Traits](handbook/generics-and-traits.md)
   - [Collections and Pipelines](handbook/collections.md)
   - [Concurrency](handbook/concurrency.md)
+  - [Networking](handbook/networking.md)
   - [Packages](handbook/packages.md)
 
 # Reference
@@ -37,6 +38,7 @@
   - [Time](reference/stdlib/time.md)
   - [Options, results and JSON](reference/stdlib/data.md)
   - [Files and processes](reference/stdlib/system.md)
+  - [Networking](reference/stdlib/network.md)
 - [Effects](reference/effects.md)
 - [Error codes](reference/errors.md)
 - [Command line](reference/cli.md)
