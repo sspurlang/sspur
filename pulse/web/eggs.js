@@ -43,7 +43,7 @@
     lost(_, first, total) { if (first) toast('You found the lost page. Look where the ISS was.', first, total); },
     sheet(btn, _f, _t, api) {
       const names = { retro: 'Retro screens', source: 'The source', shake: 'Aftershock', liftoff: 'Liftoff', weather: 'Weather of its own', iss: 'The space station', lost: 'Lost in orbit' };
-      const hints = { retro: 'The logo remembers old computers.', source: 'Updated three times as fast?', shake: 'The biggest quake is sensitive.', liftoff: 'Some numbers count down to something.', weather: 'Very cold and very hot places have weather of their own.', iss: 'Someone is always awake up there.', lost: 'Even lost pages know where the ISS is.' };
+      const hints = { retro: 'The logo remembers old computers.', source: 'Knock three times on what\'s fresh.', shake: 'The biggest quake is sensitive.', liftoff: 'Some numbers count down to something.', weather: 'Very cold and very hot places have weather of their own.', iss: 'Someone is always awake up there.', lost: 'Even lost pages know where the ISS is.' };
       const old = D.querySelector('.egg-sheet'); if (old) old.remove();
       const f = api.found();
       const box = D.createElement('div'); box.className = 'egg-src egg-sheet'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-labelledby', 'egg-sheet-h');
