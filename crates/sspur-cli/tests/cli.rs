@@ -422,3 +422,34 @@ test a1 = avg([2, 4]) == 3
     assert!(!ok && out == "no function nope", "{out}");
     let _ = std::fs::remove_dir_all(&d);
 }
+
+#[test]
+fn native_json_decode_of_a_large_array_stays_linear() {
+    if Command::new("clang").arg("--version").output().is_err() {
+        return;
+    }
+    let d = std::env::temp_dir().join(format!("sspur-cli-bigjson-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).unwrap();
+    let n = 40_000;
+    let mut js = String::from("[");
+    for i in 0..n {
+        if i > 0 {
+            js.push(',');
+        }
+        js.push_str(&format!("{{\"name\": \"record number {i}\", \"id\": {i}, \"x\": {i}.5, \"tags\": [\"alpha\", \"b\\\"c\"]}}"));
+    }
+    js.push(']');
+    assert!(js.len() > 3_000_000);
+    std::fs::write(d.join("big.json"), &js).unwrap();
+    std::fs::write(d.join("b.ssp"), "type R = {name: Str, id: Int, x: F64, tags: List[Str]}\n\nfn main() -> Unit ! log, fs\n= do\n  s = read_file(\"big.json\").or(\"\")\n  log(\"{json.decode[List[R]](s).map(rs => (rs.len, rs.map(_.id).sum, rs[n - 1].tags[1]))}\")\n".replace("n - 1", &(n - 1).to_string())).unwrap();
+    let t0 = std::time::Instant::now();
+    let o = Command::new(env!("CARGO_BIN_EXE_sspur")).args(["run", "--strict-native", "b.ssp"]).env("SSPUR_GC_STATS", "1").current_dir(&d).output().unwrap();
+    let (out, err) = (String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    assert!(o.status.success(), "{out}{err}");
+    assert_eq!(out.trim(), format!("ok(({n}, {}, \"b\\\"c\"))", n * (n - 1) / 2));
+    let mb: u64 = err.split("high water ").nth(1).and_then(|s| s.split(' ').next()).and_then(|s| s.parse().ok()).unwrap_or_else(|| panic!("{err}"));
+    assert!(mb < 120, "decoding {} bytes peaked at {mb} MB", js.len());
+    assert!(t0.elapsed().as_secs() < 60);
+    let _ = std::fs::remove_dir_all(&d);
+}

@@ -62,7 +62,7 @@ $ python3 -m http.server -d pulse/out 8000
 
 `PULSE_FIXTURES=pulse/fixtures` runs the whole pipeline offline on the captured responses, `PULSE_SECTIONS="quakes weather"` builds only some boards, `PULSE_FORCE=1` fetches even when a board is not due, and `PULSE_BACKFILL=30` lets the boards that build history from the past (Wikipedia and arXiv) fill more days per run.
 
-Section programs run in the interpreter, because natively compiled `json.decode` runs out of memory on inputs of a few hundred kilobytes (the USGS month feed, the weather for a hundred cities). The tests also pass natively.
+Section programs are compiled to native code and cached, so a rerun only pays for the run itself. With `--interp` they give the same pages, a few times slower on the large feeds.
 
 ## Data sources
 

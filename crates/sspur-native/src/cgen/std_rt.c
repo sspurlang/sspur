@@ -212,7 +212,10 @@ static int sj_hex4(SsJP* j, unsigned* out) {
 }
 static int sj_str(SsJP* j, Str* out) {
     j->p++;
-    char* o = (char*)sspur_alloc_atomic((size_t)(j->e - j->p) + 4); int64_t n = 0;
+    const unsigned char* q = j->p;
+    while (q < j->e && *q != '"') q += *q == '\\' ? 2 : 1;
+    if (q > j->e) q = j->e;
+    char* o = (char*)sspur_alloc_atomic((size_t)(q - j->p) + 4); int64_t n = 0;
     for (;;) {
         if (j->p >= j->e) return 0;
         unsigned c = *j->p++;

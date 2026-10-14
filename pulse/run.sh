@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Build SSPUR Pulse: run every section program, then the overview, into $PULSE_OUT.
 # Each section fetches on its own; a section that fails keeps its last good data.
-# Sections run in the interpreter: native json.decode runs out of memory on large
-# feeds (see the Pulse docs page).
 set -u
 cd "$(dirname "$0")/.."
 SSPUR=${SSPUR:-./target/release/sspur}
@@ -23,14 +21,14 @@ cp pulse/web/manifest.webmanifest "$PULSE_OUT/manifest.webmanifest"
 failed=""
 for s in $SECTIONS; do
   echo "== $s"
-  if ! $TMO "$SSPUR" run --interp "pulse/$s/main.ssp"; then
+  if ! $TMO "$SSPUR" run "pulse/$s/main.ssp"; then
     echo "$s: the run failed, rendering its last good data"
     failed="$failed $s"
-    PULSE_SKIP=1 $TMO "$SSPUR" run --interp "pulse/$s/main.ssp" || echo "$s: no page this run"
+    PULSE_SKIP=1 $TMO "$SSPUR" run "pulse/$s/main.ssp" || echo "$s: no page this run"
   fi
 done
 echo "== overview"
-$TMO "$SSPUR" run --interp pulse/overview/main.ssp || failed="$failed overview"
+$TMO "$SSPUR" run pulse/overview/main.ssp || failed="$failed overview"
 
 # Social images: SVG to PNG when a converter is installed, else the bundled card.
 for svg in "$PULSE_OUT"/og/*.svg; do

@@ -7,6 +7,9 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 ### Added
 - SSPUR Pulse (`pulse/`), a live dashboard of the world today at `/pulse/` on the docs site: eight boards (Wikipedia reading, space launches with a globe of the satellites in orbit, earthquakes, rising GitHub repos, a Hacker News time machine, AI papers, world weather, public holidays) fetched, checked and rendered by SSPUR programs every 6 hours by the Pages workflow, with snapshots kept on a `pulse-data` branch. Every page works without JavaScript; a small script adds chart toggles, tooltips, keyboard reading, the weather where you are (from your IP or, if you allow it, your device) and a few hidden secrets. Each board falls back to its last good data when a fetch fails and publishes JSON; the quakes, papers and reading boards publish RSS, the launches and holidays boards ICS calendars. The docs page "SSPUR Pulse: how it works" describes the design, and CI runs the Pulse tests on bundled fixtures.
 
+### Fixed
+- Native `json.decode` allocated every decoded string with room for the rest of the input, so decoding a large array was quadratic in memory: 1.3 MB of 20,000 small records hit the 8 GB heap ceiling and stopped with "out of memory". Each string now gets room for its own source text. The same decode takes 0.02s and 19 MB of heap (the interpreter 0.06s), and Pulse's section programs run natively again.
+
 ## [0.8.2] - 2026-10-14
 
 ### Added
