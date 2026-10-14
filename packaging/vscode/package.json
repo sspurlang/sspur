@@ -50,6 +50,11 @@
         }
       }
     ],
+    "breakpoints": [
+      {
+        "language": "sspur"
+      }
+    ],
     "grammars": [
       {
         "language": "sspur",

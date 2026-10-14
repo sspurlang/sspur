@@ -33,6 +33,29 @@ VS Code's own `editor.inlayHints.enabled` turns every inlay hint on, off, or on 
 
 *SSPUR: Restart Language Server* restarts it, for example after you upgrade `sspur`.
 
+## Debugging
+
+The extension lets you set breakpoints in `.ssp` files. To stop on them, debug the program with [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb): run `sspur debug-init` once, then add this to `.vscode/launch.json`, with `program` set to where `sspur` is (`which sspur`), and start *SSPUR: debug this file* with the `.ssp` file open.
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "SSPUR: debug this file",
+      "program": "${env:HOME}/.local/bin/sspur",
+      "args": ["run", "--debug", "${file}"],
+      "cwd": "${fileDirname}",
+      "initCommands": ["command script import ~/.cache/sspur/debug/sspur_lldb.py"]
+    }
+  ]
+}
+```
+
+The variables view shows locals under their SSPUR names, with strings, lists, options and sum values formatted. More in [Debugging](https://utkarshavardhana.github.io/sspur/reference/debugging.html).
+
 Other editors are covered in [Editor setup](https://utkarshavardhana.github.io/sspur/get-started/editors.html).
 
 ## Building and publishing
