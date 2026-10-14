@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 mod conc;
+pub mod debug;
 mod drops;
 pub mod export;
 pub mod flags;
@@ -933,7 +934,7 @@ static OptS_ str_last(Str s) {
 "#;
 
 pub fn compile_release(m: &Module, check: &CheckOutput, opt: &str) -> Result<Compiled, String> {
-    let opted = self::opt::optimize(m, check);
+    let opted = if debug::on() { None } else { self::opt::optimize(m, check) };
     let (m, check) = match &opted {
         Some(o) => (&o.module, &o.check),
         None => (m, check),
@@ -1097,6 +1098,8 @@ struct Plan {
     fids: HashMap<String, usize>,
     links: Vec<String>,
     export: Option<export::Wrappers>,
+    /// Debug builds: the C names of renamed `f_` functions.
+    cnames: HashMap<String, String>,
 }
 
 pub fn bare_c(m: &Module, check: &CheckOutput, arch: &str) -> Result<String, String> {
@@ -1174,8 +1177,10 @@ fn generate(m: &Module, check: &CheckOutput, export: Option<&str>, target: Optio
             }
         }
     }
+    let dbg = if host && target.is_none() && export.is_none() { debug::source().map(|s| std::sync::Arc::new(debug::Lines::new(&s))) } else { None };
     loop {
         let mut cx = Cx::new(check, &ok, &alias_refines, &field_refines, &smt);
+        cx.dbg = dbg.clone();
         cx.stable = stable;
         cx.sys = matches!(m.profile.as_deref(), Some("sys" | "bare"));
         cx.bare = m.profile.as_deref() == Some("bare");
@@ -1291,7 +1296,7 @@ fn generate(m: &Module, check: &CheckOutput, export: Option<&str>, target: Optio
             } else {
                 writeln!(src, "void sspur_core(int64_t id) {{ (void)id; }}").unwrap();
             }
-            let plan = Plan { fns: BTreeMap::new(), skipped, refines: vec![], err_types: vec![], links: vec![], export: None, owned: vec![], fids: index.clone() };
+            let plan = Plan { fns: BTreeMap::new(), skipped, refines: vec![], err_types: vec![], links: vec![], export: None, owned: vec![], fids: index.clone(), cnames: HashMap::new() };
             return Ok((fix_members(&src), plan));
         }
         if failed.is_empty() {
@@ -1315,6 +1320,9 @@ fn generate(m: &Module, check: &CheckOutput, export: Option<&str>, target: Optio
             let mut src = String::from(PRELUDE);
             if links.is_some() || export.is_some() {
                 src.push_str(ffi::FFI_PRELUDE);
+            }
+            if cx.dbg.is_some() {
+                writeln!(src, "typedef int64_t {};", debug::BOOL_T).unwrap();
             }
             src.push_str(&cx.fwd);
             src.push_str(&cx.defs);
@@ -1355,9 +1363,16 @@ fn generate(m: &Module, check: &CheckOutput, export: Option<&str>, target: Optio
             let owned = defs.iter().filter(|f| ok.contains(&f.name) && f.tparams.is_empty()).map(|f| f.name.clone()).collect();
             let refines = cx.refine_ids.iter().copied().zip(cx.refines.iter().cloned()).collect();
             let err_types = cx.err_ids.iter().copied().zip(cx.err_types.iter().cloned()).collect();
-            let plan = Plan { fns: plan_fns, skipped, refines, err_types, links: links.unwrap_or_default(), export: exported, owned, fids: index.clone() };
+            let mut plan = Plan { fns: plan_fns, skipped, refines, err_types, links: links.unwrap_or_default(), export: exported, owned, fids: index.clone(), cnames: HashMap::new() };
             let src = fix_members(&src);
-            return Ok((if cx.win { win::adapt(&src) } else { src }, plan));
+            let src = if cx.win { win::adapt(&src) } else { src };
+            if let Some(d) = &cx.dbg {
+                let fns: HashSet<String> = defs.iter().map(|f| f.name.clone()).collect();
+                let (s, cnames) = debug::finish_program(&src, d, &fns);
+                plan.cnames = cnames;
+                return Ok((s, plan));
+            }
+            return Ok((src, plan));
         }
         for (n, e) in failed {
             ok.remove(&n);
@@ -1423,7 +1438,8 @@ fn build(src: &str, opt: &str, links: &[String], lto: flags::Lto, names: &HashMa
     }
     let uniq = tmp_suffix();
     let c = dir.join(format!("{}.{uniq}.c", &key[..32]));
-    std::fs::write(&c, src).map_err(|e| e.to_string())?;
+    let debug_src = debug::on().then(|| debug::finish_unit(src, &dir.join(format!("{}.c", &key[..32]))));
+    std::fs::write(&c, debug_src.as_deref().unwrap_or(src)).map_err(|e| e.to_string())?;
     let tmp = lib.with_extension(format!("{uniq}.tmp"));
     let cc = flags::cc();
     let out = Command::new(&cc).args([opt, "-shared", "-w"]).args(flags::strip()).args(flags::pic()).args(&extra).args(lto.flag()).args(lto.linker()).arg("-o").arg(&tmp).arg(&c).args(links).args(flags::sys_libs()).output().map_err(|e| format!("cannot run {cc}: {e}"))?;
@@ -1437,6 +1453,9 @@ fn build(src: &str, opt: &str, links: &[String], lto: flags::Lto, names: &HashMa
     }
     let _ = std::fs::rename(&c, dir.join(format!("{}.c", &key[..32])));
     flags::drop_link_leftovers(&tmp);
+    if debug_src.is_some() && cfg!(target_os = "macos") {
+        debug::move_dsym(&tmp, &lib);
+    }
     flags::publish(&tmp, &lib)?;
     Ok(lib)
 }
@@ -1460,14 +1479,16 @@ fn split_mode(opt: &str) -> bool {
     match std::env::var("SSPUR_SPLIT").as_deref() {
         Ok("0") => false,
         Ok("1") => true,
-        _ => opt != "-O3",
+        _ => opt != "-O3" || debug::on(),
     }
 }
 
 fn split_units(src: &str, plan: &Plan) -> Vec<split::Tu> {
     static RUNTIME: std::sync::OnceLock<HashSet<String>> = std::sync::OnceLock::new();
     let runtime = RUNTIME.get_or_init(|| split::fn_names(&format!("{PRELUDE}\n{}\n{}\n{}\n{}", ffi::FFI_PRELUDE, stdlib::STD_RT, gpu::HOST_PRELUDE, win::WIN_RT)));
-    split::units(src, &split::Opts { owners: &plan.owned, shared: &["enc_err"], inline_bytes: 1200, inline_max: 24, runtime, share_bytes: 400 })
+    // A debug build is -O0, where a copied callee is never inlined; one copy keeps one breakpoint location.
+    let (inline_bytes, inline_max) = if debug::on() { (0, 0) } else { (1200, 24) };
+    split::units(src, &split::Opts { owners: &plan.owned, shared: &["enc_err"], inline_bytes, inline_max, runtime, share_bytes: 400, cnames: &plan.cnames })
 }
 
 fn build_split(src: &str, opt: &str, plan: &Plan, lto: flags::Lto, names: &HashMap<usize, String>) -> Result<PathBuf, String> {
@@ -1504,6 +1525,7 @@ fn build_split(src: &str, opt: &str, plan: &Plan, lto: flags::Lto, names: &HashM
         eprintln!("split: units in {:?}", t0.elapsed());
     }
     let objs: Vec<PathBuf> = keys.iter().map(|k| objdir.join(format!("{k}.o"))).collect();
+    let debug_on = debug::on();
     let todo: Vec<usize> = (0..tus.len()).filter(|&i| !objs[i].exists()).collect();
     let build = tmp_suffix();
     let next = std::sync::atomic::AtomicUsize::new(0);
@@ -1525,7 +1547,14 @@ fn build_split(src: &str, opt: &str, plan: &Plan, lto: flags::Lto, names: &HashM
                     cmd.current_dir(&wd).args(&flags);
                     for &i in batches[b] {
                         let c = format!("{}.c", keys[i]);
-                        std::fs::write(wd.join(&c), &tus[i].text).map_err(|e| e.to_string())?;
+                        if debug_on {
+                            let kept = objdir.join(&c);
+                            let text = debug::finish_unit(&tus[i].text, &kept);
+                            std::fs::write(wd.join(&c), &text).map_err(|e| e.to_string())?;
+                            std::fs::write(&kept, &text).map_err(|e| e.to_string())?;
+                        } else {
+                            std::fs::write(wd.join(&c), &tus[i].text).map_err(|e| e.to_string())?;
+                        }
                         cmd.arg(c);
                     }
                     let out = cmd.output().map_err(|e| format!("cannot run {cc}: {e}"))?;
@@ -1747,6 +1776,8 @@ struct Cx<'a> {
     rc_take: std::cell::Cell<Option<usize>>,
     rc_consume: HashSet<usize>,
     sb_vars: HashMap<String, (String, String)>,
+    dbg: Option<std::sync::Arc<debug::Lines>>,
+    dbg_line: usize,
 }
 
 impl<'a> Cx<'a> {
@@ -1827,6 +1858,8 @@ impl<'a> Cx<'a> {
             rc_take: std::cell::Cell::new(None),
             rc_consume: HashSet::new(),
             sb_vars: HashMap::new(),
+            dbg: None,
+            dbg_line: 0,
         }
     }
 
@@ -2097,6 +2130,7 @@ impl<'a> Cx<'a> {
                 let mut body = String::new();
                 for (f, ft) in &fs {
                     let c = self.cty(ft)?;
+                    let c = self.dvar(ft).map_or(c, str::to_string);
                     write!(body, "{c} {}; ", cfield(f)).unwrap();
                 }
                 self.in_progress.remove(&m);
@@ -2115,12 +2149,17 @@ impl<'a> Cx<'a> {
                             let mut body = String::new();
                             for (f, ft) in fs {
                                 let c = self.cty(ft)?;
+                                let c = self.dvar(ft).map_or(c, str::to_string);
                                 write!(body, "{c} {}; ", cfield(f)).unwrap();
                             }
                             write!(union, "struct {{ {body}}} v{k}; ").unwrap();
                         }
                     }
                     let tag_field = if self.niche(t).is_some() { "" } else { "int64_t tag; " };
+                    if self.dbg.is_some() {
+                        let names: Vec<&str> = vs.iter().map(|(v, _)| v.as_str()).collect();
+                        self.defs.push_str(&debug::tag_enum(&m, &names));
+                    }
                     writeln!(self.defs, "struct {m} {{ {tag_field}union {{ char none_; {union}}} u; }};").unwrap();
                 }
                 Ok(format!("{m}*"))
@@ -2423,6 +2462,59 @@ impl<'a> Cx<'a> {
         c
     }
 
+    /// In a debug build, a `#line` mark for the source line of `span` (and it becomes the current line).
+    fn dmark(&mut self, span: Span) -> String {
+        let Some(d) = &self.dbg else { return String::new() };
+        if d.skip.contains(lower::original_name(&self.fname)) {
+            return String::new();
+        }
+        match d.line(span.start, span.end) {
+            Some(n) => {
+                self.dbg_line = n;
+                debug::mark(n)
+            }
+            None => String::new(),
+        }
+    }
+
+    /// The mark for a loop body that is a single expression (a block marks its own statements).
+    fn dbody(&mut self, body: &Expr) -> String {
+        if matches!(body.kind, ExprKind::Block(_)) { String::new() } else { self.dmark(body.span) }
+    }
+
+    /// Line 0 in a debug build: the function's own bookkeeping, which stepping passes over.
+    fn dzero(&mut self) -> String {
+        match &self.dbg {
+            Some(d) if !d.skip.contains(lower::original_name(&self.fname)) => {
+                self.dbg_line = 0;
+                debug::mark(0)
+            }
+            _ => String::new(),
+        }
+    }
+
+    /// Back to line `n` after a construct whose arms marked their own lines.
+    fn dback(&mut self, n: usize) -> String {
+        if self.dbg.is_none() || n == 0 || n == self.dbg_line {
+            return String::new();
+        }
+        self.dbg_line = n;
+        debug::mark(n)
+    }
+
+    /// The declared C type of a binding in a debug build: `Int` is `int64_t` rather than whatever
+    /// the initializer's type is, and `Bool` is `ss_bool`, which the formatters show as true or false.
+    fn dvar(&self, t: &Type) -> Option<&'static str> {
+        self.dbg.as_ref()?;
+        if is(t, "Bool") {
+            Some(debug::BOOL_T)
+        } else if is(t, "Int") {
+            Some("int64_t")
+        } else {
+            None
+        }
+    }
+
     fn lookup(&self, name: &str) -> Option<(String, Type)> {
         self.scopes.iter().rev().find_map(|s| s.get(name).cloned())
     }
@@ -2522,7 +2614,8 @@ impl<'a> Cx<'a> {
         let mut sig = Vec::new();
         for (i, t) in params.iter().enumerate() {
             let star = if f.params.get(i).is_some_and(|p| is_mut_borrow(&p.ty)) { "*" } else { "" };
-            sig.push(format!("{}{star} a{i}", self.cty(t)?));
+            let c = self.cty(t)?;
+            sig.push(format!("{}{star} a{i}", self.dvar(t).map_or(c, str::to_string)));
         }
         sig.push("Status* st".into());
         sig.push("int64_t depth".into());
@@ -2544,7 +2637,7 @@ impl<'a> Cx<'a> {
         } else {
             self.own_fn = None;
         }
-        let split = env.is_none() && self.entry_checks(f);
+        let split = env.is_none() && self.entry_checks(f) && self.dbg.is_none();
         self.tail_spans.clear();
         self.tail_split = split;
         if env.is_none() && !self.sys && f.posts.is_empty() && !self.generics.contains_key(&f.name) && !cname.ends_with("__lin") && !matches!(f.body.kind, ExprKind::Table(_)) {
@@ -2552,6 +2645,10 @@ impl<'a> Cx<'a> {
         }
         let label = if self.tail_spans.is_empty() { "" } else { "tail_: ;\n" };
         let mut s = format!("#define RRT {rr}\n#define FIDX {fidx}\nstatic {rr} {fname_c}({env_pre}{}) {{\n{env_line}", sig.join(", "));
+        if self.dbg.is_some() {
+            s.push_str(&debug::params_note(&f.params.iter().map(|p| p.name.as_str()).collect::<Vec<_>>()));
+            s.push_str(&self.dmark(f.span));
+        }
         if split {
             writeln!(s, "  if (UNLIKELY(depth + 1 > 0)) TRAPV({T_DEPTH}, 0, 0);").unwrap();
         } else {
@@ -2584,6 +2681,7 @@ impl<'a> Cx<'a> {
             s.push('\n');
         }
         for (i, pre) in f.pres.iter().enumerate() {
+            s.push_str(&self.dmark(pre.span));
             let c = self.expr(pre)?;
             let shown = sspur_syntax::visit::mentioned_params(&f.params, pre);
             if shown.is_empty() {
@@ -2622,10 +2720,12 @@ impl<'a> Cx<'a> {
             ExprKind::Table(rows) => self.table(f, rows, params, ret)?,
             _ => self.expr(&f.body)?,
         };
-        writeln!(s, "  {}{rc} ret_;\n  ret_ = {body};\n  goto done_;\ndone_: ;", self.fn_decls).unwrap();
+        let z = self.dzero();
+        writeln!(s, "  {}{rc} ret_;{z}\n  ret_ = {body};{z}\n  goto done_;\ndone_: ;", self.fn_decls).unwrap();
         if let Some(rt) = f.ret.as_ref().filter(|_| env.is_some() || !self.smt.ret_proved(&f.name)) {
             let c = self.alias_check(rt, &format!("result of {}", lower::original_name(&f.name)), "ret_", ret)?;
-            writeln!(s, "  {c}").unwrap();
+            let m = self.dmark(f.span);
+            writeln!(s, "{m}  {c}").unwrap();
         }
         if !f.posts.is_empty() {
             self.scopes.push(HashMap::from([("r".to_string(), ("ret_".to_string(), ret.clone()))]));
@@ -2633,13 +2733,15 @@ impl<'a> Cx<'a> {
                 if env.is_none() && self.smt.post_proved(&f.name, i) {
                     continue;
                 }
+                s.push_str(&self.dmark(post.span));
                 let c = self.expr(post)?;
                 let (bits, pre) = self.value_bits("ret_", ret)?;
                 writeln!(s, "  if (UNLIKELY(!({c}))) {{ {pre}TRAPV({T_POST}, {i}, {bits}); }}").unwrap();
             }
             self.scopes.pop();
         }
-        writeln!(s, "  return ({rr}){{ret_, 0}};\n}}\n#undef RRT\n#undef FIDX").unwrap();
+        let z = self.dzero();
+        writeln!(s, "{z}  return ({rr}){{ret_, 0}};\n}}\n#undef RRT\n#undef FIDX").unwrap();
         Ok(s)
     }
 
@@ -2744,7 +2846,7 @@ impl<'a> Cx<'a> {
             }
             None => cname,
         };
-        let cname = if src.is_some_and(|(e, a)| self.callee_safe(name, a, e)) { format!("{cname}__np") } else { cname };
+        let cname = if self.dbg.is_none() && src.is_some_and(|(e, a)| self.callee_safe(name, a, e)) { format!("{cname}__np") } else { cname };
         let rr = self.rr(&rt)?;
         let mut s = String::from("({ ");
         let mut names = Vec::new();
@@ -2824,7 +2926,13 @@ impl<'a> Cx<'a> {
                 captures.push((n, c, t));
             }
         }
-        let id = self.fresh("lam");
+        let id = match &self.dbg {
+            Some(_) => {
+                let owner: String = lower::original_name(&self.fname).chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
+                self.fresh(&format!("{owner}__lambda"))
+            }
+            None => self.fresh("lam"),
+        };
         let env = format!("ENV_{id}");
         let mut fields = String::new();
         for (i, (_, cv, t)) in captures.iter().enumerate() {
@@ -2851,7 +2959,10 @@ impl<'a> Cx<'a> {
             scope.insert(p.clone(), (format!("a{i}"), t.clone()));
         }
         self.scopes = vec![scope];
+        let back = self.dbg_line;
+        let lm = if self.dbg.is_some() { format!("{}{}", debug::params_note(&params.iter().map(String::as_str).collect::<Vec<_>>()), self.dmark(body.span)) } else { String::new() };
         let b = self.expr(body);
+        self.dbg_line = back;
         self.boxed = saved_boxed;
         self.scopes = saved_scopes;
         self.catch_stack = saved_catch;
@@ -2859,7 +2970,7 @@ impl<'a> Cx<'a> {
         self.hit_ok = saved_hit;
         let b = b?;
         writeln!(self.protos, "static {rr} {id}(void* env, {sig}Status* st, int64_t depth);").unwrap();
-        writeln!(self.lambdas, "#define RRT {rr}\n#define FIDX {}\nstatic {rr} {id}(void* env, {sig}Status* st, int64_t depth) {{ struct {env}* env_ = (struct {env}*)env; (void)env_; return ({rr}){{{b}, 0}}; }}\n#undef RRT\n#undef FIDX", self.fidx).unwrap();
+        writeln!(self.lambdas, "#define RRT {rr}\n#define FIDX {}\nstatic {rr} {id}(void* env, {sig}Status* st, int64_t depth) {{ {lm}struct {env}* env_ = (struct {env}*)env; (void)env_; return ({rr}){{{b}, 0}}; }}\n#undef RRT\n#undef FIDX", self.fidx).unwrap();
         let fc = self.cty(ft)?;
         let mut s = format!("({{ struct {env}* ev_ = (struct {env}*)sspur_alloc(sizeof(struct {env})); ");
         for (i, (_, c, _)) in captures.iter().enumerate() {
@@ -3209,12 +3320,18 @@ impl<'a> Cx<'a> {
                 {
                     return Ok(s);
                 }
+                let split_lines = self.dbg.as_ref().is_some_and(|d| d.line(a.span.start, a.span.end).is_some_and(|l| l != self.dbg_line));
+                let am = if split_lines { self.dmark(a.span) } else { String::new() };
                 let av = self.under(c, true, |cx| cx.expr(a))?;
+                let bm = match b {
+                    Some(b) if split_lines => self.dmark(b.span),
+                    _ => String::new(),
+                };
                 let bv = match b {
                     Some(b) => self.under(c, false, |cx| cx.expr(b))?,
                     None => "0LL".into(),
                 };
-                Ok(format!("(({cv}) ? ({av}) : ({bv}))"))
+                Ok(format!("(({cv}) ? ({am}{av}) : ({bm}{bv}))"))
             }
             ExprKind::Match(s, arms, _) => self.match_expr(s, arms, &t),
             ExprKind::Block(stmts) => self.block(stmts),
@@ -3512,8 +3629,9 @@ impl<'a> Cx<'a> {
             self.scopes.push(HashMap::new());
             let mut decl = String::new();
             for (n, expr, bt) in binds {
+                let dv = self.dvar(&bt).unwrap_or("__auto_type");
                 let c = self.bind(&n, bt);
-                write!(decl, "__auto_type {c} = {expr}; ").unwrap();
+                write!(decl, "{dv} {c} = {expr}; ").unwrap();
             }
             let guard = match &a.guard {
                 Some(g) => self.expr(g),
@@ -4595,7 +4713,9 @@ impl<'a> Cx<'a> {
         let res = self.fresh("mr");
         let end = self.fresh("mend");
         let mut s = format!("({{ __auto_type {s_} = {sv}; {rc} {res}; ");
+        let back = self.dbg_line;
         for a in arms {
+            s.push_str(&self.dmark(a.body.span));
             let mut conds = Vec::new();
             let mut binds = Vec::new();
             let r = self.pattern(&a.pat, &s_, &st, &mut conds, &mut binds);
@@ -4604,8 +4724,9 @@ impl<'a> Cx<'a> {
             self.scopes.push(HashMap::new());
             let mut decl = String::new();
             for (n, expr, bt) in binds {
+                let dv = self.dvar(&bt).unwrap_or("__auto_type");
                 let c = self.bind(&n, bt);
-                write!(decl, "__auto_type {c} = {expr}; ").unwrap();
+                write!(decl, "{dv} {c} = {expr}; ").unwrap();
             }
             let guard = match &a.guard {
                 Some(g) => self.expr(g)?,
@@ -4616,7 +4737,8 @@ impl<'a> Cx<'a> {
             let cond = if conds.is_empty() { "1".to_string() } else { conds.join(" && ") };
             write!(s, "if ({cond}) {{ {decl}if ({guard}) {{ {res} = {body}; goto {end}; }} }} ").unwrap();
         }
-        write!(s, "TRAPV({T_NOMATCH}, 0, 0); {end}: ; {res}; }})").unwrap();
+        let dm = self.dback(back);
+        write!(s, "{dm}TRAPV({T_NOMATCH}, 0, 0); {end}: ; {res}; }})").unwrap();
         Ok(s)
     }
 
@@ -4806,6 +4928,7 @@ impl<'a> Cx<'a> {
             };
             let sb = if rc { self.sb_plan(stmts, i) } else { None };
             let plan = if rc && sb.is_none() { self.rc_plan(stmts, i) } else { None };
+            let dm = stmt_span(st).map(|sp| self.dmark(sp)).unwrap_or_default();
             let r = match (st, sb) {
                 (Stmt::Var(v, init), Some(sep)) => self.ty(init).map(|t| {
                     let name = self.bind(v, t);
@@ -4854,7 +4977,10 @@ impl<'a> Cx<'a> {
                 }
             }
             match r {
-                Ok(c) => s.push_str(&c),
+                Ok(c) => {
+                    s.push_str(&dm);
+                    s.push_str(&c);
+                }
                 Err(e) => {
                     self.scopes.pop();
                     return Err(e);
@@ -4889,11 +5015,12 @@ impl<'a> Cx<'a> {
                         out.push_str(&d);
                         continue;
                     }
+                    let dv = self.dvar(&bt).unwrap_or("__auto_type");
                     let c = self.bind(&n, bt);
                     if matches!(p, Pat::Bind(_)) {
                         self.bind_fact(&c, e);
                     }
-                    write!(out, "__auto_type {c} = {expr}; ").unwrap();
+                    write!(out, "{dv} {c} = {expr}; ").unwrap();
                 }
                 Ok(out)
             }
@@ -4912,6 +5039,7 @@ impl<'a> Cx<'a> {
             Stmt::Var(n, e) => {
                 let t = self.ty(e)?;
                 let c = self.cty(&t)?;
+                let c = self.dvar(&t).map_or(c, str::to_string);
                 let v = self.expr(e)?;
                 let var = self.bind(n, t);
                 self.mutable.insert(var.clone());
@@ -4949,14 +5077,18 @@ impl<'a> Cx<'a> {
                 Ok(format!("{var} = {v}; "))
             }
             Stmt::While(c, body) => {
+                let back = self.dbg_line;
                 let cv = self.expr(c)?;
                 self.scopes.push(HashMap::new());
+                let bm = self.dbody(body);
                 let b = self.under(c, true, |cx| cx.expr(body));
                 self.scopes.pop();
                 let poll = if self.par_mode { "PAR_POLL(); " } else { "" };
-                Ok(format!("while ({cv}) {{ {poll}(void)({}); }} ", b?))
+                let dm = self.dback(back);
+                Ok(format!("while ({cv}) {{ {poll}(void)({bm}{});{dm} }} ", b?))
             }
             Stmt::For(p, it, body) => {
+                let back = self.dbg_line;
                 if let ExprKind::Par(src) = &it.kind
                     && src.len() == 1 {
                         return self.par_for(p, &src[0], body);
@@ -4975,10 +5107,12 @@ impl<'a> Cx<'a> {
                     let iv = self.bind(i, Type::int());
                     let m = self.know.facts.len();
                     self.for_range_facts(&iv, a, b);
+                    let bm = self.dbody(body);
                     let body = self.expr(body);
                     self.know.facts.truncate(m);
                     self.scopes.pop();
-                    return Ok(format!("{{ int64_t {s_} = {av}; int64_t {e_} = {bv}; {reserve}for (int64_t {iv} = {s_}; {iv} < {e_}; {iv}++) {{ (void)({}); }} }} ", body?));
+                    let dm = self.dback(back);
+                    return Ok(format!("{{ int64_t {s_} = {av}; int64_t {e_} = {bv}; {reserve}for (int64_t {iv} = {s_}; {iv} < {e_}; {iv}++) {{ (void)({bm}{});{dm} }} }} ", body?));
                 }
                 if let (Pat::Bind(i), ExprKind::Call(_, args)) = (p, &it.kind)
                     && self.range_call(it) {
@@ -4987,9 +5121,11 @@ impl<'a> Cx<'a> {
                         let (s_, e_, k_, n_, c_) = (self.fresh("fs"), self.fresh("fe"), self.fresh("fk"), self.fresh("fn"), self.fresh("fc"));
                         self.scopes.push(HashMap::new());
                         let iv = self.bind(i, Type::int());
+                        let bm = self.dbody(body);
                         let body = self.expr(body);
                         self.scopes.pop();
-                        return Ok(format!("{{ int64_t {s_} = {av}; int64_t {e_} = {bv}; int64_t {k_} = {kv}; if (UNLIKELY({k_} == 0)) ss_fail(st, \"range step must not be 0\"); {} for (int64_t {c_} = 0; {c_} < {n_}; {c_}++) {{ int64_t {iv} = (int64_t)({s_} + (__int128){c_} * {k_}); (void)({}); }} }} ", range_count(&n_, &s_, &e_, &k_), body?));
+                        let dm = self.dback(back);
+                        return Ok(format!("{{ int64_t {s_} = {av}; int64_t {e_} = {bv}; int64_t {k_} = {kv}; if (UNLIKELY({k_} == 0)) ss_fail(st, \"range step must not be 0\"); {} for (int64_t {c_} = 0; {c_} < {n_}; {c_}++) {{ int64_t {iv} = (int64_t)({s_} + (__int128){c_} * {k_}); (void)({bm}{});{dm} }} }} ", range_count(&n_, &s_, &e_, &k_), body?));
                     }
                 let lt = self.ty(it)?;
                 let et = match elem(&lt, "List") {
@@ -5013,13 +5149,16 @@ impl<'a> Cx<'a> {
                 }
                 let mut decl = String::new();
                 for (n, expr, bt) in binds {
+                    let dv = self.dvar(&bt).unwrap_or("__auto_type");
                     let c = self.bind(&n, bt);
-                    write!(decl, "__auto_type {c} = {expr}; ").unwrap();
+                    write!(decl, "{dv} {c} = {expr}; ").unwrap();
                 }
+                let bm = self.dbody(body);
                 let body = self.expr(body);
                 self.scopes.pop();
                 let cond = if conds.is_empty() { "1".to_string() } else { conds.join(" && ") };
-                Ok(format!("{{ __auto_type {l} = {lv}; for (int64_t {i} = 0; {i} < {l}.len; {i}++) {{ __auto_type {item} = {l}.data[{i}]; {pre}if ({cond}) {{ {decl}(void)({}); }} }} {it_drop}}} ", body?))
+                let dm = self.dback(back);
+                Ok(format!("{{ __auto_type {l} = {lv}; for (int64_t {i} = 0; {i} < {l}.len; {i}++) {{ __auto_type {item} = {l}.data[{i}]; {pre}if ({cond}) {{ {decl}(void)({bm}{});{dm} }} }} {it_drop}}} ", body?))
             }
             Stmt::Expr(e) => Ok(format!("(void)({}); ", self.expr(e)?)),
             Stmt::Fn(_) => Ok(String::new()),
@@ -5081,6 +5220,14 @@ impl<'a> Cx<'a> {
         }
         write!(s, "{w}; }})").unwrap();
         Ok(s)
+    }
+}
+
+fn stmt_span(s: &Stmt) -> Option<Span> {
+    match s {
+        Stmt::Let(_, e) | Stmt::Var(_, e) | Stmt::Expr(e) | Stmt::While(e, _) | Stmt::For(_, e, _) => Some(e.span),
+        Stmt::Assign(_, _, sp) => Some(*sp),
+        Stmt::Fn(_) => None,
     }
 }
 

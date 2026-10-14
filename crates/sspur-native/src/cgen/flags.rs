@@ -33,9 +33,11 @@ impl Lto {
     }
 }
 
-/// Extra clang flags from `SSPUR_CFLAGS` (for example `-fsanitize=address,undefined`), part of every cache key.
+/// Extra clang flags from `SSPUR_CFLAGS` (for example `-fsanitize=address,undefined`) and those of a debug build, part of every cache key.
 pub fn extra() -> Vec<String> {
-    std::env::var("SSPUR_CFLAGS").map(|v| v.split_whitespace().map(str::to_string).collect()).unwrap_or_default()
+    let mut f: Vec<String> = std::env::var("SSPUR_CFLAGS").map(|v| v.split_whitespace().map(str::to_string).collect()).unwrap_or_default();
+    f.extend(super::debug::cflags());
+    f
 }
 
 pub fn sys_libs() -> Vec<String> {

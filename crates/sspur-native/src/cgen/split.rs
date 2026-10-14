@@ -343,6 +343,8 @@ pub(super) struct Opts<'a> {
     pub(super) inline_max: usize,
     pub(super) runtime: &'a HashSet<String>,
     pub(super) share_bytes: usize,
+    /// Debug builds give functions their SSPUR names; `f_name` maps to the C name used.
+    pub(super) cnames: &'a HashMap<String, String>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -355,7 +357,11 @@ enum Mode {
 
 pub(super) fn units(src: &str, o: &Opts) -> Vec<Tu> {
     let mut its = items(src);
-    let owner_of: HashMap<String, usize> = o.owners.iter().enumerate().flat_map(|(k, n)| [(format!("f_{n}"), k), (format!("sspur_entry_{n}"), k), (format!("sspur_wentry_{n}"), k)]).collect();
+    let c_fn = |n: &str| -> String {
+        let f = format!("f_{n}");
+        o.cnames.get(&f).cloned().unwrap_or(f)
+    };
+    let owner_of: HashMap<String, usize> = o.owners.iter().enumerate().flat_map(|(k, n)| [(c_fn(n), k), (format!("sspur_entry_{n}"), k), (format!("sspur_wentry_{n}"), k)]).collect();
     let mut shared_fns: HashSet<String> = o.shared.iter().map(|s| s.to_string()).collect();
     for it in its.iter_mut() {
         if it.kind == Kind::Fn {
