@@ -229,7 +229,7 @@
   });
 
   // Controls: speed and orbit band on the globe, operators in the legend (a sheet on phones)
-  const legend = $('.orb-legend', box), lbtn = $('[data-orb-layers]', box), scrim = $('.orb-scrim', box);
+  const legend = $('.orb-legend', box), lbtn = $('[data-orb-layers]', box), modal = W.PulseModal || { open() {}, close() {} };
   const gi = (key) => idx.groups.findIndex((x) => x.key === key);
   const persist = () => {
     const off = idx.groups.filter((g, i) => !shown[i]).map((g) => g.key);
@@ -270,13 +270,13 @@
   };
   const openSheet = () => {
     legend.classList.add('open'); legend.setAttribute('role', 'dialog'); legend.setAttribute('aria-modal', 'true'); legend.setAttribute('aria-label', 'Layers');
-    scrim.hidden = false; lbtn.setAttribute('aria-expanded', 'true'); D.addEventListener('keydown', onSheetKey);
+    modal.open(closeSheet); lbtn.setAttribute('aria-expanded', 'true'); D.addEventListener('keydown', onSheetKey);
     requestAnimationFrame(() => { const f = $('.orb-fh', legend); if (f) f.focus({ preventScroll: true }); });
   };
   const closeSheet = () => {
     if (!legend.classList.contains('open')) return;
     legend.classList.remove('open'); legend.setAttribute('role', 'group'); legend.removeAttribute('aria-modal'); legend.setAttribute('aria-label', 'Operators');
-    scrim.hidden = true; lbtn.setAttribute('aria-expanded', 'false'); D.removeEventListener('keydown', onSheetKey);
+    modal.close(); lbtn.setAttribute('aria-expanded', 'false'); D.removeEventListener('keydown', onSheetKey);
     if (lbtn.offsetParent) lbtn.focus({ preventScroll: true });
   };
   W.matchMedia('(min-width: 700px)').addEventListener('change', (m) => { if (m.matches) closeSheet(); });

@@ -54,6 +54,15 @@
   const key = 'pulse:' + location.pathname;
   const state = new URLSearchParams(location.hash.slice(1) || store(key) || '');
   const save = () => { const s = state.toString(); store(key, s || null); history.replaceState(null, '', s ? '#' + s : location.pathname + location.search); };
+  // Sheets (Layers, secrets, the source, your place): one scrim over everything, the page held still
+  const scrim = D.createElement('div'); scrim.className = 'pscrim'; scrim.hidden = true; D.body.appendChild(scrim);
+  let onScrim = null;
+  scrim.addEventListener('click', () => { if (onScrim) onScrim(); });
+  scrim.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+  W.PulseModal = {
+    open(close) { onScrim = close; scrim.hidden = false; R.classList.add('pulse-lock'); },
+    close() { onScrim = null; scrim.hidden = true; R.classList.remove('pulse-lock'); },
+  };
   // orbit.js keeps the globe's view here too
   W.PulseState = { get: (k) => state.get(k), set: (k, v) => { if (v == null) state.delete(k); else state.set(k, v); save(); } };
 
@@ -268,7 +277,14 @@
   };
   $$('figure[data-group]').forEach(wireFig);
   // here.js adds charts it builds in the browser through this.
-  W.PulseCharts = { add(g, fig) { groups[g.id] = g; wireFig(fig); draw(fig, false); } };
+  W.PulseCharts = {
+    add(g, fig) { groups[g.id] = g; wireFig(fig); draw(fig, false); },
+    extend(id, views) { const g = groups[id]; if (g) g.views = g.views.filter((v) => !views.some((x) => x.key === v.key)).concat(views); },
+    pick(id, key) {
+      const g = groups[id], fig = $(`figure[data-group="${id}"]`); if (!g || !fig || !g.views.some((v) => v.key === key)) return;
+      g.view = key; state.set(id + '-v', key); save(); draw(fig, false); fig.dispatchEvent(new CustomEvent('pulse:view'));
+    },
+  };
   const orb = $('#orbit');
   if (orb && 'IntersectionObserver' in W && 'Worker' in W) {
     const io = new IntersectionObserver((es) => { if (!es[0].isIntersecting) return; io.disconnect(); const s = D.createElement('script'); s.src = base + 'assets/orbit.js'; D.head.appendChild(s); }, { rootMargin: '400px' });
@@ -436,13 +452,17 @@
   // Hold the logo for 650 ms: a ring fills, then the retro screens. A tap still goes home.
   const logo = $('.logo');
   if (logo) {
-    let t = 0, fired = false, at = null;
+    // Every hold behaves the same: the link cannot be dragged or previewed, the menu is always
+    // refused while holding or just after a hold, and the state resets at each new touch.
+    logo.draggable = false; logo.querySelectorAll('svg,span').forEach((e) => { e.setAttribute('draggable', 'false'); });
+    let t = 0, fired = false, at = null, kind = 'mouse';
     const stop = () => { clearTimeout(t); t = 0; logo.classList.remove('holding'); };
-    logo.addEventListener('pointerdown', (e) => { fired = false; at = [e.clientX, e.clientY]; logo.classList.add('holding'); t = setTimeout(() => { fired = true; stop(); egg('retro'); }, 650); });
+    logo.addEventListener('pointerdown', (e) => { kind = e.pointerType; fired = false; at = [e.clientX, e.clientY]; logo.classList.add('holding'); t = setTimeout(() => { fired = true; stop(); egg('retro'); }, 650); });
     logo.addEventListener('pointermove', (e) => { if (t && at && Math.hypot(e.clientX - at[0], e.clientY - at[1]) > 8) stop(); });
     ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => logo.addEventListener(ev, stop));
     logo.addEventListener('click', (e) => { if (fired) { e.preventDefault(); fired = false; } });
-    logo.addEventListener('contextmenu', (e) => { if (t || fired) e.preventDefault(); });
+    logo.addEventListener('contextmenu', (e) => { if (t || fired || kind !== 'mouse') e.preventDefault(); });
+    logo.addEventListener('dragstart', (e) => e.preventDefault());
   }
   D.addEventListener('pulse:hot', (e) => egg('weather', e.detail));
   D.addEventListener('click', (e) => { const h = e.target.closest('[data-hot]'); if (h) egg('weather', { kind: h.dataset.hot, el: h.closest('.card') || h }); });

@@ -105,6 +105,45 @@ for (const dev of devices) {
   const kept = await p.evaluate(() => [document.querySelector('[data-ofam="nav"]').getAttribute('aria-checked'), document.querySelector('[data-band="0"]').getAttribute('aria-checked')]);
   checks++;
   if (kept[0] !== 'false' || kept[1] !== 'true') fail(`${tag}: the globe's view did not survive a reload (${kept})`);
+  // Holding the logo cycles normal, retro, night sky, normal, every time; the menu never opens
+  await p.goto(BASE + 'launches/');
+  await p.evaluate(() => localStorage.removeItem('pulse-eggs'));
+  // Desktop WebKit has no -webkit-touch-callout and drops it from the CSSOM: read the styles' text
+  const hold = () => p.evaluate(async () => {
+    const calloutRule = () => { const raw = [...document.querySelectorAll('style')].map((x) => x.textContent).join('\n'); return /\.logo,\.logo \*\{-webkit-touch-callout:none!important/.test(raw) && !/touch-callout:\s*(?!none)/.test(raw) ? 'none' : 'not none'; };
+    const logo = document.querySelector('.logo'), b = logo.getBoundingClientRect(), x = b.left + 20, y = b.top + b.height / 2;
+    const o = { bubbles: true, cancelable: true, composed: true, pointerType: 'touch', isPrimary: true, pointerId: 9, clientX: x, clientY: y };
+    const target = document.elementFromPoint(x, y);
+    target.dispatchEvent(new PointerEvent('pointerdown', o));
+    await new Promise((r) => setTimeout(r, 560));
+    const menu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y });
+    target.dispatchEvent(menu);
+    await new Promise((r) => setTimeout(r, 300));
+    target.dispatchEvent(new PointerEvent('pointerup', o));
+    await new Promise((r) => setTimeout(r, 900));
+    const cs = getComputedStyle(logo), top = getComputedStyle(document.querySelector('.top'));
+    return { egg: document.documentElement.dataset.egg || 'normal', menuBlocked: menu.defaultPrevented, callout: CSS.supports('-webkit-touch-callout', 'none') ? cs.getPropertyValue('-webkit-touch-callout') : calloutRule(logo), select: cs.webkitUserSelect || cs.userSelect, onTop: target.closest('.logo') !== null, header: +top.zIndex, toasts: document.querySelectorAll('.egg-toast').length };
+  });
+  const cycle = ['crt', 'sky', 'normal', 'crt', 'sky', 'normal'];
+  for (const [k, want] of cycle.entries()) {
+    const h = await hold();
+    checks++;
+    if (h.egg !== want) fail(`${tag}: logo hold ${k + 1} gave ${h.egg}, not ${want}`);
+    if (!h.menuBlocked) fail(`${tag}: logo hold ${k + 1} let the context menu through`);
+    if (dev.engine === 'webkit' && h.callout !== 'none') fail(`${tag}: logo hold ${k + 1}: -webkit-touch-callout is ${h.callout} in ${h.egg}`);
+    if (h.select !== 'none') fail(`${tag}: logo hold ${k + 1}: user-select is ${h.select}`);
+    if (!h.onTop) fail(`${tag}: logo hold ${k + 1}: something covers the logo`);
+    if (h.egg === 'crt' && h.header <= 60) fail(`${tag}: the retro scanlines cover the header`);
+    if (k === 0 && h.toasts !== 1) fail(`${tag}: the first retro find showed ${h.toasts} toasts`);
+    if (k > 0 && h.toasts) fail(`${tag}: retro toggle ${k + 1} still shows a toast`);
+  }
+  for (const want of ['crt']) {
+    await hold();
+    const lb = await p.$eval('.logo', (e) => { const b = e.getBoundingClientRect(); return { x: b.left + 20, y: b.top + b.height / 2 }; });
+    await p.touchscreen.tap(lb.x, lb.y);
+    try { await p.waitForURL(BASE, { timeout: 4000 }); } catch (e) { fail(`${tag}: a tap on the logo in ${want} did not go home`); }
+    checks++;
+  }
   await browser.close();
 }
 console.log(`${checks} tap checks, ${problems.length} problems`);

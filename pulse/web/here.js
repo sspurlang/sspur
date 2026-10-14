@@ -15,7 +15,8 @@
   const km = (a, b, c, d) => { const r = Math.PI / 180, h = Math.sin((c - a) * r / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin((d - b) * r / 2) ** 2; return 12742 * Math.asin(Math.sqrt(h)); };
   const P = { sun: 'M12 3v2M12 19v2M5.6 5.6 7 7M17 17l1.4 1.4M3 12h2M19 12h2M5.6 18.4 7 17M17 7l1.4-1.4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z', moon: 'M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z', cloud: 'M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9.5 4.3 4.3 0 0 0 7 18z', rain: 'M7 15h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 6.5 4.3 4.3 0 0 0 7 15zM8 18l-1 3M12 18l-1 3M16 18l-1 3', snow: 'M7 14h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 5.5 4.3 4.3 0 0 0 7 14zM8 18h.01M12 20h.01M16 18h.01M10 22h.01M14 22h.01', storm: 'M7 14h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 5.5 4.3 4.3 0 0 0 7 14zM12 15l-2 4h4l-2 4', fog: 'M4 9h16M4 13h16M6 17h12' };
   const kind = (c, day) => c === 0 || c === 1 ? (day ? 'sun' : 'moon') : c <= 3 ? 'cloud' : c <= 48 ? 'fog' : c <= 67 || (c >= 80 && c <= 82) ? 'rain' : c <= 77 || c === 85 || c === 86 ? 'snow' : c >= 95 ? 'storm' : 'cloud';
-  const words = { sun: 'Clear', moon: 'Clear', cloud: 'Cloudy', fog: 'Fog', rain: 'Rain', snow: 'Snow', storm: 'Thunderstorm' };
+  // The same words the weather board uses for a WMO code
+  const sky = (c) => c === 0 ? 'Clear' : c <= 2 ? 'Partly cloudy' : c === 3 ? 'Overcast' : c === 45 || c === 48 ? 'Fog' : c >= 51 && c <= 57 ? 'Drizzle' : c >= 61 && c <= 67 ? 'Rain' : c >= 71 && c <= 77 ? 'Snow' : c >= 80 && c <= 82 ? 'Showers' : c === 85 || c === 86 ? 'Snow showers' : c >= 95 ? 'Thunderstorm' : 'Cloudy';
   const icon = (k) => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${P[k]}"/></svg>`;
   const deg = (t) => (t < 0 ? '−' : '') + Math.abs(t).toFixed(0) + '°C';
 
@@ -55,16 +56,19 @@
     if (!data.current || !isFinite(data.current.temperature_2m)) throw new Error('no weather');
     put(ss, k, { at: Date.now(), data }); return data;
   };
-  // Where we are and what it is like there. Board cities within 30 km use the board.
+  // Where we are and what it is like there. Only a place that is a board city (same name within
+  // 40 km, or within 5 km) uses the board; anywhere else, Gurugram next to Delhi say, gets its own
+  // forecast, so the front page and the weather board show the same reading for it.
+  const fromBoard = (p, c) => ({ p, city: c, t: c.t, k: kind(c.c, c.d), w: sky(c.c), hi: c.hi, lo: c.lw });
   const resolve = async () => {
     const b = await board(), p = await place(b);
     if (!p) return null;
     const n = nearestCity(b, p.lat, p.lon);
-    if (n && n.d <= 30) return { p, city: n.c, t: n.c.t, k: kind(n.c.c, n.c.d), hi: n.c.hi, lo: n.c.lw };
-    try { const f = await forecast(p); return { p, f, t: f.current.temperature_2m, k: kind(f.current.weather_code, f.current.is_day), hi: f.daily.temperature_2m_max.slice(-1)[0], lo: f.daily.temperature_2m_min.slice(-1)[0] }; } catch (e) { return n ? { p: { ...p, name: n.c.n, kind: 'zone' }, city: n.c, t: n.c.t, k: kind(n.c.c, n.c.d), hi: n.c.hi, lo: n.c.lw } : null; }
+    if (n && (n.d <= 5 || (n.d <= 40 && n.c.n.toLowerCase() === String(p.name).toLowerCase()))) return fromBoard(p, n.c);
+    try { const f = await forecast(p); return { p, f, t: f.current.temperature_2m, k: kind(f.current.weather_code, f.current.is_day), w: sky(f.current.weather_code), hi: f.daily.temperature_2m_max.slice(-1)[0], lo: f.daily.temperature_2m_min.slice(-1)[0] }; } catch (e) { return n ? fromBoard({ ...p, name: n.c.n, kind: 'zone' }, n.c) : null; }
   };
   const note = (p) => p.kind === 'precise' ? 'precise' : p.kind === 'approx' ? 'approximate' : 'nearest board city';
-  const link = (r) => r.city ? `weather/#city-v=${encodeURIComponent(r.city.s)}~temp~48h&go=cityfig` : 'weather/#here=1&go=here';
+  const link = (r) => `weather/#city-v=${r.city ? encodeURIComponent(r.city.s) : 'here'}~temp~48h&go=cityfig`;
 
   // The overview card: one link, plus a pin button for the location settings
   const card = $('[data-lwx]');
@@ -80,21 +84,23 @@
     $('.lwx-ic', card).innerHTML = icon(r.k);
     $('.lwx-v', card).textContent = short(r.t);
     $('.lwx-name', card).textContent = r.p.name;
-    $('.lwx-n', card).textContent = words[r.k];
+    $('.lwx-n', card).textContent = r.w;
     const pin = $('.lwx-pinx', card), how = r.p.kind === 'precise' ? 'Precise, from your device' : r.p.kind === 'approx' ? 'Approximate, from your network' : 'The board city nearest your time zone';
     pin.classList.toggle('precise', r.p.kind === 'precise'); pin.setAttribute('aria-hidden', 'true'); pin.parentElement.title = how;
-    card.setAttribute('aria-label', `${r.p.name}, ${deg(r.t)}, ${words[r.k]}. ${how}. Open the weather board`);
+    card.setAttribute('aria-label', `${r.p.name}, ${deg(r.t)}, ${r.w}. ${how}. Open the weather board`);
     D.documentElement.classList.add('lwx-ok');
   };
   const menu = () => {
     const btn = $('[data-lwx-menu]'); if (!btn) return;
     btn.addEventListener('click', () => {
-      const old = $('.psheet'); if (old) { old.remove(); return; }
+      const modal = W.PulseModal || { open() {}, close() {} }, asSheet = W.matchMedia('(max-width: 699px)').matches;
+      const old = $('.psheet'); if (old) { old.remove(); modal.close(); return; }
       const chosen = get(ls, 'pulse-place'), sh = D.createElement('div');
       sh.className = 'psheet'; sh.setAttribute('role', 'dialog'); sh.setAttribute('aria-label', 'Location');
       sh.innerHTML = `<strong>Your place</strong><p>Approximate place from your IP (BigDataCloud). Precise place only if you allow it, used just to fetch the weather (Open-Meteo).</p><div class="acts">${chosen && chosen.kind === 'precise' ? '' : '<button type="button" class="primary" data-act="precise">Use precise location</button>'}${chosen ? '<button type="button" data-act="forget">Forget my place</button>' : ''}<button type="button" data-act="close">Close</button></div>`;
       btn.parentElement.parentElement.appendChild(sh);
-      const close = () => { sh.remove(); D.removeEventListener('keydown', onKey); btn.focus(); };
+      const close = () => { sh.remove(); modal.close(); D.removeEventListener('keydown', onKey); btn.focus(); };
+      if (asSheet) modal.open(close);
       const onKey = (e) => { if (e.key === 'Escape') close(); };
       D.addEventListener('keydown', onKey);
       sh.addEventListener('click', async (e) => {
@@ -112,26 +118,59 @@
   // The weather page card: the same chart and toggles as "One city, up close"
   const hourLabel = (t) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(t + ':00Z').getUTCDay()] + ' ' + t.slice(11, 16);
   const dayLabel = (t) => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][+t.slice(5, 7) - 1] + ' ' + +t.slice(8, 10);
+  // Charts from one Open-Meteo response, keyed like the board's city views
+  const viewsOf = (f, pre) => {
+    const hl = f.hourly.time.map(hourLabel), s = (key, name, color, values) => ({ key, name, color, values: values.map((v) => v == null ? null : v) });
+    const vs = [
+      { key: 'temp~48h', label: 'Temperature', chart: { kind: 'line', labels: hl, series: [s('t', 'Temperature', 2, f.hourly.temperature_2m)], unit: '°C', digits: 1 } },
+      { key: 'rain~48h', label: 'Rain', chart: { kind: 'bar', labels: hl, series: [s('r', 'Rain', 1, f.hourly.precipitation)], unit: 'mm', digits: 1 } },
+      { key: 'wind~48h', label: 'Wind', chart: { kind: 'line', labels: hl, series: [s('w', 'Wind', 6, f.hourly.wind_speed_10m)], unit: 'km/h', digits: 0 } },
+    ];
+    if (f.daily && f.daily.time) {
+      const dl = f.daily.time.map(dayLabel);
+      vs.push({ key: 'temp~30d', label: 'Temperature', chart: { kind: 'line', labels: dl, series: [s('hi', 'High', 2, f.daily.temperature_2m_max), s('lo', 'Low', 1, f.daily.temperature_2m_min)], unit: '°C', digits: 1 } },
+        { key: 'rain~30d', label: 'Rain', chart: { kind: 'bar', labels: dl, series: [s('r', 'Rain', 1, f.daily.precipitation_sum)], unit: 'mm', digits: 1 } },
+        { key: 'wind~30d', label: 'Wind', chart: { kind: 'line', labels: dl, series: [s('w', 'Strongest wind', 6, f.daily.wind_speed_10m_max)], unit: 'km/h', digits: 0 } });
+    }
+    return vs.map((v) => ({ ...v, key: pre + v.key }));
+  };
+
+  // The weather board's "One city, up close": a first entry for the visitor's own place, drawn
+  // from the same forecast the front page shows. A board city is picked as itself.
+  const cityHere = async () => {
+    const fig = $('#cityfig'), pick = $('select[data-vpart="0"][data-for="city"]'); if (!fig || !pick || !W.PulseCharts) return;
+    const st = W.PulseState || { get: () => null }, want = st.get('city-v') || '';
+    const r = await resolve().catch(() => null);
+    if (!r) return;
+    if (r.city) { if (/^here~/.test(want)) W.PulseCharts.pick('city', want.replace(/^here/, r.city.s)); return; }
+    const old = $('option[value="here"]', pick); if (old) old.remove();
+    const o = D.createElement('option'); o.value = 'here'; o.textContent = 'Your location: ' + r.p.name;
+    pick.insertBefore(o, pick.firstChild);
+    const vs = viewsOf(r.f, 'here~');
+    W.PulseCharts.extend('city', vs);
+    const span = $(`[data-vpart="2"][data-for="city"] button[data-v="30d"]`);
+    let now = $('.here-now', fig);
+    if (!now) { now = D.createElement('p'); now.className = 'here-now small'; $('.cv-cap', fig).appendChild(now); }
+    const t = r.f.current.time ? r.f.current.time.slice(11, 16) : '';
+    now.innerHTML = `<span class="lwx-big">${icon(r.k)}<b>${short(r.t)}C</b></span> Now in ${esc(r.p.name)}: ${r.w}, today ${short(r.lo)} to ${short(r.hi)}. Live from Open-Meteo${t ? ', ' + t + ' local time' : ''}.`;
+    const sync = () => { const on = (st.get('city-v') || pick.value).startsWith('here~') || pick.value === 'here'; now.hidden = !on; if (span) span.hidden = on && !vs.some((v) => v.key === 'here~temp~30d'); };
+    pick.addEventListener('change', () => setTimeout(sync));
+    fig.addEventListener('pulse:view', () => setTimeout(sync));
+    if (/^here~/.test(want)) W.PulseCharts.pick('city', vs.some((v) => v.key === want) ? want : 'here~temp~48h');
+    sync();
+  };
   const here = async () => {
     const box = $('#here'); if (!box) return;
     const r = await resolve().catch(() => null);
     if (!r) { box.innerHTML = '<div class="card"><p class="muted">Your area is not available right now, so here is the whole board.</p></div>'; return; }
     if (!r.f) { box.innerHTML = `<div class="card"><h2 class="ct">Your area: ${esc(r.p.name)}</h2><p class="muted">${esc(r.city.n)} is on the board. <a href="./?up=1#city-v=${encodeURIComponent(r.city.s)}~temp~48h&go=cityfig">See it up close</a>.</p></div>`; return; }
-    const f = r.f, hl = f.hourly.time.map(hourLabel), dl = f.daily.time.map(dayLabel);
-    const s = (key, name, color, values) => ({ key, name, color, values: values.map((v) => v == null ? null : v) });
-    const views = [
-      { key: 'temp~48h', label: 'Temperature', chart: { kind: 'line', labels: hl, series: [s('t', 'Temperature', 2, f.hourly.temperature_2m)], unit: '°C', digits: 1 } },
-      { key: 'rain~48h', label: 'Rain', chart: { kind: 'bar', labels: hl, series: [s('r', 'Rain', 1, f.hourly.precipitation)], unit: 'mm', digits: 1 } },
-      { key: 'wind~48h', label: 'Wind', chart: { kind: 'line', labels: hl, series: [s('w', 'Wind', 6, f.hourly.wind_speed_10m)], unit: 'km/h', digits: 0 } },
-      { key: 'temp~30d', label: 'Temperature', chart: { kind: 'line', labels: dl, series: [s('hi', 'High', 2, f.daily.temperature_2m_max), s('lo', 'Low', 1, f.daily.temperature_2m_min)], unit: '°C', digits: 1 } },
-      { key: 'rain~30d', label: 'Rain', chart: { kind: 'bar', labels: dl, series: [s('r', 'Rain', 1, f.daily.precipitation_sum)], unit: 'mm', digits: 1 } },
-      { key: 'wind~30d', label: 'Wind', chart: { kind: 'line', labels: dl, series: [s('w', 'Strongest wind', 6, f.daily.wind_speed_10m_max)], unit: 'km/h', digits: 0 } },
-    ];
+    const views = viewsOf(r.f, '');
     const seg = (part, opts) => `<div class="seg ctl" role="radiogroup" aria-label="${part ? 'Span' : 'Metric'}" data-vpart="${part}" data-for="here">${opts.map(([v, l], i) => `<button type="button" role="radio" aria-checked="${i === 0}" data-v="${v}">${l}</button>`).join('')}</div>`;
-    box.innerHTML = `<figure class="card cv-fig" data-group="here"><figcaption class="cv-cap"><h2 class="ct">Your area: ${esc(r.p.name)} <span class="pill acc">${note(r.p)}</span></h2><p><span class="lwx-big">${icon(r.k)}<b>${deg(r.t)}</b></span> ${words[r.k]}. Today ${deg(r.lo)} to ${deg(r.hi)}. Live from Open-Meteo, in local time.</p></figcaption><div class="cv-ctl">${seg(0, [['temp', 'Temperature'], ['rain', 'Rain'], ['wind', 'Wind']])}${seg(1, [['48h', '48 hours'], ['30d', '30 days']])}</div><div class="cv" tabindex="0" role="group" aria-label="Your area, interactive chart. Use arrow keys to read values."></div><table class="sr-only"></table><p class="muted small">Approximate place from your IP (BigDataCloud). Precise place only if you allow it, used just to fetch the weather (Open-Meteo).</p></figure>`;
+    box.innerHTML = `<figure class="card cv-fig" data-group="here"><figcaption class="cv-cap"><h2 class="ct">Your area: ${esc(r.p.name)} <span class="pill acc">${note(r.p)}</span></h2><p><span class="lwx-big">${icon(r.k)}<b>${deg(r.t)}</b></span> ${r.w}. Today ${deg(r.lo)} to ${deg(r.hi)}. Live from Open-Meteo, in local time.</p></figcaption><div class="cv-ctl">${seg(0, [['temp', 'Temperature'], ['rain', 'Rain'], ['wind', 'Wind']])}${seg(1, [['48h', '48 hours'], ['30d', '30 days']])}</div><div class="cv" tabindex="0" role="group" aria-label="Your area, interactive chart. Use arrow keys to read values."></div><table class="sr-only"></table><p class="muted small">Approximate place from your IP (BigDataCloud). Precise place only if you allow it, used just to fetch the weather (Open-Meteo).</p></figure>`;
     W.PulseCharts.add({ id: 'here', views, ranges: [], view: 'temp~48h', range: '' }, $('figure', box));
   };
   menu();
   if (card) paint();
   if (D.documentElement.classList.contains('here')) here();
+  cityHere();
 })();
