@@ -179,7 +179,7 @@ fn headline(s: State) -> Headline
   ps = s.papers
   latest = s.days.last
   t = top_topic(ps)
-  Headline{value: latest.map(d => thousands(d.total)).or("{ps.len}"), label: latest.map(d => "AI papers submitted on {short_date(pulse.day_time(d.date))}").or("newest AI papers"), detail: "Most common topic: {topics().get(t).or("Other")}", count: latest.map(d => "{d.total}").or("{ps.len}")}
+  Headline{value: latest.map(d => thousands(d.total)).or("{ps.len}"), label: latest.map(d => "AI papers submitted on {short_date(pulse.day_time(d.date))}, the newest full day arXiv has announced").or("newest AI papers"), detail: "Most common topic: {topics().get(t).or("Other")}", count: latest.map(d => "{d.total}").or("{ps.len}"), spark: cap(s.days, 30).map(d => some(d.total.to_f64)), spark_kind: "bar"}
 
 fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
   pre g.value.papers.all(valid)
@@ -199,7 +199,7 @@ fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
   chartrow = "<div class='grid2'>{pulse.chart_block(charts[0], "What the newest {ps.len} are about", "Topics come from keywords in each title, then the abstract.")}{daychart}</div>"
   hotcard = if s.hot.is_empty then "" else "<div class='card'><div class='sh'><h2>Most discussed this week</h2><p>arXiv links on Hacker News, by points.</p></div><ol class='rows'>{s.hot.take(10).enumerate.map(p => hot_row(p.0, p.1, s.hot.first.map(_.points).or(1))).join("")}</ol></div>"
   chips = pulse.chips("topic", "Filter by topic", "#plist", [("all", "All")] + topics().enumerate.filter(p => ps.any(x => x.topic == p.0)).map(p => (tslug(p.0), p.1)) + (if noticed.is_empty then [] else [("hn", "On Hacker News")]))
-  list = "<div class='card'><div class='sh'><h2>The newest papers</h2>{pulse.sort_seg("#plist", "Sort papers", [("new", "Newest"), ("pts", "Most discussed")], "new")}</div>{chips}<ol class='rows' id='plist' style='margin-top:10px'>{ps.take(40).enumerate.map(p => row(cx, p.0, p.1, s.hot)).join("")}<li class='empty muted' hidden>No papers on this topic in the newest batch.</li></ol></div>"
+  list = "<div class='card'><div class='sh'><h2>The newest papers</h2>{pulse.sort_seg("#plist", "Sort papers", [("new", "Newest"), ("pts", "Most discussed")], "new")}</div>{chips}<ol class='rows clamp' id='plist' style='margin-top:10px'>{ps.take(40).enumerate.map(p => row(cx, p.0, p.1, s.hot)).join("")}<li class='empty muted' hidden>No papers on this topic in the newest batch.</li></ol>{pulse.more("plist")}</div>"
   body = "<section class='wrap band'>{stats}</section><section class='wrap band'>{chartrow}</section>{if hotcard == "" then "" else "<section class='wrap band'>{hotcard}</section>"}<section class='wrap band'>{list}</section><section class='wrap band'>{pulse.links_row([("feed", "../feeds/papers.xml", "RSS of the newest 50"), ("data", "../api/papers.json", "JSON for developers")])}</section>"
   p = Page{title: "AI papers of the day", desc: "The newest arXiv papers in AI, language and machine learning, grouped by topic, with what Hacker News is reading. Computed by SSPUR.", h1: "<em class='num' data-count='{h.count}'>{h.value}</em> new AI papers", lede: "{esc(h.label.take(1).upper + h.label.drop(1))}, across cs.AI, cs.CL and cs.LG. {esc(topics().get(t).or("Other"))} leads the newest batch{hottest.map(x => ", and Hacker News is talking about “{esc(clip(x.title, 80))}”").or("")}.", body, updated, stale: g.stale, note: g.note, snippet: pulse.snippet(cx, "classify"), data: pulse.charts_json(charts)}
   pulse.publish(cx, "papers/index.html", pulse.page(cx, p))

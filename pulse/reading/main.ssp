@@ -150,7 +150,7 @@ fn daily_group(s: State) -> Group
 fn headline(s: State) -> Headline
 = do
   r = rows(s).first.get
-  Headline{value: compact(r.views.to_f64), label: "views for {r.title}, the most read article", detail: "English Wikipedia, {short_date(pulse.day_time(s.history.last.get.date))}", count: ""}
+  Headline{value: compact(r.views.to_f64), label: "views for {r.title}, the most read article", detail: "English Wikipedia, {short_date(pulse.day_time(s.history.last.get.date))}. The line is the daily views of the top 50.", count: "", spark: cap(s.history, 30).map(d => some(d.top.take(50).map(_.v).sum.to_f64)), spark_kind: "line"}
 
 fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
   pre g.value.history.all(valid_day)
@@ -175,7 +175,7 @@ fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
   stats = "<div class='stats'>{pulse.stat(compact(rs.map(_.views).sum.to_f64), "views of the top 50", "")}{pulse.stat("{fresh.len}", "new in the top 50 today", "{fresh.len}")}{pulse.stat(best.map(r => "↑ {r.prev_rank.or(0) - r.rank}").or("none"), best.map(r => "biggest climb, {esc(pulse.clip(r.title, 36))}").or("biggest climb"), "")}{pulse.stat("{s.history.len}", "days of history", "{s.history.len}")}</div>"
   filters = pulse.chips("r", "Filter articles", "#rlist", [("all", "All 50")] + (if has_prev then [("new", "New today"), ("up", "Climbing")] else []))
   sorts = pulse.sort_seg("#rlist", "Sort articles", [("views", "Most read")] + (if has_prev then [("climb", "Biggest climb")] else []), "views")
-  list = "<div class='card'><div class='sh'><h2>The top 50</h2><p>{esc(when.format("%A, %B "))}{when.format("%d").to_int.or(0)}, all of English Wikipedia</p></div><div class='cv-ctl'>{filters}{sorts}</div><ol class='rows' id='rlist'>{rs.map(r => row_html(s, r, top.views, has_prev)).join("")}<li class='empty muted' hidden>Nothing matches this filter today.</li></ol></div>"
+  list = "<div class='card'><div class='sh'><h2>The top 50</h2><p>{esc(when.format("%A, %B "))}{when.format("%d").to_int.or(0)}, all of English Wikipedia</p></div><div class='cv-ctl'>{filters}{sorts}</div><ol class='rows clamp' id='rlist'>{rs.map(r => row_html(s, r, top.views, has_prev)).join("")}<li class='empty muted' hidden>Nothing matches this filter today.</li></ol>{pulse.more("rlist")}</div>"
   charts = [tg, dg]
   body = "<section class='wrap band'>{stats}</section><section class='wrap band'><div class='grid2'>{trend}{daily}</div></section><section class='wrap band'>{list}</section><section class='wrap band'>{pulse.links_row([("feed", "../feeds/reading.xml", "RSS of the daily top 20"), ("data", "../api/reading.json", "JSON for developers")])}</section>"
   h = headline(s)

@@ -100,7 +100,7 @@ fn month_group(ds: List[Day]) -> Group
 fn headline(s: State) -> Headline
 = do
   top = s.quakes.first
-  Headline{value: "{s.quakes.len}", label: "earthquakes in the last 24 hours", detail: top.map(q => "Strongest M{f1(q.mag)}, {q.place}").or(""), count: "{s.quakes.len}"}
+  Headline{value: "{s.quakes.len}", label: "earthquakes in the last 24 hours", detail: top.map(q => "Strongest M{f1(q.mag)}, {q.place}").or(""), count: "{s.quakes.len}", spark: s.days.map(d => some(d.counts.sum.to_f64)), spark_kind: "bar"}
 
 fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
   pre g.value.quakes.all(valid)
@@ -116,7 +116,7 @@ fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
   charts = [Group{id: "bands", views: [View{key: "n", label: "Count", chart: bands24(qs)}], ranges: [], view: "n", range: ""}, month_group(s.days)]
   stats = "<div class='stats'>{pulse.stat(thousands(qs.len), "quakes in 24 hours", "{qs.len}")}{pulse.stat("M{f1(top.mag)}", "strongest, {esc(pulse.clip(top.place, 40))}", "")}{pulse.stat("{m45}", "at magnitude 4.5 or more", "{m45}")}{pulse.stat("{india.len}", "in India and its neighbours", "{india.len}")}</div>"
   chartrow = "<div class='grid2'>{pulse.chart_block(charts[0], "Magnitude bands, last 24 hours", "Quakes by whole magnitude. Most are too small to feel.")}{if s.days.is_empty then "" else pulse.chart_block(charts[1], "Thirty days of shaking", "Daily M2.5+ quakes by band, or the strongest of each day.")}</div>"
-  list = "<div class='card'><div class='sh'><h2>Strongest first</h2>{pulse.seg("sort", "Sort quakes", [("mag", "Magnitude"), ("time", "Newest")], "mag").replace("data-ctl='sort'", "data-ctl='sort' data-sort='#qlist'")}</div><ol class='rows' id='qlist'>{qs.take(30).enumerate.map(p => row(cx, p.0, p.1)).join("")}<li class='empty muted' hidden>Nothing here in the last 24 hours. Good news.</li></ol></div>"
+  list = "<div class='card'><div class='sh'><h2>Strongest first</h2>{pulse.seg("sort", "Sort quakes", [("mag", "Magnitude"), ("time", "Newest")], "mag").replace("data-ctl='sort'", "data-ctl='sort' data-sort='#qlist'")}</div><ol class='rows clamp' id='qlist'>{qs.take(30).enumerate.map(p => row(cx, p.0, p.1)).join("")}<li class='empty muted' hidden>Nothing here in the last 24 hours. Good news.</li></ol>{pulse.more("qlist")}</div>"
   sig = if s.week.is_empty then "" else "<div class='card'><div class='sh'><h2>Significant this week</h2><p>Picked by USGS from magnitude, felt reports and impact.</p></div><ol class='rows'>{s.week.take(12).enumerate.map(p => row(cx, p.0, p.1)).join("")}</ol></div>"
   body = "<section class='wrap band'>{stats}</section><section class='wrap band'><div class='grid2'>{mapcard}</div></section><section class='wrap band'>{chartrow}</section><section class='wrap band'><div class='grid2'>{list}{sig}</div></section><section class='wrap band'>{pulse.links_row([("feed", "../feeds/quakes.xml", "RSS of M4.5+ quakes"), ("data", "../api/quakes.json", "JSON for developers")])}</section>"
   h = headline(s)

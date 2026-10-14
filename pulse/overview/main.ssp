@@ -19,7 +19,7 @@ fn latest(ms: List[Meta]) -> Opt[Time]
 
 fn tile(cx: Ctx, t: Tile) -> Str
 = match t.meta
-  | some(m) => "<a class='tile s-{t.sec.slug}' href='{t.sec.slug}/'><span class='tk'>{pulse.icon(t.sec.slug)}{esc(t.sec.name)}</span><span class='tv'>{if m.headline.count == "" then esc(m.headline.value) else "<span class='num' data-count='{esc(m.headline.count)}'>{esc(m.headline.value)}</span>"}</span><span class='tl'>{esc(m.headline.label)}</span><span class='td'>{esc(m.headline.detail)}</span><span class='td'>{if m.stale then "Last good data, " else ""}updated <time datetime='{esc(m.updated)}' data-rel>{ago(cx.now, parse_time(m.updated).or(cx.now))}</time></span></a>"
+  | some(m) => "<a class='tile s-{t.sec.slug}' href='{t.sec.slug}/'><span class='tk'>{pulse.icon(t.sec.slug)}{esc(t.sec.name)}</span><span class='tv'>{if m.headline.count == "" then esc(m.headline.value) else "<span class='num' data-count='{esc(m.headline.count)}'>{esc(m.headline.value)}</span>"}</span>{pulse.mini(m.headline.spark, m.headline.spark_kind)}<span class='tl'>{esc(m.headline.label)}</span><span class='td'>{esc(m.headline.detail)}</span><span class='td'>{if m.stale then "Last good data, " else ""}updated <time datetime='{esc(m.updated)}' data-rel>{ago(cx.now, parse_time(m.updated).or(cx.now))}</time></span></a>"
   | none => "<a class='tile s-{t.sec.slug}' href='{t.sec.slug}/'><span class='tk'>{pulse.icon(t.sec.slug)}{esc(t.sec.name)}</span><span class='tv'>Soon</span><span class='tl'>{esc(t.sec.blurb)}</span><span class='td'>Warming up: the first update has not finished yet.</span></a>"
 
 // The workflow runs at minute 17 of every sixth hour, UTC.
@@ -95,4 +95,4 @@ fn fixture(name: Str) -> Str ! fs
 test iss_parses = parse_iss(fixture("iss.json")) is ok(i) and i.altitude > 300.0
 test iss_rejects = parse_iss("\{\"latitude\": 120.0, \"longitude\": 0.0, \"altitude\": 400.0, \"velocity\": 1.0, \"timestamp\": 1}").is_err and parse_iss("nope").is_err
 test hemispheres = hemi(-48.5, "N", "S") == "48.5° S" and hemi(33.0, "E", "W") == "33.0° E"
-test newest_update = latest([Meta{section: "a", title: "", updated: "2026-01-01T00:00:00Z", stale: false, headline: Headline{value: "", label: "", detail: "", count: ""}, generated: ""}, Meta{section: "b", title: "", updated: "2026-02-01T00:00:00Z", stale: false, headline: Headline{value: "", label: "", detail: "", count: ""}, generated: ""}]) == parse_time("2026-02-01T00:00:00Z")
+test newest_update = latest([Meta{section: "a", title: "", updated: "2026-01-01T00:00:00Z", stale: false, headline: Headline{value: "", label: "", detail: "", count: "", spark: [], spark_kind: ""}, generated: ""}, Meta{section: "b", title: "", updated: "2026-02-01T00:00:00Z", stale: false, headline: Headline{value: "", label: "", detail: "", count: "", spark: [], spark_kind: ""}, generated: ""}]) == parse_time("2026-02-01T00:00:00Z")

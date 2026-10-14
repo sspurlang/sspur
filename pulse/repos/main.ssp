@@ -128,8 +128,8 @@ fn curve_group(s: State, ks: List[Rank]) -> Group
 
 fn headline(ks: List[Rank]) -> Headline
 = match ks.first
-  | some(k) => Headline{value: "+{compact(k.vel)}", label: "stars a day for {k.repo.name}", detail: if k.repo.desc == "" then "The fastest rising new repo on GitHub" else clip(k.repo.desc, 90), count: ""}
-  | none => Headline{value: "0", label: "rising repos", detail: "", count: ""}
+  | some(k) => Headline{value: "+{compact(k.vel)}", label: "stars a day for {k.repo.name}", detail: if k.repo.desc == "" then "The fastest rising new repo on GitHub" else clip(k.repo.desc, 90), count: "", spark: ks.take(12).map(x => some(x.vel)), spark_kind: "bar"}
+  | none => Headline{value: "0", label: "rising repos", detail: "", count: "", spark: [], spark_kind: "bar"}
 
 fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
   pre g.value.repos.all(valid)
@@ -148,7 +148,7 @@ fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
   stats = "<div class='stats'>{pulse.stat("+" + compact(top.vel), "stars a day, {esc(short(top.repo.name))}", "")}{pulse.stat(thousands(s.repos.len), "new repos tracked", "{s.repos.len}")}{pulse.stat(if real then "+" + compact(gained.to_f64) else "{s.snaps.len}", if real then "stars gained by the top 30 since the last snapshot" else "snapshots so far", "")}{pulse.stat(langs.first.or("Other"), "most common language in the top 30", "")}</div>"
   chips = pulse.chips("lang", "Filter by language", "#rlist", [("all", "All")] + langs.map(l => (slug(l), l)) + [("other", "Other")])
   sorter = pulse.sort_seg("#rlist", "Sort repos", [("vel", "Fastest"), ("stars", "Most stars"), ("new", "Newest")], "vel")
-  list = "<div class='card'><div class='sh'><h2>The top 30</h2>{sorter}</div>{chips}<ol class='rows' id='rlist' style='margin-top:10px'>{shown.enumerate.map(p => row(s, p.0, p.1, maxv, langs, cx.now)).join("")}<li class='empty muted' hidden>No repos in this language today.</li></ol></div>"
+  list = "<div class='card'><div class='sh'><h2>The top 30</h2>{sorter}</div>{chips}<ol class='rows clamp' id='rlist' style='margin-top:10px'>{shown.enumerate.map(p => row(s, p.0, p.1, maxv, langs, cx.now)).join("")}<li class='empty muted' hidden>No repos in this language today.</li></ol>{pulse.more("rlist")}</div>"
   sub = if real then "Stars gained since the previous snapshot, scaled to a day." else "Until a second snapshot exists, this is stars divided by age in days."
   chartrow = "<div class='grid2'>{pulse.chart_block(charts[0], "Who is gaining fastest", sub)}{if charts.len > 1 then pulse.chart_block(charts[1], "Star curves of the leaders", "Stars at each 6 hour snapshot.") else "<div class='card'><h2 class='ct'>Star curves arrive soon</h2><p class='muted' style='margin-top:8px'>Pulse keeps its own snapshots every 6 hours. Once two exist, the leaders' curves appear here, with true stars per day instead of estimates.</p></div>"}</div>"
   body = "<section class='wrap band'>{stats}</section><section class='wrap band'>{chartrow}</section><section class='wrap band'>{list}</section><section class='wrap band'>{pulse.links_row([("data", "../api/repos.json", "JSON for developers")])}</section>"

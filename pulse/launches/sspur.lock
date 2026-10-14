@@ -4,5 +4,5 @@
 name = "pulse"
 version = "0.1.0"
 source = "path+../lib"
-hash = "lgdfl6okip5frjeje2dzcjn4ymkhjn7kjhzb2fvosvzbl5rymxeq"
+hash = "cea4xwft5zn6x2woguiqhuryc6xrw4qrls7m5x6ryev7v4ezlrwa"
 deps = []

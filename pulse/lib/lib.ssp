@@ -564,7 +564,7 @@ pub fn og_svg(cx: Ctx, title: Str, value: Str, label: Str) -> Str
 
 // Section envelope written to api/<sec>.json and read by the overview.
 
-pub type Headline = {value: Str, label: Str, detail: Str, count: Str}
+pub type Headline = {value: Str, label: Str, detail: Str, count: Str, spark: List[Opt[F64]], spark_kind: Str}
 pub type Meta = {section: Str, title: Str, updated: Str, stale: Bool, headline: Headline, generated: Str}
 
 pub fn meta(cx: Ctx, updated: Time, stale: Bool, h: Headline) -> Meta
@@ -609,3 +609,21 @@ pub fn part_seg(group: Str, part: Int, label: Str, opts: List[(Str, Str)], cur: 
 
 pub fn part_pick(group: Str, part: Int, label: Str, opts: List[(Str, Str)], cur: Str) -> Str
 = "<label class='pick ctl'><span>{esc(label)}</span><select data-vpart='{part}' data-for='{group}'>{opts.map(o => "<option value='{esc(o.0)}'{if o.0 == cur then " selected" else ""}>{esc(o.1)}</option>").join("")}</select></label>"
+
+// Long lists: 10 rows on phones and 20 on wider screens until "Show all" is opened.
+// It is a details element, so it works without JavaScript; pulse.js keeps the count right under filters.
+pub fn more(id: Str) -> Str
+= "<details class='more' data-more='{id}'><summary><span class='m-open'>Show all</span><span class='m-close'>Show fewer</span></summary></details>"
+
+// A mini chart for an overview tile: bars or a line, 100 by 100 units stretched to the tile.
+pub fn mini(vs: List[Opt[F64]], kind: Str) -> Str
+= do
+  xs = vs.filter(_.is_some).map(_.or(0.0))
+  hi = max(xs.max.or(1.0), 0.000001)
+  n = vs.len
+  bars = vs.enumerate.map(p => match p.1
+    | some(v) if v > 0.0 => "<rect x='{(p.0.to_f64 * 100.0 / n.to_f64 + 0.12 * 100.0 / n.to_f64).fmt(2)}' y='{(100.0 - v / hi * 100.0).fmt(2)}' width='{(0.76 * 100.0 / n.to_f64).fmt(2)}' height='{(v / hi * 100.0).fmt(2)}'/>"
+    | _ => "").join("")
+  if xs.len < 2 then "" else if kind == "bar" then "<svg class='mini' viewBox='0 0 100 100' preserveAspectRatio='none' aria-hidden='true'>{bars}</svg>" else spark(vs, "mini")
+
+test mini_charts = mini([some(1.0), some(2.0)], "bar").contains("<rect") and mini([some(1.0)], "bar") == "" and mini([some(1.0), none, some(3.0)], "line").contains("<path")

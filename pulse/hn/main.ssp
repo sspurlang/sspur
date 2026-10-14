@@ -114,7 +114,7 @@ fn headline(s: State) -> Headline
 = do
   e = s.eras.sort_by(_.years).first.get
   t = e.stories.first.get
-  Headline{value: thousands(t.points), label: "points for the top story {e.years} years ago today", detail: pulse.clip(t.title, 80), count: "{t.points}"}
+  Headline{value: thousands(t.points), label: "points for the top story {e.years} years ago today", detail: pulse.clip(t.title, 80), count: "{t.points}", spark: s.eras.sort_by(x => -x.years).map(x => x.stories.first.map(y => y.points.to_f64)) + [s.today.map(_.points).max.map(_.to_f64)], spark_kind: "bar"}
 
 fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
   pre g.value.eras.all(e => e.stories.all(valid))

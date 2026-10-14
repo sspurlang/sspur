@@ -188,3 +188,18 @@ details.more summary{cursor:pointer;min-height:44px;display:flex;align-items:cen
 @media (max-width:640px){.schips,.fchips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-left:-4px;margin-right:-4px;padding:2px 4px;-webkit-mask-image:linear-gradient(90deg,#000 88%,transparent);mask-image:linear-gradient(90deg,#000 88%,transparent)}.schips::-webkit-scrollbar,.fchips::-webkit-scrollbar{display:none}.schips button,.fchips button{flex:none}}
 .card>.ct{font-size:1.15rem;letter-spacing:-.01em;margin-bottom:8px}
 .grid>*,.grid2>*,.tiles>*{min-width:0}
+html:not(.js) .clamp>li:nth-child(n+11){display:none}
+@media (min-width:700px){html:not(.js) .clamp>li:nth-child(n+11){display:grid}html:not(.js) .clamp>li:nth-child(n+21){display:none}}
+html:not(.js) .clamp:has(+ details.more[open])>li{display:grid}
+.clamp>.cut10,.clamp>.cut20{display:none}
+@media (min-width:700px){.clamp>.cut10{display:grid}.more.few{display:none}}
+.clamp.open>.cut10,.clamp.open>.cut20{display:grid}
+.clamp>.off,.clamp>.empty[hidden]{display:none!important}
+details.more{margin-top:6px}
+details.more summary{list-style:none;display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 18px;border-radius:14px;background:var(--card2);font-weight:600;font-size:.92rem;cursor:pointer;transition:transform .2s var(--spring)}
+details.more summary::-webkit-details-marker{display:none}
+details.more summary:active{transform:scale(.95)}
+details.more[open] .m-open,details.more:not([open]) .m-close{display:none}
+.tile .mini{display:block;width:100%;height:40px;margin:4px 0 2px;overflow:visible}
+.mini rect{fill:var(--acc);opacity:.8}
+.sp.mini path{stroke:var(--acc);stroke-width:2.2}

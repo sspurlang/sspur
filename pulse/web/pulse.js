@@ -24,6 +24,12 @@
   const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
   const ago = (ms) => { const s = Math.round(ms / 1000); return s < 90 ? 'just now' : s < 5400 ? plural(Math.round(s / 60), 'minute') + ' ago' : s < 129600 ? plural(Math.round(s / 3600), 'hour') + ' ago' : plural(Math.round(s / 86400), 'day') + ' ago'; };
   const pad = (n) => String(n).padStart(2, '0');
+  const renamed = { Calcutta: 'Kolkata', Saigon: 'Ho Chi Minh City', Kiev: 'Kyiv', Rangoon: 'Yangon', Katmandu: 'Kathmandu', Godthab: 'Nuuk' };
+  const place = () => {
+    let tz = ''; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (er) { /* none */ }
+    const city = tz.split('/').pop().replace(/_/g, ' ');
+    return !city || /^(UTC|GMT|Etc)/.test(tz) ? 'UTC' : renamed[city] || city;
+  };
   const tick = () => {
     const now = Date.now();
     $$('time[data-rel]').forEach((t) => { t.textContent = ago(now - Date.parse(t.getAttribute('datetime'))); });
@@ -35,7 +41,7 @@
       if (neg && e.dataset.done !== e.dataset.countdown) { e.dataset.done = e.dataset.countdown; if (s < 5) egg('liftoff', e); }
     });
     $$('[data-clock]').forEach((e) => { const t = new Date(now); e.textContent = pad(t.getHours()) + ':' + pad(t.getMinutes()) + ':' + pad(t.getSeconds()); });
-    $$('[data-tz]').forEach((e) => { try { e.textContent = Intl.DateTimeFormat().resolvedOptions().timeZone.replace(/_/g, ' '); } catch (er) { /* keep */ } });
+    $$('[data-tz]').forEach((e) => { e.textContent = place(); });
   };
   tick();
   setInterval(tick, 1000);
@@ -306,12 +312,32 @@
       const empty = $(':scope > .empty', list); if (empty) list.appendChild(empty);
       rows.forEach((r, i) => { const rk = r.querySelector(':scope > .rk'); if (rk && /^\d+$/.test(rk.textContent.trim())) rk.textContent = i + 1; });
       if (!calm()) rows.slice(0, 40).forEach((r) => { const dy = first.get(r) - r.getBoundingClientRect().top; if (dy) r.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], { duration: 380, easing: 'cubic-bezier(.2,.8,.2,1)' }); });
+      list.dispatchEvent(new CustomEvent('pulse:sort', { bubbles: true }));
       if (push) { state.set('s-' + seg.dataset.sort.slice(1), v); save(); }
     };
     const init = state.get('s-' + seg.dataset.sort.slice(1));
     if (init && $(`button[data-v="${CSS.escape(init)}"]`, seg)) set(init, false);
     seg.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) set(b.dataset.v, true); });
   });
+
+  // Long lists: 10 rows on phones, 20 on wider screens, the rest behind "Show all"
+  const clampList = (list) => {
+    const d = list.nextElementSibling; if (!d || !d.matches('details.more')) return;
+    const rows = $$(':scope > li:not(.empty)', list).filter((r) => !r.classList.contains('off'));
+    rows.forEach((r, i) => { r.classList.toggle('cut10', i >= 10 && i < 20); r.classList.toggle('cut20', i >= 20); });
+    $$(':scope > li.off', list).forEach((r) => r.classList.remove('cut10', 'cut20'));
+    d.hidden = rows.length <= 10; d.classList.toggle('few', rows.length <= 20);
+    $('.m-open', d).textContent = 'Show all ' + rows.length;
+    list.classList.toggle('open', d.open);
+  };
+  $$('ol.clamp').forEach((list) => {
+    const d = list.nextElementSibling; if (!d || !d.matches('details.more')) return;
+    if (state.get('m-' + d.dataset.more)) d.open = true;
+    d.addEventListener('toggle', () => { list.classList.toggle('open', d.open); if (d.open) state.set('m-' + d.dataset.more, '1'); else state.delete('m-' + d.dataset.more); save(); });
+    clampList(list);
+  });
+  D.addEventListener('pulse:filter', () => $$('ol.clamp').forEach(clampList));
+  D.addEventListener('pulse:sort', () => $$('ol.clamp').forEach(clampList));
 
   // Motion: count up once, reveal below-the-fold cards, draw charts in
   if (!calm() && 'IntersectionObserver' in W) {
