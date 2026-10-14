@@ -383,6 +383,9 @@ fn pad(x: &str, n: i64, fill: &str, left: bool) -> R {
 
 impl Interp {
     pub(crate) fn std_global(&self, n: &str, a: Vec<Value>) -> R {
+        if let Some(r) = self.net_global(n, &a) {
+            return r;
+        }
         #[cfg(target_family = "wasm")]
         {
             if n == "eprint" {

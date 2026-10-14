@@ -2,6 +2,7 @@
 mod builtins;
 #[cfg(feature = "native")]
 mod ffi;
+mod net;
 pub mod fuzz;
 pub mod progen;
 pub mod suggest;
@@ -256,6 +257,15 @@ impl Interp {
             recording: Cell::new(false),
             record: RefCell::new((String::new(), vec![])),
         };
+        for (internal, src) in sspur_check::STD_RECORDS.iter().filter(|(n, _)| sspur_check::OPEN_STD_RECORDS.contains(n)).chain(sspur_check::STD_SUMS) {
+            if let Ok(sm) = sspur_syntax::parse(src)
+                && let Some(Def::Type(t)) = sm.defs.first()
+            {
+                let mut t = t.clone();
+                t.name = internal.to_string();
+                it.add_type(&t);
+            }
+        }
         for d in &m.defs {
             match d {
                 Def::Fn(f) => {
@@ -1452,7 +1462,7 @@ impl Interp {
     #[inline(never)]
     fn eval_record(&self, span: Span, ctor: &Option<String>, fields: &[(String, Expr)], env: &Rc<Env>) -> R {
         let owner = match ctor {
-            Some(c) => c.clone(),
+            Some(c) => self.record_types.get(&(span.start, span.end)).filter(|r| r.starts_with('#')).cloned().unwrap_or_else(|| c.clone()),
             None => match self.record_types.get(&(span.start, span.end)) {
                 Some(n) => n.clone(),
                 None => return trap("untyped record literal"),
