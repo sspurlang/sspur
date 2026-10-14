@@ -3,7 +3,9 @@
 
 A link is internal when it has no scheme. Its file must exist, and a #fragment must
 match an id in that file. Links that leave the book (to ../README.md, a source
-directory, and so on) are reported too, since they 404 on GitHub Pages.
+directory, and so on) are reported too, since they 404 on GitHub Pages. Absolute links
+to the deployed site itself (such as SSPUR Pulse's footer links to the docs) are
+checked as internal links too.
 Exits 1 if anything is broken.
 """
 
@@ -11,6 +13,8 @@ import html.parser
 import os
 import sys
 import urllib.parse
+
+SITE = "https://utkarshavardhana.github.io/sspur/"
 
 
 class Page(html.parser.HTMLParser):
@@ -51,6 +55,8 @@ def main():
             page_path = os.path.join(dirpath, name)
             page = parse(page_path, cache)
             for link in page.links:
+                if link.startswith(SITE):
+                    link = os.path.relpath(root, dirpath).replace(os.sep, "/") + "/" + link[len(SITE):]
                 url = urllib.parse.urlsplit(link)
                 if url.scheme or url.netloc or link.startswith("mailto:"):
                     continue

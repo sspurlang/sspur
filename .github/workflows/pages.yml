@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    # SSPUR Pulse refreshes every 6 hours.
+    - cron: "17 */6 * * *"
 
 permissions:
   contents: read
@@ -20,6 +23,9 @@ jobs:
   build:
     name: Build the site
     runs-on: ubuntu-24.04
+    permissions:
+      # Pushes the Pulse snapshots to the pulse-data branch.
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -54,6 +60,58 @@ jobs:
 
       - name: Playground smoke test
         run: node tools/playground_test.mjs docs/book/play
+
+      - name: Build sspur
+        run: cargo build --release -p sspur-cli
+
+      - name: Pulse tests
+        run: pulse/test.sh
+
+      - name: Restore Pulse data
+        run: |
+          PULSE_DATA="$RUNNER_TEMP/pulse-data"
+          echo "PULSE_DATA=$PULSE_DATA" >> "$GITHUB_ENV"
+          mkdir -p "$PULSE_DATA"
+          if git fetch --depth 1 origin pulse-data; then
+            git archive FETCH_HEAD | tar -x -C "$PULSE_DATA"
+          else
+            echo "No pulse-data branch yet: every section starts from its bundled sample."
+          fi
+
+      - name: Install the SVG converter and the display font
+        run: |
+          sudo apt-get install -y --no-install-recommends librsvg2-bin
+          mkdir -p ~/.local/share/fonts
+          cp pulse/web/fonts/pulse-display.ttf ~/.local/share/fonts/
+          fc-cache -f
+
+      - name: Build SSPUR Pulse
+        env:
+          PULSE_OUT: docs/book/pulse
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pulse/run.sh
+
+      - name: Save Pulse data
+        if: github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd "$PULSE_DATA"
+          git init -q -b pulse-data
+          git add -A
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -q -m "Pulse data $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -q -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" pulse-data
+
+      - name: Send lost /pulse/ visitors to the Pulse 404 page
+        run: |
+          python3 - <<'PY'
+          p = "docs/book/404.html"
+          s = open(p, encoding="utf-8").read()
+          js = "<script>if(/\\/pulse\\//.test(location.pathname)&&!/404\\.html$/.test(location.pathname))location.replace('/sspur/pulse/404.html')</script>"
+          if js not in s:
+              s = s.replace("<head>", "<head>" + js, 1)
+          open(p, "w", encoding="utf-8").write(s)
+          PY
 
       - name: Check internal links
         run: python3 tools/check_site_links.py docs/book

@@ -85,6 +85,11 @@ jobs:
           SSPUR_STRICT_NATIVE: "1"
         run: python3 tools/corpus_diff.py
 
+      - name: Pulse tests (offline fixtures)
+        env:
+          SSPUR_STRICT_NATIVE: "1"
+        run: pulse/test.sh
+
   windows:
     name: Windows x86_64
     runs-on: windows-latest
