@@ -40,7 +40,7 @@ jobs:
 
       - name: Install tools (macOS)
         if: runner.os == 'macOS'
-        run: brew install z3
+        run: brew install z3 openssl@3
 
       - name: Install tools (Linux)
         if: runner.os == 'Linux'
