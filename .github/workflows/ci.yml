@@ -224,5 +224,13 @@ jobs:
       - name: Build the site
         run: mdbook build docs
 
+      - name: Build Pulse from its bundled samples (no network)
+        env:
+          SSPUR: ${{ github.workspace }}/target/release/sspur
+          PULSE_FIXTURES: pulse/fixtures
+          PULSE_OUT: docs/book/pulse
+          PULSE_DATA: ${{ runner.temp }}/pulse-data
+        run: pulse/run.sh
+
       - name: Check internal links
         run: python3 tools/check_site_links.py docs/book
