@@ -4,6 +4,7 @@ mod holes;
 pub mod own;
 mod deploy;
 mod json;
+pub mod net;
 mod pats;
 mod statics;
 mod traits;
@@ -19,7 +20,8 @@ pub use deploy::{db_op, HTTP_METHODS};
 pub use types::{Row, Type};
 pub use traits::{ImplOut, TraitOut};
 pub use holes::{HoleCtx, HoleSite, Sig, SigKind};
-pub use builtins::{BARE_NAMES, GLOBALS, METHODS, STD_GLOBALS, STD_GLOBAL_NAMES, STD_METHODS, STD_TYPES};
+pub use builtins::{BARE_NAMES, GLOBALS, METHODS, OPEN_STD_RECORDS, STD_GLOBALS, STD_GLOBAL_NAMES, STD_METHODS, STD_RECORDS, STD_SUMS, STD_TYPES};
+pub use net::NetSite;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Diag {
@@ -64,11 +66,14 @@ pub struct CheckOutput {
     pub kernels: BTreeMap<String, kernel::Kernel>,
     pub body_diags: BTreeMap<String, Vec<Diag>>,
     pub traits: TraitOut,
+    /// Networking, config and log-level sites that `elab::lower` rewrites (ADR 0035).
+    pub net: BTreeMap<(u32, u32), NetSite>,
 }
 
 pub type ExprKey = (u32, u32, u8);
 pub type RecordTable = HashMap<String, (Vec<String>, Vec<(String, Type)>)>;
-pub type SumTable = HashMap<String, (Vec<String>, Vec<(String, Option<Vec<(String, Type)>>)>)>;
+pub type SumTable = HashMap<String, (Vec<String>, SumVariants)>;
+pub type SumVariants = Vec<(String, Option<Vec<(String, Type)>>)>;
 
 fn static_hint(n: &str) -> String {
     format!("use {n}.load, {n}.store(v), {n}.swap(v), {n}.add(d) or {n}.cas(old, new); arrays take an index first, as {n}.load(i)")
@@ -229,6 +234,12 @@ struct Checker {
     res_types: HashSet<String>,
     impl_self: HashMap<String, Type>,
     hole_ctx: Option<HoleCtx>,
+    net_sites: BTreeMap<(u32, u32), NetSite>,
+    svcs: HashMap<String, SvcDef>,
+    /// What E_PAR_RACE and E_PAR_SHARE call the code that runs concurrently.
+    par_word: &'static str,
+    std_sum_fields: HashMap<String, SumVariants>,
+    svc_params: HashMap<String, Vec<String>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -358,6 +369,11 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
         res_types: HashSet::new(),
         impl_self: HashMap::new(),
         hole_ctx: capture.then(HoleCtx::default),
+        net_sites: BTreeMap::new(),
+        svcs: HashMap::new(),
+        par_word: "task",
+        std_sum_fields: HashMap::new(),
+        svc_params: HashMap::new(),
     };
     c.load_builtins();
     if c.sys {
@@ -443,7 +459,10 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
                 newtypes.insert(n.clone(), inner.clone());
             }
             TypeKind::Sum(vs) => {
-                let variants = vs.iter().map(|v| (v.clone(), c.ctors.get(v).and_then(|ci| ci.fields.clone()))).collect();
+                let variants = match c.std_sum_fields.get(n) {
+                    Some(v) => v.clone(),
+                    None => vs.iter().map(|v| (v.clone(), c.ctors.get(v).and_then(|ci| ci.fields.clone()))).collect(),
+                };
                 sums.insert(n.clone(), (info.params.clone(), variants));
             }
             _ => {}
@@ -497,7 +516,7 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
     let hole_ctx = c.hole_ctx.take().map(|h| HoleCtx { sigs: c.hole_sigs(m), ..h });
     let mut traits_out = std::mem::take(&mut c.tout);
     traits_out.active = !traits_out.sites.is_empty() || !traits_out.insts.is_empty() || !traits_out.units.is_empty() || !traits_out.impls.is_empty() || !traits_out.bounded.is_empty() || m.defs.iter().any(|d| matches!(d, Def::Trait(_) | Def::Impl(_)));
-    (CheckOutput { traits: traits_out, diags: c.diags, record_types: c.record_types, user_methods: c.user_methods, sigs, expr_types: c.expr_types, bind_types: c.bind_types, fn_types, records, sums, newtypes, local_fn_types: c.local_fn_types, gen_loops: c.gen_loops, clause_effects: c.clause_effects, own: own.info, stores: c.stores, json_types, kernels: c.kernels, body_diags }, hole_ctx)
+    (CheckOutput { net: std::mem::take(&mut c.net_sites), traits: traits_out, diags: c.diags, record_types: c.record_types, user_methods: c.user_methods, sigs, expr_types: c.expr_types, bind_types: c.bind_types, fn_types, records, sums, newtypes, local_fn_types: c.local_fn_types, gen_loops: c.gen_loops, clause_effects: c.clause_effects, own: own.info, stores: c.stores, json_types, kernels: c.kernels, body_diags }, hole_ctx)
 }
 
 fn edit_distance(a: &str, b: &str) -> usize {
@@ -668,6 +687,19 @@ impl Checker {
             let fields = fs.iter().map(|f| (f.name.clone(), self.conv_ty(&f.ty))).collect();
             self.tparams.clear();
             self.types.insert(internal.to_string(), TypeInfo { params, kind: TypeKind::Record(fields) });
+        }
+        for (internal, src) in builtins::STD_SUMS {
+            let m = parse(src).expect("std sum must parse");
+            let Def::Type(t) = &m.defs[0] else { unreachable!() };
+            let TypeBody::Sum(vs) = &t.body else { unreachable!() };
+            let mut variants = Vec::new();
+            for v in vs {
+                let fields: Option<Vec<(String, Type)>> = v.fields.as_ref().map(|fs| fs.iter().map(|f| (f.name.clone(), self.conv_ty(&f.ty))).collect());
+                self.ctors.insert(v.name.clone(), CtorInfo { ty: internal.to_string(), params: vec![], fields: fields.clone() });
+                variants.push((v.name.clone(), fields));
+            }
+            self.types.insert(internal.to_string(), TypeInfo { params: vec![], kind: TypeKind::Sum(vs.iter().map(|v| v.name.clone()).collect()) });
+            self.std_sum_fields.insert(internal.to_string(), variants);
         }
         for src in builtins::GLOBALS {
             let (name, s) = self.builtin_scheme(src);
@@ -903,7 +935,7 @@ impl Checker {
                 TypeBody::Sum(vs) => {
                     for v in vs {
                         let fields = v.fields.as_ref().map(|fs| fs.iter().map(|f| (f.name.clone(), self.conv_ty(&f.ty))).collect());
-                        if self.ctors.contains_key(&v.name) || self.types.contains_key(&v.name) && v.name != t.name {
+                        if self.ctors.get(&v.name).is_some_and(|c| !c.ty.starts_with('#')) || self.types.contains_key(&v.name) && v.name != t.name {
                             self.err("E_DUPLICATE", t.span, format!("constructor '{}' is already defined", v.name));
                         }
                         self.ctors.insert(v.name.clone(), CtorInfo { ty: t.name.clone(), params: params.clone(), fields });
@@ -935,6 +967,19 @@ impl Checker {
         }
         self.collect_impls(m);
         self.collect_stores(m);
+        for d in &m.defs {
+            if let Def::Svc(sv) = d {
+                self.svcs.insert(sv.name.clone(), sv.clone());
+            }
+        }
+        if !self.svcs.is_empty() {
+            let handlers: HashSet<&str> = self.svcs.values().flat_map(|s| s.eps.iter().map(|e| e.handler.as_str())).collect();
+            for d in &m.defs {
+                if let Def::Fn(f) = d && handlers.contains(f.name.as_str()) {
+                    self.svc_params.insert(f.name.clone(), f.params.iter().map(|p| p.name.clone()).collect());
+                }
+            }
+        }
         for d in &m.defs {
             if let Def::Fn(f) = d {
                 self.cur_def = Some(f.name.clone());
@@ -1658,7 +1703,12 @@ impl Checker {
                 return t;
             }
         match found {
-            Some(s) => self.call_scheme(&s, name, Some((rt, recv.span)), args, span),
+            Some(s) => {
+                if con == "#Request" || con == "#Response" {
+                    self.record_method_site(&con, name, span);
+                }
+                self.call_scheme(&s, name, Some((rt, recv.span)), args, span)
+            }
             None => {
                 let candidates: Vec<String> = self.methods.keys().filter(|(c, _)| *c == con).map(|(_, m)| m.clone()).collect();
                 let fields: Vec<String> = match self.types.get(&con) {
@@ -2014,6 +2064,10 @@ impl Checker {
             }
             ExprKind::Method { recv, name, targs, args } if self.is_json_recv(recv) => self.infer_json(name, targs, args, e.span),
             ExprKind::Method { recv, name, args, .. } if self.is_db_recv(recv) => self.infer_db(name, args, e.span),
+            ExprKind::Method { recv, name, targs, args } if self.is_ns_recv(recv, "http") => self.infer_http(name, targs, args, e.span),
+            ExprKind::Method { recv, name, args, .. } if self.is_ns_recv(recv, "config") => self.infer_config(name, args, e.span),
+            ExprKind::Method { recv, name, targs, args } if targs.is_empty() && self.is_ns_recv(recv, "log") => self.infer_log_level(name, args, e.span),
+            ExprKind::Method { recv, name, targs, args } if name == "json" && !targs.is_empty() && let Some(t) = self.infer_body_json(recv, targs, args, e.span) => t,
             ExprKind::Method { recv, name, targs, args } if name == "mmio" && targs.len() == 1 => self.infer_mmio(recv, &targs[0], args, e.span),
             ExprKind::Method { recv, name, targs, args } if name == "asm" && args.len() == 3 && matches!(recv.kind, ExprKind::Str(_)) => self.infer_asm(recv, targs, args, e.span),
             ExprKind::Method { recv, name, targs, args } => {
@@ -2333,7 +2387,7 @@ impl Checker {
         let mut cur = self.resolve(base);
         for seg in path {
             cur = match (seg, &cur) {
-                (PathSeg::Field(_), Type::Con(n, _)) if n.starts_with('#') => {
+                (PathSeg::Field(_), Type::Con(n, _)) if n.starts_with('#') && !builtins::OPEN_STD_RECORDS.contains(&n.as_str()) => {
                     self.err("E_WITH_PATH", span, format!("{cur} fields are read-only"));
                     return self.fresh();
                 }
@@ -2431,13 +2485,16 @@ impl Checker {
     }
 
     fn infer_name(&mut self, n: &str, span: Span) -> Type {
+        if self.lookup(n).is_none() && self.svcs.contains_key(n) && !self.fns.contains_key(n) && !self.ctors.contains_key(n) {
+            return self.svc_value(n, span);
+        }
         if let Some(l) = self.lookup(n) {
             let ty = l.ty.clone();
             if let Some(&base) = self.task_bases.last()
                 && self.scope_of(n).is_some_and(|i| i < base) {
                     let rt = self.resolve(&ty);
                     if self.type_has_fn(&rt) {
-                        self.push_diag("E_PAR_SHARE", "error", span, format!("task uses '{n}' of type {rt} from outside the task; function values can write captured variables, so they are not shared across tasks"), Some("call a top-level function by name, or define the function inside the task".into()), vec![]);
+                        self.push_diag("E_PAR_SHARE", "error", span, format!("{w} uses '{n}' of type {rt} from outside the {w}; function values can write captured variables, so they are not shared across {w}s", w = self.par_word), Some(format!("call a top-level function by name, or define the function inside the {}", self.par_word)), vec![]);
                     }
                 }
             return ty;
@@ -2621,6 +2678,10 @@ impl Checker {
                     let map: HashMap<String, Type> = params.iter().map(|p| (p.clone(), self.fresh())).collect();
                     let ty = Type::Con(c.to_string(), params.iter().map(|p| map[p].clone()).collect());
                     (ty, fs.iter().map(|(n, t)| (n.clone(), subst_params(t, &map))).collect(), c.to_string())
+                } else if let Some((_, internal, _)) = builtins::STD_TYPES.iter().find(|(n, i, _)| n == &c && builtins::OPEN_STD_RECORDS.contains(i))
+                    && let Some(TypeInfo { kind: TypeKind::Record(fs), .. }) = self.types.get(*internal).cloned()
+                {
+                    (Type::con(internal), fs, internal.to_string())
                 } else {
                     let hint = suggest(c, self.ctors.keys().chain(self.types.keys()));
                     self.push_diag("E_UNKNOWN_CTOR", "error", span, format!("unknown record or constructor '{c}'"), hint, vec![]);
@@ -2640,7 +2701,7 @@ impl Checker {
                     _ => None,
                 };
                 let found = from_exp.or_else(|| {
-                    let matches: Vec<_> = self
+                    let mut matches: Vec<_> = self
                         .types
                         .iter()
                         .filter_map(|(n, i)| match &i.kind {
@@ -2648,6 +2709,9 @@ impl Checker {
                             _ => None,
                         })
                         .collect();
+                    if matches.iter().any(|(n, _, _)| !n.starts_with('#')) {
+                        matches.retain(|(n, _, _)| !n.starts_with('#'));
+                    }
                     if matches.len() == 1 {
                         let (n, ps, fs) = matches.into_iter().next().unwrap();
                         let args = ps.iter().map(|_| Type::Var(u32::MAX)).collect();
@@ -3266,7 +3330,7 @@ impl Checker {
                 Some(Local { ty, mutable: true }) => {
                     if let Some(&base) = self.task_bases.last()
                         && self.scope_of(n).is_some_and(|i| i < base) {
-                            self.push_diag("E_PAR_RACE", "error", *span, format!("task assigns '{n}', which is declared outside the task; tasks run concurrently, so this is a data race"), Some("return the value from the task, or use an Atomic[Int] or a Chan".into()), vec![]);
+                            self.push_diag("E_PAR_RACE", "error", *span, format!("{w} assigns '{n}', which is declared outside the {w}; {w}s run concurrently, so this is a data race", w = self.par_word), Some(format!("return the value from the {}, or use an Atomic[Int] or a Chan", self.par_word)), vec![]);
                         }
                     let tr = self.resolve(&ty);
                     let t = self.infer(e, Some(&tr));

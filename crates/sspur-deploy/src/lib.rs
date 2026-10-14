@@ -130,6 +130,33 @@ fn db_ops(f: &FnDef, check: &CheckOutput, fns: &HashSet<&str>, ops: &mut BTreeSe
     }
 }
 
+/// What only `http.serve` supports, or no deploy target provides: effects without an AWS
+/// mapping, query string parameters, and raw `Request` and `Response` handlers.
+fn deploy_rules(src: &str, svc: &SvcDef, fns: &HashMap<&str, &FnDef>, check: &CheckOutput) -> Result<(), String> {
+    let mut errs = Vec::new();
+    for ep in &svc.eps {
+        let Some(f) = fns.get(ep.handler.as_str()) else { continue };
+        let (l, c) = line_col(src, ep.span.start);
+        let bad: Vec<String> = f.effects.iter().filter(|e| !matches!(e.name.as_str(), "log" | "div" | "time" | "env" | "fail" | "db.read" | "db.write")).map(printer::effect).collect();
+        if !bad.is_empty() {
+            errs.push(format!("{l}:{c} E_EP_EFFECT {} performs {}, which no deploy target provides", ep.handler, bad.join(", ")));
+        }
+        let Some((ptys, ret)) = check.fn_types.get(&f.name) else { continue };
+        let path = ep.path_params();
+        for (p, t) in f.params.iter().zip(ptys) {
+            if matches!(t, Type::Con(n, _) if n == "#Request") {
+                errs.push(format!("{l}:{c} E_EP_TYPE {} takes the raw Request, which only http.serve provides", ep.handler));
+            } else if !path.contains(&p.name) && matches!(ep.method.as_str(), "get" | "delete") {
+                errs.push(format!("{l}:{c} E_EP_BODY {} {} binds '{}' from the query string, which only http.serve supports; a deployed GET or DELETE takes path parameters", ep.method, ep.path, p.name));
+            }
+        }
+        if matches!(ret, Type::Con(n, _) if n == "#Response") {
+            errs.push(format!("{l}:{c} E_EP_TYPE {} returns a raw Response, which only http.serve sends", ep.handler));
+        }
+    }
+    if errs.is_empty() { Ok(()) } else { Err(errs.join("\n")) }
+}
+
 pub fn analyze(src: &str) -> Result<Service, String> {
     let (m, check) = load(src)?;
     let svcs: Vec<&SvcDef> = m.defs.iter().filter_map(|d| if let Def::Svc(s) = d { Some(s) } else { None }).collect();
@@ -137,6 +164,7 @@ pub fn analyze(src: &str) -> Result<Service, String> {
         return Err(format!("a deployable program declares exactly one svc, found {}", svcs.len()));
     };
     let fn_defs: HashMap<&str, &FnDef> = m.defs.iter().filter_map(|d| if let Def::Fn(f) = d { Some((f.name.as_str(), f)) } else { None }).collect();
+    deploy_rules(src, svc, &fn_defs, &check)?;
     let fn_names: HashSet<&str> = fn_defs.keys().copied().collect();
     let mut direct: HashMap<&str, (Ops, BTreeSet<String>)> = HashMap::new();
     for (n, f) in &fn_defs {

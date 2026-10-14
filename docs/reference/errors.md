@@ -219,15 +219,24 @@ This page lists every code the compiler can emit, grouped by area. The test suit
 | `E_EP_METHOD` | An unknown HTTP method | `get post put patch delete` |
 | `E_EP_PATH` | A malformed endpoint path | `"/items/{id}"` |
 | `E_EP_PARAM` | A path parameter that isn't `Str`, `Int` or a newtype over them | Change the parameter type |
-| `E_EP_BODY` | More than one request body parameter, or a body on GET or DELETE | One body parameter at most |
-| `E_EP_TYPE` | A request body type that can't be decoded from JSON | Use a data type |
-| `E_EP_EFFECT` | A handler performing an effect no deploy target provides (`fs`, `io`, `proc`, ...) | Keep handlers to `db.*`, `log`, `time`, `env`, `div` and `fail` |
+| `E_EP_BODY` | More than one request body parameter; a GET or DELETE parameter that can't come from the query string; a query parameter in a deployed service | One body parameter at most; query parameters are `Str`, `Int`, `F64`, `Bool` or an `Opt` of them |
+| `E_EP_TYPE` | A request body type that can't be decoded from JSON, or a raw `Request` or `Response` in a deployed service | Use a data type |
+| `E_EP_EFFECT` | A handler performing a user-defined effect, or, in a deployed service, an effect no deploy target provides (`fs`, `io`, `proc`, `net`, ...) | Keep deployed handlers to `db.*`, `log`, `time`, `env`, `div` and `fail` |
 | `E_EP_HANDLER` | A generic endpoint handler | Write a concrete function |
 | `E_DUPLICATE` | One route defined twice | Remove one |
 | `E_JSON` | `json.decode` of a type that can't be checked or decoded | Decode a plain data type and validate it |
 | `E_MIGRATE_MISSING` | A store's value type changed and there is no `migrate_S` | Add `fn migrate_S(old: OldT) -> V` |
 | `E_MIGRATE_SIG` | A `migrate_` or `unmigrate_` function with the wrong shape | Pure, one parameter of the old type |
 | `E_MIGRATE_KEY` | A store's key type changed | Add a new store and copy into it |
+
+## Networking and configuration
+
+| Code | Meaning | Fix |
+|---|---|---|
+| `E_SERVE_EFFECT` | A handler passed to `http.serve` performs a user-defined effect, or a `db.*` effect, which needs `sspur deploy local` | Handle the effect inside the handler, or run the service with `sspur deploy local` |
+| `E_SERVE_TYPE` | A svc endpoint whose body or result `http.serve` can't decode or encode (refinements, functions), or a handler that raises two non-sum error types | Take an unrefined type and build the refined value in the handler |
+| `E_HTTP_SHADOW` | The program defines a constructor with the name of an `HttpErr` variant (`Dns`, `Connect`, `Tls`, `Timeout`, `HttpStatus`, `Io`) and uses the HTTP client | Rename your constructor |
+| `E_CONFIG_TYPE` | `config.load` of something other than a record, or of a record with a field JSON can't decode | `config.load(Config{...}, path, prefix)` with plain data fields |
 
 ## Packages and dependencies
 

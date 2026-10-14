@@ -117,9 +117,15 @@ pub const METHODS: &[(&str, &str)] = &[
     ("*", "str[A](x: A) -> Str"),
 ];
 
-pub const STD_TYPES: &[(&str, &str, usize)] = &[("Set", "#Set", 1), ("Heap", "#Heap", 1), ("StrBuf", "#StrBuf", 0), ("Time", "#Time", 0), ("Duration", "#Duration", 0), ("Bits", "#Bits", 0), ("HashMap", "#HashMap", 2), ("HashSet", "#HashSet", 1), ("BigInt", "#BigInt", 0), ("Dec", "#Dec", 0), ("Regex", "#Regex", 0), ("DevBuf", "#DevBuf", 1), ("Rng", "#Rng", 0), ("Complex", "#Complex", 0), ("FlatMap", "#FlatMap", 2), ("MdSpan", "#MdSpan", 1), ("Zone", "#Zone", 0), ("File", "#File", 0), ("View", "#View", 1), ("Ratio", "#Ratio", 0), ("Locale", "#Locale", 0)];
+pub const STD_TYPES: &[(&str, &str, usize)] = &[("Set", "#Set", 1), ("Heap", "#Heap", 1), ("StrBuf", "#StrBuf", 0), ("Time", "#Time", 0), ("Duration", "#Duration", 0), ("Bits", "#Bits", 0), ("HashMap", "#HashMap", 2), ("HashSet", "#HashSet", 1), ("BigInt", "#BigInt", 0), ("Dec", "#Dec", 0), ("Regex", "#Regex", 0), ("DevBuf", "#DevBuf", 1), ("Rng", "#Rng", 0), ("Complex", "#Complex", 0), ("FlatMap", "#FlatMap", 2), ("MdSpan", "#MdSpan", 1), ("Zone", "#Zone", 0), ("File", "#File", 0), ("View", "#View", 1), ("Ratio", "#Ratio", 0), ("Locale", "#Locale", 0), ("Request", "#Request", 0), ("Response", "#Response", 0), ("Server", "#Server", 0), ("HttpErr", "#HttpErr", 0)];
 
-pub const STD_RECORDS: &[(&str, &str)] = &[("#Rng", "type Rng = {state: Int, gamma: Int}"), ("#Complex", "type Complex = {re: F64, im: F64}"), ("#FlatMap", "type FlatMap[K, V] = {keys: List[K], values: List[V]}"), ("#MdSpan", "type MdSpan[T] = {data: List[T], offset: Int, shape: List[Int], strides: List[Int]}"), ("#Zone", "type Zone = {name: Str, trans: List[Int], idx: List[Int], offs: List[Int], dst: List[Bool], abbrs: List[Str], tail: List[Int]}"), ("#File", "type File = {fd: Int, path: Str, dev: Int, ino: Int}"), ("#Ratio", "type Ratio = {num: BigInt, den: BigInt}"), ("#Locale", "type Locale = {tag: Str}")];
+pub const STD_RECORDS: &[(&str, &str)] = &[("#Rng", "type Rng = {state: Int, gamma: Int}"), ("#Complex", "type Complex = {re: F64, im: F64}"), ("#FlatMap", "type FlatMap[K, V] = {keys: List[K], values: List[V]}"), ("#MdSpan", "type MdSpan[T] = {data: List[T], offset: Int, shape: List[Int], strides: List[Int]}"), ("#Zone", "type Zone = {name: Str, trans: List[Int], idx: List[Int], offs: List[Int], dst: List[Bool], abbrs: List[Str], tail: List[Int]}"), ("#File", "type File = {fd: Int, path: Str, dev: Int, ino: Int}"), ("#Ratio", "type Ratio = {num: BigInt, den: BigInt}"), ("#Locale", "type Locale = {tag: Str}"), ("#Request", "type Request = {method: Str, url: Str, headers: List[(Str, Str)], body: Str, timeout_ms: Int, retries: Int, redirects: Int}"), ("#Response", "type Response = {status: Int, headers: List[(Str, Str)], body: Str}"), ("#Server", "type Server = {port: Int, host: Str, workers: Int, max_body: Int, timeout_ms: Int, max_requests: Int, cors: List[Str], gzip: Bool, files: List[(Str, Str)], health: Str, cert: Str, key: Str, access_log: Bool}")];
+
+/// Std records programs can build with a literal and update with `with`; the others are opaque.
+pub const OPEN_STD_RECORDS: &[&str] = &["#Request", "#Response", "#Server"];
+
+/// Std sum types, by internal name; their constructors are global unless a program defines its own.
+pub const STD_SUMS: &[(&str, &str)] = &[("#HttpErr", "type HttpErr = Dns{msg: Str} | Connect{msg: Str} | Tls{msg: Str} | Timeout{msg: Str} | HttpStatus{code: Int, body: Str} | Io{msg: Str}")];
 
 pub const STD_GLOBALS: &[&str] = &[
     "dev_f32(xs: List[F64]) -> DevBuf[F32] ! dev",
@@ -212,6 +218,8 @@ pub const STD_GLOBALS: &[&str] = &[
     "mins(n: Int) -> Duration",
     "hours(n: Int) -> Duration",
     "days(n: Int) -> Duration",
+    "__net_fetch(method: Str, url: Str, headers: List[(Str, Str)], body: Str, timeout_ms: Int, retries: Int, redirects: Int, path: Str) -> (Int, Int, List[(Str, Str)], Str) ! net",
+    "__net_serve[e](cfg: (Int, Str, Int, Int, Int, Int, List[Str], Bool, List[(Str, Str)], Str, Str, Str, Bool), h: (Str, Str, List[(Str, Str)], Str, Int) -> (Int, List[(Str, Str)], Str) ! e) -> Unit ! net, log, e",
     "pi() -> F64",
     "euler() -> F64",
     "inf() -> F64",
@@ -548,10 +556,14 @@ pub const STD_METHODS: &[(&str, &str)] = &[
     ("#File", "tell(f: File) -> Res[Int, Str] ! fs"),
     ("#File", "size(f: File) -> Res[Int, Str] ! fs"),
     ("#File", "close(f: File) -> Res[Unit, Str] ! fs"),
+    ("#Request", "header(r: Request, name: Str) -> Opt[Str]"),
+    ("#Request", "path(r: Request) -> Str"),
+    ("#Request", "query(r: Request, name: Str) -> Opt[Str]"),
+    ("#Response", "header(r: Response, name: Str) -> Opt[Str]"),
 ];
 
 pub const STD_GLOBAL_NAMES: &[&str] = &[
-    "empty_set", "empty_heap", "str_buf", "range", "clamp", "rand", "rand_int", "rand_f64", "rand_binomial", "rand_poisson", "rand_geometric", "rand_gamma", "rand_beta", "rand_weighted", "rng", "complex", "polar", "ratio", "ratio_big", "parse_ratio", "locale", "empty_flat_map", "mdspan", "time_zone", "local_zone", "fixed_zone", "open_file", "with_file", "iota", "iterate", "from_bytes", "from_codes", "read_file", "write_file", "append_file", "list_dir", "remove_file", "read_line", "read_lines", "now_ms", "mono_ns", "sleep_ms", "env_var", "args", "pi", "euler", "inf", "nan", "rand_normal", "rand_uniform", "rand_exp", "rand_bool", "read_bytes", "write_bytes", "mkdir", "mkdir_all", "remove_dir", "rename", "exists", "is_dir", "file_size", "modified_ms", "copy_file", "symlink", "read_link", "is_symlink", "file_mode", "set_mode", "eprint", "run_cmd", "exit", "regex", "bits", "big", "parse_big", "decimal", "hash_map", "hash_set", "time_ms", "date", "datetime", "parse_time", "now", "millis", "secs", "mins", "hours", "days", "dev_f32", "dev_f64", "dev_i32", "dev_u32", "dev_int", "gpu_sync",
+    "empty_set", "empty_heap", "str_buf", "range", "clamp", "rand", "rand_int", "rand_f64", "rand_binomial", "rand_poisson", "rand_geometric", "rand_gamma", "rand_beta", "rand_weighted", "rng", "complex", "polar", "ratio", "ratio_big", "parse_ratio", "locale", "empty_flat_map", "mdspan", "time_zone", "local_zone", "fixed_zone", "open_file", "with_file", "iota", "iterate", "from_bytes", "from_codes", "read_file", "write_file", "append_file", "list_dir", "remove_file", "read_line", "read_lines", "now_ms", "mono_ns", "sleep_ms", "env_var", "args", "pi", "euler", "inf", "nan", "rand_normal", "rand_uniform", "rand_exp", "rand_bool", "read_bytes", "write_bytes", "mkdir", "mkdir_all", "remove_dir", "rename", "exists", "is_dir", "file_size", "modified_ms", "copy_file", "symlink", "read_link", "is_symlink", "file_mode", "set_mode", "eprint", "run_cmd", "exit", "regex", "bits", "big", "parse_big", "decimal", "hash_map", "hash_set", "time_ms", "date", "datetime", "parse_time", "now", "millis", "secs", "mins", "hours", "days", "dev_f32", "dev_f64", "dev_i32", "dev_u32", "dev_int", "gpu_sync", "__net_fetch", "__net_serve",
 ];
 
 pub const SYS_GLOBALS: &[&str] = &[

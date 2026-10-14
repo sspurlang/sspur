@@ -32,7 +32,7 @@ impl Checker {
         }
     }
 
-    fn refined_alias_in(&self, t: &Ty) -> Option<String> {
+    pub(crate) fn refined_alias_in(&self, t: &Ty) -> Option<String> {
         match t {
             Ty::Named { name, args, .. } => {
                 if matches!(self.types.get(name).map(|i| &i.kind), Some(TypeKind::Alias(_))) && self.refined_names.contains(name) {

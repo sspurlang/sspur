@@ -30,6 +30,15 @@ impl Checker {
         self.cur_def = None;
     }
 
+    /// A query string parameter: a scalar, an Opt of one, or a newtype over Str or Int.
+    pub(crate) fn query_ok(&self, t: &Type) -> bool {
+        match t {
+            Type::Con(n, a) if n == "Opt" && a.len() == 1 => !matches!(&a[0], Type::Con(m, _) if m == "Opt") && self.query_ok(&a[0]),
+            Type::Con(n, a) if a.is_empty() && matches!(n.as_str(), "F64" | "Bool") => true,
+            _ => self.key_ok(t),
+        }
+    }
+
     pub(crate) fn key_ok(&self, t: &Type) -> bool {
         match t {
             Type::Con(n, a) if a.is_empty() && (n == "Str" || n == "Int") => true,
@@ -153,11 +162,17 @@ impl Checker {
             }
             let Some(f) = m.defs.iter().find_map(|d| if let Def::Fn(f) = d { (f.name == ep.handler).then_some(f) } else { None }) else { continue };
             let path_params = ep.path_params();
+            let query = matches!(ep.method.as_str(), "get" | "delete");
             let mut body = Vec::new();
             for (p, t) in f.params.iter().zip(&s.params) {
                 if path_params.contains(&p.name) {
                     if !self.key_ok(t) {
                         self.err("E_EP_PARAM", sp, format!("path parameter '{}' must be Str, Int, or a newtype over them, found {t}", p.name));
+                    }
+                } else if matches!(t, Type::Con(n, a) if n == "#Request" && a.is_empty()) {
+                } else if query {
+                    if !self.query_ok(t) {
+                        self.err("E_EP_BODY", sp, format!("{} {} binds '{}' from the query string, which needs Str, Int, F64, Bool, an Opt of them or a newtype over Str or Int, found {t}", ep.method, ep.path, p.name));
                     }
                 } else {
                     body.push(p.name.clone());
@@ -182,9 +197,9 @@ impl Checker {
                     self.err("E_EP_TYPE", sp, format!("{} raises {t}: {why}", ep.handler));
                 }
             }
-            let bad: Vec<String> = s.atoms.iter().filter(|a| !(matches!(a.as_str(), "log" | "div" | "time" | "env") || a.starts_with("db.read[") || a.starts_with("db.write["))).cloned().chain(s.ueffs.iter().map(|(n, _)| n.clone())).collect();
-            if !bad.is_empty() {
-                self.err("E_EP_EFFECT", sp, format!("{} performs {}, which no deploy target provides", ep.handler, bad.join(", ")));
+            let user: Vec<String> = s.atoms.iter().filter(|a| a.as_str() != "log" && self.effects.contains_key(a.split('[').next().unwrap_or(""))).cloned().chain(s.ueffs.iter().map(|(n, _)| n.clone())).collect();
+            if !user.is_empty() {
+                self.err("E_EP_EFFECT", sp, format!("{} performs {}, which no server or deploy target provides", ep.handler, user.join(", ")));
             }
         }
         self.cur_def = None;
