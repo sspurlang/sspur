@@ -252,7 +252,7 @@ pub fn credit_lines(cx: Ctx) -> Str
 pub fn footer(cx: Ctx) -> Str
 = do
   src = if cx.sec == "overview" or cx.sec == "404" then "https://github.com/utkarshavardhana/sspur/tree/main/pulse" else "https://github.com/utkarshavardhana/sspur/tree/main/pulse/{cx.sec}"
-  "<footer class='foot'><div class='wrap'><p class='foot-lead'>Computed every 6 hours by <a href='{src}'>SSPUR programs</a>. No servers, no keys, no trackers.</p><ul class='credits'>{credit_lines(cx)}<li>Display type: Bricolage Grotesque, SIL Open Font License 1.1</li></ul><p class='foot-links'><a href='https://utkarshavardhana.github.io/sspur/'>SSPUR docs</a><a href='https://utkarshavardhana.github.io/sspur/play/'>Playground</a><a href='https://utkarshavardhana.github.io/sspur/pulse-how-it-works.html'>How Pulse works</a><a href='https://github.com/utkarshavardhana/sspur'>Source</a></p><p class='made'>Created by Utkarsha Vardhana</p></div></footer>"
+  "<footer class='foot'><div class='wrap'><p class='foot-lead'>Computed every 6 hours by <a href='{src}'>SSPUR programs</a>. No servers, no keys, no trackers.</p><ul class='credits'>{credit_lines(cx)}<li>Display type: Bricolage Grotesque, SIL Open Font License 1.1</li></ul><p class='foot-links'><a href='https://utkarshavardhana.github.io/sspur/'>SSPUR docs</a><a href='https://utkarshavardhana.github.io/sspur/play/'>Playground</a><a href='https://utkarshavardhana.github.io/sspur/pulse-how-it-works.html'>How Pulse works</a><a href='https://github.com/utkarshavardhana/sspur'>Source</a></p><p class='made'>Created by <a href='https://utkarshavardhana.github.io/' target='_blank' rel='noopener'>Utkarsha Vardhana</a></p></div></footer>"
 
 pub fn page(cx: Ctx, p: Page) -> Str ! fs
 = do
@@ -263,7 +263,7 @@ pub fn page(cx: Ctx, p: Page) -> Str ! fs
   og = "{cx.base}og/{if cx.sec == "404" then "overview" else cx.sec}.png"
   title = if cx.sec == "overview" then p.title else "{p.title} | SSPUR Pulse"
   head = "<!doctype html><html lang='en' class='s-{cx.sec}'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'><title>{esc(title)}</title><meta name='description' content='{esc(p.desc)}'>{if cx.sec == "404" then "<meta name='robots' content='noindex'>" else ""}<link rel='canonical' href='{esc(url)}'><meta name='theme-color' content='#f6f5f1' media='(prefers-color-scheme: light)'><meta name='theme-color' content='#0d0f14' media='(prefers-color-scheme: dark)'><meta name='color-scheme' content='light dark'><meta property='og:type' content='website'><meta property='og:site_name' content='SSPUR Pulse'><meta property='og:title' content='{esc(title)}'><meta property='og:description' content='{esc(p.desc)}'><meta property='og:url' content='{esc(url)}'><meta property='og:image' content='{esc(og)}'><meta property='og:image:width' content='1200'><meta property='og:image:height' content='630'><meta name='twitter:card' content='summary_large_image'><meta name='twitter:title' content='{esc(title)}'><meta name='twitter:description' content='{esc(p.desc)}'><meta name='twitter:image' content='{esc(og)}'><link rel='icon' href='{pre}assets/icon.svg' type='image/svg+xml'><link rel='icon' href='{pre}assets/icon-192.png' sizes='192x192' type='image/png'><link rel='apple-touch-icon' href='{pre}assets/icon-192.png'><link rel='manifest' href='{pre}manifest.webmanifest'><link rel='preload' href='{pre}assets/pulse-display.woff2' as='font' type='font/woff2' crossorigin>{if cx.sec == "overview" or cx.sec == "404" then "" else "<link rel='alternate' type='application/json' href='{pre}api/{cx.sec}.json'>"}<script>{head_js}</script><style>{css}</style><script src='{pre}assets/pulse.js' defer></script></head>"
-  top = "<a class='skip' href='#main'>Skip to content</a><header class='top'><div class='wrap top-in'><a class='logo' href='{sec_url(cx, "overview")}' aria-label='SSPUR Pulse, home'><span class='logo-mark' aria-hidden='true'>{icon("overview")}</span><span class='logo-word'>Pulse</span></a>{nav(cx)}<button class='theme' type='button' aria-label='Switch theme' title='Switch theme'>{icon("theme")}</button></div></header>"
+  top = "<a class='skip' href='#main'>Skip to content</a><header class='top'><div class='wrap top-in'><a class='logo' href='{sec_url(cx, "overview")}' aria-label='SSPUR Pulse, home'><span class='logo-mark' aria-hidden='true'>{icon("overview")}</span><span class='logo-word'>Pulse</span></a>{nav(cx)}<button class='theme' type='button' aria-label='Switch theme' title='Switch theme'><svg class='ic t-moon' viewBox='0 0 24 24' aria-hidden='true' focusable='false'><path d='{icon_path("theme")}'/></svg><svg class='ic t-sun' viewBox='0 0 24 24' aria-hidden='true' focusable='false'><path d='{icon_path("weather")}'/></svg></button></div></header>"
   intro = "<section class='hero wrap'><p class='kicker'>{icon(cx.sec)}<span>{esc(if cx.sec == "overview" or cx.sec == "404" then "SSPUR Pulse" else sec_name(cx.sec))}</span></p><h1>{p.h1}</h1><p class='lede'>{p.lede}</p>{if cx.sec == "404" then "" else badge(cx, p.updated, p.stale)}{if p.note == "" then "" else "<p class='note'>{esc(p.note)}</p>"}</section>"
   tpl = if p.snippet == "" then "" else "<template id='sspur-src'>{esc(p.snippet)}</template>"
   data = if p.data == "" then "" else "<script type='application/json' id='pulse-charts'>{script_json(p.data)}</script>"
@@ -488,7 +488,7 @@ pub fn spark(vs: List[Opt[F64]], cls: Str) -> Str
 
 // A world map in an equirectangular projection, 2 units per degree.
 
-pub type Dot = {lat: F64, lon: F64, r: F64, cls: Str, tip: Str, id: Str, fill: Str}
+pub type Dot = {lat: F64, lon: F64, r: F64, cls: Str, tip: Str, id: Str, fill: Str, tags: Str}
 
 pub fn map_x(lon: F64) -> F64
 = (lon + 180.0) * 2.0
@@ -501,7 +501,7 @@ test projection = map_x(0.0) == 360.0 and map_y(0.0) == 180.0 and map_x(-180.0) 
 pub fn world_map(cx: Ctx, dots: List[Dot], label: Str) -> Str ! fs
 = do
   land = read("{cx.web}/land.path").or("").trim
-  ds = dots.map(d => "<circle class='{d.cls}' cx='{map_x(d.lon).fmt(1)}' cy='{map_y(d.lat).fmt(1)}' r='{d.r.fmt(1)}'{if d.fill == "" then "" else " style='fill:{d.fill}'"} data-tip='{esc(d.tip)}' data-id='{esc(d.id)}'/>").join("")
+  ds = dots.map(d => "<circle class='{d.cls}' cx='{map_x(d.lon).fmt(1)}' cy='{map_y(d.lat).fmt(1)}' r='{d.r.fmt(1)}'{if d.fill == "" then "" else " style='fill:{d.fill}'"} data-tip='{esc(d.tip)}' data-id='{esc(d.id)}'{if d.tags == "" then "" else " data-tags='{esc(d.tags)}'"}/>").join("")
   "<div class='map' tabindex='0' role='group' aria-label='{esc(label)}. Use arrow keys to move between points.'><svg viewBox='0 10 720 290' role='img' aria-label='{esc(label)}'><path class='land' d='{land}'/><g class='dots'>{ds}</g></svg></div>"
 
 // RSS 2.0

@@ -43,7 +43,8 @@ fn overview(cx: Ctx) -> Unit ! fs, log
   metas = tiles.map(_.meta).filter(_.is_some).map(_.get)
   updated = latest(metas).or(cx.now)
   stale = metas.any(_.stale)
-  clock = "<div class='card nowbar'><p class='big clock'><span data-clock>{pulse.hm(cx.now)}</span></p><div class='nb-t'><p class='muted small'>Your local time, <span data-tz>UTC</span></p><p class='small'>Last board update <time datetime='{updated.iso}' data-rel>{ago(cx.now, updated)}</time>. Next run in about {next_run(cx.now)}.</p></div></div>"
+  lwx = "<div class='lwx-box'><a class='lwx' data-lwx href='weather/'><span class='lwx-ic' aria-hidden='true'>{pulse.icon("weather")}</span><span class='lwx-b'><span class='lwx-v'>&nbsp;</span><span class='lwx-l'>Your area</span><span class='lwx-n'>Finding the weather near you</span></span></a><p class='lwx-act'><button type='button' data-lwx-precise>Use precise location</button><button type='button' data-lwx-forget hidden>Forget my place</button></p><p class='lwx-priv'>Your approximate location comes from your IP via BigDataCloud; precise location is used only if you allow it and never leaves your browser except to fetch the weather from Open-Meteo.</p></div>"
+  clock = "<div class='card nowbar'><p class='big clock'><span data-clock>{pulse.hm(cx.now)}</span></p><div class='nb-t'><p class='muted small'>Your local time, <span data-tz>UTC</span></p><p class='small'>Last board update <time datetime='{updated.iso}' data-rel>{ago(cx.now, updated)}</time>. Next run in about {next_run(cx.now)}.</p></div>{lwx}</div>"
   how = "<section class='wrap band'>{pulse.section_head("How this page is made", "")}<div class='grid'><div class='card'><h3>Fetched</h3><p class='muted'>Every six hours a GitHub Actions job runs one small SSPUR program per board. Each calls a free public API through curl, with timeouts and retries.</p></div><div class='card'><h3>Checked</h3><p class='muted'>Contracts check the shape and the ranges of the data. A board whose fetch fails keeps its last good data and says how old it is.</p></div><div class='card'><h3>Published</h3><p class='muted'>The programs write static HTML, SVG charts, JSON, RSS and calendars. No server, no keys, no cost. <a href='https://utkarshavardhana.github.io/sspur/pulse-how-it-works.html'>Read how it works</a>.</p></div></div></section>"
   body = "<section class='wrap band'>{clock}<div class='tiles'>{tiles.map(t => tile(cx, t)).join("")}</div></section>{how}"
   top = metas.find(_.section == "quakes").map(m => "{m.headline.value} {m.headline.label}").or("Eight live boards")
@@ -63,7 +64,7 @@ fn parse_iss(s: Str) -> Res[Iss, Str]
   | err(e) => err(e)
 
 fn iss_dot(lat: Lat, lon: Lon) -> Dot
-= Dot{lat, lon, r: 7.0, cls: "iss", tip: "The ISS | {f1(lat)}, {f1(lon)}", id: "iss", fill: ""}
+= Dot{lat, lon, r: 7.0, cls: "iss", tip: "The ISS | {f1(lat)}, {f1(lon)}", id: "iss", fill: "", tags: ""}
 
 fn hemi(v: F64, pos: Str, neg: Str) -> Str
 = "{f1(v.abs)}° {if v >= 0.0 then pos else neg}"
@@ -82,10 +83,62 @@ fn lost(cx: Ctx) -> Unit ! fs, proc, time, log
   p = Page{title: "Lost in orbit", desc: "This page does not exist.", h1: "This page is <em>lost in orbit</em>", lede: "The link you followed leads nowhere. The rest of the world is still right here: <a href='./'>back to Pulse</a>.", body, updated: cx.now, stale: false, note: "", snippet: "", data: ""}
   pulse.publish(c404, "404.html", pulse.page(c404, p))
 
+// The visitor's area: the board cities with their weather now, and the nearest board city
+// for every time zone, for pulse.js to use without any request when location lookups fail.
+
+type WPlace = {name: Str, slug: Str, lat: F64, lon: F64}
+type WCity = {c: WPlace, temp: F64, code: F64, isday: Bool, tmax: F64, tmin: F64}
+type WApi = {cities: List[WCity]}
+type HereCity = {s: Str, n: Str, la: F64, lo: F64, t: F64, c: Int, d: Bool, hi: F64, lw: F64}
+type Here = {updated: Str, cities: List[HereCity], zones: Map[Str, Str]}
+
+fn rad(x: F64) -> F64
+= x * pi() / 180.0
+
+pub fn km(la1: F64, lo1: F64, la2: F64, lo2: F64) -> F64
+= do
+  h = (rad(la2 - la1) / 2.0).sin.pow(2.0) + rad(la1).cos * rad(la2).cos * (rad(lo2 - lo1) / 2.0).sin.pow(2.0)
+  6371.0 * 2.0 * h.sqrt.asin
+
+test distances = km(28.61, 77.21, 19.08, 72.88).round == 1147 and km(0.0, 0.0, 0.0, 0.0) == 0.0
+
+fn nearest(cs: List[HereCity], la: F64, lo: F64) -> Str
+= cs.sort_by(c => km(la, lo, c.la, c.lo)).first.map(_.s).or("")
+
+// Old names browsers still report, and the zone.tab names they stand for.
+fn aliases() -> List[(Str, Str)]
+= [("Asia/Calcutta", "Asia/Kolkata"), ("Asia/Saigon", "Asia/Ho_Chi_Minh"), ("Asia/Katmandu", "Asia/Kathmandu"), ("Asia/Rangoon", "Asia/Yangon"), ("Europe/Kiev", "Europe/Kyiv"), ("America/Godthab", "America/Nuuk"), ("Asia/Istanbul", "Europe/Istanbul"), ("America/Buenos_Aires", "America/Argentina/Buenos_Aires"), ("Pacific/Ponape", "Pacific/Pohnpei"), ("Atlantic/Faeroe", "Atlantic/Faroe"), ("US/Eastern", "America/New_York"), ("US/Central", "America/Chicago"), ("US/Mountain", "America/Denver"), ("US/Pacific", "America/Los_Angeles"), ("Australia/ACT", "Australia/Sydney"), ("Asia/Dacca", "Asia/Dhaka"), ("Asia/Ulan_Bator", "Asia/Ulaanbaatar")]
+
+fn zone_line(l: Str) -> Opt[(Str, F64, F64)]
+= if l.split("|") is [z, la, lo] and la.to_f64 is some(a) and lo.to_f64 is some(b) then some((z, a, b)) else none
+
+fn zones(cs: List[HereCity], tab: Str) -> Map[Str, Str]
+= do
+  zs = tab.split("\n").filter(l => not l.starts_with("#")).map(zone_line).filter(_.is_some).map(_.get)
+  var m = empty_map()
+  for (z, la, lo) in zs
+    m := m.put(z, nearest(cs, la, lo))
+  for (old, cur) in aliases()
+    if m.get(cur) is some(v) then m := m.put(old, v)
+  m
+
+fn here_city(w: WCity) -> HereCity
+= HereCity{s: w.c.slug, n: w.c.name, la: w.c.lat, lo: w.c.lon, t: w.temp, c: w.code.round, d: w.isday, hi: w.tmax, lw: w.tmin}
+
+fn here(cx: Ctx) -> Unit ! fs, log
+= match pulse.read("{cx.out}/api/weather.json").map(s => json.decode[WApi](s))
+  | some(ok(w)) if not w.cities.is_empty => do
+    cs = w.cities.map(here_city)
+    pulse.publish(cx, "api/here.json", json.encode(Here{updated: cx.now.iso, cities: cs, zones: zones(cs, pulse.read("{cx.web}/zones.txt").or(""))}))
+  | _ => log("overview: no weather board for the local weather")
+
+test zone_map = zones([HereCity{s: "delhi", n: "Delhi", la: 28.6, lo: 77.2, t: 30.0, c: 0, d: true, hi: 33.0, lw: 22.0}, HereCity{s: "london", n: "London", la: 51.5, lo: -0.1, t: 12.0, c: 3, d: false, hi: 14.0, lw: 9.0}], "# x\nAsia/Kolkata|22.53|88.37\nEurope/London|51.51|-0.13\n") == empty_map().put("Asia/Kolkata", "delhi").put("Europe/London", "london").put("Asia/Calcutta", "delhi")
+
 fn main() -> Unit ! log, fs, proc, env, time
 = do
   cx = pulse.ctx("overview")
   overview(cx)
+  here(cx)
   lost(cx)
   log("overview: done")
 

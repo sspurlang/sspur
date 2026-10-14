@@ -14,7 +14,7 @@ TMO=""
 if command -v timeout >/dev/null 2>&1; then TMO="timeout 600"; fi
 
 mkdir -p "$PULSE_OUT/assets" "$PULSE_OUT/og" "$PULSE_DATA"
-cp pulse/web/pulse.js pulse/web/eggs.js pulse/web/icon.svg pulse/web/icon-192.png pulse/web/icon-512.png pulse/web/fonts/pulse-display.woff2 "$PULSE_OUT/assets/"
+cp pulse/web/pulse.js pulse/web/eggs.js pulse/web/here.js pulse/web/icon.svg pulse/web/icon-192.png pulse/web/icon-512.png pulse/web/fonts/pulse-display.woff2 "$PULSE_OUT/assets/"
 cp pulse/web/manifest.webmanifest "$PULSE_OUT/manifest.webmanifest"
 
 failed=""

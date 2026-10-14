@@ -1,1 +1,1 @@
-(function(){var d=document.documentElement;d.classList.add('js');try{var t=localStorage.getItem('pulse-theme');if(t)d.dataset.theme=t}catch(e){}})()
+(function(){var d=document.documentElement;d.classList.add('js');if(/(^#|&)here=1/.test(location.hash))d.classList.add('here');try{var t=localStorage.getItem('pulse-theme');if(t)d.dataset.theme=t}catch(e){}})()

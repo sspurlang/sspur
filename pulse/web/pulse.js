@@ -14,10 +14,14 @@
 
   // Theme
   const themeBtn = $('.theme');
+  const isDark = () => R.dataset.theme ? R.dataset.theme === 'dark' : W.matchMedia('(prefers-color-scheme: dark)').matches;
+  const themeLabel = () => { if (!themeBtn) return; const l = isDark() ? 'Switch to light mode' : 'Switch to dark mode'; themeBtn.setAttribute('aria-label', l); themeBtn.title = l; };
+  themeLabel();
+  W.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', themeLabel);
   if (themeBtn) themeBtn.addEventListener('click', () => {
-    const dark = R.dataset.theme ? R.dataset.theme === 'dark' : W.matchMedia('(prefers-color-scheme: dark)').matches;
-    R.dataset.theme = dark ? 'light' : 'dark';
+    R.dataset.theme = isDark() ? 'light' : 'dark';
     store('pulse-theme', R.dataset.theme);
+    themeLabel();
   });
 
   // Relative times, countdowns and clocks
@@ -196,7 +200,7 @@
     const c = cv._c, r = $('.cv-area', cv).getBoundingClientRect(), f = (clientX - r.left) / r.width, n = c.labels.length;
     return Math.max(0, Math.min(n - 1, c.kind === 'line' ? Math.round(f * (n - 1)) : Math.floor(f * n)));
   };
-  $$('figure[data-group]').forEach((fig) => {
+  const wireFig = (fig) => {
     const g = groups[fig.dataset.group], cv = $('.cv', fig); if (!g) return;
     const v0 = g.view, r0 = g.range;
     if (state.get(g.id + '-v') && g.views.some((v) => v.key === state.get(g.id + '-v'))) g.view = state.get(g.id + '-v');
@@ -241,7 +245,15 @@
       if (to != null) { e.preventDefault(); focusPoint(cv, cv._i == null ? n - 1 : to); } else if (e.key === 'Escape') clear(cv);
     });
     cv.addEventListener('blur', () => { clear(cv); cv._i = null; });
-  });
+  };
+  $$('figure[data-group]').forEach(wireFig);
+  // here.js adds charts it builds in the browser through this.
+  W.PulseCharts = { add(g, fig) { groups[g.id] = g; wireFig(fig); draw(fig, false); } };
+  if ($('[data-lwx], #here')) { const s = D.createElement('script'); s.src = base + 'assets/here.js'; s.defer = true; D.head.appendChild(s); }
+
+  // A link can ask for a part of the page: #...&go=id
+  const go = state.get('go');
+  if (go) { state.delete('go'); save(); const el = D.getElementById(go); if (el) requestAnimationFrame(() => el.scrollIntoView({ block: 'start' })); }
 
   // Maps: nearest point under the pointer, arrow keys between points
   $$('.map').forEach((m) => {
@@ -286,6 +298,7 @@
       t.classList.toggle('picking', mode === 'hl' && v !== 'all');
       els.forEach((el) => { const hit = v === 'all' || (' ' + el.dataset.tags + ' ').includes(' ' + v + ' '); if (mode === 'hl') el.classList.toggle('hl', hit && v !== 'all'); else el.classList.toggle('off', !hit); });
       const empty = t.querySelector('.empty'); if (empty) empty.hidden = els.some((x) => !x.classList.contains('off'));
+      $$(`[data-shown="#${t.id}"]`).forEach((c) => { const n = els.filter((x) => !x.classList.contains('off')).length, w = c.dataset.word || 'item'; c.textContent = n + ' ' + w + (n === 1 ? '' : 's'); });
     });
   };
   $$('[data-filter]').forEach((box) => {

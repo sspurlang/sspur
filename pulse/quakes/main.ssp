@@ -21,7 +21,7 @@ fn radius(m: Mag) -> F64
 = max(2.0, 1.5.pow(m) * 0.62)
 
 fn pin(q: Quake, lat: Lat, lon: Lon, r: F64, top: Str) -> Dot
-= Dot{lat, lon, r, cls: if q.id == top then "top1" else "", tip: "M{f1(q.mag)} | {q.place} | {pulse.hm(time_ms(q.time))} UTC, {f1(q.depth)} km deep", id: q.id, fill: ""}
+= Dot{lat, lon, r, cls: if q.id == top then "top1" else "", tip: "M{f1(q.mag)} | {q.place} | {pulse.hm(time_ms(q.time))} UTC, {f1(q.depth)} km deep", id: q.id, fill: "", tags: tags(q)}
 
 fn quake(f: Feat) -> Opt[Quake]
 = if f.properties.mag is some(m) and f.geometry is some(g) and g.coordinates is [lon, lat, depth, ..] and f.properties.time is some(t) then some(Quake{id: f.id, mag: m, place: f.properties.place.or("Unknown place"), time: t, lat, lon, depth, url: f.properties.url.or(""), tsunami: f.properties.tsunami.or(0) == 1, alert: f.properties.alert.or(""), felt: f.properties.felt.or(0)}) else none
@@ -112,7 +112,7 @@ fn render(cx: Ctx, g: Got[State]) -> Unit ! fs, log
   india = qs.filter(near_india)
   updated = parse_time(s.updated).or(cx.now)
   map_dots = qs.sort_by(_.mag).reverse.map(q => dot(q, top.id))
-  mapcard = "<div class='card span2'><div class='sh'><h2>Where the ground moved</h2><p>Dot size grows with magnitude. Tap the biggest one.</p></div>{pulse.chips("q", "Filter quakes", "#qmap,#qlist", [("all", "Everywhere"), ("in", "India and neighbours"), ("m45", "M4.5 and up")])}<div id='qmap' style='margin-top:14px'>{pulse.world_map(cx, map_dots, "Map of {qs.len} earthquakes in the last 24 hours")}</div></div>"
+  mapcard = "<div class='card span2'><div class='sh'><h2>Where the ground moved</h2><p>Dot size grows with magnitude. Tap the biggest one.</p></div>{pulse.chips("q", "Filter quakes", "#qmap,#qlist", [("all", "Everywhere"), ("in", "India and neighbours"), ("m45", "M4.5 and up")])}<p class='muted small shown' style='margin-top:10px'><span data-shown='#qmap' data-word='quake'>{plural(qs.len, "quake")}</span> on the map</p><div id='qmap' style='margin-top:8px'>{pulse.world_map(cx, map_dots, "Map of {qs.len} earthquakes in the last 24 hours")}</div></div>"
   charts = [Group{id: "bands", views: [View{key: "n", label: "Count", chart: bands24(qs)}], ranges: [], view: "n", range: ""}, month_group(s.days)]
   stats = "<div class='stats'>{pulse.stat(thousands(qs.len), "quakes in 24 hours", "{qs.len}")}{pulse.stat("M{f1(top.mag)}", "strongest, {esc(pulse.clip(top.place, 40))}", "")}{pulse.stat("{m45}", "at magnitude 4.5 or more", "{m45}")}{pulse.stat("{india.len}", "in India and its neighbours", "{india.len}")}</div>"
   chartrow = "<div class='grid2'>{pulse.chart_block(charts[0], "Magnitude bands, last 24 hours", "Quakes by whole magnitude. Most are too small to feel.")}{if s.days.is_empty then "" else pulse.chart_block(charts[1], "Thirty days of shaking", "Daily M2.5+ quakes by band, or the strongest of each day.")}</div>"
