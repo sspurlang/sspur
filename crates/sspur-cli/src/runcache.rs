@@ -70,7 +70,7 @@ pub fn applies(cmd: &str, flags: &[String], path: Option<&String>) -> bool {
 }
 
 fn emit(_: *const (), s: &str) {
-    println!("{s}");
+    sspur_native::emit_log(s);
 }
 
 /// Runs the program at `path` from the cache, or returns `None` (having done nothing) when the

@@ -126,7 +126,9 @@ extern "C" fn host_log(p: *const u8, len: i64) {
         Some((f, ctx)) => f(ctx, s),
         None => {
             use std::io::Write;
-            let _ = writeln!(std::io::stdout(), "{s}");
+            if let Some(l) = crate::format_log(s) {
+                let _ = writeln!(std::io::stdout(), "{l}");
+            }
         }
     }
 }

@@ -316,7 +316,7 @@ impl Interp {
     fn emit(&self, line: String) {
         match &mut *self.output.borrow_mut() {
             Some(buf) => buf.push(line),
-            None => println!("{line}"),
+            None => sspur_native::emit_log(&line),
         }
     }
 
