@@ -15,6 +15,8 @@ pub mod cgen;
 #[cfg(feature = "jit")]
 pub mod llvm;
 #[cfg(feature = "jit")]
+pub mod net;
+#[cfg(feature = "jit")]
 mod jit;
 #[cfg(feature = "jit")]
 pub use jit::*;
