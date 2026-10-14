@@ -9,6 +9,7 @@ mod pats;
 mod statics;
 mod traits;
 pub mod elab;
+mod elab_net;
 pub mod kernel;
 pub mod types;
 

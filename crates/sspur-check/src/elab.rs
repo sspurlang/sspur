@@ -24,6 +24,24 @@ struct Elab<'a> {
 
 /// The trait-free program for `m`, with its check output, or `None` when `m` uses no traits.
 pub fn lower(m: &Module, out: &CheckOutput) -> Result<Option<(Module, CheckOutput)>, String> {
+    if out.has_errors() {
+        return Ok(None);
+    }
+    if let Some(n) = crate::elab_net::lower(m, out)? {
+        let c = check(&n);
+        if let Some(d) = c.diags.iter().find(|d| d.is_error()) {
+            let name = d.def.clone().unwrap_or_default();
+            return Err(format!("internal: the elaborated network program does not check ({name}): {} {}", d.code, d.msg));
+        }
+        return Ok(Some(match lower_traits(&n, &c)? {
+            Some(x) => x,
+            None => (n, c),
+        }));
+    }
+    lower_traits(m, out)
+}
+
+fn lower_traits(m: &Module, out: &CheckOutput) -> Result<Option<(Module, CheckOutput)>, String> {
     if !out.traits.active || out.has_errors() {
         return Ok(None);
     }

@@ -1,0 +1,181 @@
+// The network prelude: what http.*, config.load, log levels and svc handlers elaborate into
+// (ADR 0035). Only __net_fetch and __net_serve are provided by each tier.
+
+fn __http_err(k: Int, msg: Str) -> HttpErr
+= match k
+  | 1 => Dns{msg}
+  | 2 => Connect{msg}
+  | 3 => Tls{msg}
+  | 4 => Timeout{msg}
+  | _ => Io{msg}
+
+fn __http_do(r: Request, path: Str) -> Res[Response, HttpErr] ! net
+= do
+  (k, status, headers, body) = __net_fetch(r.method, r.url, r.headers, r.body, r.timeout_ms, r.retries, r.redirects, path)
+  if k == 0 then ok(Response{status, headers, body}) else err(__http_err(k, body))
+
+fn __http_req(method: Str, url: Str) -> Request
+= Request{method, url, headers: [], body: "", timeout_ms: 30000, retries: 0, redirects: 10}
+
+fn __http_send(r: Request) -> Res[Response, HttpErr] ! net
+= __http_do(r, "")
+
+fn __http_get(url: Str) -> Res[Response, HttpErr] ! net
+= __http_do(__http_req("GET", url), "")
+
+fn __http_post(url: Str, body: Str) -> Res[Response, HttpErr] ! net
+= do
+  r = __http_req("POST", url) with headers := [("content-type", "application/json")], body := body
+  __http_do(r, "")
+
+fn __http_download(r: Request, path: Str) -> Res[Response, HttpErr] ! net, fs
+= __http_do(r, path)
+
+fn __http_fetch(url: Str) -> Str ! net, fail[HttpErr]
+= do
+  r = __http_get(url).get
+  if r.status < 200 or r.status > 299 then raise HttpStatus{code: r.status, body: r.body}
+  r.body
+
+fn __http_find(hs: List[(Str, Str)], name: Str) -> Opt[Str]
+= do
+  n = name.lower
+  hs.find(h => h.0.lower == n).map(h => h.1)
+
+fn __http_req_header(r: Request, name: Str) -> Opt[Str]
+= __http_find(r.headers, name)
+
+fn __http_resp_header(r: Response, name: Str) -> Opt[Str]
+= __http_find(r.headers, name)
+
+fn __http_req_path(r: Request) -> Str
+= match r.url.split_once("?")
+  | some((p, _)) => p
+  | none => r.url
+
+fn __http_req_query(r: Request, name: Str) -> Opt[Str]
+= match r.url.split_once("?")
+  | some((_, q)) => q.split("&").map(__http_kv).find(kv => kv.0 == name).map(kv => kv.1)
+  | none => none
+
+fn __http_kv(kv: Str) -> (Str, Str)
+= match kv.split_once("=")
+  | some((k, v)) => (__url_decode(k, true), __url_decode(v, true))
+  | none => (__url_decode(kv, true), "")
+
+fn __hexv(b: Int) -> Int
+= if b >= 48 and b <= 57 then b - 48 else if b >= 97 and b <= 102 then b - 87 else if b >= 65 and b <= 70 then b - 55 else -1
+
+fn __pct_step(out: List[Int], pend: List[Int], b: Int, plus: Bool) -> (List[Int], List[Int])
+= match pend
+  | [] => if b == 37 then (out, [37]) else (out.push(if plus and b == 43 then 32 else b), [])
+  | [_] => if __hexv(b) >= 0 then (out, [37, b]) else __pct_step(out.push(37), [], b, plus)
+  | [_, h] => if __hexv(b) >= 0 then (out.push(__hexv(h) * 16 + __hexv(b)), []) else __pct_step(out.push(37).push(h), [], b, plus)
+  | _ => (out, [])
+
+fn __url_decode(s: Str, plus: Bool) -> Str
+= if not (s.contains("%") or (plus and s.contains("+"))) then s else do
+  (out, pend) = s.bytes.fold(([], []), (st, b) => __pct_step(st.0, st.1, b, plus))
+  from_bytes(out.concat(pend)).or(s)
+
+fn __http_segs(r: Request) -> List[Str]
+= do
+  p = __http_req_path(r)
+  if p == "/" or p == "" then [] else p.drop(1).split("/").map(x => __url_decode(x, false))
+
+fn __http_server(port: Int) -> Server
+= Server{port, host: "127.0.0.1", workers: 0, max_body: 1048576, timeout_ms: 30000, max_requests: 0, cors: [], gzip: false, files: [], health: "", cert: "", key: "", access_log: true}
+
+fn __http_serve[e](c: Server, h: Request -> Response ! e) -> Unit ! net, log, e
+= __net_serve((c.port, c.host, c.workers, c.max_body, c.timeout_ms, c.max_requests, c.cors, c.gzip, c.files, c.health, c.cert, c.key, c.access_log), (m, u, hs, b, t) => __http_out(h(Request{method: m, url: u, headers: hs, body: b, timeout_ms: t, retries: 0, redirects: 0})))
+
+fn __http_out(r: Response) -> (Int, List[(Str, Str)], Str)
+= (r.status, r.headers, r.body)
+
+fn __http_typed(status: Int, ctype: Str, body: Str) -> Response
+= Response{status, headers: [("content-type", ctype)], body}
+
+fn __http_text(status: Int, body: Str) -> Response
+= __http_typed(status, "text/plain; charset=utf-8", body)
+
+fn __http_html(status: Int, body: Str) -> Response
+= __http_typed(status, "text/html; charset=utf-8", body)
+
+fn __http_json(status: Int, body: Str) -> Response
+= __http_typed(status, "application/json", body)
+
+fn __http_error(status: Int, detail: Str) -> Response
+= __http_json(status, "\{\"error\":" + detail + "}")
+
+fn __http_problem(status: Int, error: Str, detail: Str) -> Response
+= __http_json(status, "\{\"error\":" + json.encode(error) + ",\"detail\":" + json.encode(detail) + "}")
+
+fn __http_not_found() -> Response
+= __http_json(404, "\{\"error\":\"not found\"}")
+
+fn __http_no_route(r: Request) -> Response
+= __http_problem(404, "no route", r.method + " " + __http_req_path(r))
+
+fn __http_405(allow: Str) -> Response
+= Response{status: 405, headers: [("content-type", "application/json"), ("allow", allow)], body: "\{\"error\":\"method not allowed\"}"}
+
+fn __http_bad(detail: Str) -> Response
+= __http_problem(400, "invalid request", detail)
+
+fn __http_bad_body(e: Str) -> Response
+= __http_bad(if e.starts_with("expected") or e == "invalid JSON" then "body: " + e else if e.starts_with("[") then "body" + e else "body." + e)
+
+fn __http_err_text[T](r: Res[T, Str]) -> Str
+= match r
+  | err(e) => e
+  | ok(_) => ""
+
+fn __http_no_content() -> Response
+= Response{status: 204, headers: [], body: ""}
+
+fn __http_int(s: Str) -> Opt[Int]
+= s.to_int
+
+fn __http_f64(s: Str) -> Opt[F64]
+= s.to_f64
+
+fn __http_bool(s: Str) -> Opt[Bool]
+= if s == "true" or s == "1" then some(true) else if s == "false" or s == "0" then some(false) else none
+
+fn __http_opt_str(s: Opt[Str]) -> Opt[Opt[Str]]
+= some(s)
+
+fn __http_opt_int(s: Opt[Str]) -> Opt[Opt[Int]]
+= match s
+  | none => some(none)
+  | some(x) => x.to_int.map(v => some(v))
+
+fn __http_opt_f64(s: Opt[Str]) -> Opt[Opt[F64]]
+= match s
+  | none => some(none)
+  | some(x) => x.to_f64.map(v => some(v))
+
+fn __http_opt_bool(s: Opt[Str]) -> Opt[Opt[Bool]]
+= match s
+  | none => some(none)
+  | some(x) => __http_bool(x).map(v => some(v))
+
+fn __log_debug(m: Str) -> Unit ! log
+= log("debug: " + m)
+
+fn __log_info(m: Str) -> Unit ! log
+= log("info: " + m)
+
+fn __log_warn(m: Str) -> Unit ! log
+= log("warn: " + m)
+
+fn __log_error(m: Str) -> Unit ! log
+= log("error: " + m)
+
+type SspurConfigErr = SspurBadConfig{msg: Str}
+
+fn __config_text(path: Str) -> Res[Str, Str] ! fs
+= if path == "" or not exists(path) then ok("\{}") else read_file(path)
+
+fn __config_bool(s: Str) -> Opt[Bool]
+= __http_bool(s.lower)
