@@ -1,4 +1,4 @@
-//! Debug builds (ADR 0035): `#line` directives back to the `.ssp` source, debugger-visible names
+//! Debug builds (ADR 0036): `#line` directives back to the `.ssp` source, debugger-visible names
 //! for functions, parameters and locals, and the clang flags. Release builds never reach this code.
 
 use std::collections::{HashMap, HashSet};

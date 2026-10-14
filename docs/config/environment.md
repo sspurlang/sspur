@@ -16,6 +16,7 @@ None of these are needed for normal use. They exist for CI, for pinning toolchai
 | `SSPUR_FILL_MS` | Time hole filling may spend per hole in milliseconds, for `check`, `fill` and the MCP tools; `--fill-ms` still wins (defaults 400 for `check`, 600 in editors, 1000 for `fill`) |
 | `SSPUR_LTO` | Default for `--lto`: `off`, `thin` or `full` |
 | `CC` | The C compiler for native code and `export-c` (default `clang`) |
+| `SSPUR_DEBUG=1` | Same as `--debug`: native code with debug info mapped to the `.ssp` lines, at `-O0` ([Debugging](../reference/debugging.md)). Part of the cache key |
 | `SSPUR_CFLAGS` | Extra C compiler flags for native builds, part of the cache key. `-fsanitize=address,undefined` builds native code under the sanitizers; on macOS run with `DYLD_INSERT_LIBRARIES` set to clang's `libclang_rt.asan_osx_dynamic.dylib` |
 | `SSPUR_PROFDATA` | The `llvm-profdata` to use for `--pgo` |
 | `SSPUR_LLVM_CC` | The clang for `--backend llvm` |

@@ -4,6 +4,9 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+### Added
+- Source-level debugging with lldb and gdb (ADR 0036). `sspur build --debug`, `run --debug`, `test --debug` or `SSPUR_DEBUG=1` build native code with DWARF (CodeView on Windows) at `-O0` whose lines are the `.ssp` lines: breakpoints by `prog.ssp:12` and by function name work, the backtrace shows SSPUR functions and lines, and parameters and locals have their SSPUR names (`acc`, not `v_acc_$6`), with the generated temporaries hidden. `sspur debug prog.ssp [args]` builds and starts lldb (macOS) or gdb (Linux) with breakpoints on `main` and on `sspur_trap`, which every trap and contract failure calls. `sspur debug-init` writes lldb and gdb formatters that show `Str` as text, `Bool` as `true` or `false`, `List` elements, `Opt` as `some(3)` or `none` and sum values as `Circle{r: 2}`, plus a `sspur-locals` command. A codebase's projected source is written to the cache so the debugger can show it. Normal builds are unchanged: the same generated C and the same speed. The new Debugging page covers lldb, gdb, VS Code with CodeLLDB and Windows, and the VS Code extension allows breakpoints in `.ssp` files.
+
 ## [0.9.0] - 2026-10-14
 
 ### Added

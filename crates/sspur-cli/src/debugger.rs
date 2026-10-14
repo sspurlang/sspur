@@ -1,4 +1,4 @@
-//! Source-level debugging (ADR 0035): `--debug` builds, `sspur debug` and `sspur debug-init`.
+//! Source-level debugging (ADR 0036): `--debug` builds, `sspur debug` and `sspur debug-init`.
 
 use sspur_native::cgen::debug as nd;
 use sspur_store::Loaded;

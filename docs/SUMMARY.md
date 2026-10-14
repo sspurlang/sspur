@@ -40,6 +40,7 @@
 - [Effects](reference/effects.md)
 - [Error codes](reference/errors.md)
 - [Command line](reference/cli.md)
+- [Debugging](reference/debugging.md)
 - [Agent reference](agent/agent-spec.md)
   - [Agent reference, more](agent/agent-spec-more.md)
   - [MCP setup](agent/mcp.md)
@@ -113,6 +114,7 @@
   - [ADR 0032: e is p anywhere, guard clauses and long lines](adr/0032-pattern-tests-guards-and-long-lines.md)
   - [ADR 0033: Freeing at last use, in front of the collector](adr/0033-drops-at-last-use.md)
   - [ADR 0034: Running an unchanged program from the cache](adr/0034-cached-run.md)
+  - [ADR 0036: Source-level debugging with lldb and gdb](adr/0036-source-level-debugging.md)
 - [Native performance versus C++](design/native-benchmarks.md)
 - [Agent benchmarks](design/agent-benchmarks.md)
 

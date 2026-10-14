@@ -1,4 +1,4 @@
-//! Debug builds (ADR 0035) under a real debugger: lldb on macOS, gdb on Linux. Each check is
+//! Debug builds (ADR 0036) under a real debugger: lldb on macOS, gdb on Linux. Each check is
 //! skipped when its debugger isn't installed or can't start a process here.
 
 use std::path::{Path, PathBuf};

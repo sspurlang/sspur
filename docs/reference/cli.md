@@ -18,6 +18,7 @@ Everything SSPUR does goes through one binary, `sspur`. This is its usage text, 
 | Editors | `sspur lsp` (the language server, see [Editor setup](../get-started/editors.md)) |
 | Packages | `sspur init --pkg NAME`, `sspur add PATH-OR-URL[@REV]`, `sspur deps fetch`, `sspur deps update [--force]`, `sspur deps tree` |
 | Native code and C | `sspur native FILE`, `sspur run --O3`, `--pgo`, `--lto`, `sspur explain-opt FILE`, `sspur bind HEADER.h`, `sspur export-c FILE` |
+| Debug with lldb or gdb | `sspur debug FILE [ARGS]`, `sspur build --debug FILE`, `sspur run --debug FILE`, `sspur debug-init [--install]` (see [Debugging](debugging.md)) |
 | Bare metal and GPU | `sspur build --target riscv64-qemu\|aarch64-qemu\|thumbv7em-mps2 FILE`, `sspur gpu FILE --emit metal\|opencl\|spirv\|ptx` |
 | Services | `sspur deploy plan`, `local`, `migrate`, `replay`, `swap`, `promote`, `rollback`, `backfill`, `status` |
 | Many agents and replicas | `sspur sync serve`, `push`, `pull`, `status`, `resolve` |
@@ -25,6 +26,10 @@ Everything SSPUR does goes through one binary, `sspur`. This is its usage text, 
 ## Execution tiers
 
 `run` and `test` compile to native code through C and clang, cached by content hash under `~/.cache/sspur/native/`. A plain `sspur run FILE` of a program that hasn't changed since its last run skips parsing and checking and calls the cached library's `main` directly (ADR 0034); `--no-cache` takes the normal path. `--interp` uses the reference interpreter and `--native` the Cranelift JIT. If a native build fails, SSPUR prints one warning and falls back to the interpreter; `--strict-native` or `SSPUR_STRICT_NATIVE=1` makes that an error, which is how CI runs.
+
+## Debugging
+
+`--debug` on `run`, `test`, `build` and `native`, or `SSPUR_DEBUG=1`, builds native code with debug info that maps to the `.ssp` lines: DWARF (CodeView on Windows) at `-O0`, functions, parameters and locals under their SSPUR names where C allows it, cached separately from normal builds, which don't change. `sspur build --debug FILE` builds it and prints the library and the source file its lines refer to (for a codebase, a copy of its source under `~/.cache/sspur/debug/src/`). `sspur debug FILE [ARGS]` builds it and starts lldb (macOS) or gdb (Linux, or `--debugger gdb`) with the formatters loaded and breakpoints on `fn main` and on `sspur_trap`, which every trap calls. `sspur debug-init` writes the lldb and gdb formatters to `~/.cache/sspur/debug/` and prints the lines that load them; `--install` adds those lines to `~/.lldbinit` and `~/.gdbinit`. See [Debugging](debugging.md) and [ADR 0036](../adr/0036-source-level-debugging.md).
 
 ## Queries
 
