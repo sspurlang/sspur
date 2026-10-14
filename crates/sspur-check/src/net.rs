@@ -24,7 +24,7 @@ pub enum NetSite {
     Svc(String),
 }
 
-const HTTP_SIGS: &[&str] = &[
+static HTTP_SIGS: &[&str] = &[
     "get(url: Str) -> Res[Response, HttpErr] ! net",
     "post(url: Str, body: Str) -> Res[Response, HttpErr] ! net",
     "send(req: Request) -> Res[Response, HttpErr] ! net",

@@ -15,6 +15,8 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 ### Changed
 - `svc` endpoints may take a `Request` or return a `Response`, bind GET and DELETE parameters from the query string, and perform any effect but `db.*` and user-defined ones when served with `http.serve`; `sspur deploy` still accepts only what Lambda supports and says so (`E_EP_EFFECT`, `E_EP_BODY`, `E_EP_TYPE`).
 - SSPUR Pulse fetches with the HTTP client instead of running `curl`; its pages are unchanged except for the sentence that said so.
+- The playground's WebAssembly file is 972 KiB gzipped, below 0.9.0's 982 KiB (networking had taken it to 1,025 KiB): it leaves out the generator of svc dispatchers, since the playground can't serve, keeps one copy of the builtin signature tables instead of two, and is built at opt-level 2, which also runs slightly fewer instructions.
+- On macOS `sspur` is linked with chained fixups, so the dynamic linker no longer writes every pointer in the binary at launch: the cached `sspur run` of hello world peaks at 2.45 MiB instead of 2.56 MiB.
 
 ## [0.9.0] - 2026-10-14
 

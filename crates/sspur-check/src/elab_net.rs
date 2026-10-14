@@ -8,6 +8,9 @@
 use super::*;
 use std::fmt::Write as _;
 
+#[cfg(not(target_family = "wasm"))]
+const PRELUDE: &str = concat!(include_str!("net_prelude.ssp"), "\n", include_str!("net_prelude_serve.ssp"));
+#[cfg(target_family = "wasm")]
 const PRELUDE: &str = include_str!("net_prelude.ssp");
 
 fn name_expr(n: &str) -> Expr {
@@ -32,6 +35,7 @@ pub fn status_for(variant: &str) -> u16 {
 }
 
 struct Gen<'a> {
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
     m: &'a Module,
     out: &'a CheckOutput,
     extra: Vec<String>,
@@ -47,6 +51,7 @@ fn src_ty(t: &Type) -> Result<String, String> {
     Ok(s)
 }
 
+#[cfg(not(target_family = "wasm"))]
 fn std_name(n: &str) -> String {
     builtins::STD_TYPES.iter().find(|(s, _, _)| *s == n).map_or_else(|| n.to_string(), |(_, i, _)| i.to_string())
 }
@@ -92,6 +97,7 @@ impl Gen<'_> {
         Ok(cur)
     }
 
+    #[cfg(not(target_family = "wasm"))]
     fn fail_types(&self, f: &FnDef) -> Vec<Type> {
         let (_, _) = (&self.m, ());
         f.effects
@@ -105,6 +111,7 @@ impl Gen<'_> {
             .collect()
     }
 
+    #[cfg(not(target_family = "wasm"))]
     fn handler(&self, name: &str) -> Option<&FnDef> {
         self.m.defs.iter().find_map(|d| match d {
             Def::Fn(f) if f.name == name => Some(f),
@@ -112,6 +119,7 @@ impl Gen<'_> {
         })
     }
 
+    #[cfg(not(target_family = "wasm"))]
     fn conv(&self, var: &str, raw: &str, t: &Type, what: &str) -> Result<String, String> {
         let newtype = match t {
             Type::Con(n, a) if a.is_empty() => self.out.newtypes.get(n).map(|inner| (n.clone(), inner.clone())),
@@ -136,7 +144,19 @@ impl Gen<'_> {
         })
     }
 
+    /// The playground can't serve, so a svc there is a handler that is never called: `__net_serve`
+    /// stops the program first.
+    #[cfg(target_family = "wasm")]
+    fn svc(&mut self, name: &str) -> Result<String, String> {
+        let fname = format!("__svc_{name}");
+        if self.done.insert(fname.clone()) {
+            self.extra.push(format!("fn {fname}(__rq: Request) -> Response\n= __http_text(503, \"\")"));
+        }
+        Ok(fname)
+    }
+
     /// `__svc_<name>`, the dispatcher of a svc, with one function per endpoint.
+    #[cfg(not(target_family = "wasm"))]
     fn svc(&mut self, name: &str) -> Result<String, String> {
         let fname = format!("__svc_{name}");
         if !self.done.insert(fname.clone()) {

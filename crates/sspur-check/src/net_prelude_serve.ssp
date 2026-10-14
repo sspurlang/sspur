@@ -1,0 +1,57 @@
+// The part of the network prelude that only the generated svc dispatchers call (ADR 0035). The
+// playground, which can't serve, is built without it.
+
+fn __http_segs(r: Request) -> List[Str]
+= do
+  p = __http_req_path(r)
+  if p == "/" or p == "" then [] else p.drop(1).split("/").map(x => __url_decode(x, false))
+
+fn __http_problem(status: Int, error: Str, detail: Str) -> Response
+= __http_json(status, "\{\"error\":" + json.encode(error) + ",\"detail\":" + json.encode(detail) + "}")
+
+fn __http_not_found() -> Response
+= __http_json(404, "\{\"error\":\"not found\"}")
+
+fn __http_no_route(r: Request) -> Response
+= __http_problem(404, "no route", r.method + " " + __http_req_path(r))
+
+fn __http_405(allow: Str) -> Response
+= Response{status: 405, headers: [("content-type", "application/json"), ("allow", allow)], body: "\{\"error\":\"method not allowed\"}"}
+
+fn __http_bad(detail: Str) -> Response
+= __http_problem(400, "invalid request", detail)
+
+fn __http_bad_body(e: Str) -> Response
+= __http_bad(if e.starts_with("expected") or e == "invalid JSON" then "body: " + e else if e.starts_with("[") then "body" + e else "body." + e)
+
+fn __http_err_text[T](r: Res[T, Str]) -> Str
+= match r
+  | err(e) => e
+  | ok(_) => ""
+
+fn __http_no_content() -> Response
+= Response{status: 204, headers: [], body: ""}
+
+fn __http_int(s: Str) -> Opt[Int]
+= s.to_int
+
+fn __http_f64(s: Str) -> Opt[F64]
+= s.to_f64
+
+fn __http_opt_str(s: Opt[Str]) -> Opt[Opt[Str]]
+= some(s)
+
+fn __http_opt_int(s: Opt[Str]) -> Opt[Opt[Int]]
+= match s
+  | none => some(none)
+  | some(x) => x.to_int.map(v => some(v))
+
+fn __http_opt_f64(s: Opt[Str]) -> Opt[Opt[F64]]
+= match s
+  | none => some(none)
+  | some(x) => x.to_f64.map(v => some(v))
+
+fn __http_opt_bool(s: Opt[Str]) -> Opt[Opt[Bool]]
+= match s
+  | none => some(none)
+  | some(x) => __http_bool(x).map(v => some(v))

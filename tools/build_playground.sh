@@ -53,6 +53,9 @@ fi
 # The interpreter keeps its frames on the shadow stack in linear memory, about 1.5 KiB a call,
 # so give it 32 MiB rather than the 1 MiB default: enough for 20,000 small calls, the limit of
 # `sspur run --interp`. A program that doesn't recurse deeply never touches most of it.
+# opt-level 2 rather than the release profile's 3: the wasm is about 3% smaller gzipped, and
+# the interpreter, checker and formatter run slightly fewer instructions under Node.
+CARGO_PROFILE_RELEASE_OPT_LEVEL=2 \
 CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS="-C link-arg=-zstack-size=33554432" \
   cargo build --release -p sspur-wasm --target wasm32-unknown-unknown
 
