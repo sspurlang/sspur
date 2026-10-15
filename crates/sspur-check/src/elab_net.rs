@@ -158,25 +158,40 @@ impl Gen<'_> {
     #[cfg(target_family = "wasm")]
     fn svc(&mut self, name: &str) -> Result<String, String> {
         let fname = format!("__svc_{name}");
+        let ps = self.svc_ctx(name).unwrap_or_default();
         if self.done.insert(fname.clone()) {
             self.extra.push(format!("fn {fname}(__rq: Request) -> Response\n= __http_text(503, \"\")"));
+            if !ps.is_empty() {
+                self.extra.push(format!("fn {fname}_with({ps}) -> (Request -> Response)\n= {fname}"));
+            }
         }
-        Ok(fname)
+        Ok(if ps.is_empty() { fname } else { format!("{fname}_with") })
+    }
+
+    /// The parameters of `svc name(...)` as source text.
+    #[cfg(target_family = "wasm")]
+    fn svc_ctx(&self, name: &str) -> Option<String> {
+        self.m.defs.iter().find_map(|d| match d {
+            Def::Svc(s) if s.name == name => Some(s.params.iter().map(|p| format!("{}: {}", p.name, printer::ty(&p.ty))).collect::<Vec<_>>().join(", ")),
+            _ => None,
+        })
     }
 
     /// `__svc_<name>`, the dispatcher of a svc, with one function per endpoint.
     #[cfg(not(target_family = "wasm"))]
     fn svc(&mut self, name: &str) -> Result<String, String> {
         let fname = format!("__svc_{name}");
-        if !self.done.insert(fname.clone()) {
-            return Ok(fname);
-        }
         let Some(sv) = self.m.defs.iter().find_map(|d| match d {
             Def::Svc(s) if s.name == name => Some(s.clone()),
             _ => None,
         }) else {
             return Err(format!("internal: no svc {name}"));
         };
+        if !self.done.insert(fname.clone()) {
+            return Ok(if sv.params.is_empty() { fname } else { format!("{fname}_with") });
+        }
+        let ctx: Vec<String> = sv.params.iter().map(|p| p.name.clone()).collect();
+        let ctx_ps: Vec<String> = sv.params.iter().map(|p| format!("{}: {}", p.name, printer::ty(&p.ty))).collect();
         let mut row: BTreeSet<String> = BTreeSet::new();
         let mut arms: Vec<(Vec<u8>, String)> = Vec::new();
         let mut shapes: BTreeMap<Vec<String>, (Vec<u8>, BTreeSet<String>)> = BTreeMap::new();
@@ -194,7 +209,7 @@ impl Gen<'_> {
             let rank: Vec<u8> = segs.iter().map(|s| u8::from(s.starts_with('{'))).collect();
             let method = ep.method.to_uppercase();
             let epn = format!("{fname}_{k}");
-            let call_args: Vec<String> = std::iter::once("__rq".to_string()).chain(pnames.iter().map(|p| format!("__p_{p}"))).collect();
+            let call_args: Vec<String> = ctx.iter().cloned().chain(std::iter::once("__rq".to_string())).chain(pnames.iter().map(|p| format!("__p_{p}"))).collect();
             arms.push((rank.clone(), format!("  | ({}, [{}]) => {epn}({})", json_lit(&method), pat.join(", "), call_args.join(", "))));
             let shape: Vec<String> = segs.iter().map(|s| if s.starts_with('{') { "_".to_string() } else { json_lit(s) }).collect();
             shapes.entry(shape).or_insert_with(|| (rank.clone(), BTreeSet::new())).1.insert(method.clone());
@@ -202,7 +217,8 @@ impl Gen<'_> {
             let query = matches!(ep.method.as_str(), "get" | "delete");
             let mut args = Vec::new();
             for (p, t) in f.params.iter().zip(&ptys) {
-                if pnames.contains(&p.name) {
+                if ctx.contains(&p.name) {
+                } else if pnames.contains(&p.name) {
                     body.push_str(&self.conv(&p.name, &format!("__p_{}", p.name), t, &format!("path parameter {}", p.name))?);
                 } else if matches!(t, Type::Con(n, _) if n == "#Request") {
                     body.push_str(&format!("  {} = __rq\n", p.name));
@@ -263,21 +279,26 @@ impl Gen<'_> {
                 let top = self.catches(&rname, &ps.join(", "), &args.join(", "), &erow, &fails, &rname)?;
                 vec![format!("{top}({})", args.join(", "))]
             };
-            let ptxt: Vec<String> = std::iter::once("__rq: Request".to_string()).chain(pnames.iter().map(|p| format!("__p_{p}: Str"))).collect();
+            let ptxt: Vec<String> = ctx_ps.iter().cloned().chain(std::iter::once("__rq: Request".to_string())).chain(pnames.iter().map(|p| format!("__p_{p}: Str"))).collect();
             self.extra.push(format!("fn {epn}({}) -> Response{}\n= do\n{body}  {}", ptxt.join(", "), effs(&[]), tail.join("\n  ")));
         }
         arms.sort_by(|a, b| a.0.cmp(&b.0));
         let mut shape_arms: Vec<(Vec<u8>, String)> = shapes.into_iter().map(|(shape, (rank, ms))| (rank, format!("  | (_, [{}]) => __http_405({})", shape.join(", "), json_lit(&ms.into_iter().collect::<Vec<_>>().join(", "))))).collect();
         shape_arms.sort_by(|a, b| a.0.cmp(&b.0));
         let effs = if row.is_empty() { String::new() } else { format!(" ! {}", row.into_iter().collect::<Vec<_>>().join(", ")) };
-        let mut s = format!("fn {fname}(__rq: Request) -> Response{effs}\n= match (if __rq.method == \"HEAD\" then \"GET\" else __rq.method, __http_segs(__rq))\n");
+        let head: Vec<String> = ctx_ps.iter().cloned().chain(std::iter::once("__rq: Request".to_string())).collect();
+        let mut s = format!("fn {fname}({}) -> Response{effs}\n= match (if __rq.method == \"HEAD\" then \"GET\" else __rq.method, __http_segs(__rq))\n", head.join(", "));
         for (_, a) in arms.iter().chain(shape_arms.iter()) {
             s.push_str(a);
             s.push('\n');
         }
         s.push_str("  | _ => __http_no_route(__rq)");
         self.extra.push(s);
-        Ok(fname)
+        if ctx.is_empty() {
+            return Ok(fname);
+        }
+        self.extra.push(format!("fn {fname}_with({}) -> (Request -> Response{effs})\n= __rq => {fname}({}, __rq)", ctx_ps.join(", "), ctx.join(", ")));
+        Ok(format!("{fname}_with"))
     }
 
     fn config(&mut self, tn: &str) -> Result<String, String> {

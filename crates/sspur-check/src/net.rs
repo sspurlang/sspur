@@ -243,10 +243,10 @@ impl Checker {
             let names = self.svc_params.get(&ep.handler).cloned().unwrap_or_default();
             if !matches!(ep.method.as_str(), "get" | "delete") {
                 for (p, t) in names.iter().zip(&s.params) {
-                    if path.contains(p) || matches!(t, Type::Con(c, _) if c == "#Request") {
+                    if path.contains(p) || matches!(t, Type::Con(c, _) if c == "#Request") || sv.params.iter().any(|q| q.name == *p) {
                         continue;
                     }
-                    if let Some(why) = self.json_bad(t, true, &mut vec![]) {
+                    if let Some(why) = self.json_bad_r(t, true, cfg!(not(target_family = "wasm")), &mut vec![]) {
                         self.push_diag("E_SERVE_TYPE", "error", ep.span, format!("http.serve can't decode the body of {} into {t}: {why}", ep.handler), Some("take an unrefined type and build the refined value in the handler, or run the service with 'sspur deploy local'".into()), vec![]);
                     }
                 }
@@ -256,7 +256,12 @@ impl Checker {
             }
         }
         self.net_site(span, NetSite::Svc(n.to_string()));
-        Type::Fn(vec![Type::con("#Request")], Box::new(Type::con("#Response")), Row::closed(atoms))
+        let h = Type::Fn(vec![Type::con("#Request")], Box::new(Type::con("#Response")), Row::closed(atoms));
+        if sv.params.is_empty() {
+            return h;
+        }
+        let ps = sv.params.iter().map(|p| self.conv_ty(&p.ty)).collect();
+        Type::Fn(ps, Box::new(h), Row::closed(BTreeSet::new()))
     }
 
     /// `x.json[T]` on a `Request` or `Response`.

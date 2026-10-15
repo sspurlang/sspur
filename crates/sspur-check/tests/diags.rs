@@ -410,3 +410,21 @@ fn data_libraries_are_typed() {
     assert_eq!(codes("fn f() -> Int\n= db.frob(1)"), vec!["E_UNKNOWN_METHOD"]);
     assert_eq!(codes("fn f() -> Int ! db, fail[DbErr]\n= db.tx(db.open(\"x\"), () => 1)"), Vec::<String>::new());
 }
+
+#[test]
+fn svc_parameters_bind_endpoint_parameters_by_name() {
+    let base = "type App = {name: Str}\ntype Note = {id: Int, title: Str}\nfn note(app: App, id: Int) -> Note\n= Note{id, title: app.name}\n";
+    let ok = format!("{base}svc api(app: App)\n  ep get \"/notes/{{id}}\" = note\nfn main() -> Unit ! net, log\n= http.serve(8080, api(App{{name: \"n\"}}))");
+    assert!(codes(&ok).is_empty(), "{:?}", diags(&ok));
+    let wrong = format!("{base}svc api(app: Int)\n  ep get \"/notes/{{id}}\" = note\n");
+    assert_eq!(codes(&wrong), vec!["E_EP_PARAM"]);
+    let bare = format!("{base}svc api(app: App)\n  ep get \"/notes/{{id}}\" = note\nfn main() -> Unit ! net, log\n= http.serve(8080, api)");
+    assert_eq!(codes(&bare), vec!["E_TYPE_MISMATCH"]);
+}
+
+#[test]
+fn svc_endpoints_return_any_json_type() {
+    let src = "type Page[T] = {items: List[T], total: Int}\ntype Note = {id: Int, at: Time, tags: Set[Str]}\nfn page() -> Page[Note]\n= Page{items: [], total: 0}\nsvc api\n  ep get \"/notes\" = page\n";
+    assert!(codes(src).is_empty(), "{:?}", diags(src));
+    assert_eq!(codes("fn f() -> Secret[Str]\n= secret(\"x\")\nsvc api\n  ep get \"/s\" = f\n"), vec!["E_EP_TYPE"]);
+}

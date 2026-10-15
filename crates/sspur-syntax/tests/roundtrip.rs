@@ -72,6 +72,11 @@ fn store_and_svc_roundtrip() {
     assert_eq!(print_module(&m), src);
     let Def::Svc(s) = &m.defs[1] else { panic!() };
     assert_eq!(s.eps[1].path_params(), ["id"]);
+    let ctx = "svc api(app: App, limits: List[Int])\n  ep get \"/notes\" = list\n";
+    let m = parse(ctx).unwrap();
+    assert_eq!(print_module(&m), ctx);
+    let Def::Svc(s) = &m.defs[0] else { panic!() };
+    assert_eq!(s.params.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["app", "limits"]);
 }
 
 #[test]

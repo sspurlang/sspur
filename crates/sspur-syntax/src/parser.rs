@@ -405,6 +405,7 @@ impl Parser {
     fn svc_def(&mut self) -> PResult<SvcDef> {
         let start = self.expect_kw("svc")?;
         let name = self.expect_ident()?;
+        let params = if self.is_sym("(") { self.params()? } else { vec![] };
         let mut eps = Vec::new();
         while let Some(c) = self.newline_then(|t| matches!(t, Tok::Ident(n) if n == "ep")) {
             if c == 0 {
@@ -425,7 +426,7 @@ impl Parser {
         if eps.is_empty() {
             return self.err("E_PARSE_SVC", "a svc needs at least one endpoint: indented lines 'ep get \"/path/{id}\" = handler'");
         }
-        Ok(SvcDef { name, eps, span: start.to(self.prev_span()) })
+        Ok(SvcDef { name, params, eps, span: start.to(self.prev_span()) })
     }
 
     fn effect_def(&mut self) -> PResult<EffectDef> {

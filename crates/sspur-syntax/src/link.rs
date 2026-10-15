@@ -194,6 +194,10 @@ impl R<'_> {
                 self.ty(&mut st.val, span);
             }
             Def::Svc(sv) => {
+                self.tps.clear();
+                for p in &mut sv.params {
+                    self.ty(&mut p.ty, span);
+                }
                 for e in &mut sv.eps {
                     self.qual(&mut e.handler, e.span, &[Kind::Fn]);
                 }

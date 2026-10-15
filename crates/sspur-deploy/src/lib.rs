@@ -134,6 +134,10 @@ fn db_ops(f: &FnDef, check: &CheckOutput, fns: &HashSet<&str>, ops: &mut BTreeSe
 /// mapping, query string parameters, and raw `Request` and `Response` handlers.
 fn deploy_rules(src: &str, svc: &SvcDef, fns: &HashMap<&str, &FnDef>, check: &CheckOutput) -> Result<(), String> {
     let mut errs = Vec::new();
+    if !svc.params.is_empty() {
+        let (l, c) = line_col(src, svc.span.start);
+        errs.push(format!("{l}:{c} E_EP_PARAM svc {} takes parameters, which only http.serve can give it; a deployed service reads its settings with env_var", svc.name));
+    }
     for ep in &svc.eps {
         let Some(f) = fns.get(ep.handler.as_str()) else { continue };
         let (l, c) = line_col(src, ep.span.start);
@@ -146,7 +150,7 @@ fn deploy_rules(src: &str, svc: &SvcDef, fns: &HashMap<&str, &FnDef>, check: &Ch
         for (p, t) in f.params.iter().zip(ptys) {
             if matches!(t, Type::Con(n, _) if n == "#Request") {
                 errs.push(format!("{l}:{c} E_EP_TYPE {} takes the raw Request, which only http.serve provides", ep.handler));
-            } else if !path.contains(&p.name) && matches!(ep.method.as_str(), "get" | "delete") {
+            } else if !path.contains(&p.name) && !svc.params.iter().any(|q| q.name == p.name) && matches!(ep.method.as_str(), "get" | "delete") {
                 errs.push(format!("{l}:{c} E_EP_BODY {} {} binds '{}' from the query string, which only http.serve supports; a deployed GET or DELETE takes path parameters", ep.method, ep.path, p.name));
             }
         }

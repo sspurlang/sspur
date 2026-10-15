@@ -27,6 +27,10 @@ fn print_def_inner(d: &Def) -> String {
         Def::Store(st) => format!("store {} = {}[{}, {}]", st.name, st.kind, ty(&st.key), ty(&st.val)),
         Def::Svc(sv) => {
             let mut s = format!("svc {}", sv.name);
+            if !sv.params.is_empty() {
+                let ps: Vec<String> = sv.params.iter().map(|p| format!("{}: {}", p.name, ty(&p.ty))).collect();
+                s.push_str(&format!("({})", ps.join(", ")));
+            }
             for ep in &sv.eps {
                 s.push_str(&format!("\n  ep {} {:?} = {}", ep.method, ep.path, ep.handler));
             }

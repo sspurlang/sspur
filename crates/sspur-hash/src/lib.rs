@@ -229,7 +229,10 @@ impl<'a> Hasher<'a> {
                 tys.push(&s.ty);
                 exprs.push(&s.init);
             }
-            Def::Svc(sv) => sv.eps.iter().for_each(|e| add(&e.handler)),
+            Def::Svc(sv) => {
+                tys.extend(sv.params.iter().map(|p| &p.ty));
+                sv.eps.iter().for_each(|e| add(&e.handler));
+            }
             Def::Effect(e) => {
                 for op in &e.ops {
                     tys.extend(op.params.iter().map(|p| &p.ty));
@@ -523,6 +526,14 @@ impl<'a> Hasher<'a> {
             }
             Def::Svc(sv) => {
                 enc.tag(b'V');
+                if !sv.params.is_empty() {
+                    enc.tag(b'(');
+                    enc.uint(sv.params.len() as u64);
+                    for p in &sv.params {
+                        enc.str(&p.name);
+                        self.ty(&mut enc, &p.ty, group);
+                    }
+                }
                 enc.uint(sv.eps.len() as u64);
                 for e in &sv.eps {
                     enc.str(&e.method);

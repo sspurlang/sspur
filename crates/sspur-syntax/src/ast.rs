@@ -267,6 +267,9 @@ pub struct StaticDef {
 #[derive(Clone, Debug, PartialEq)]
 pub struct SvcDef {
     pub name: String,
+    /// `svc api(app: App)`: values the svc is given when it is served, which endpoint parameters
+    /// of the same name receive.
+    pub params: Vec<Param>,
     pub eps: Vec<Endpoint>,
     pub span: Span,
 }

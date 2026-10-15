@@ -62,13 +62,19 @@ impl Checker {
     }
 
     pub(crate) fn json_bad(&self, t: &Type, decode: bool, seen: &mut Vec<String>) -> Option<String> {
+        self.json_bad_r(t, decode, false, seen)
+    }
+
+    /// `json_bad`, where `refined_ok` accepts types with `where` refinements, which svc bodies
+    /// are checked against after decoding.
+    pub(crate) fn json_bad_r(&self, t: &Type, decode: bool, refined_ok: bool, seen: &mut Vec<String>) -> Option<String> {
         match t {
             Type::Fn(..) => Some("functions are not data".into()),
             Type::Param(p) => Some(format!("type parameter {p} is not concrete")),
             Type::Var(_) => Some("its type is not known; add a type annotation".into()),
-            Type::Tuple(xs) => xs.iter().find_map(|x| self.json_bad(x, decode, seen)),
+            Type::Tuple(xs) => xs.iter().find_map(|x| self.json_bad_r(x, decode, refined_ok, seen)),
             Type::Con(n, a) => {
-                if let Some(x) = a.iter().find_map(|x| self.json_bad(x, decode, seen)) {
+                if let Some(x) = a.iter().find_map(|x| self.json_bad_r(x, decode, refined_ok, seen)) {
                     return Some(x);
                 }
                 match n.as_str() {
@@ -78,19 +84,19 @@ impl Checker {
                     "#Locale" if decode => Some("decoding cannot check the locale tag; decode a Str and call locale".into()),
                     "#Ratio" if decode => Some("decoding cannot check that a Ratio is normalized; decode num and den and call ratio_big".into()),
                     _ if seen.contains(n) => None,
-                    _ if decode && self.refined_names.contains(n) => Some(format!("{n} has 'where' refinements that decoding cannot check")),
+                    _ if decode && !refined_ok && self.refined_names.contains(n) => Some(format!("{n} has 'where' refinements that decoding cannot check")),
                     _ => {
                         let Some(info) = self.types.get(n) else { return Some(format!("{n} has no JSON form")) };
                         let map: HashMap<String, Type> = info.params.iter().cloned().zip(a.iter().cloned()).collect();
                         match &info.kind {
                             TypeKind::Record(fs) => {
                                 seen.push(n.clone());
-                                fs.iter().find_map(|(_, ft)| self.json_bad(&subst_params(ft, &map), decode, seen))
+                                fs.iter().find_map(|(_, ft)| self.json_bad_r(&subst_params(ft, &map), decode, refined_ok, seen))
                             }
-                            TypeKind::New(inner) => self.json_bad(inner, decode, seen),
+                            TypeKind::New(inner) => self.json_bad_r(inner, decode, refined_ok, seen),
                             TypeKind::Sum(vs) => {
                                 seen.push(n.clone());
-                                vs.iter().filter_map(|v| self.ctors.get(v).and_then(|c| c.fields.clone())).flatten().find_map(|(_, ft)| self.json_bad(&subst_params(&ft, &map), decode, seen))
+                                vs.iter().filter_map(|v| self.ctors.get(v).and_then(|c| c.fields.clone())).flatten().find_map(|(_, ft)| self.json_bad_r(&subst_params(&ft, &map), decode, refined_ok, seen))
                             }
                             TypeKind::Alias(_) => Some(format!("{n} has no JSON form")),
                         }

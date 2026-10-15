@@ -134,6 +134,7 @@ impl Checker {
 
     pub(crate) fn check_svc(&mut self, sv: &SvcDef, m: &Module) {
         self.cur_def = Some(sv.name.clone());
+        let ctx: Vec<(String, Type)> = sv.params.iter().map(|p| (p.name.clone(), self.conv_ty(&p.ty))).collect();
         let mut seen: HashSet<(String, String)> = HashSet::new();
         for ep in &sv.eps {
             let sp = ep.span;
@@ -165,7 +166,11 @@ impl Checker {
             let query = matches!(ep.method.as_str(), "get" | "delete");
             let mut body = Vec::new();
             for (p, t) in f.params.iter().zip(&s.params) {
-                if path_params.contains(&p.name) {
+                if let Some((_, ct)) = ctx.iter().find(|(n, _)| *n == p.name) {
+                    if path_params.contains(&p.name) || ct != t {
+                        self.err("E_EP_PARAM", sp, format!("'{}' of {} is the svc's parameter {}: {ct}, so it can't be {t} or a path parameter", p.name, ep.handler, p.name));
+                    }
+                } else if path_params.contains(&p.name) {
                     if !self.key_ok(t) {
                         self.err("E_EP_PARAM", sp, format!("path parameter '{}' must be Str, Int, or a newtype over them, found {t}", p.name));
                     }
@@ -176,7 +181,7 @@ impl Checker {
                     }
                 } else {
                     body.push(p.name.clone());
-                    if let Some(why) = self.data_bad(t, &mut vec![]) {
+                    if let Some(why) = self.json_bad_r(t, true, true, &mut vec![]) {
                         self.err("E_EP_TYPE", sp, format!("request body '{}' has type {t}: {why}", p.name));
                     }
                 }
@@ -189,11 +194,11 @@ impl Checker {
             if body.len() > 1 || (!body.is_empty() && matches!(ep.method.as_str(), "get" | "delete")) {
                 self.err("E_EP_BODY", sp, format!("{} {} can take at most one request body parameter ({} has {}: {})", ep.method, ep.path, ep.handler, body.len(), body.join(", ")));
             }
-            if let Some(why) = self.data_bad(&s.ret, &mut vec![]) {
+            if let Some(why) = self.json_bad(&s.ret, false, &mut vec![]).filter(|_| !matches!(&s.ret, Type::Con(n, _) if n == "#Response")) {
                 self.err("E_EP_TYPE", sp, format!("{} returns {}: {why}", ep.handler, s.ret));
             }
             for t in &s.fails {
-                if let Some(why) = self.data_bad(t, &mut vec![]) {
+                if let Some(why) = self.json_bad(t, false, &mut vec![]) {
                     self.err("E_EP_TYPE", sp, format!("{} raises {t}: {why}", ep.handler));
                 }
             }
