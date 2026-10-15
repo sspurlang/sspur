@@ -341,3 +341,24 @@ fn traits_and_impls_cross_packages() {
     w.write("app/lib.ssp", "fn f(s: geo.Square) -> Int = geo.area(s)\n\nfn g[T: geo.Area](x: T) -> Str = x.label\n\ntest t = f(geo.Square{side: 4}) == 16 and g(geo.Square{side: 1}) == \"area 1\"\n");
     assert_eq!(w.ok("app", &["test", "--strict-native", "lib.ssp"]), "1 passed, 0 failed");
 }
+
+#[test]
+fn path_dependencies_inside_the_package_follow_their_source() {
+    let w = Ws::new("members");
+    w.pkg("app/models", "models", &[], "pub fn greet(s: Str) -> Str = \"hi \" + s\n");
+    w.pkg("app/storage", "storage", &[("models", "{ path = \"../models\" }")], "pub fn hello() -> Str = models.greet(\"store\")\n");
+    w.pkg("app", "app", &[("models", "{ path = \"models\" }"), ("storage", "{ path = \"storage\" }")], "fn main() -> Unit ! log = log(storage.hello() + \" \" + models.greet(\"app\"))\n");
+    assert_eq!(w.ok("app", &["run", "lib.ssp"]), "hi store hi app");
+    let lock = std::fs::read_to_string(w.dir.join("app/sspur.lock")).unwrap();
+    w.write("app/models/lib.ssp", "pub fn greet(s: Str) -> Str = \"hello \" + s\n");
+    assert_eq!(w.ok("app", &["run", "--interp", "lib.ssp"]), "hello store hello app", "an edited member is rebuilt, and so is the member that uses it");
+    assert_ne!(std::fs::read_to_string(w.dir.join("app/sspur.lock")).unwrap(), lock, "and the lock follows");
+    w.write("app/models/lib.ssp", "pub fn greet(s: Str) -> Int = s.len\n");
+    assert!(w.err("app", &["check", "lib.ssp"]).contains("storage"), "a member that no longer builds is an error");
+    w.pkg("lib", "geo", &[], TEXT);
+    w.write("app/models/lib.ssp", "pub fn greet(s: Str) -> Str = \"hey \" + s + \" \" + geo.area(geo.Box{w: 2}).str\n");
+    w.write("app/models/sspur.toml", "[package]\nname = \"models\"\nversion = \"0.1.0\"\n\n[deps]\ngeo = { path = \"../../lib\" }\n");
+    assert_eq!(w.ok("app", &["run", "lib.ssp"]), "hey store 4 hey app 4");
+    w.write("lib/lib.ssp", &TEXT.replace("w * w", "w + w"));
+    assert_eq!(w.ok("app", &["run", "lib.ssp"]), "hey store 4 hey app 4", "a dependency outside the package stays pinned");
+}

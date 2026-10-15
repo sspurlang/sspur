@@ -28,6 +28,8 @@ A build reads only the lock and the package cache, `~/.cache/sspur/pkgs/<hash>` 
 | `E_DEP_STALE` | `sspur.toml` asks for a different source or rev than the lock pins | `sspur deps update NAME`, which shows the diff first |
 | `E_DEP_CONFLICT` | Two versions of one package in the graph | `sspur deps update NAME` where the older one is pinned |
 
+Path dependencies inside the package's own directory, such as `models = { path = "models" }`, are parts of the package rather than upstream code: a build reads their source, and when one of them changed it builds them again and rewrites the lock, so an edit to a module takes effect at the next `sspur run`. A dependency outside the directory (`../lib`, a git URL) stays pinned until `sspur deps update`.
+
 `sspur deps update` prints a line per changed export, such as `~ lib.f  effects: + log`, `~ lib.g  contracts: + pre n > 0`, `+ lib.new` or `- lib.old`, typechecks your package against the new version, and refuses to write the lock if it no longer checks, unless you pass `--force`.
 
 When codebases sync (`sspur sync push` and `pull`), the lock and each locked package's source travel with the commits, and the receiver checks them by hash.

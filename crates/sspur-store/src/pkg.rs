@@ -432,9 +432,11 @@ impl Env {
     pub fn load(root: &Path) -> Result<Option<Env>, String> {
         let Some(m) = Manifest::read(root)? else { return Ok(None) };
         let lock = Lock::read(root)?;
-        if let Some(env) = Env::from_lock(&m, &lock) {
-            return Ok(Some(env));
-        }
+        let members = changed_members(root, &lock);
+        if members.is_none()
+            && let Some(env) = Env::from_lock(&m, &lock) {
+                return Ok(Some(env));
+            }
         for (n, s) in &m.deps {
             if let Some(e) = lock.entries.get(n)
                 && (e.source != s.key() || e.reference.as_deref() != s.rev()) {
@@ -443,7 +445,7 @@ impl Env {
                     return Err(format!("E_DEP_STALE {n}: sspur.toml asks for {want} but sspur.lock pins {have}; run 'sspur deps update {n}' to review the change"));
                 }
         }
-        let (lock2, env) = resolve(root, &m, &lock, None)?;
+        let (lock2, env) = resolve(root, &m, &lock, members)?;
         if lock2 != lock {
             lock2.write(root)?;
         }
@@ -476,6 +478,29 @@ impl Env {
         }
         Some(Env { name: Some(m.name.clone()), direct: m.deps.keys().cloned().collect(), all })
     }
+}
+
+/// Path dependencies inside the package's own directory are parts of it, like modules: a build
+/// follows their source instead of the lock. When one of them changed since it was locked, this
+/// is the set of all of them, which the build then locks again; a dependency outside the
+/// directory stays pinned until `sspur deps update`.
+fn changed_members(root: &Path, lock: &Lock) -> Option<BTreeSet<String>> {
+    let base = root.canonicalize().ok()?;
+    let mut members = BTreeSet::new();
+    let mut changed = false;
+    for e in lock.entries.values() {
+        let Some(p) = e.source.strip_prefix("path+") else { continue };
+        let Ok(dir) = Path::new(p).is_absolute().then(|| PathBuf::from(p)).unwrap_or_else(|| root.join(p)).canonicalize() else { continue };
+        if dir == base || !dir.starts_with(&base) {
+            continue;
+        }
+        members.insert(e.name.clone());
+        if !changed {
+            let now = Manifest::read(&dir).ok().flatten().and_then(|m| Some((read_src(&dir, &m).ok()?, m.text)));
+            changed = now.is_none() || now != cached_source(&e.hash);
+        }
+    }
+    changed.then_some(members)
 }
 
 pub struct Linked {
