@@ -127,6 +127,21 @@ jobs:
           sha256sum "sspur-${GITHUB_REF_NAME}.vsix" "sspur-lsp4ij-${GITHUB_REF_NAME}.zip" "sspur-zed-${GITHUB_REF_NAME}.zip" >> SHA256SUMS
           sha256sum -c SHA256SUMS
 
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Browser checker for the package registry's Publish page
+        run: |
+          v="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/^version = "\(.*\)"$/\1/p')"
+          curl -fsSL "https://github.com/wasm-bindgen/wasm-bindgen/releases/download/${v}/wasm-bindgen-${v}-x86_64-unknown-linux-musl.tar.gz" | tar -xz -C "$RUNNER_TEMP"
+          export PATH="$RUNNER_TEMP/wasm-bindgen-${v}-x86_64-unknown-linux-musl:$PATH"
+          curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/version_123/binaryen-version_123-x86_64-linux.tar.gz" | tar -xz -C "$RUNNER_TEMP"
+          export PATH="$RUNNER_TEMP/binaryen-version_123/bin:$PATH"
+          tools/build_registry_checker.sh "$RUNNER_TEMP/registry-web/checker"
+          tar -C "$RUNNER_TEMP/registry-web" -czf "dist/sspur-registry-web-${GITHUB_REF_NAME}.tar.gz" checker
+          (cd dist && sha256sum "sspur-registry-web-${GITHUB_REF_NAME}.tar.gz" >> SHA256SUMS && sha256sum -c SHA256SUMS)
+
       - name: Release notes
         run: |
           awk -v v="${GITHUB_REF_NAME#v}" '

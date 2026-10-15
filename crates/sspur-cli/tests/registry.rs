@@ -250,7 +250,18 @@ fn publish_checks_merge_and_install() {
     assert_eq!(v["commit"].as_str().unwrap(), git(&w, &["rev-parse", "HEAD"]));
     assert_eq!(v["snapshot"]["sha256"].as_str().unwrap().len(), 64);
     assert!(r.t.join("releases/money-1.0.0/money-1.0.0.tar").is_file());
+    let schema: J = serde_json::from_str(&std::fs::read_to_string(template().join("schema/package.schema.json")).unwrap()).unwrap();
+    for k in schema["required"].as_array().unwrap() {
+        assert!(entry.get(k.as_str().unwrap()).is_some(), "the package file has no {k}");
+    }
+    for k in schema["$defs"]["version"]["required"].as_array().unwrap() {
+        assert!(v.get(k.as_str().unwrap()).is_some(), "the version entry has no {k}");
+    }
     let summary: J = serde_json::from_str(&r.index_file("index.json").unwrap()).unwrap();
+    let ischema: J = serde_json::from_str(&std::fs::read_to_string(template().join("schema/index.schema.json")).unwrap()).unwrap();
+    for k in ischema["properties"]["packages"]["items"]["required"].as_array().unwrap() {
+        assert!(summary["packages"][0].get(k.as_str().unwrap()).is_some(), "index.json entries have no {k}");
+    }
     assert_eq!(summary["packages"][0]["latest"], "1.0.0");
     assert_eq!(r.state()["issues"]["1"]["state"], "closed");
     assert!(r.comments("1")[0].contains("Every blocking check passed"));
@@ -384,7 +395,7 @@ fn publish_checks_merge_and_install() {
     let (log, ok) = r.run(&idx, idx.join("tools/ci.sh").to_str().unwrap(), &["site", out.to_str().unwrap()], &[("WORK", r.t.join("sitework").to_str().unwrap()), ("INDEX_DIR", idx.to_str().unwrap()), ("SSPUR_INDEX", idx.to_str().unwrap())]);
     assert!(ok && log.contains("site: 1 package"), "{log}");
     let page = std::fs::read_to_string(out.join("packages/money/index.html")).unwrap();
-    assert!(page.contains("sspur add money@^1.2.0") && page.contains("A small package used by the registry tests") && page.contains("Created by <a href='https://utkarshavardhana.github.io/'"), "{page}");
+    assert!(page.contains("sspur add money@^1.1.0") && page.contains("A small package used by the registry tests") && page.contains("Created by <a href='https://utkarshavardhana.github.io/'"), "{page}");
     for f in ["index.html", "publish/index.html", "publish/publish.js", "publish/worker.js", "assets/site.css", "index.json", "packages/mo/money.json", "404.html"] {
         assert!(out.join(f).is_file(), "{f}");
     }

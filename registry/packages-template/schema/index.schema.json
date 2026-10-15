@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://utkarshavardhana.github.io/sspur-packages/schema/index.schema.json",
+  "title": "The index summary (schema 1)",
+  "description": "index.json, generated from the package files by the registry program; clients use it for search and the typosquatting check.",
+  "type": "object",
+  "required": ["schema", "packages"],
+  "properties": {
+    "schema": {"const": 1},
+    "packages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "description", "latest", "versions", "keywords", "updated", "yanked"],
+        "properties": {
+          "name": {"type": "string"},
+          "description": {"type": "string"},
+          "latest": {"type": ["string", "null"], "description": "The newest version that is not yanked"},
+          "versions": {"type": "integer", "minimum": 0},
+          "keywords": {"type": "array", "items": {"type": "string"}},
+          "updated": {"type": "string"},
+          "yanked": {"type": "boolean", "description": "Every version is yanked"},
+          "deprecated": {"type": ["string", "null"]}
+        }
+      }
+    }
+  }
+}
