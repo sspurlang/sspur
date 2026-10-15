@@ -16,7 +16,7 @@ A query names the record type its rows become. Columns map to fields by name, so
 
 `db.query[T]` returns every row, `db.one[T]` exactly one (raising `NoRow` when there is none), and `db.opt[T]` zero or one as an `Opt`. A row type can also be a single column type, `db.one[Int](c, "select count(*) from todos")`, or a tuple read by position. `db.exec` runs a statement that returns no rows and gives the number of rows it changed; with no parameters it can run several statements separated by `;`. `insert ... returning *` gives back the row with its new id.
 
-Field types map to SQLite's: `Int` (INTEGER), `F64` (REAL, or INTEGER), `Str` (TEXT), `Bool` (INTEGER 0 or 1), `Bytes` (BLOB), `Time` (ISO 8601 TEXT, or INTEGER milliseconds), `Dec` (TEXT), a newtype of one of them, and `Opt` of any of these for a column that can be NULL. A value that doesn't fit raises `Mismatch` with a message that says which column and why:
+Field types map to SQLite's: `Int` (INTEGER), `F64` (REAL, or INTEGER), `Str` (TEXT), `Bool` (INTEGER 0 or 1), `Bytes` (BLOB), `Time` (ISO 8601 TEXT, always with milliseconds so that `order by` and `<` on the text follow time, or INTEGER milliseconds), `Dec` (TEXT), a newtype of one of them, and `Opt` of any of these for a column that can be NULL. A value that doesn't fit raises `Mismatch` with a message that says which column and why:
 
 ```sspur
 {{#include ../snippets/handbook/data/todos.ssp:errors}}

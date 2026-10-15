@@ -269,7 +269,7 @@ fn __db_pb(x: Bool) -> (Int, Int, F64, Str, Bytes)
 = __db_pi(if x then 1 else 0)
 
 fn __db_pt(x: Time) -> (Int, Int, F64, Str, Bytes)
-= __db_ps(x.iso)
+= __db_ps(x.format("%Y-%m-%dT%H:%M:%S.%LZ"))
 
 fn __db_pd(x: Dec) -> (Int, Int, F64, Str, Bytes)
 = __db_ps(x.str)
