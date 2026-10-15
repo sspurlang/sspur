@@ -42,6 +42,8 @@ Certificates are verified against the system's roots, or the certificates in the
 | `req.query(name)` | `Opt[Str]`, decoded, the first occurrence |
 | `req.header(name)` | `Opt[Str]`, case-insensitive; `x-request-id` is always there |
 | `req.json[T]` | `Res[T, Str]` |
+| `req.form(name)` | `Opt[Str]`: the first field of that name in a form body (`application/x-www-form-urlencoded`), decoded |
+| `req.cookie(name)` | `Opt[Str]`: the cookie of that name in the `Cookie` header |
 
 The handler is a function from `Request` to `Response`, a lambda, or a `svc` name. Errors a handler raises become responses; it can't perform `db.*` or user-defined effects (`E_SERVE_EFFECT`), assign variables from outside it (`E_PAR_RACE`) or use function values from outside it (`E_PAR_SHARE`), because handlers run concurrently.
 
@@ -60,4 +62,4 @@ Graceful shutdown: on SIGINT or SIGTERM the server stops accepting, answers what
 | `config.load(defaults, path, prefix)` | `Res[T, Str] ! fs, env` for a record type `T`: each field from the environment variable `prefix + NAME`, else the JSON file at `path` (`""` or a missing file is no file), else `defaults`. `Str` fields take the variable as it is, and so do `Secret[Str]` fields, as a secret that can't be logged; `Int`, `F64` and `Bool` (`true false 1 0`) parse it, other types decode it as JSON. `where` clauses on the fields are checked when the record is built |
 | `log.debug(m)`, `log.info(m)`, `log.warn(m)`, `log.error(m)` | `Unit ! log`: `log("warn: " + m)` and so on |
 
-`SSPUR_LOG_LEVEL=debug|info|warn|error` drops lines below that level (a line without a level prefix is info), and `SSPUR_LOG=json` prints each line as `{"ts":"2026-10-15T09:30:00.123Z","level":"warn","msg":"..."}`. The server's access log and its listening line go through the same filter.
+`SSPUR_LOG_LEVEL=debug|info|warn|error` drops lines below that level (a line without a level prefix is info), and `SSPUR_LOG=json` prints each line as `{"ts":"2026-10-15T09:30:00.123Z","level":"warn","msg":"..."}`. A message that is itself a JSON object, such as `log.info(json.encode(event))`, gives its fields instead of `msg`: `{"ts":"...","level":"info","event":"note.created","id":7}`. The server's access log and its listening line go through the same filter, and with `SSPUR_LOG=json` each access line is `{"ts":"...","level":"info","method":"GET","path":"/notes","status":200,"ms":3,"id":"..."}`.

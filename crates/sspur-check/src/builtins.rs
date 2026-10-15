@@ -241,7 +241,7 @@ pub static LIB_GLOBALS: &str = "bytes(xs: List[Int]) -> Bytes\nfrom_hex(s: Str) 
 
 /// `Bytes` (ADR 0037), which the playground leaves out with the libraries that need it.
 #[cfg(not(target_family = "wasm"))]
-pub static LIB_METHODS: &str = "Str to_bytes(s: Str) -> Bytes\n#Bytes len(b: Bytes) -> Int\n#Bytes is_empty(b: Bytes) -> Bool\n#Bytes get(b: Bytes, i: Int) -> Opt[Int]\n#Bytes slice(b: Bytes, from: Int, to: Int) -> Bytes\n#Bytes concat(b: Bytes, c: Bytes) -> Bytes\n#Bytes to_list(b: Bytes) -> List[Int]\n#Bytes to_str(b: Bytes) -> Opt[Str]\n#Bytes hex(b: Bytes) -> Str\n#Bytes base64(b: Bytes) -> Str\n#Bytes base64url(b: Bytes) -> Str";
+pub static LIB_METHODS: &str = "Str to_bytes(s: Str) -> Bytes\n#Bytes len(b: Bytes) -> Int\n#Bytes is_empty(b: Bytes) -> Bool\n#Bytes get(b: Bytes, i: Int) -> Opt[Int]\n#Bytes slice(b: Bytes, from: Int, to: Int) -> Bytes\n#Bytes concat(b: Bytes, c: Bytes) -> Bytes\n#Bytes to_list(b: Bytes) -> List[Int]\n#Bytes to_str(b: Bytes) -> Opt[Str]\n#Bytes hex(b: Bytes) -> Str\n#Bytes base64(b: Bytes) -> Str\n#Bytes base64url(b: Bytes) -> Str\n#Request form(r: Request, name: Str) -> Opt[Str]\n#Request cookie(r: Request, name: Str) -> Opt[Str]";
 
 /// `receiver signature` lines: text rather than a table of pointers, which the dynamic linker
 /// would fix up at every start.

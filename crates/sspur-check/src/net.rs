@@ -294,5 +294,9 @@ impl Checker {
         if let Some((_, _, f)) = RECORD_METHODS.iter().find(|(c, m, _)| *c == con && *m == name) {
             self.net_site(span, NetSite::Method(f.to_string()));
         }
+        #[cfg(not(target_family = "wasm"))]
+        if con == "#Request" && matches!(name, "form" | "cookie") {
+            self.net_site(span, NetSite::Method(format!("__http_req_{name}")));
+        }
     }
 }

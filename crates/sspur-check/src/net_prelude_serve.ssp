@@ -55,3 +55,14 @@ fn __http_opt_bool(s: Opt[Str]) -> Opt[Opt[Bool]]
 = match s
   | none => some(none)
   | some(x) => __http_bool(x).map(v => some(v))
+
+fn __http_req_form(r: Request, name: Str) -> Opt[Str]
+= if r.body == "" then none else r.body.split("&").map(__http_kv).find(kv => kv.0 == name).map(kv => kv.1)
+
+fn __http_cookie_kv(s: Str) -> (Str, Str)
+= match s.trim.split_once("=")
+  | some((k, v)) => (k.trim, if v.len >= 2 and v.starts_with("\"") and v.ends_with("\"") then v.drop(1).take(v.len - 2) else v.trim)
+  | none => (s.trim, "")
+
+fn __http_req_cookie(r: Request, name: Str) -> Opt[Str]
+= __http_req_header(r, "cookie").or("").split(";").map(__http_cookie_kv).find(kv => kv.0 == name).map(kv => kv.1)
