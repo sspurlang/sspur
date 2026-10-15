@@ -628,6 +628,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sspur-registry"
+version = "0.11.0"
+dependencies = [
+ "blake3",
+ "serde",
+ "serde_json",
+ "sspur-check",
+ "sspur-hash",
+ "sspur-syntax",
+]
+
+[[package]]
 name = "sspur-smt"
 version = "0.11.0"
 dependencies = [
@@ -646,6 +658,7 @@ dependencies = [
  "sspur-check",
  "sspur-eval",
  "sspur-hash",
+ "sspur-registry",
  "sspur-syntax",
 ]
 

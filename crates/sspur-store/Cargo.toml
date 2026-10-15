@@ -13,3 +13,4 @@ sspur-eval.workspace = true
 blake3.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sspur-registry.workspace = true

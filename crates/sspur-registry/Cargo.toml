@@ -1,0 +1,15 @@
+[package]
+name = "sspur-registry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The SSPUR package registry: package facts, versions, the index format and source snapshots"
+
+[dependencies]
+sspur-syntax.workspace = true
+sspur-check.workspace = true
+sspur-hash.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+blake3.workspace = true
