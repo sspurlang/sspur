@@ -1,0 +1,329 @@
+// The package site: a static site built from the index, like SSPUR Pulse.
+//
+//   sspur run tools/site/main.ssp INDEX_DIR SOURCES_DIR OUT_DIR STATIC_DIR
+//
+// INDEX_DIR is a checkout of sspur-packages, SOURCES_DIR holds the verified source of each
+// package's newest version (tools/ci.sh site downloads them with `sspur source`), OUT_DIR
+// receives the pages, and STATIC_DIR is site/ with the stylesheet, scripts and the Publish
+// page. Every page works without JavaScript; the scripts add search, copying and the theme.
+// Text from packages is escaped everywhere, and their Markdown is rendered by a small,
+// safe subset: no HTML passes through, and links go only to http, https and mailto URLs.
+
+type Snapshot = {url: Str, sha256: Str, size: Int}
+
+type ApiItem = {name: Str, kind: Str, sig: Str, effects: List[Str], doc: Str}
+
+type Entry = {version: Str, git: Str, tag: Str, commit: Str, hash: Str, snapshot: Opt[Snapshot], effects: List[Str], deps: Map[Str, Str], license: Str, yanked: Bool, deprecated: Opt[Str], published: Str, publisher: Str, api: List[ApiItem]}
+
+type Package = {name: Str, description: Str, repository: Str, owners: List[Str], keywords: List[Str], versions: List[Entry]}
+
+type V = {major: Int, minor: Int, patch: Int} derive Eq, Ord, Show
+
+type Ctx = {index: Str, sources: Str, out: Str, web: Str}
+
+type Card = {name: Str, description: Str, latest: Str, effects: List[Str], keywords: List[Str], updated: Str, yanked: Bool, deprecated: Opt[Str]}
+
+type Md = {out: List[Str], para: List[Str], items: List[Str], ordered: Bool, code: Opt[List[Str]], lang: Str, quote: List[Str]}
+
+// ---------- text ----------
+
+fn esc(s: Str) -> Str
+= s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#39;")
+
+fn unesc(s: Str) -> Str
+= s.replace("&quot;", "\"").replace("&#39;", "'").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+
+fn num(s: Str) -> Int
+= s.to_int.or(0)
+
+fn version_of(s: Str) -> V
+= match s.split(".")
+  | [a, b, c] => V{major: num(a), minor: num(b), patch: num(c)}
+  | _ => V{major: 0, minor: 0, patch: 0}
+
+fn day(iso: Str) -> Str
+= iso.take(10)
+
+fn slug(repo: Str) -> Str
+= do
+  r = repo.replace("https://github.com/", "").replace("http://github.com/", "")
+  if r.ends_with(".git") then r.take(r.len - 4) else r
+
+// A link target that is safe in an href: http(s), mailto and in-page anchors pass, a relative
+// path is resolved against `base`, anything else (javascript:, data:, ...) is dropped.
+fn safe_url(u: Str, base: Str) -> Opt[Str]
+= do
+  t = unesc(u).trim
+  low = t.lower
+  if low.starts_with("https://") or low.starts_with("http://") or low.starts_with("mailto:") then some(t) else if t.starts_with("#") then some(t) else if t.contains(":") or t.starts_with("//") or base == "" then none else some(base + (if t.starts_with("./") then t.drop(2) else if t.starts_with("/") then t.drop(1) else t))
+
+fn link_html(text: Str, url: Str, base: Str) -> Str
+= match safe_url(url, base)
+  | some(u) => "<a href=\"{esc(u)}\" rel=\"nofollow noopener\">{text}</a>"
+  | none => text
+
+fn emph(s: Str) -> Str
+= do
+  b = regex("\\*\\*([^*]+)\\*\\*").map(r => r.replace(s, "<strong>$1</strong>")).or(s)
+  regex("(^|[\\s(])\\*([^*\\s][^*]*)\\*").map(r => r.replace(b, "$1<em>$2</em>")).or(b)
+
+// Links and emphasis in text that is already escaped.
+fn rich(s: Str, base: Str) -> Str
+= match regex("!?\\[([^\\]]+)\\]\\(([^)\\s]+)\\)")
+  | err(_) => emph(s)
+  | ok(re) => match (re.span(s), re.captures(s))
+    | (some((a, b)), some(groups)) => do
+      text = groups.get(1).or("")
+      url = groups.get(2).or("")
+      image = s.drop(a).starts_with("!")
+      label = if image then "image: " + text else emph(text)
+      emph(s.take(a)) + link_html(label, url, base) + rich(s.drop(b), base)
+    | _ => emph(s)
+
+// Inline Markdown: code spans, links, strong and emphasis. Everything else is plain text.
+fn inline(s: Str, base: Str) -> Str
+= do
+  parts = s.split("`")
+  last_code = if parts.len % 2 == 1 then parts.len - 1 else parts.len - 2
+  parts.enumerate().map(p => if p.0 % 2 == 1 and p.0 <= last_code then "<code>{esc(p.1)}</code>" else if p.0 % 2 == 1 then "`" + rich(esc(p.1), base) else rich(esc(p.1), base)).join("")
+
+fn flush(m: Md, base: Str) -> Md
+= do
+  a = if m.para.is_empty() then [] else ["<p>{inline(m.para.join(" "), base)}</p>"]
+  tag = if m.ordered then "ol" else "ul"
+  b = if m.items.is_empty() then [] else ["<{tag}>" + m.items.map(i => "<li>{inline(i, base)}</li>").join("") + "</{tag}>"]
+  c = if m.quote.is_empty() then [] else ["<blockquote><p>{inline(m.quote.join(" "), base)}</p></blockquote>"]
+  m with out := m.out + a + b + c, para := [], items := [], quote := []
+
+fn heading_level(l: Str) -> Int
+= do
+  n = l.chars.take_while_hash
+  if n >= 1 and n <= 6 and l.drop(n).starts_with(" ") then n else 0
+
+fn take_while_hash(cs: List[Str]) -> Int
+= cs.index_of_not("#")
+
+fn index_of_not(cs: List[Str], c: Str) -> Int
+= cs.enumerate().find(p => p.1 != c).map(_.0).or(cs.len)
+
+fn list_item(l: Str) -> Opt[(Bool, Str)]
+= do
+  t = l.trim
+  if t.starts_with("- ") or t.starts_with("* ") or t.starts_with("+ ") then some((false, t.drop(2))) else match regex("^(\\d+)[.)] (.*)$").map(r => r.captures(t)).or(none)
+    | some(g) => some((true, g.get(2).or("")))
+    | none => none
+
+fn md_step(m: Md, l: Str, base: Str) -> Md
+= match m.code
+  | some(lines) => if l.trim.starts_with("```") then m with out := m.out.push(code_block(lines, m.lang)), code := none else m with code := some(lines.push(l))
+  | none => md_line(m, l, base)
+
+fn code_block(lines: List[Str], lang: Str) -> Str
+= do
+  cls = if lang == "" then "" else " class=\"language-{esc(lang.split(" ").first.or(""))}\""
+  "<pre><code{cls}>{esc(lines.join("\n"))}</code></pre>"
+
+fn md_line(m: Md, l: Str, base: Str) -> Md
+= do
+  t = l.trim
+  h = heading_level(t)
+  item = list_item(l)
+  if t.starts_with("```") then flush(m, base) with code := some([]), lang := t.drop(3).trim else if t == "" then flush(m, base) else if h > 0 then do
+    f = flush(m, base)
+    level = min(h + 1, 6)
+    f with out := f.out.push("<h{level}>{inline(t.drop(h).trim, base)}</h{level}>")
+  else if t == "---" or t == "***" or t == "___" then do
+    f = flush(m, base)
+    f with out := f.out.push("<hr>")
+  else if t.starts_with(">") then do
+    f = if m.para.is_empty() and m.items.is_empty() then m else flush(m, base)
+    f with quote := f.quote.push(t.drop(1).trim)
+  else if item is some((ordered, text)) then do
+    f = if not m.para.is_empty() or not m.quote.is_empty() or (not m.items.is_empty() and m.ordered != ordered) then flush(m, base) else m
+    f with items := f.items.push(text), ordered := ordered
+  else if not m.items.is_empty() and l.starts_with("  ") then m with items := m.items.take(m.items.len - 1).push(m.items.last.or("") + " " + t)
+  else if not m.items.is_empty() or not m.quote.is_empty() then do
+    f = flush(m, base)
+    f with para := [t]
+  else m with para := m.para.push(t)
+
+// Markdown to HTML: headings (shifted one level down), paragraphs, lists, quotes, rules and
+// fenced code. Relative links resolve against `base`.
+fn markdown(text: Str, base: Str) -> Str
+= do
+  start = Md{out: [], para: [], items: [], ordered: false, code: none, lang: "", quote: []}
+  m = text.replace("\r\n", "\n").split("\n").fold(start, (acc, l) => md_step(acc, l, base))
+  done = match m.code
+    | some(lines) => m with out := m.out.push(code_block(lines, m.lang)), code := none
+    | none => flush(m, base)
+  done.out.join("\n")
+
+test markdown_basics = markdown("# Title\n\nSome *em* and **strong** with `code <b>`.\n\n- one\n- two [link](https://example.com/a)\n\n```sspur\nfn f() -> Int = 1 < 2\n```", "") == "<h2>Title</h2>\n<p>Some <em>em</em> and <strong>strong</strong> with <code>code &lt;b&gt;</code>.</p>\n<ul><li>one</li><li>two <a href=\"https://example.com/a\" rel=\"nofollow noopener\">link</a></li></ul>\n<pre><code class=\"language-sspur\">fn f() -&gt; Int = 1 &lt; 2</code></pre>"
+
+test markdown_is_safe = do
+  h = markdown("<script>alert(1)</script> [x](javascript:alert(1)) [y](docs/a.md) ![i](data:x)", "https://github.com/a/b/blob/c/")
+  not h.contains("<script") and not h.contains("javascript:") and h.contains("href=\"https://github.com/a/b/blob/c/docs/a.md\"") and not h.contains("data:x")
+
+test markdown_lists_and_quotes = markdown("1. a\n2. b\n> q\nplain", "") == "<ol><li>a</li><li>b</li></ol>\n<blockquote><p>q</p></blockquote>\n<p>plain</p>"
+
+// ---------- the page shell ----------
+
+fn logo() -> Str
+= "<svg class='ic' viewBox='0 0 24 24' aria-hidden='true'><path d='M12 3 4 7.5v9L12 21l8-4.5v-9z'/><path d='M4 7.5 12 12l8-4.5M12 12v9'/></svg>"
+
+fn icon(name: Str) -> Str
+= if name == "search" then "<svg class='ic' viewBox='0 0 24 24' aria-hidden='true'><circle cx='11' cy='11' r='7'/><path d='m20 20-3.5-3.5'/></svg>" else if name == "up" then "<svg class='ic' viewBox='0 0 24 24' aria-hidden='true'><path d='M12 19V5M5 12l7-7 7 7'/></svg>" else if name == "docs" then "<svg class='ic' viewBox='0 0 24 24' aria-hidden='true'><path d='M4 5a2 2 0 0 1 2-2h12v16H6a2 2 0 0 0-2 2z'/><path d='M4 19V5'/></svg>" else if name == "git" then "<svg class='ic' viewBox='0 0 24 24' aria-hidden='true'><circle cx='6' cy='6' r='2'/><circle cx='18' cy='18' r='2'/><circle cx='6' cy='18' r='2'/><path d='M6 8v8M8 6h5a5 5 0 0 1 5 5v5'/></svg>" else if name == "copy" then "<svg class='ic' viewBox='0 0 24 24' aria-hidden='true'><rect x='9' y='9' width='11' height='11' rx='2'/><path d='M5 15V6a2 2 0 0 1 2-2h9'/></svg>" else "<svg class='ic' viewBox='0 0 24 24' aria-hidden='true'><circle cx='12' cy='12' r='4'/><path d='M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4'/></svg>"
+
+fn up(depth: Int) -> Str
+= if depth == 0 then "./" else "../".repeat(depth)
+
+fn chip(href: Str, label: Str, ic: Str, on: Bool) -> Str
+= "<a class='chip{if on then " on" else ""}' href='{href}'{if on then " aria-current='page'" else ""}>{icon(ic)}{label}</a>"
+
+fn shell(title: Str, desc: Str, depth: Int, active: Str, body: Str) -> Str
+= do
+  r = up(depth)
+  head = "<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'><title>{esc(title)}</title><meta name='description' content='{esc(desc)}'><meta name='color-scheme' content='light dark'><meta name='theme-color' content='#f6f5f1' media='(prefers-color-scheme: light)'><meta name='theme-color' content='#0d0f14' media='(prefers-color-scheme: dark)'><link rel='icon' href='{r}assets/icon.svg' type='image/svg+xml'><link rel='stylesheet' href='{r}assets/site.css'><script>try\{var t=localStorage.getItem('sspur-theme');if(t)document.documentElement.dataset.theme=t}catch(e)\{}document.documentElement.classList.add('js')</script></head>"
+  nav = "<nav class='chips-nav' aria-label='Site'><div class='chips-row'>" + chip("{r}", "Packages", "search", active == "packages") + chip("{r}publish/", "Publish", "up", active == "publish") + chip("https://utkarshavardhana.github.io/sspur/handbook/publishing.html", "Docs", "docs", false) + chip("https://github.com/utkarshavardhana/sspur-packages", "Index", "git", false) + "</div></nav>"
+  top = "<a class='skip' href='#main'>Skip to content</a><header class='top'><div class='wrap top-in'><a class='logo' href='{r}'><span class='logo-mark'>{logo()}</span><span>SSPUR packages</span></a>{nav}<button class='theme' type='button' data-theme-toggle aria-label='Switch between light and dark'>{icon("sun")}</button></div></header>"
+  foot = "<footer class='foot'><div class='wrap'><p class='foot-lead'>Built from <a href='https://github.com/utkarshavardhana/sspur-packages'>the index</a> by SSPUR programs on every change. No servers, no keys, no trackers.</p><p class='foot-links'><a href='https://utkarshavardhana.github.io/sspur/'>SSPUR docs</a><a href='https://utkarshavardhana.github.io/sspur/play/'>Playground</a><a href='https://github.com/utkarshavardhana/sspur-packages/blob/main/CONTRIBUTING.md'>Standards</a><a href='https://github.com/utkarshavardhana/sspur'>Source</a></p><p class='made'>Created by <a href='https://utkarshavardhana.github.io/' target='_blank' rel='noopener'>Utkarsha Vardhana</a></p></div></footer>"
+  "{head}<body>{top}<main id='main'>{body}</main>{foot}<div class='toast' role='status' aria-live='polite' hidden></div><script src='{r}assets/site.js' defer></script></body></html>\n"
+
+// ---------- packages ----------
+
+fn capability() -> List[Str]
+= ["fs", "io", "proc", "env", "net", "db", "ffi", "unsafe", "dev"]
+
+fn pills(es: List[Str]) -> Str
+= es.filter(e => capability().contains(e)).map(e => "<span class='pill acc' title='uses the {e} effect'>{esc(e)}</span>").join(" ")
+
+fn latest(p: Package) -> Opt[Entry]
+= do
+  live = p.versions.filter(e => not e.yanked)
+  pool = if live.is_empty() then p.versions else live
+  pool.sort_by(e => version_of(e.version)).last
+
+fn card_of(p: Package) -> Opt[Card]
+= latest(p).map(e => Card{name: p.name, description: p.description, latest: e.version, effects: e.effects, keywords: p.keywords, updated: p.versions.map(x => x.published).sort.last.or(""), yanked: p.versions.all(_.yanked), deprecated: e.deprecated})
+
+fn card_html(c: Card) -> Str
+= do
+  note = if c.yanked then " <span class='pill bad'>yanked</span>" else if c.deprecated.is_some() then " <span class='pill warn'>deprecated</span>" else ""
+  kw = c.keywords.map(k => esc(k)).join(" ")
+  "<li class='pkg card' data-name='{esc(c.name)}' data-text='{esc(c.name + " " + c.description + " " + kw).lower}'><a class='pkg-link' href='packages/{esc(c.name)}/'><span class='pkg-name'>{esc(c.name)}</span> <span class='pill'>{esc(c.latest)}</span>{note}</a><p class='pkg-desc'>{esc(c.description)}</p><p class='pkg-meta'>{pills(c.effects)} <span class='muted small'>updated {esc(day(c.updated))}</span></p></li>"
+
+fn index_page(cards: List[Card]) -> Str
+= do
+  n = cards.len
+  list = if cards.is_empty() then "<p class='empty card'>No packages yet. <a href='publish/'>Publish the first one.</a></p>" else "<ul class='pkgs' id='pkgs'>" + cards.map(card_html).join("") + "</ul><p class='none card' id='none' hidden>No package matches. Try fewer words.</p>"
+  body = "<section class='hero wrap'><p class='kicker'>{icon("search")} The SSPUR registry</p><h1>Packages for <em>SSPUR</em></h1><p class='lede'>{plural(n, "package", "packages")}, each pinned to a commit and a source snapshot, checked when it was published: types, tests in both tiers, effects, docs and the API diff.</p><form class='search' role='search' action='./' onsubmit='return false'><label class='sr-only' for='q'>Search packages</label><input id='q' name='q' type='search' placeholder='Search packages' autocomplete='off' spellcheck='false' enterkeyhint='search'><kbd class='hint' aria-hidden='true'>/</kbd></form><p class='note'>Add one with <code>sspur add NAME</code>. Publish yours from the <a href='publish/'>Publish page</a> or with <code>sspur publish</code>.</p></section><section class='band wrap' aria-label='All packages'>{list}</section>"
+  shell("SSPUR packages", "Search the packages of the SSPUR registry and publish your own.", 0, "packages", body)
+
+fn plural(n: Int, one: Str, many: Str) -> Str
+= if n == 1 then "{n} {one}" else "{n} {many}"
+
+fn commit_url(p: Package, e: Entry) -> Str
+= "https://github.com/{slug(p.repository)}/tree/{e.commit}"
+
+fn api_html(e: Entry, base: Str) -> Str
+= if e.api.is_empty() then "<p class='muted'>No public definitions.</p>" else e.api.map(a => "<article class='def' id='{esc(a.kind)}-{esc(a.name)}'><h3><a href='#{esc(a.kind)}-{esc(a.name)}'>{esc(a.name)}</a> <span class='pill'>{esc(a.kind)}</span> {pills(a.effects.map(fx => fx.split("[").first.or(fx).split(".").first.or(fx)))}</h3><pre><code class='language-sspur'>{esc(a.sig)}</code></pre>{if a.doc == "" then "" else "<div class='doc'>" + markdown(a.doc, base) + "</div>"}</article>").join("")
+
+fn version_row(p: Package, e: Entry) -> Str
+= do
+  flag = if e.yanked then "<span class='pill bad'>yanked</span>" else match e.deprecated
+    | some(d) => "<span class='pill warn' title='{esc(d)}'>deprecated</span>"
+    | none => ""
+  snap = match e.snapshot
+    | some(s) => "<a href='{esc(s.url)}' title='SHA-256 {esc(s.sha256)}'>snapshot</a>"
+    | none => "<span class='muted'>none</span>"
+  "<tr><th scope='row'>{esc(e.version)} {flag}</th><td>{esc(day(e.published))}</td><td><a href='{esc(commit_url(p, e))}'><code>{esc(e.commit.take(10))}</code></a></td><td>{snap}</td><td>{pills(e.effects)}</td></tr>"
+
+fn dep_links(m: Map[Str, Str]) -> Str
+= if m.items.is_empty() then "<p class='muted'>None.</p>" else "<ul class='links'>" + m.items.map(kv => "<li><a href='../{esc(kv.0)}/'>{esc(kv.0)}</a> <code>{esc(kv.1)}</code></li>").join("") + "</ul>"
+
+fn package_page(p: Package, e: Entry, readme: Str, dependents: List[Str]) -> Str
+= do
+  s = slug(p.repository)
+  base = "https://github.com/{s}/blob/{e.commit}/"
+  req = "^{e.version}"
+  notice = if p.versions.all(_.yanked) then "<p class='notice bad'>Every version of {esc(p.name)} is yanked: no new lock will choose it.</p>" else match e.deprecated
+    | some(d) => "<p class='notice warn'>Deprecated: {esc(d)}</p>"
+    | none => ""
+  install = "<div class='card install'><h2>Install</h2><div class='copy'><pre><code id='cmd'>sspur add {esc(p.name)}@{esc(req)}</code></pre><button type='button' class='btn copy-btn' data-copy='cmd'>{icon("copy")}<span>Copy</span></button></div><p class='muted small'>or in <code>sspur.toml</code>:</p><div class='copy'><pre><code id='toml'>{esc(p.name)} = \{ version = \"{esc(req)}\" }</code></pre><button type='button' class='btn copy-btn' data-copy='toml'>{icon("copy")}<span>Copy</span></button></div></div>"
+  rd = if readme == "" then "<p class='muted'>No README in this version.</p>" else markdown(readme, base)
+  versions = "<table class='versions'><thead><tr><th scope='col'>Version</th><th scope='col'>Published</th><th scope='col'>Commit</th><th scope='col'>Source</th><th scope='col'>Effects</th></tr></thead><tbody>" + p.versions.sort_by(x => version_of(x.version)).reverse.map(x => version_row(p, x)).join("") + "</tbody></table>"
+  deps_html = dep_links(e.deps)
+  rev = if dependents.is_empty() then "<p class='muted'>None yet.</p>" else "<ul class='links'>" + dependents.map(d => "<li><a href='../{esc(d)}/'>{esc(d)}</a></li>").join("") + "</ul>"
+  snap = match e.snapshot
+    | some(x) => "<dt>Snapshot</dt><dd><a href='{esc(x.url)}'>{esc(p.name)}-{esc(e.version)}.tar</a><br><code class='hash'>sha256 {esc(x.sha256)}</code></dd>"
+    | none => ""
+  facts = "<dl class='facts'><dt>Version</dt><dd>{esc(e.version)}</dd><dt>Licence</dt><dd>{esc(e.license)}</dd><dt>Repository</dt><dd><a href='https://github.com/{esc(s)}'>{esc(s)}</a></dd><dt>Commit</dt><dd><a href='{esc(commit_url(p, e))}'><code>{esc(e.commit.take(12))}</code></a> (tag <code>{esc(e.tag)}</code>)</dd>{snap}<dt>Content hash</dt><dd><code class='hash'>#{esc(e.hash.take(20))}</code></dd><dt>Effects</dt><dd>{if e.effects.is_empty() then "none" else pills(e.effects)}</dd><dt>Owners</dt><dd>{p.owners.map(o => "<a href='https://github.com/" + esc(o) + "'>" + esc(o) + "</a>").join(", ")}</dd><dt>Published</dt><dd>{esc(day(e.published))} by {esc(e.publisher)}</dd></dl>"
+  body = "<section class='hero wrap'><p class='kicker'>{logo()} Package</p><h1>{esc(p.name)}</h1><p class='lede'>{esc(p.description)}</p><p class='badges'><span class='pill'>{esc(e.version)}</span> <span class='pill'>{esc(e.license)}</span> {pills(e.effects)}</p>{notice}</section><div class='wrap pkg-grid'><div class='pkg-main'>{install}<section class='card readme' aria-labelledby='readme'><h2 id='readme'>README</h2>{rd}</section><section class='card' aria-labelledby='api'><h2 id='api'>API</h2>{api_html(e, base)}</section><section class='card' aria-labelledby='versions'><h2 id='versions'>Versions</h2><div class='table-scroll'>{versions}</div></section></div><aside class='pkg-side'><section class='card'><h2>About</h2>{facts}</section><section class='card'><h2>Dependencies</h2>{deps_html}</section><section class='card'><h2>Dependents</h2>{rev}</section></aside></div>"
+  shell("{p.name} {e.version}: SSPUR packages", p.description, 2, "", body)
+
+// ---------- files ----------
+
+fn read_or(path: Str, d: Str) -> Str ! fs
+= read_file(path).or(d)
+
+fn put(path: Str, text: Str) -> Unit ! fs, log
+= do
+  parts = path.split("/")
+  dir = parts.take(parts.len - 1).join("/")
+  made = mkdir_all(dir)
+  r = write_file(path, text)
+  if r is err(e) then log("cannot write {path}: {e}")
+
+fn load_packages(index: Str) -> List[Package] ! fs, log
+= do
+  shards = list_dir(index + "/packages").or([]).filter(s => is_dir("{index}/packages/{s}"))
+  var out = []
+  for s in shards
+    for f in list_dir("{index}/packages/{s}").or([]).filter(_.ends_with(".json"))
+      match json.decode[Package](read_or("{index}/packages/{s}/{f}", ""))
+      | ok(p) => out := out.push(p)
+      | err(e) => log("skipping packages/{s}/{f}: {e}")
+  out.sort_by(_.name)
+
+fn copy_dir(from: Str, to: Str) -> Unit ! fs, log
+= do
+  made = mkdir_all(to)
+  for f in list_dir(from).or([])
+    r = copy_file("{from}/{f}", "{to}/{f}")
+    if r is err(e) then log("cannot copy {f}: {e}")
+
+fn copy_static(cx: Ctx) -> Unit ! fs, log
+= do
+  copy_dir(cx.web + "/assets", cx.out + "/assets")
+  copy_dir(cx.web + "/publish", cx.out + "/publish")
+
+fn search_json(cards: List[Card]) -> Str
+= json.encode(cards)
+
+fn dependents_of(all: List[Package], name: Str) -> List[Str]
+= all.filter(p => p.versions.any(e => e.deps.has(name))).map(_.name)
+
+fn build(cx: Ctx) -> Int ! fs, log
+= do
+  all = load_packages(cx.index)
+  cards = all.flat_map(p => card_of(p).map(c => [c]).or([]))
+  put(cx.out + "/index.html", index_page(cards))
+  put(cx.out + "/search.json", search_json(cards))
+  put(cx.out + "/index.json", read_or(cx.index + "/index.json", "\{\"schema\": 1, \"packages\": []}"))
+  for p in all
+    some(e) = latest(p) else ()
+    readme = read_or("{cx.sources}/{p.name}/README.md", "")
+    put("{cx.out}/packages/{p.name}/index.html", package_page(p, e, readme, dependents_of(all, p.name)))
+    put("{cx.out}/packages/{p.name.take(2)}/{p.name}.json", read_or("{cx.index}/packages/{p.name.take(2)}/{p.name}.json", ""))
+  publish = read_or(cx.web + "/publish.html", "<p>The Publish page is missing.</p>")
+  put(cx.out + "/publish/index.html", shell("Publish a package: SSPUR packages", "Check a package in your browser and open its publish request on GitHub.", 1, "publish", publish))
+  put(cx.out + "/404.html", shell("Not found: SSPUR packages", "This page does not exist.", 0, "", "<section class='hero wrap'><p class='kicker'>404</p><h1>No such page</h1><p class='lede'>It may be a package that was never published. <a href='/sspur-packages/'>Search the packages</a>.</p></section>"))
+  copy_static(cx)
+  all.len
+
+fn main() -> Unit ! env, fs, log
+= do
+  a = args()
+  if a.len < 4 then log("usage: sspur run tools/site/main.ssp INDEX_DIR SOURCES_DIR OUT_DIR STATIC_DIR") else do
+    n = build(Ctx{index: a[0], sources: a[1], out: a[2], web: a[3]})
+    log("site: {plural(n, "package", "packages")} in {a[2]}")

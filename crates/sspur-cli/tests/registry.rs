@@ -378,6 +378,16 @@ fn publish_checks_merge_and_install() {
     let (out, ok) = r.run(&idx, idx.join("tools/ci.sh").to_str().unwrap(), &["guard", "origin/main"], &[("WORK", r.t.join("guard").to_str().unwrap()), ("INDEX_DIR", idx.to_str().unwrap())]);
     assert!(!ok && out.contains("1.0.0 changed; only `yanked` and `deprecated` may change"), "{out}");
     git(&idx, &["checkout", "-q", "--detach", "origin/main"]);
+
+    // The package site, built from the index and the verified sources.
+    let out = r.t.join("site");
+    let (log, ok) = r.run(&idx, idx.join("tools/ci.sh").to_str().unwrap(), &["site", out.to_str().unwrap()], &[("WORK", r.t.join("sitework").to_str().unwrap()), ("INDEX_DIR", idx.to_str().unwrap()), ("SSPUR_INDEX", idx.to_str().unwrap())]);
+    assert!(ok && log.contains("site: 1 package"), "{log}");
+    let page = std::fs::read_to_string(out.join("packages/money/index.html")).unwrap();
+    assert!(page.contains("sspur add money@^1.2.0") && page.contains("A small package used by the registry tests") && page.contains("Created by <a href='https://utkarshavardhana.github.io/'"), "{page}");
+    for f in ["index.html", "publish/index.html", "publish/publish.js", "publish/worker.js", "assets/site.css", "index.json", "packages/mo/money.json", "404.html"] {
+        assert!(out.join(f).is_file(), "{f}");
+    }
 }
 
 #[test]

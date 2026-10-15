@@ -1,0 +1,52 @@
+<section class="hero wrap">
+  <p class="kicker"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg> Publish</p>
+  <h1>Publish a package</h1>
+  <p class="lede">Pick your repository and a tag. This page reads the files from GitHub and runs the registry's checks in your browser, then opens the publish request on github.com, where you are signed in. No tokens, no server, nothing sent anywhere but GitHub.</p>
+  <p class="note">From a terminal, <code>sspur publish</code> in the package does the same, with its tests too.</p>
+</section>
+<section class="band wrap" data-index-repo="utkarshavardhana/sspur-packages" id="publish">
+  <noscript><p class="card">This page needs JavaScript to read your repositories. Without it, run <code>sspur publish</code> in your package, or open the <a href="https://github.com/utkarshavardhana/sspur-packages/issues/new?template=publish.yml">publish form</a> directly.</p></noscript>
+  <ol class="steps">
+    <li class="card step" id="step-user">
+      <h2><span class="n">1</span> Your GitHub account</h2>
+      <form id="user-form" class="row" autocomplete="on">
+        <div class="field"><label for="user">GitHub username</label><input id="user" name="user" autocomplete="username" autocapitalize="none" spellcheck="false" required pattern="[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})" inputmode="text" enterkeyhint="go"></div>
+        <button class="btn primary" type="submit">List repositories</button>
+      </form>
+      <p class="status" id="user-status" role="status" aria-live="polite"></p>
+      <details id="manual">
+        <summary>Or enter a repository and ref yourself</summary>
+        <form id="manual-form" class="row">
+          <div class="field"><label for="manual-repo">Repository</label><input id="manual-repo" placeholder="https://github.com/OWNER/REPO" spellcheck="false" autocapitalize="none" required></div>
+          <div class="field"><label for="manual-ref">Tag</label><input id="manual-ref" placeholder="v1.0.0" spellcheck="false" autocapitalize="none" required></div>
+          <button class="btn" type="submit">Check it</button>
+        </form>
+      </details>
+    </li>
+    <li class="card step" id="step-repo" hidden>
+      <h2><span class="n">2</span> Repository</h2>
+      <div class="field"><label for="repo-filter">Filter</label><input id="repo-filter" type="search" placeholder="Name" spellcheck="false" autocapitalize="none"></div>
+      <ul class="repos" id="repos" aria-label="Your public repositories"></ul>
+    </li>
+    <li class="card step" id="step-ref" hidden>
+      <h2><span class="n">3</span> Version</h2>
+      <div class="row">
+        <div class="field"><label for="ref">Tag or branch</label><select id="ref"></select></div>
+        <button class="btn primary" type="button" id="check">Run the checks</button>
+      </div>
+      <p class="status" id="ref-status" role="status" aria-live="polite"></p>
+    </li>
+    <li class="card step" id="step-results" hidden>
+      <h2><span class="n">4</span> Checks</h2>
+      <div class="summary" id="summary" role="status" aria-live="polite"></div>
+      <div class="effects" id="effects"></div>
+      <ul class="checks" id="checks"></ul>
+      <div class="actions">
+        <a class="btn primary" id="submit" href="#" target="_blank" rel="noopener" aria-disabled="true">Submit publish request</a>
+        <button class="btn" type="button" id="recheck">Check again</button>
+      </div>
+      <p class="note" id="submit-note">The request opens on github.com as a prefilled form; submitting it there makes it yours. The registry workflow then runs every check again, including the tests, and answers on the request.</p>
+    </li>
+  </ol>
+</section>
+<script type="module" src="./publish.js"></script>
