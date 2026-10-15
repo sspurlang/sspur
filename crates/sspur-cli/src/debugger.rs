@@ -50,9 +50,9 @@ fn anchors(d: &sspur_syntax::Def) -> Vec<u32> {
     let mut visit = |e: &sspur_syntax::Expr| {
         sspur_syntax::visit::walk_expr(e, &mut |x| {
             match &x.kind {
-                ExprKind::Block(stmts) => out.extend(stmts.iter().filter_map(|s| match s {
-                    Stmt::Let(_, v) | Stmt::Var(_, v) | Stmt::Assign(_, v, _) | Stmt::Expr(v) | Stmt::For(_, v, _) | Stmt::While(v, _) => Some(v.span.start),
-                    Stmt::Fn(f) => Some(f.span.start),
+                ExprKind::Block(stmts) => out.extend(stmts.iter().map(|s| match s {
+                    Stmt::Let(_, v) | Stmt::Var(_, v) | Stmt::Assign(_, v, _) | Stmt::Expr(v) | Stmt::For(_, v, _) | Stmt::While(v, _) => v.span.start,
+                    Stmt::Fn(f) => f.span.start,
                 })),
                 ExprKind::Match(_, arms, _) | ExprKind::Catch(_, arms) | ExprKind::Handle(_, arms) => out.extend(arms.iter().map(|a| a.body.span.start)),
                 _ => {}

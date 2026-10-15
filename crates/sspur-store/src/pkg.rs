@@ -490,7 +490,7 @@ fn changed_members(root: &Path, lock: &Lock) -> Option<BTreeSet<String>> {
     let mut changed = false;
     for e in lock.entries.values() {
         let Some(p) = e.source.strip_prefix("path+") else { continue };
-        let Ok(dir) = Path::new(p).is_absolute().then(|| PathBuf::from(p)).unwrap_or_else(|| root.join(p)).canonicalize() else { continue };
+        let Ok(dir) = root.join(p).canonicalize() else { continue };
         if dir == base || !dir.starts_with(&base) {
             continue;
         }

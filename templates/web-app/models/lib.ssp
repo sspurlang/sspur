@@ -28,8 +28,10 @@ pub type NewNote = {title: Title, body: Opt[Body], tags: Opt[Tags]}
 pub type NotePatch = {title: Opt[Title], body: Opt[Body], tags: Opt[Tags]}
 // ANCHOR_END: types
 
+// A note as the API returns it.
 pub type Note = {id: Int, title: Str, body: Str, tags: List[Str], created_at: Time, updated_at: Time}
 
+// An account as the API returns it, without its password hash.
 pub type User = {id: Int, email: Str, created_at: Time}
 
 // The errors handlers raise. The server picks the status from the name: Invalid is 400,

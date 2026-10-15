@@ -6,6 +6,7 @@ use models.{AppErr, User}
 // and per client address within `window_mins` minutes.
 pub type Policy = {session_days: Int where _ >= 1, max_failures: Int where _ >= 1, window_mins: Int where _ >= 1}
 
+// Sessions last 14 days; 5 failed logins in 15 minutes lock an account or address for the rest of the window.
 pub fn default_policy() -> Policy
 = Policy{session_days: 14, max_failures: 5, window_mins: 15}
 

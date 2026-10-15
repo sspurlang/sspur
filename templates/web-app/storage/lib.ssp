@@ -37,6 +37,7 @@ pub fn create_user(c: Db, email: Str, password_hash: Str, now: Time) -> User ! d
 pub fn account(c: Db, email: Str) -> Opt[Account] ! db, fail[DbErr]
 = db.opt[Account](c, "select id, email, password, created_at from users where email = ?", [email])
 
+// Replaces the password hash of `user`.
 pub fn set_password(c: Db, user: Int, password_hash: Str) -> Int ! db, fail[DbErr]
 = db.exec(c, "update users set password = ? where id = ?", [password_hash, user])
 
@@ -48,6 +49,7 @@ pub fn add_session(c: Db, user: Int, digest: Str, now: Time, expires: Time) -> I
 pub fn session_user(c: Db, digest: Str, now: Time) -> Opt[User] ! db, fail[DbErr]
 = db.opt[User](c, "select u.id, u.email, u.created_at from sessions s join users u on u.id = s.user_id where s.digest = ? and s.expires_at > ?", [digest, now])
 
+// Ends the session with this digest.
 pub fn drop_session(c: Db, digest: Str) -> Int ! db, fail[DbErr]
 = db.exec(c, "delete from sessions where digest = ?", [digest])
 
@@ -55,6 +57,7 @@ pub fn drop_session(c: Db, digest: Str) -> Int ! db, fail[DbErr]
 pub fn sweep(c: Db, now: Time, keep_failures: Time) -> Int ! db, fail[DbErr]
 = db.exec(c, "delete from sessions where expires_at <= ?", [now]) + db.exec(c, "delete from login_failures where at < ?", [keep_failures])
 
+// Records a failed login for `key`, an account (`email:...`) or an address (`client:...`).
 pub fn add_failure(c: Db, key: Str, now: Time) -> Int ! db, fail[DbErr]
 = db.exec(c, "insert into login_failures (key, at) values (?, ?)", [key, now])
 
@@ -65,6 +68,7 @@ pub fn failures(c: Db, key: Str, since: Time) -> (Int, Opt[Time]) ! db, fail[DbE
   first = db.one[Opt[Time]](c, "select min(at) from login_failures where key = ? and at >= ?", [key, since])
   (n, first)
 
+// Forgets the failed logins of `key`, after a successful one.
 pub fn clear_failures(c: Db, key: Str) -> Int ! db, fail[DbErr]
 = db.exec(c, "delete from login_failures where key = ?", [key])
 
