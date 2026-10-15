@@ -178,7 +178,7 @@ pub fn facts(path: &str, src: &str, mode: Check) -> J {
         Ok(m) => m,
         Err(e) => {
             let d = sspur_check::syntax_diag_in(src, &e);
-            return json!({"facts": FACTS_VERSION, "source": path, "parse": false, "checked": false, "diags": [diag_json(src, path, &d)], "fmt": {"clean": false}, "defs": [], "holes": [], "run_cmd": [], "tests": 0});
+            return json!({"facts": FACTS_VERSION, "source": path, "parse": false, "checked": false, "profile": null, "diags": [diag_json(src, path, &d)], "fmt": {"clean": false, "line": line_col(src, d.span[0]).0, "have": "", "want": ""}, "defs": [], "holes": [], "run_cmd": [], "tests": 0, "tested": []});
         }
     };
     let own_check;
@@ -228,7 +228,7 @@ pub fn facts(path: &str, src: &str, mode: Check) -> J {
         let mut j = json!({
             "kind": def_kind(d),
             "name": d.name(),
-            "pub": d.is_pub(),
+            "public": d.is_pub(),
             "line": line,
             "doc": doc_above(&lines, line),
             "hash": hashes.get(d.name()).cloned().unwrap_or_default(),
@@ -311,6 +311,56 @@ pub fn facts(path: &str, src: &str, mode: Check) -> J {
     })
 }
 
+/// The manifest as the checks see it: the known fields, every key as `section.key`, and the
+/// dependencies with their kind (`registry`, `path` or `git`).
+pub fn manifest(text: &str) -> J {
+    use crate::toml::{parse_toml, TVal};
+    let secs = match parse_toml(text) {
+        Ok(s) => s,
+        Err(e) => return json!({"error": e, "name": "", "version": "", "src": "", "description": "", "license": "", "repository": "", "keywords": [], "keys": [], "deps": []}),
+    };
+    let mut get = BTreeMap::new();
+    let mut keys = Vec::new();
+    let mut deps = Vec::new();
+    let mut keywords: Vec<String> = Vec::new();
+    for s in &secs {
+        let sec = if s.name.is_empty() { "package" } else { s.name.as_str() };
+        if s.kv.is_empty() && !s.name.is_empty() {
+            keys.push(format!("{sec}."));
+        }
+        for (k, v) in &s.kv {
+            keys.push(format!("{}{sec}.{k}", if s.array { "[]" } else { "" }));
+            match (sec, v) {
+                ("package", TVal::Str(x)) => {
+                    get.insert(k.clone(), x.clone());
+                }
+                ("package", TVal::Arr(xs)) if k == "keywords" => keywords = xs.clone(),
+                ("deps" | "dependencies", v) => {
+                    let (kind, req) = match v {
+                        TVal::Str(p) => ("path", p.clone()),
+                        TVal::Table(t) if t.contains_key("version") => ("registry", t.get("version").and_then(TVal::str).unwrap_or_default().to_string()),
+                        TVal::Table(t) if t.contains_key("git") => ("git", t.get("git").and_then(TVal::str).unwrap_or_default().to_string()),
+                        TVal::Table(t) => ("path", t.get("path").and_then(TVal::str).unwrap_or_default().to_string()),
+                        TVal::Arr(_) => ("invalid", String::new()),
+                    };
+                    deps.push(json!({"name": k, "kind": kind, "req": req}));
+                }
+                _ => {}
+            }
+        }
+    }
+    let f = |k: &str| get.get(k).cloned().unwrap_or_default();
+    json!({"name": f("name"), "version": f("version"), "src": f("src"), "description": f("description"), "license": f("license"), "repository": f("repository"), "keywords": keywords, "keys": keys, "deps": deps})
+}
+
+/// What the checks see of one file of the package: its size, whether it is text, its first
+/// bytes in hex (for the binary check), and its text when it is text and at most 1 MiB.
+pub fn file_info(path: &str, data: &[u8], mode: &str) -> J {
+    let head: String = data.iter().take(8).map(|b| format!("{b:02x}")).collect();
+    let text = std::str::from_utf8(data).ok().filter(|t| !t[..t.len().min(8000)].contains('\0'));
+    json!({"path": path, "size": data.len(), "binary": text.is_none(), "head": head, "mode": mode, "text": text.filter(|t| t.len() <= 1 << 20)})
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -326,7 +376,7 @@ mod tests {
         assert_eq!(get("Money")["line"], 2);
         assert_eq!(get("Money")["derives"], json!(["Eq", "Show"]));
         assert_eq!(get("add")["doc"], "Adds two amounts.\nNever overflows in practice.");
-        assert_eq!(get("add")["pub"], true);
+        assert_eq!(get("add")["public"], true);
         assert_eq!(get("half")["doc"], "", "a section comment followed by a blank line is not a doc");
         assert_eq!(get("half")["effects"], json!(["log"]));
         assert_eq!(get("half")["params"][0]["refined"], true);
@@ -351,6 +401,20 @@ mod tests {
         assert_eq!(r["want"], "fn f(x: Int) -> Int");
         let url = "fn u() -> Str\n= \"https://example.com/a\"\n";
         assert_eq!(fmt_check(url, &parse(url).unwrap())["clean"], true, "// inside a string is not a comment");
+    }
+
+    #[test]
+    fn manifests_and_files() {
+        let m = manifest("[package]\nname = \"money\"\nversion = \"1.0.0\"\nlicense = \"MIT\"\nkeywords = [\"cash\"]\nbuild = \"make\"\n\n[deps]\ntext = { version = \"^0.2\" }\nlocal = { path = \"../l\" }\n");
+        assert_eq!(m["name"], "money");
+        assert_eq!(m["keywords"], json!(["cash"]));
+        assert!(m["keys"].as_array().unwrap().contains(&json!("package.build")));
+        assert_eq!(m["deps"][1], json!({"name": "text", "kind": "registry", "req": "^0.2"}));
+        assert_eq!(m["deps"][0]["kind"], "path");
+        let f = file_info("a.bin", &[0x7f, b'E', b'L', b'F', 0, 1], "100644");
+        assert_eq!(f["binary"], true);
+        assert_eq!(f["head"], "7f454c460001");
+        assert_eq!(file_info("a.txt", b"hi", "100644")["text"], "hi");
     }
 
     #[test]

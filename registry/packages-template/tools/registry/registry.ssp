@@ -1,0 +1,719 @@
+// The SSPUR package registry checks and index tools.
+//
+// One program, pure apart from reading its input and printing its output, so the same code
+// runs everywhere a package is checked: `sspur publish` (which embeds this file), the
+// publish workflow of sspur-packages, and the Publish page, in the browser's interpreter.
+//
+// Input is one JSON object on stdin with a "cmd" field; the result is JSON on stdout.
+// Commands: check, render, text, parse-request, entry, apply, summary, guard.
+// The standards each check enforces are documented in CONTRIBUTING.md under their ids.
+
+// ---------- input and output types ----------
+
+type Diag = {code: Str, severity: Str, file: Str, line: Int, col: Int, msg: Str, hint: Opt[Str]}
+
+type Param = {name: Str, ty: Str, refined: Bool}
+
+type FactDef = {kind: Str, name: Str, public: Bool, line: Int, doc: Str, hash: Str, sig: Opt[Str], sig_hash: Opt[Str], effects: Opt[List[Str]], pres: Opt[List[Str]], posts: Opt[Int], examples: Opt[Int], params: Opt[List[Param]], type_kind: Opt[Str], derives: Opt[List[Str]], has_fn_fields: Opt[Bool], generic: Opt[Bool]}
+
+type Fmt = {clean: Bool, line: Opt[Int], have: Opt[Str], want: Opt[Str]}
+
+type Site = {line: Int, def: Str}
+
+type Hole = {name: Str, line: Int, def: Str}
+
+type Dep = {name: Str, kind: Str, req: Str}
+
+type Manifest = {name: Str, version: Str, src: Str, description: Str, license: Str, repository: Str, keywords: List[Str], keys: List[Str], deps: List[Dep], error: Opt[Str]}
+
+type Facts = {source: Str, parse: Bool, checked: Bool, diags: List[Diag], fmt: Fmt, defs: List[FactDef], holes: List[Hole], run_cmd: List[Site], tests: Int, tested: List[Str], manifest: Opt[Manifest], hash: Opt[Str], build_error: Opt[Str]}
+
+type FileInfo = {path: Str, size: Int, binary: Bool, head: Str, mode: Str, text: Opt[Str]}
+
+type Request = {kind: Str, name: Str, repository: Str, ref: Str, version: Str, effects: List[Str], author: Str, issue: Int, commit: Str, tag: Bool, action: Str, reason: Str}
+
+type TestRun = {ran: Bool, passed: Int, failed: Int, detail: Str}
+
+type Tests = {native: Opt[TestRun], interp: Opt[TestRun]}
+
+type Snapshot = {url: Str, sha256: Str, size: Int}
+
+type ApiItem = {name: Str, kind: Str, sig: Str, sig_hash: Str, hash: Str, effects: List[Str], doc: Str}
+
+type Entry = {version: Str, git: Str, tag: Str, commit: Str, hash: Str, snapshot: Opt[Snapshot], effects: List[Str], deps: Map[Str, Str], license: Str, yanked: Bool, deprecated: Opt[Str], published: Str, publisher: Str, request: Opt[Int], api: List[ApiItem]}
+
+type Package = {schema: Int, name: Str, description: Str, repository: Str, owners: List[Str], keywords: List[Str], versions: List[Entry]}
+
+type CheckIn = {facts: Facts, files: List[FileInfo], request: Request, previous: Opt[Package], names: List[Str], tests: Opt[Tests], env: Str}
+
+type Detail = {file: Str, line: Int, msg: Str, fix: Str}
+
+type Check = {id: Str, title: Str, severity: Str, status: Str, details: List[Detail], note: Str}
+
+type FnEffects = {name: Str, effects: List[Str]}
+
+type Change = {name: Str, kind: Str, before: Str, after: Str}
+
+type ApiDiff = {previous: Opt[Str], added: List[Change], removed: List[Change], changed: List[Change], body: List[Str], required: Str}
+
+type Report = {name: Str, version: Str, env: Str, commit: Str, checks: List[Check], blocking_failed: Int, advisory_failed: Int, skipped_blocking: Int, ok: Bool, effects: List[FnEffects], effects_new: List[Str], effects_missing: List[Str], api: ApiDiff}
+
+type V = {major: Int, minor: Int, patch: Int} derive Eq, Ord, Show
+
+type Cmd = {cmd: Str}
+
+// ---------- policy ----------
+
+// Effects that reach outside the program; a version that adds one needs an acknowledgement.
+fn capability_effects() -> List[Str]
+= ["fs", "io", "proc", "env", "net", "db", "ffi", "unsafe", "dev"]
+
+fn reserved_names() -> List[Str]
+= ["std", "sspur", "core", "json", "db", "http", "net", "fs", "io", "proc", "env", "log", "crypto", "gzip", "zstd", "deflate", "csv", "uuid", "config", "regex", "time", "test", "main", "self", "pub", "use", "registry", "packages", "index", "fn", "type", "var", "for", "in", "if", "then", "else", "match", "catch", "handle", "do", "raise", "return", "with", "profile", "derive", "where", "pre", "post", "dec", "cost", "new", "true", "false", "and", "or", "not", "par", "ex", "while", "rule", "trait", "impl", "store", "svc", "queue", "effect"]
+
+// SPDX identifiers of OSI-approved licences.
+fn osi_licences() -> List[Str]
+= ["0BSD", "AFL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later", "Apache-2.0", "Artistic-2.0", "BSD-1-Clause", "BSD-2-Clause", "BSD-2-Clause-Patent", "BSD-3-Clause", "BSL-1.0", "CDDL-1.0", "ECL-2.0", "EFL-2.0", "EPL-1.0", "EPL-2.0", "EUPL-1.2", "GPL-2.0-only", "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later", "ISC", "LGPL-2.1-only", "LGPL-2.1-or-later", "LGPL-3.0-only", "LGPL-3.0-or-later", "LPL-1.02", "MIT", "MIT-0", "MPL-2.0", "MS-PL", "MS-RL", "MulanPSL-2.0", "NCSA", "OFL-1.1", "OSL-3.0", "PostgreSQL", "UPL-1.0", "Unlicense", "Zlib"]
+
+// Words that identify a licence's text, for the advisory licence-text check.
+fn licence_marker(id: Str) -> Str
+= if id.starts_with("Apache") then "Apache License" else if id == "MIT" or id == "MIT-0" then "Permission is hereby granted" else if id.starts_with("BSD") then "Redistribution and use" else if id == "ISC" or id == "0BSD" then "Permission to use, copy, modify" else if id.starts_with("MPL") then "Mozilla Public License" else if id.starts_with("AGPL") then "GNU AFFERO" else if id.starts_with("LGPL") then "GNU LESSER" else if id.starts_with("GPL") then "GNU GENERAL PUBLIC LICENSE" else if id == "Unlicense" then "unencumbered" else if id == "Zlib" then "provided 'as-is'" else if id == "BSL-1.0" then "Boost Software License" else if id.starts_with("EPL") then "Eclipse Public License" else ""
+
+fn max_file_bytes() -> Int
+= 1048576
+
+fn max_total_bytes() -> Int
+= 5242880
+
+fn max_source_bytes() -> Int
+= 524288
+
+fn max_files() -> Int
+= 500
+
+fn manifest_keys() -> List[Str]
+= ["package.name", "package.version", "package.src", "package.description", "package.license", "package.repository", "package.keywords", "package.homepage", "package.authors", "package.readme"]
+
+fn hook_words() -> List[Str]
+= ["build", "install", "preinstall", "postinstall", "scripts", "script", "hooks", "prepare", "setup", "run", "exec"]
+
+fn blocked_extensions() -> List[Str]
+= [".exe", ".dll", ".so", ".dylib", ".a", ".o", ".obj", ".lib", ".wasm", ".jar", ".class", ".zip", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".7z", ".rar", ".pyc", ".bin", ".msi", ".deb", ".rpm", ".dmg", ".apk"]
+
+// Magic numbers of executables, objects and archives, as hex prefixes.
+fn blocked_magic() -> List[(Str, Str)]
+= [("7f454c46", "an ELF executable"), ("cffaedfe", "a Mach-O executable"), ("cefaedfe", "a Mach-O executable"), ("feedface", "a Mach-O executable"), ("feedfacf", "a Mach-O executable"), ("cafebabe", "a Mach-O universal binary or Java class"), ("4d5a", "a Windows executable"), ("0061736d", "a WebAssembly module"), ("504b0304", "a zip archive"), ("1f8b", "a gzip archive"), ("425a68", "a bzip2 archive"), ("fd377a585a00", "an xz archive"), ("377abcaf271c", "a 7z archive"), ("52617221", "a rar archive"), ("213c617263683e", "an ar archive")]
+
+// Token patterns, by name. A match is blocking: the token is public once the tag is.
+fn secret_patterns() -> List[(Str, Str)]
+= [("an AWS access key id", "\\b(AKIA|ASIA)[0-9A-Z]\{16}\\b"), ("a GitHub token", "\\bgh[pousr]_[A-Za-z0-9]\{36,}"), ("a GitHub fine-grained token", "\\bgithub_pat_[A-Za-z0-9_]\{22,}"), ("a GitLab token", "\\bglpat-[A-Za-z0-9_-]\{20,}"), ("a Slack token", "\\bxox[abposr]-[A-Za-z0-9-]\{10,}"), ("a Slack webhook", "hooks\\.slack\\.com/services/T[A-Za-z0-9_]+/B[A-Za-z0-9_]+/[A-Za-z0-9_]+"), ("a private key", "-----BEGIN ([A-Z0-9]+ )?PRIVATE KEY-----"), ("a Google API key", "\\bAIza[0-9A-Za-z_-]\{35}"), ("a Stripe live key", "\\b(sk|rk)_live_[0-9A-Za-z]\{24,}"), ("an Anthropic API key", "\\bsk-ant-[A-Za-z0-9_-]\{32,}"), ("an OpenAI API key", "\\bsk-(proj-)?[A-Za-z0-9]\{32,}"), ("an npm token", "\\bnpm_[A-Za-z0-9]\{36}\\b"), ("a PyPI token", "\\bpypi-[A-Za-z0-9_-]\{50,}"), ("a Discord bot token", "\\b[MN][A-Za-z\\d]\{23,25}\\.[\\w-]\{6}\\.[\\w-]\{27,}")]
+
+// ---------- small helpers ----------
+
+fn parse_num(s: Str) -> Opt[Int]
+= if s.is_empty() or s.len > 9 or (s.len > 1 and s.starts_with("0")) or not s.chars.all(c => "0123456789".contains(c)) then none else s.to_int
+
+fn parse_version(s: Str) -> Opt[V]
+= match s.trim.split(".")
+  | [a, b, c] => if parse_num(a) is some(x) and parse_num(b) is some(y) and parse_num(c) is some(z) then some(V{major: x, minor: y, patch: z}) else none
+  | _ => none
+
+fn vstr(v: V) -> Str
+= "{v.major}.{v.minor}.{v.patch}"
+
+// The part of a version that changes when compatibility breaks: the first non-zero component.
+fn compat(v: V) -> Str
+= if v.major > 0 then "{v.major}" else if v.minor > 0 then "0.{v.minor}" else "0.0.{v.patch}"
+
+// The smallest version after `v` that may break compatibility, may add, or may only fix.
+fn next_breaking(v: V) -> V
+= if v.major > 0 then V{major: v.major + 1, minor: 0, patch: 0} else if v.minor > 0 then V{major: 0, minor: v.minor + 1, patch: 0} else V{major: 0, minor: 0, patch: v.patch + 1}
+
+fn next_feature(v: V) -> V
+= if v.major > 0 then V{major: v.major, minor: v.minor + 1, patch: 0} else V{major: 0, minor: v.minor, patch: v.patch + 1}
+
+// Which kind of release `b` is after `a`: breaking, feature or fix (in a 0.x line, a feature is a patch).
+fn bump_kind(a: V, b: V) -> Str
+= if compat(a) != compat(b) then "major" else if a.major > 0 and a.minor != b.minor then "minor" else "patch"
+
+fn rank(kind: Str) -> Int
+= if kind == "major" then 3 else if kind == "minor" then 2 else if kind == "patch" then 1 else 0
+
+fn min3(a: Int, b: Int, c: Int) -> Int
+= min(a, min(b, c))
+
+fn lev_row(prev: List[Int], x: Str, ys: List[Str], i: Int) -> List[Int]
+= do
+  var row = [i]
+  for j in 0..ys.len
+    cost = if ys[j] == x then 0 else 1
+    row := row.push(min3(prev[j + 1] + 1, row[j] + 1, prev[j] + cost))
+  row
+
+// Levenshtein distance.
+fn lev(a: Str, b: Str) -> Int
+= do
+  ys = b.chars
+  var prev = (0..ys.len + 1).map(j => j)
+  var i = 0
+  for x in a.chars
+    i := i + 1
+    prev := lev_row(prev, x, ys, i)
+  prev[ys.len]
+
+// A name with the characters people confuse mapped together, for the typosquatting check.
+fn skeleton(n: Str) -> Str
+= n.lower.replace("_", "").replace("-", "").replace("0", "o").replace("1", "l").replace("i", "l").replace("5", "s").replace("rn", "m").replace("vv", "w")
+
+fn base_effect(e: Str) -> Str
+= do
+  a = e.split("[").first.or(e)
+  a.split(".").first.or(a).trim
+
+fn is_upper_camel(n: Str) -> Bool
+= n.len > 0 and n.chars.first.is_some and "ABCDEFGHIJKLMNOPQRSTUVWXYZ".contains(n.chars.first.or("")) and not n.contains("_")
+
+fn is_snake(n: Str) -> Bool
+= n.len > 0 and n.chars.all(c => "abcdefghijklmnopqrstuvwxyz0123456789_".contains(c)) and not "0123456789_".contains(n.chars.first.or("_"))
+
+fn valid_name(n: Str) -> Bool
+= n.len >= 2 and n.len <= 40 and "abcdefghijklmnopqrstuvwxyz".contains(n.chars.first.or("_")) and n.chars.all(c => "abcdefghijklmnopqrstuvwxyz0123456789_".contains(c)) and not n.contains("__") and not n.ends_with("_")
+
+fn short(s: Str, n: Int) -> Str
+= if s.len <= n then s else s.take(n - 1) + "…"
+
+// Text for inside a Markdown code span: no backticks, line breaks or pipes.
+fn md_code(s: Str) -> Str
+= "`" + short(s.replace("`", "'").replace("\n", " ").replace("\r", " ").replace("|", "\\|"), 160) + "`"
+
+// Untrusted text for Markdown: no HTML, no mentions, no line breaks.
+fn md_text(s: Str) -> Str
+= short(s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("@", "@&#8203;").replace("\n", " ").replace("\r", " ").replace("|", "\\|"), 400)
+
+fn plural(n: Int, one: Str, many: Str) -> Str
+= if n == 1 then "{n} {one}" else "{n} {many}"
+
+fn line_of(text: Str, at: Int) -> Int
+= text.take(at).split("\n").len
+
+// A GitHub repository URL as `owner/name`, lowercase; none if it isn't one.
+fn github_slug(url: Str) -> Opt[Str]
+= do
+  u = url.trim.lower
+  rest = if u.starts_with("https://github.com/") then u.drop(19) else if u.starts_with("http://github.com/") then u.drop(18) else ""
+  r = if rest.ends_with(".git") then rest.take(rest.len - 4) else rest
+  parts = r.split("/").filter(_ != "")
+  if parts.len == 2 and parts.all(p => p.chars.all(c => "abcdefghijklmnopqrstuvwxyz0123456789-_.".contains(c))) then some("{parts[0]}/{parts[1]}") else none
+
+fn has_doc(d: FactDef) -> Bool
+= d.doc.trim.len > 0
+
+fn api_kinds() -> List[Str]
+= ["fn", "extern", "type", "effect", "trait", "impl"]
+
+fn public_defs(f: Facts) -> List[FactDef]
+= f.defs.filter(d => d.public and api_kinds().contains(d.kind))
+
+fn api_of(f: Facts) -> List[ApiItem]
+= public_defs(f).map(d => ApiItem{name: d.name, kind: d.kind, sig: d.sig.or(d.name), sig_hash: d.sig_hash.or(""), hash: d.hash, effects: d.effects.or([]), doc: d.doc})
+
+// ---------- checks ----------
+
+fn detail(file: Str, line: Int, msg: Str, fix: Str) -> Detail
+= Detail{file, line, msg, fix}
+
+fn mk(id: Str, title: Str, severity: Str, details: List[Detail]) -> Check
+= Check{id, title, severity, status: if details.is_empty() then "pass" else "fail", details, note: ""}
+
+fn skip(id: Str, title: Str, severity: Str, why: Str) -> Check
+= Check{id, title, severity, status: "skip", details: [], note: why}
+
+fn src_file(i: CheckIn) -> Str
+= i.facts.source
+
+fn check_build(i: CheckIn) -> List[Check]
+= do
+  f = i.facts
+  path = src_file(i)
+  parse = if f.parse then mk("build.parse", "The source parses", "blocking", []) else mk("build.parse", "The source parses", "blocking", f.diags.map(d => detail(d.file, d.line, "{d.code} {d.msg}", d.hint.or("Fix the syntax; `sspur check {path}` shows the same error."))))
+  errors = f.diags.filter(_.severity == "error")
+  warnings = f.diags.filter(_.severity == "warning")
+  build_errs = match f.build_error
+    | some(e) => [detail(path, 0, e, "The package must build as a dependency; `sspur api` shows the same error.")]
+    | none => []
+  typecheck = if not f.parse then skip("build.typecheck", "The package typechecks", "blocking", "it does not parse") else if not f.checked then skip("build.typecheck", "The package typechecks", "blocking", "dependencies are not available here; the registry workflow typechecks it") else mk("build.typecheck", "The package typechecks", "blocking", errors.map(d => detail(d.file, d.line, "{d.code} {d.msg}", d.hint.or("`sspur check {path}` explains it."))) + build_errs)
+  warn = if not f.parse or not f.checked then skip("build.warnings", "No warnings", "blocking", "the package was not typechecked here") else mk("build.warnings", "No warnings", "blocking", warnings.map(d => detail(d.file, d.line, "{d.code} {d.msg}", d.hint.or("Remove the cause of the warning; a published package has none."))))
+  fmt = if not f.parse then skip("build.fmt", "The source is formatted", "blocking", "it does not parse") else if f.fmt.clean then mk("build.fmt", "The source is formatted", "blocking", []) else mk("build.fmt", "The source is formatted", "blocking", [detail(path, f.fmt.line.or(1), "the line differs from what `sspur fmt` prints: {md_code(f.fmt.have.or(""))}", "Write it as {md_code(f.fmt.want.or(""))}. `sspur fmt {path}` prints the canonical form; it drops comments, so copy the changed lines instead of overwriting the file.")])
+  native = test_check("build.tests-native", "The tests pass in native code", i.tests.map(_.native).or(none), "sspur test", f.tests)
+  interp = test_check("build.tests-interp", "The tests pass in the interpreter", i.tests.map(_.interp).or(none), "sspur test --interp", f.tests)
+  [parse, typecheck, warn, fmt, native, interp]
+
+fn test_check(id: Str, title: Str, run: Opt[TestRun], cmd: Str, expected: Int) -> Check
+= match run
+  | none => skip(id, title, "blocking", "the tests run in the registry workflow")
+  | some(r) => if not r.ran then mk(id, title, "blocking", [detail("", 0, "the tests did not run: {short(r.detail, 300)}", "Run `{cmd}` in the package and fix what it reports.")]) else if r.failed > 0 then mk(id, title, "blocking", [detail("", 0, "{plural(r.failed, "test", "tests")} failed: {short(r.detail, 600)}", "Run `{cmd}` in the package and fix the failing tests.")]) else mk(id, title, "blocking", [])
+
+fn sorted_versions(p: Package) -> List[V]
+= p.versions.map(e => parse_version(e.version)).filter(_ is some(_)).map(v => v.or(V{major: 0, minor: 0, patch: 0})).sort
+
+// The published version this one is compared with: the highest one below it.
+fn previous_entry(i: CheckIn) -> Opt[Entry]
+= do
+  some(p) = i.previous else none
+  some(v) = parse_version(i.request.version) else none
+  below = p.versions.filter(e => parse_version(e.version) is some(x) and x < v)
+  below.sort_by(e => parse_version(e.version).or(V{major: 0, minor: 0, patch: 0})).last
+
+fn api_key(a: ApiItem) -> Str
+= "{a.kind} {a.name}"
+
+fn api_diff(old: List[ApiItem], now: List[ApiItem], previous: Opt[Str]) -> ApiDiff
+= do
+  added = now.filter(n => not old.any(o => api_key(o) == api_key(n))).map(n => Change{name: n.name, kind: n.kind, before: "", after: n.sig})
+  removed = old.filter(o => not now.any(n => api_key(o) == api_key(n))).map(o => Change{name: o.name, kind: o.kind, before: o.sig, after: ""})
+  changed = now.filter(n => old.any(o => api_key(o) == api_key(n) and o.sig_hash != n.sig_hash)).map(n => Change{name: n.name, kind: n.kind, before: old.find(o => api_key(o) == api_key(n)).map(_.sig).or(""), after: n.sig})
+  body = now.filter(n => old.any(o => api_key(o) == api_key(n) and o.sig_hash == n.sig_hash and o.hash != n.hash)).map(_.name)
+  required = if previous.is_none() then "none" else if not removed.is_empty() or not changed.is_empty() then "major" else if not added.is_empty() then "minor" else "patch"
+  ApiDiff{previous, added, removed, changed, body, required}
+
+fn check_version(i: CheckIn, diff: ApiDiff) -> List[Check]
+= do
+  r = i.request
+  m = i.facts.manifest
+  mver = m.map(_.version).or("")
+  parsed = parse_version(r.version)
+  format = mk("version.format", "The version is MAJOR.MINOR.PATCH", "blocking", if parsed.is_some() then [] else [detail("sspur.toml", 0, "{md_code(r.version)} is not a version", "Use three numbers without leading zeros, like 1.2.0. Pre-release suffixes are not supported.")])
+  manifest = mk("version.manifest", "The request names the version in sspur.toml", "blocking", if mver == r.version then [] else [detail("sspur.toml", 0, "sspur.toml says {md_code(mver)}, the request says {md_code(r.version)}", "Set version = \"{r.version}\" in sspur.toml, commit, tag, and update the ref; or request {mver}.")])
+  taken = i.previous.map(p => p.versions.any(_.version == r.version)).or(false)
+  fresh = mk("version.new", "The version is not published yet", "blocking", if taken then [detail("", 0, "{r.name} {r.version} is already in the index; published versions never change", "Bump the version in sspur.toml (for example to {parsed.map(v => vstr(V{major: v.major, minor: v.minor, patch: v.patch + 1})).or("the next patch")}), commit, tag it, and update the ref.")] else [])
+  semver = match (diff.previous, parsed)
+    | (some(p), some(v)) => semver_check(diff, parse_version(p).or(v), v)
+    | _ => mk("version.semver", "The version number matches the API change", "blocking", [])
+  tag = if r.ref == "" then skip("version.tag", "The ref is a tag", "blocking", "no ref yet") else mk("version.tag", "The ref is a tag", "blocking", if r.tag then [] else [detail("", 0, "{md_code(r.ref)} is not a tag; a published version pins a tag and its commit", "Run `git tag v{r.version} && git push origin v{r.version}` in the package and set the ref to v{r.version}.")])
+  [format, manifest, fresh, semver, tag]
+
+fn semver_check(diff: ApiDiff, prev: V, v: V) -> Check
+= do
+  kind = bump_kind(prev, v)
+  need = diff.required
+  ok = rank(kind) >= rank(need)
+  hint = if need == "major" then vstr(next_breaking(prev)) else if need == "minor" then vstr(next_feature(prev)) else vstr(V{major: prev.major, minor: prev.minor, patch: prev.patch + 1})
+  what = if need == "major" then "breaks the API ({plural(diff.removed.len + diff.changed.len, "removed or changed definition", "removed or changed definitions")})" else if need == "minor" then "adds to the API ({plural(diff.added.len, "new definition", "new definitions")})" else "keeps the API"
+  mk("version.semver", "The version number matches the API change", "blocking", if ok then [] else [detail("sspur.toml", 0, "{vstr(v)} is a {kind} release after {vstr(prev)}, but it {what}", "Publish it as {hint} or later, or keep the API of {vstr(prev)}. The API changes are listed below.")])
+
+fn effect_rows(f: Facts) -> List[FnEffects]
+= public_defs(f).filter(d => d.kind == "fn" or d.kind == "extern").map(d => FnEffects{name: d.name, effects: d.effects.or([])})
+
+fn caps_of(rows: List[List[Str]]) -> List[Str]
+= rows.flat_map(es => es.map(base_effect)).filter(e => capability_effects().contains(e)).unique.sort
+
+fn check_effects(i: CheckIn, prev: Opt[Entry]) -> (List[Check], List[Str], List[Str])
+= do
+  rows = effect_rows(i.facts)
+  now = caps_of(rows.map(_.effects))
+  before = prev.map(e => caps_of(e.api.map(_.effects) + [e.effects])).or([])
+  fresh = now.filter(e => not before.contains(e))
+  acked = i.request.effects.map(e => e.trim.lower)
+  missing = fresh.filter(e => not acked.contains(e))
+  since = prev.map(e => "since {e.version}").or("in a first version")
+  listing = rows.filter(r => not r.effects.is_empty()).map(r => detail(src_file(i), def_line(i.facts, r.name), "{r.name}: {r.effects.join(", ")}", ""))
+  list_check = Check{id: "effects.list", title: "Effects of the public functions", severity: "advisory", status: "pass", details: listing, note: if now.is_empty() then "no capability effects" else "capability effects: {now.join(", ")}"}
+  ack = mk("effects.ack", "New capability effects are acknowledged", "blocking", missing.map(e => detail(src_file(i), first_with(i.facts, e), "`{e}` is new {since} and not acknowledged in the request", "If {i.request.name} should use `{e}`, add `{e}` to the Effects field of the request (`sspur publish --ack {missing.join(",")}`); otherwise remove the calls that need it.")))
+  ([list_check, ack], fresh, missing)
+
+fn def_line(f: Facts, name: Str) -> Int
+= f.defs.find(_.name == name).map(_.line).or(0)
+
+fn first_with(f: Facts, e: Str) -> Int
+= public_defs(f).find(d => d.effects.or([]).any(x => base_effect(x) == e)).map(_.line).or(0)
+
+fn top_files(i: CheckIn) -> List[FileInfo]
+= i.files.filter(f => not f.path.contains("/"))
+
+fn check_name(i: CheckIn) -> List[Check]
+= do
+  n = i.request.name
+  mname = i.facts.manifest.map(_.name).or("")
+  bad_syntax = if valid_name(n) then [] else [detail("sspur.toml", 0, "{md_code(n)} is not a valid package name", "Use 2 to 40 lowercase letters, digits and single underscores, starting with a letter.")]
+  bad_reserved = if reserved_names().contains(n) then [detail("sspur.toml", 0, "{md_code(n)} is reserved", "Pick another name; names of the standard library, keywords and sspur itself are reserved.")] else []
+  bad_match = if mname != "" and mname != n then [detail("sspur.toml", 0, "sspur.toml names the package {md_code(mname)}, the request {md_code(n)}", "Request {mname}, or rename the package in sspur.toml.")] else []
+  name = mk("pkg.name", "The name follows the naming rules", "blocking", bad_syntax + bad_reserved + bad_match)
+  taken = i.previous.is_some()
+  near = if taken then [] else i.names.filter(o => o != n and (skeleton(o) == skeleton(n) or lev(o, n) <= (if n.len >= 8 then 2 else 1)))
+  similar = mk("pkg.name-similar", "The name is not confusable with an existing one", "advisory", near.map(o => detail("", 0, "{md_code(n)} is close to the existing package {md_code(o)}", "If you meant {o}, use it with `sspur add {o}`. Otherwise this is only a warning, but a clearly different name avoids typos and confusion.")))
+  [name, similar]
+
+fn check_owner(i: CheckIn) -> Check
+= do
+  r = i.request
+  slug = github_slug(r.repository)
+  title = "The request comes from the package's owner"
+  if i.env != "ci" and r.author == "" then skip("pkg.owner", title, "blocking", "checked by the registry workflow against the GitHub account that opens the request") else match i.previous
+    | some(p) => do
+      same_repo = github_slug(p.repository) == slug
+      owner = p.owners.map(_.lower).contains(r.author.lower)
+      a = if owner then [] else [detail("", 0, "@{r.author.replace("@", "")} is not an owner of {p.name} (owners: {p.owners.join(", ")})", "Ask an owner to publish, or to add you as an owner with a pull request that edits `owners`.")]
+      b = if same_repo then [] else [detail("", 0, "{p.name} is published from {p.repository}, not {r.repository}", "Publish from the registered repository. Moving a package to a new repository needs a maintainer's review: open a pull request that changes `repository`.")]
+      mk("pkg.owner", title, "blocking", a + b)
+    | none => do
+      owner = slug.map(s => s.split("/").first.or("")).or("")
+      mk("pkg.owner", title, "blocking", if owner != "" and owner == r.author.lower then [] else [detail("", 0, "the first version of a package must be requested by the owner of its repository ({owner}), not @{r.author.replace("@", "")}", "Open the request from the {owner} account. For a repository owned by an organization, ask a registry maintainer.")])
+
+fn check_files(i: CheckIn) -> List[Check]
+= do
+  m = i.facts.manifest
+  licence = m.map(_.license).or("")
+  ids = licence.replace("(", " ").replace(")", " ").split(" ").filter(w => w != "" and w != "OR" and w != "AND" and w != "WITH")
+  unknown = ids.filter(x => not osi_licences().contains(x))
+  lic_files = top_files(i).filter(f => do
+    u = f.path.upper
+    u.starts_with("LICENSE") or u.starts_with("LICENCE") or u.starts_with("COPYING") or u.starts_with("UNLICENSE"))
+  lic = mk("pkg.license", "An OSI licence is declared and included", "blocking", (if licence == "" then [detail("sspur.toml", 0, "no `license` in [package]", "Add license = \"MIT\" (or another OSI-approved SPDX identifier, such as Apache-2.0 or \"MIT OR Apache-2.0\") to sspur.toml.")] else []) + unknown.map(x => detail("sspur.toml", 0, "{md_code(x)} is not an OSI-approved SPDX licence identifier", "Use an identifier from https://opensource.org/licenses, written as SPDX spells it (MIT, Apache-2.0, BSD-3-Clause, MPL-2.0, ...).")) + (if lic_files.is_empty() then [detail("", 0, "no LICENSE file at the top of the repository", "Add the licence text as LICENSE (or LICENSE-MIT and LICENSE-APACHE for a dual licence).")] else []))
+  texts = lic_files.map(f => f.text.or(""))
+  unmatched = ids.filter(x => licence_marker(x) != "" and not texts.any(t => t.contains(licence_marker(x))))
+  lic_text = mk("pkg.license-text", "The licence file matches the declared licence", "advisory", unmatched.map(x => detail(lic_files.first.map(_.path).or("LICENSE"), 0, "no licence file contains the text of {x}", "Copy the standard text of {x} into the licence file.")))
+  readme = top_files(i).find(f => f.path.upper == "README.MD" or f.path.upper == "README")
+  prose = readme.map(f => f.text.or("").split("\n").filter(l => not l.trim.starts_with("#") and l.trim != "").join(" ").trim).or("")
+  rd = mk("pkg.readme", "A README describes the package", "blocking", if readme.is_none() then [detail("", 0, "no README.md at the top of the repository", "Add README.md: what the package does, a short example, and how to add it (`sspur add {i.request.name}`).")] else if prose.len < 60 then [detail(readme.map(_.path).or("README.md"), 1, "the README has almost no text ({prose.len} characters)", "Describe what the package does and show a short example of using it.")] else [])
+  [lic, lic_text, rd]
+
+fn check_docs(i: CheckIn) -> List[Check]
+= do
+  f = i.facts
+  pubs = public_defs(f).filter(d => d.kind != "impl")
+  docs = mk("pkg.docs", "Every public definition is documented", "blocking", pubs.filter(d => not has_doc(d)).map(d => detail(src_file(i), d.line, "pub {d.kind} {d.name} has no doc comment", "Write what it does in `//` lines directly above it, with no blank line in between.")))
+  tests = mk("pkg.tests", "The package has tests", "blocking", if f.tests > 0 or not f.parse then [] else [detail(src_file(i), 0, "no `test` definitions", "Add at least one `test name = ...` that exercises the public functions.")])
+  exports = mk("pkg.exports", "The package exports something", "blocking", if not f.parse or not public_defs(f).is_empty() then [] else [detail(src_file(i), 0, "nothing is `pub`", "Mark the definitions dependents use with `pub`.")])
+  roots = f.defs.filter(d => d.kind == "store" or d.kind == "svc")
+  services = mk("pkg.no-services", "No stores or services", "blocking", roots.map(d => detail(src_file(i), d.line, "{d.kind} {d.name}: a dependency can't define a store or a service", "Keep stores and services in the application that deploys them, and publish the logic around them.")))
+  [docs, tests, exports, services]
+
+fn has_ext(p: Str, exts: List[Str]) -> Bool
+= exts.any(e => p.lower.ends_with(e))
+
+fn check_contents(i: CheckIn) -> List[Check]
+= do
+  total = i.files.map(_.size).sum
+  big = i.files.filter(f => f.size > max_file_bytes())
+  src = i.files.find(f => f.path == src_file(i))
+  size_details = (if i.files.len > max_files() then [detail("", 0, "{i.files.len} files; the limit is {max_files()}", "Keep only the package's source, docs and tests in its repository, or move other files elsewhere.")] else []) + (if total > max_total_bytes() then [detail("", 0, "{total} bytes in all; the limit is {max_total_bytes()}", "Remove large files from the repository.")] else []) + big.map(f => detail(f.path, 0, "{f.size} bytes; the limit for one file is {max_file_bytes()}", "Remove the file or move it out of the repository.")) + (if src.map(_.size > max_source_bytes()).or(false) then [detail(src_file(i), 0, "the source is over {max_source_bytes()} bytes", "Split the package into smaller packages.")] else [])
+  size = mk("pkg.size", "The package is within the size limits", "blocking", size_details)
+  links = i.files.filter(f => f.mode == "120000").map(f => detail(f.path, 0, "a symbolic link", "Replace the link with the file itself, or remove it."))
+  hard = i.files.filter(f => f.mode != "120000" and (has_ext(f.path, blocked_extensions()) or blocked_magic().any(m => f.head.starts_with(m.0))))
+  bins = mk("pkg.binaries", "No executables, objects or archives", "blocking", links + hard.map(f => detail(f.path, 0, "{blocked_magic().find(m => f.head.starts_with(m.0)).map(_.1).or("a binary file type")}", "Remove it: published packages are source only, and nothing is built or run at install.")))
+  soft = i.files.filter(f => f.binary and f.mode != "120000" and not hard.any(h => h.path == f.path))
+  assets = mk("pkg.binary-assets", "Other binary files are only documentation assets", "advisory", soft.filter(f => not has_ext(f.path, [".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico", ".pdf", ".woff", ".woff2", ".ttf"])).map(f => detail(f.path, 0, "a binary file", "Keep binary files to images and fonts for the documentation.")))
+  [size, bins, assets, check_secrets(i)]
+
+fn secret_hits(f: FileInfo) -> List[Detail]
+= match f.text
+  | none => []
+  | some(t) => secret_patterns().flat_map(p => match regex(p.1)
+    | err(_) => []
+    | ok(re) => re.find_all(t).take(3).map(hit => detail(f.path, line_of(t, t.index_of(hit).or(0)), "looks like {p.0}", "Remove it, revoke it with its issuer (it is public once the repository is), and rewrite the history so no tag contains it. If it is a placeholder, change its shape.")))
+
+fn check_secrets(i: CheckIn) -> Check
+= mk("pkg.secrets", "No secrets", "blocking", i.files.flat_map(secret_hits))
+
+fn check_manifest(i: CheckIn) -> List[Check]
+= do
+  some(m) = i.facts.manifest else [mk("pkg.manifest", "sspur.toml is complete", "blocking", [detail("sspur.toml", 0, "no sspur.toml at the top of the repository", "Add one with `sspur init --pkg {i.request.name}`.")])]
+  unknown = m.keys.filter(k => not manifest_keys().contains(k) and not k.starts_with("deps.") and not k.starts_with("dependencies.") and k != "deps." and k != "dependencies.")
+  hooks = unknown.filter(k => hook_words().any(w => k.split(".").any(p => p.lower == w)))
+  others = unknown.filter(k => not hooks.contains(k))
+  hk = mk("pkg.hooks", "No build or install hooks", "blocking", hooks.map(k => detail("sspur.toml", 0, "{md_code(k)} looks like a build or install hook", "Remove it. Installing a package only downloads and typechecks its source; nothing in it runs.")) + others.map(k => detail("sspur.toml", 0, "{md_code(k)} is not a key sspur.toml has", "Remove it, or move it to the README.")))
+  bad_deps = m.deps.filter(d => d.kind != "registry").map(d => detail("sspur.toml", 0, "dependency {d.name} is a {d.kind} dependency", "A published package depends only on published packages: write {d.name} = \{ version = \"^1.0\" } after publishing {d.name}."))
+  missing = m.deps.filter(d => d.kind == "registry" and not i.names.contains(d.name)).map(d => detail("sspur.toml", 0, "dependency {d.name} is not in the index", "Publish {d.name} first, or fix the name."))
+  deps = mk("pkg.deps", "Dependencies are published packages", "blocking", bad_deps + missing)
+  desc = (if m.description.trim == "" then [detail("sspur.toml", 0, "no description", "Add description = \"one line on what it does\" to [package].")] else []) + (if m.description.len > 200 then [detail("sspur.toml", 0, "the description is {m.description.len} characters", "Keep it to one line of at most 200 characters.")] else []) + (match m.error
+    | some(e) => [detail("sspur.toml", 0, e, "Fix sspur.toml.")]
+    | none => [])
+  [mk("pkg.manifest", "sspur.toml is complete", "blocking", desc), hk, deps]
+
+fn justified(lines: List[Str], line: Int) -> Bool
+= do
+  here = lines.get(line - 1).or("")
+  above = lines.get(line - 2).or("")
+  marks = ["// run_cmd:", "// why:", "// justification:"]
+  marks.any(m => here.contains(m) or above.trim.starts_with(m))
+
+fn check_review(i: CheckIn) -> List[Check]
+= do
+  f = i.facts
+  path = src_file(i)
+  text = i.files.find(x => x.path == path).map(_.text.or("")).or("")
+  lines = text.split("\n")
+  holes = mk("review.holes", "No holes left in the code", "blocking", f.holes.map(h => detail(path, h.line, "the hole {h.name} in {h.def} is not filled", "Replace it with the expression; `sspur fill {path} {h.name}` proposes one.")))
+  todo_lines = lines.enumerate().filter(p => p.1.contains("//") and ["TODO", "FIXME", "XXX", "HACK"].any(w => p.1.drop(p.1.index_of("//").or(0)).contains(w)))
+  todo = mk("review.todo", "No TODO or FIXME notes", "advisory", todo_lines.map(p => detail(path, p.0 + 1, "{short(p.1.trim, 120)}", "Finish it or remove the note before publishing; open an issue in the package repository for later work.")))
+  cmds = mk("review.run-cmd", "Every run_cmd says why", "blocking", f.run_cmd.filter(s => not justified(lines, s.line)).map(s => detail(path, s.line, "run_cmd in {s.def} has no justification", "Put `// run_cmd: <why this program must run>` on the line above. Prefer a built-in (file, HTTP, JSON) to a program on the user's PATH.")))
+  refined = public_defs(f).filter(d => d.kind == "fn" and d.params.or([]).any(_.refined) and d.posts.or(0) == 0 and d.examples.or(0) == 0)
+  contracts = mk("review.contracts", "Public functions with refined inputs state their result", "advisory", refined.map(d => detail(path, d.line, "{d.name} takes refined inputs but has no `post` or `ex`", "Add a `post` clause about the result, or an `ex` example; `sspur suggest {path} {d.name}` proposes contracts.")))
+  names = public_defs(f).filter(d => do
+    want_type = d.kind == "type" or d.kind == "trait"
+    if want_type then not is_upper_camel(d.name) else if d.kind == "fn" or d.kind == "extern" or d.kind == "effect" then not is_snake(d.name) else false)
+  naming = mk("review.naming", "Public names follow the naming conventions", "blocking", names.map(d => detail(path, d.line, "{d.kind} {d.name}", if d.kind == "type" or d.kind == "trait" then "Type and trait names are UpperCamelCase." else "Function and effect names are snake_case.")))
+  data_types = public_defs(f).filter(d => d.kind == "type" and not d.has_fn_fields.or(false) and (d.type_kind.or("") == "record" or d.type_kind.or("") == "sum"))
+  underived = data_types.filter(d => not (d.derives.or([]).contains("Eq") and d.derives.or([]).contains("Show")))
+  derive = mk("review.derive", "Public data types derive Eq and Show", "advisory", underived.map(d => detail(path, d.line, "type {d.name} derives {if d.derives.or([]).is_empty() then "nothing" else d.derives.or([]).join(", ")}", "Add `derive Eq, Show` so dependents can compare and print its values in tests.")))
+  untested = public_defs(f).filter(d => d.kind == "fn" and not f.tested.contains(d.name))
+  tested = mk("review.tested", "Every public function is tested", "advisory", untested.map(d => detail(path, d.line, "no test or `ex` mentions {d.name}", "Add a test that calls it, or an `ex` line.")))
+  [holes, todo, cmds, contracts, naming, derive, tested]
+
+fn run_checks(i: CheckIn) -> Report
+= do
+  prev = previous_entry(i)
+  diff = api_diff(prev.map(_.api).or([]), api_of(i.facts), prev.map(_.version))
+  (effect_checks, fresh, missing) = check_effects(i, prev)
+  checks = check_build(i) + check_version(i, diff) + effect_checks + check_name(i) + [check_owner(i)] + check_manifest(i) + check_files(i) + check_docs(i) + check_contents(i) + check_review(i)
+  blocking = checks.filter(c => c.severity == "blocking" and c.status == "fail").len
+  advisory = checks.filter(c => c.severity == "advisory" and c.status == "fail").len
+  skipped = checks.filter(c => c.severity == "blocking" and c.status == "skip").len
+  Report{name: i.request.name, version: i.request.version, env: i.env, commit: i.request.commit, checks, blocking_failed: blocking, advisory_failed: advisory, skipped_blocking: skipped, ok: blocking == 0 and skipped == 0, effects: effect_rows(i.facts), effects_new: fresh, effects_missing: missing, api: diff}
+
+// ---------- reports as text and Markdown ----------
+
+fn status_mark(c: Check) -> Str
+= if c.status == "pass" then "ok  " else if c.status == "skip" then "skip" else if c.severity == "blocking" then "FAIL" else "warn"
+
+fn loc(d: Detail) -> Str
+= if d.file == "" then "" else if d.line > 0 then "{d.file}:{d.line}: " else "{d.file}: "
+
+fn report_text(r: Report) -> Str
+= do
+  var out = []
+  for c in r.checks
+    out := out.push("{status_mark(c)}  {c.id}  {c.title}{if c.status == "skip" then " ({c.note})" else ""}")
+    if c.status == "fail" then do
+      for d in c.details.take(20)
+        out := out.push("        {loc(d)}{d.msg}")
+        if d.fix != "" then out := out.push("          fix: {d.fix}")
+      if c.details.len > 20 then out := out.push("        ... and {c.details.len - 20} more")
+  if not r.effects_new.is_empty() then out := out.push("new capability effects: {r.effects_new.join(", ")}")
+  out := out.push(api_text(r.api))
+  verdict = if r.blocking_failed > 0 then "{plural(r.blocking_failed, "blocking check", "blocking checks")} failed" else if r.skipped_blocking > 0 then "no blocking check failed; {r.skipped_blocking} run in the registry workflow" else "every blocking check passed"
+  out := out.push("{r.name} {r.version}: {verdict}, {plural(r.advisory_failed, "warning", "warnings")}")
+  out.join("\n")
+
+fn api_text(d: ApiDiff) -> Str
+= match d.previous
+  | none => "API: first version, {plural(d.added.len, "public definition", "public definitions")}"
+  | some(p) => "API since {p}: {d.added.len} added, {d.removed.len} removed, {d.changed.len} changed, {d.body.len} with new bodies; needs a {d.required} release"
+
+fn check_line(c: Check) -> List[Str]
+= do
+  box = if c.status == "pass" then "[x]" else "[ ]"
+  tag = if c.status == "skip" then " (not run: {md_text(c.note)})" else if c.status == "fail" and c.severity == "blocking" then " **blocking**" else if c.status == "fail" then " (advisory)" else ""
+  head = "- {box} `{c.id}` {c.title}{tag}"
+  more = if c.status == "fail" then c.details.take(15).map(d => "  - {if d.file == "" then "" else md_code(if d.line > 0 then "{d.file}:{d.line}" else d.file) + " "}{md_text(d.msg)}{if d.fix == "" then "" else " Fix: " + md_text(d.fix)}") + (if c.details.len > 15 then ["  - ... and {c.details.len - 15} more"] else []) else []
+  [head] + more
+
+fn effects_md(r: Report) -> List[Str]
+= do
+  rows = r.effects.filter(e => not e.effects.is_empty())
+  table = if rows.is_empty() then ["No public function has an effect."] else ["| Function | Effects |", "|---|---|"] + rows.map(e => "| {md_code(e.name)} | {e.effects.map(md_code).join(", ")} |")
+  news = if r.effects_new.is_empty() then [] else ["", "New capability effects {r.api.previous.map(p => "since " + p).or("in this first version")}: " + r.effects_new.map(e => if r.effects_missing.contains(e) then "`{e}` (**not acknowledged**)" else "`{e}` (acknowledged)").join(", ") + "."]
+  table + news
+
+fn change_md(prefix: Str, c: Change) -> Str
+= if c.before != "" and c.after != "" then "- {prefix} {md_code(c.before)} → {md_code(c.after)}" else "- {prefix} {md_code(if c.after != "" then c.after else c.before)}"
+
+fn api_md(d: ApiDiff) -> List[Str]
+= match d.previous
+  | none => ["First version: {plural(d.added.len, "public definition", "public definitions")}."] + d.added.take(40).map(c => change_md("", c))
+  | some(p) => ["Compared with {p}: {d.added.len} added, {d.removed.len} removed, {d.changed.len} changed, {d.body.len} with new bodies only. A {d.required} release is needed."] + d.removed.map(c => change_md("removed", c)) + d.changed.map(c => change_md("changed", c)) + d.added.take(40).map(c => change_md("added", c)) + (if d.body.is_empty() then [] else ["- new bodies: " + d.body.map(md_code).join(", ")])
+
+type RenderIn = {report: Report, request: Request, repo: Str, pr: Opt[Int]}
+
+type Rendered = {title: Str, body: Str, comment: Str, merge: Bool, labels: List[Str]}
+
+fn render(i: RenderIn) -> Rendered
+= do
+  r = i.report
+  q = i.request
+  short_commit = q.commit.take(12)
+  failed = r.checks.filter(c => c.status == "fail" and c.severity == "blocking")
+  verdict = if r.ok then "**Every blocking check passed.** The workflow merges this pull request." else if failed.is_empty() then "**Some blocking checks did not run.** See below." else "**{plural(failed.len, "blocking check", "blocking checks")} failed.** This pull request stays open until they pass."
+  next = ["### Submitting the next revision", "", "Fix what failed in the package repository, then do one of these:", "", "1. Commit the fix, move the tag (`git tag -f {q.ref} && git push -f origin {q.ref}`) and comment `/recheck` on #{q.issue}. Until a version is published its tag may move; once it is, it never changes.", "2. Or tag the fix as a new ref and edit the request on #{q.issue} to name it. Editing the request runs the checks again.", "3. Or, if the ref is a branch, push to it: open requests are rechecked every hour when their ref moves.", "", "The checks run again on every revision and this description is rewritten each time. Run them yourself first with `sspur publish --dry-run` in the package."]
+  lines = ["## {md_text(q.name)} {md_text(q.version)}", "", "Publish request #{q.issue} by @{q.author.replace("@", "")}: {md_text(q.repository)} at {md_code(q.ref)}, commit {md_code(short_commit)}.", "", verdict, "", "### Checks", ""] + r.checks.flat_map(check_line) + ["", "### Effects", ""] + effects_md(r) + ["", "### API", ""] + api_md(r.api) + ["", "### Install", "", "```console", "$ sspur add {q.name}@^{q.version}", "```", ""] + next + ["", "<!-- sspur-registry commit={q.commit} ok={r.ok} -->"]
+  pr = i.pr.map(n => " in #{n}").or("")
+  comment = if r.ok then "Every blocking check passed for {md_text(q.name)} {md_text(q.version)} at {md_code(short_commit)}; merging{pr}. Once it is merged: `sspur add {q.name}@^{q.version}`." else "Checks for {md_text(q.name)} {md_text(q.version)} at {md_code(short_commit)}: " + (if failed.is_empty() then "some blocking checks did not run" else plural(failed.len, "blocking check", "blocking checks") + " failed (" + failed.map(c => "`{c.id}`").join(", ") + ")") + ". The details and how to fix them are{pr}. Fix them in the package, then comment `/recheck` here or edit the ref."
+  Rendered{title: "Publish {q.name} {q.version}", body: lines.join("\n"), comment, merge: r.ok, labels: if r.ok then ["publish"] else ["publish", "checks-failed"]}
+
+// ---------- publish requests ----------
+
+type Issue = {number: Int, title: Str, body: Str, author: Str}
+
+type Parsed = {ok: Bool, errors: List[Str], request: Request}
+
+// The value of `### Label` in an issue-form body; "_No response_" is empty.
+fn form_field(body: Str, label: Str) -> Str
+= do
+  parts = ("\n" + body.replace("\r\n", "\n")).split("\n### ")
+  hit = parts.find(p => p.split("\n").first.or("").trim.lower == label.lower)
+  v = hit.map(p => p.split("\n").drop(1).join("\n").trim).or("")
+  if v == "_No response_" then "" else v
+
+fn list_field(s: Str) -> List[Str]
+= s.replace("\n", ",").replace(" ", ",").split(",").map(x => x.trim.trim_matches_bt.lower).filter(x => x != "" and x != "none")
+
+fn trim_matches_bt(s: Str) -> Str
+= s.replace("`", "")
+
+fn parse_request(i: Issue) -> Parsed
+= do
+  t = i.title.trim.lower
+  kind = if t.starts_with("publish:") or t.starts_with("publish ") then "publish" else if t.starts_with("yank:") or t.starts_with("yank ") then "yank" else ""
+  name = form_field(i.body, "Package name").lower
+  repo = form_field(i.body, "Repository")
+  rf = form_field(i.body, "Ref").replace("`", "")
+  version = form_field(i.body, "Version").trim_matches_v
+  effects = list_field(form_field(i.body, "Effects"))
+  action = form_field(i.body, "Action").lower
+  reason = form_field(i.body, "Reason")
+  req = Request{kind, name, repository: repo.trim, ref: rf.trim, version, effects, author: i.author, issue: i.number, commit: "", tag: false, action: if action == "" then (if kind == "yank" then "yank" else "") else action, reason}
+  errs = (if kind == "" then ["the title must start with `publish:` or `yank:`"] else []) + (if name == "" then ["the Package name field is empty"] else []) + (if version == "" then ["the Version field is empty"] else []) + (if kind == "publish" and github_slug(repo).is_none() then ["the Repository field must be a GitHub URL like https://github.com/OWNER/REPO"] else []) + (if kind == "publish" and rf.trim == "" then ["the Ref field is empty"] else []) + (if kind == "yank" and not ["yank", "unyank", "deprecate", "undeprecate"].contains(req.action) then ["the Action must be yank, unyank, deprecate or undeprecate"] else [])
+  Parsed{ok: errs.is_empty(), errors: errs, request: req}
+
+fn trim_matches_v(s: Str) -> Str
+= do
+  t = s.trim.replace("`", "")
+  if t.starts_with("v") then t.drop(1) else t
+
+// ---------- index entries ----------
+
+type EntryIn = {report: Report, facts: Facts, request: Request, snapshot: Opt[Snapshot], now: Str}
+
+fn make_entry(i: EntryIn) -> Entry
+= do
+  q = i.request
+  m = i.facts.manifest
+  deps = m.map(x => x.deps.filter(_.kind == "registry").fold(empty_map(), (acc, d) => acc.put(d.name, d.req))).or(empty_map())
+  slug = github_slug(q.repository).or("")
+  Entry{version: q.version, git: "https://github.com/{slug}.git", tag: q.ref, commit: q.commit, hash: i.facts.hash.or(""), snapshot: i.snapshot, effects: caps_of(effect_rows(i.facts).map(_.effects)), deps, license: m.map(_.license).or(""), yanked: false, deprecated: none, published: i.now, publisher: q.author, request: some(q.issue), api: api_of(i.facts)}
+
+type ApplyIn = {package: Opt[Package], entry: Opt[Entry], request: Request, facts: Opt[Facts]}
+
+type Applied = {ok: Bool, error: Str, package: Opt[Package], changed: Bool}
+
+fn apply(i: ApplyIn) -> Applied
+= do
+  q = i.request
+  if q.kind == "publish" then apply_publish(i) else apply_flag(i)
+
+fn apply_publish(i: ApplyIn) -> Applied
+= do
+  q = i.request
+  some(e) = i.entry else Applied{ok: false, error: "no entry", package: none, changed: false}
+  m = i.facts.map(_.manifest).or(none)
+  base = i.package.or(Package{schema: 1, name: q.name, description: m.map(_.description).or(""), repository: "https://github.com/" + github_slug(q.repository).or(""), owners: [q.author], keywords: m.map(_.keywords).or([]), versions: []})
+  existing = base.versions.find(_.version == e.version)
+  match existing
+  | some(x) => if x.commit == e.commit and x.hash == e.hash then Applied{ok: true, error: "", package: some(base), changed: false} else Applied{ok: false, error: "{q.name} {e.version} is already published from commit {x.commit.take(12)}", package: none, changed: false}
+  | none => do
+    desc = m.map(_.description).or(base.description)
+    kws = m.map(_.keywords).or(base.keywords)
+    Applied{ok: true, error: "", package: some(base with versions := base.versions.push(e), description := desc, keywords := kws), changed: true}
+
+fn set_flag(e: Entry, action: Str, reason: Str) -> Entry
+= if action == "yank" then e with yanked := true else if action == "unyank" then e with yanked := false else if action == "deprecate" then e with deprecated := some(if reason == "" then "deprecated" else reason) else e with deprecated := none
+
+fn apply_flag(i: ApplyIn) -> Applied
+= do
+  q = i.request
+  some(p) = i.package else Applied{ok: false, error: "{q.name} is not in the index", package: none, changed: false}
+  if not p.owners.map(_.lower).contains(q.author.lower) then Applied{ok: false, error: "@{q.author} is not an owner of {q.name} (owners: {p.owners.join(", ")})", package: none, changed: false} else do
+    some(old) = p.versions.find(_.version == q.version) else Applied{ok: false, error: "{q.name} has no version {q.version}", package: none, changed: false}
+    now = set_flag(old, q.action, q.reason)
+    Applied{ok: true, error: "", package: some(p with versions := p.versions.map(e => if e.version == q.version then now else e)), changed: now != old}
+
+// ---------- index.json and the append-only guard ----------
+
+type Item = {name: Str, description: Str, latest: Opt[Str], versions: Int, keywords: List[Str], updated: Str, yanked: Bool, deprecated: Opt[Str]}
+
+type Summary = {schema: Int, packages: List[Item]}
+
+type SummaryIn = {packages: List[Package]}
+
+fn latest_entry(p: Package) -> Opt[Entry]
+= do
+  live = p.versions.filter(e => not e.yanked)
+  live.sort_by(e => parse_version(e.version).or(V{major: 0, minor: 0, patch: 0})).last
+
+fn summary(i: SummaryIn) -> Summary
+= Summary{schema: 1, packages: i.packages.sort_by(_.name).map(p => do
+  l = latest_entry(p)
+  Item{name: p.name, description: p.description, latest: l.map(_.version), versions: p.versions.len, keywords: p.keywords, updated: p.versions.map(_.published).sort.last.or(""), yanked: l.is_none(), deprecated: l.map(_.deprecated).or(none)})}
+
+type Named = {path: Str, text: Str}
+
+type GuardIn = {base: List[Named], head: List[Named]}
+
+type Guard = {ok: Bool, errors: List[Str]}
+
+fn without_flags(e: Entry) -> Entry
+= e with yanked := false, deprecated := none
+
+// What a change to the index may do: add package files, append versions, and flip the yanked
+// and deprecated flags. Everything else in a published entry is fixed forever.
+fn guard(i: GuardIn) -> Guard
+= do
+  var errs = []
+  for h in i.head
+    if not h.path.starts_with("packages/") or not h.path.ends_with(".json") then errs := errs.push("{h.path}: only package files live under packages/")
+    match json.decode[Package](h.text)
+    | err(e) => errs := errs.push("{h.path}: not a valid package file: {e}")
+    | ok(p) => errs := errs + guard_one(h.path, p, i.base.find(b => b.path == h.path))
+  for b in i.base
+    if not i.head.any(h => h.path == b.path) then errs := errs.push("{b.path}: package files are never deleted")
+  Guard{ok: errs.is_empty(), errors: errs}
+
+fn guard_one(path: Str, p: Package, base: Opt[Named]) -> List[Str]
+= do
+  shard = p.name.take(2)
+  where_ok = path == "packages/{shard}/{p.name}.json"
+  e1 = if where_ok and valid_name(p.name) then [] else ["{path}: the file of {p.name} belongs at packages/{shard}/{p.name}.json"]
+  vs = p.versions.map(_.version)
+  e2 = if vs.unique.len == vs.len then [] else ["{path}: a version is listed twice"]
+  e3 = p.versions.filter(e => parse_version(e.version).is_none() or e.commit.len != 40 or e.hash == "").map(e => "{path}: {e.version} needs a MAJOR.MINOR.PATCH version, a 40-character commit and a hash")
+  e4 = match base
+    | none => []
+    | some(b) => match json.decode[Package](b.text)
+      | err(_) => []
+      | ok(old) => old.versions.flat_map(o => match p.versions.find(_.version == o.version)
+        | none => ["{path}: {o.version} was removed; published versions stay in the index (yank them instead)"]
+        | some(n) => if without_flags(n) == without_flags(o) then [] else ["{path}: {o.version} changed; only `yanked` and `deprecated` may change after publishing"]) + (if old.name != p.name then ["{path}: the package name changed"] else [])
+  e1 + e2 + e3 + e4
+
+// ---------- the program ----------
+
+fn out(v: Str) -> Unit ! log
+= log(v)
+
+fn bad(what: Str, e: Str) -> Str
+= "\{\"error\": {json.encode("{what}: {e}")}}"
+
+fn dispatch(cmd: Str, text: Str) -> Str
+= if cmd == "check" then (match json.decode[CheckIn](text)
+  | ok(v) => json.encode(run_checks(v))
+  | err(e) => bad("check input", e)) else if cmd == "text" then (match json.decode[Report](text)
+  | ok(v) => json.encode(report_text(v))
+  | err(e) => bad("report", e)) else if cmd == "render" then (match json.decode[RenderIn](text)
+  | ok(v) => json.encode(render(v))
+  | err(e) => bad("render input", e)) else if cmd == "parse-request" then (match json.decode[Issue](text)
+  | ok(v) => json.encode(parse_request(v))
+  | err(e) => bad("issue", e)) else if cmd == "entry" then (match json.decode[EntryIn](text)
+  | ok(v) => json.encode(make_entry(v))
+  | err(e) => bad("entry input", e)) else if cmd == "apply" then (match json.decode[ApplyIn](text)
+  | ok(v) => json.encode(apply(v))
+  | err(e) => bad("apply input", e)) else if cmd == "summary" then (match json.decode[SummaryIn](text)
+  | ok(v) => json.encode(summary(v))
+  | err(e) => bad("summary input", e)) else if cmd == "guard" then (match json.decode[GuardIn](text)
+  | ok(v) => json.encode(guard(v))
+  | err(e) => bad("guard input", e)) else bad("input", "unknown command '{cmd}'")
+
+fn main() -> Unit ! io, log
+= do
+  text = read_lines().join("\n")
+  cmd = json.decode[Cmd](text).map(_.cmd).or("")
+  out(dispatch(cmd, text))
