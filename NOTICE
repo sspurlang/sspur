@@ -11,3 +11,22 @@ in LICENSE-MIT or LICENSE-APACHE.
 "SSPUR" is the name of this project. Neither license grants permission to use
 the name or logo for a fork or derived product, other than to describe where
 the work came from.
+
+Third-party code
+----------------
+
+The native runtimes are built from these vendored sources, kept with their
+license files in crates/sspur-native/vendor/ and embedded in the sspur binary:
+
+- SQLite 3.54.0 (https://sqlite.org), in the public domain.
+- Monocypher 4.0.3 (https://monocypher.org), Copyright (c) 2017-2023 Loup
+  Vaillant, Michael Savage and Fabio Scotoni; 2-clause BSD license, or CC0 1.0.
+- libsodium 1.0.22 (https://libsodium.org), SHA-256 and HMAC-SHA-256 only:
+  Copyright (c) 2013-2026 Frank Denis, ISC license; the SHA-256 code is
+  Copyright 2005, 2007, 2009 Colin Percival, 2-clause BSD license.
+- miniz 3.1.2 (https://github.com/richgel999/miniz), Copyright 2013-2014 RAD
+  Game Tools and Valve Software, Copyright 2010-2014 Rich Geldreich and
+  Tenacious Software LLC; MIT license.
+- Zstandard 1.5.7 (https://github.com/facebook/zstd), Copyright (c) Meta
+  Platforms, Inc. and affiliates; BSD license (zstd is dual-licensed BSD or
+  GPLv2, and SSPUR uses it under the BSD license).

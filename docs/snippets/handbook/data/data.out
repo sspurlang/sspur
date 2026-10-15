@@ -1,0 +1,44 @@
+// ANCHOR: todos
+$ sspur run todos.ssp
+2 migrations applied; added 1 and 2
+["write the docs", "ship it"]
+finished 1; still open: 1; todo 9: none
+mismatch: the first column: expected Int, found TEXT
+$ sspur run --interp todos.ssp
+0 migrations applied; added 3 and 4
+["ship it", "write the docs", "ship it"]
+finished 1; still open: 2; todo 9: none
+mismatch: the first column: expected Int, found TEXT
+// ANCHOR_END: todos
+// ANCHOR: security
+$ sspur run security.ssp
+$argon2id$v=19$m=19456,t=2,p=1$
+right: true, wrong: false
+token 43 chars, stored digest 64 hex digits
+cookie checks: some("user=42"), tampered: none
+sealed and opened: some("meet at noon")
+signature 64 bytes, valid: true
+sha256(abc) = ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+uuid v4 36 chars, v7 version digit 7
+// ANCHOR_END: security
+// ANCHOR: files
+$ sspur run files.ssp
+2 sales, 4 units
+bad file: row 2, column units: expected Int, found "three"
+region,units,price,note | "east, upper",5,1.25,"says ""hi""" | west,7,2.0,
+units: ok(12)
+9415 bytes, gzip true, zstd true, round trip true
+files: ok(()), ok(()), same: true
+// ANCHOR_END: files
+// ANCHOR: api
+$ sspur run api.ssp &
+info: listening on http://127.0.0.1:8080
+$ curl -s -w ' %{http_code}\n' -X POST -d '{"title": "write the docs"}' localhost:8080/todos
+{"id":1,"title":"write the docs","done":false} 201
+$ curl -s -w ' %{http_code}\n' localhost:8080/todos/1
+{"id":1,"title":"write the docs","done":false} 200
+$ curl -s -w ' %{http_code}\n' localhost:8080/todos/9
+{"error":"not found"} 404
+$ curl -s -w ' %{http_code}\n' -X POST -d '{"title": "write the docs"}' localhost:8080/todos
+{"error":{"tag":"Constraint","msg":"UNIQUE constraint failed: todos.title"}} 409
+// ANCHOR_END: api

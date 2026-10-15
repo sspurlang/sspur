@@ -1,0 +1,48 @@
+// ANCHOR: passwords
+fn register(pw: Str) -> Str ! rand
+= crypto.hash_password(pw)
+
+fn login(pw: Str, stored: Str) -> Bool
+= crypto.verify_password(pw, stored)
+// ANCHOR_END: passwords
+
+// ANCHOR: tokens
+type Session = {token: Str, digest: Str}
+
+fn new_session() -> Session ! rand
+= do
+  t = crypto.token(32)
+  Session{token: t, digest: crypto.sha256(t).hex}
+
+fn sign_cookie(key: Secret[Bytes], value: Str) -> Str
+= value + "." + crypto.hmac256(key, value).base64url
+
+fn check_cookie(key: Secret[Bytes], cookie: Str) -> Opt[Str]
+= match cookie.split_once(".")
+  | some((v, mac)) => if crypto.equal(mac, crypto.hmac256(key, v).base64url) then some(v) else none
+  | none => none
+// ANCHOR_END: tokens
+
+// ANCHOR: seal
+fn roundtrip(key: Secret[Bytes], note: Str) -> Opt[Str] ! rand
+= crypto.open(key, crypto.seal(key, note)).map(b => b.to_str.or(""))
+// ANCHOR_END: seal
+
+// ANCHOR: main
+fn main() -> Unit ! log, rand, time
+= do
+  stored = register("correct horse battery staple")
+  log(stored.take(31))
+  log("right: {login("correct horse battery staple", stored)}, wrong: {login("Correct horse", stored)}")
+  s = new_session()
+  log("token {s.token.len} chars, stored digest {s.digest.len} hex digits")
+  key = crypto.key()
+  c = sign_cookie(key, "user=42")
+  log("cookie checks: {check_cookie(key, c)}, tampered: {check_cookie(key, c.replace("42", "43"))}")
+  log("sealed and opened: {roundtrip(key, "meet at noon")}")
+  (sk, pk) = crypto.keypair()
+  sig = crypto.sign(sk, "release 0.11")
+  log("signature {sig.len} bytes, valid: {crypto.verify(pk, "release 0.11", sig)}")
+  log("sha256(abc) = {crypto.sha256("abc").hex}")
+  log("uuid v4 {uuid.v4().len} chars, v7 version digit {uuid.v7().get(14).or("")}")
+// ANCHOR_END: main

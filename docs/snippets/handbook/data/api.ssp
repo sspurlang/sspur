@@ -1,0 +1,23 @@
+// ANCHOR: api
+type Todo = {id: Int, title: Str, done: Bool}
+type NewTodo = {title: Str}
+
+fn conn() -> Db ! db, fail[DbErr], env
+= db.open(env_var("TODO_DB").or("api.db"))
+
+fn todo(id: Int) -> Todo ! db, fail[DbErr], env
+= db.one[Todo](conn(), "select id, title, done from todos where id = ?", [id])
+
+fn add(t: NewTodo) -> Todo ! db, fail[DbErr], env
+= db.one[Todo](conn(), "insert into todos (title) values (?) returning id, title, done", [t.title])
+
+svc api
+  ep get "/todos/{id}" = todo
+  ep post "/todos" = add
+
+fn main() -> Unit ! net, log, env, db, fail[DbErr]
+= do
+  n = db.migrate(conn(), ["create table todos (id integer primary key, title text not null unique, done integer not null default 0)"])
+  port = env_var("PORT").or("8080").to_int.or(8080)
+  http.serve_with(http.server(port) with workers := 8, api)
+// ANCHOR_END: api

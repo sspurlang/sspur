@@ -11,6 +11,7 @@ The standard library is built in: there is nothing to import, and a definition o
 | [Options, results and JSON](stdlib/data.md) | `Opt`, `Res`, and `json.encode` and `json.decode[T]` for any data type, with readable decode errors |
 | [Files and processes](stdlib/system.md) | Files and directories (`fs`), stdin and stderr (`io`), child processes (`proc`), the clock (`time`) and the environment (`env`) |
 | [Networking](stdlib/network.md) | An HTTP client and an HTTP/1.1 server with TLS (`net`), typed configuration from files and the environment, and levelled, JSON-capable logs |
+| [Databases, crypto, compression and CSV](stdlib/data-libs.md) | `Bytes`; SQLite with typed rows, transactions and migrations (`db`); hashes, MACs, authenticated encryption, password hashing, signatures, tokens and UUIDs (`rand` for randomness); gzip, DEFLATE and zstd; RFC 4180 CSV with typed records |
 | Traits | `Eq`, `Ord`, `Show`, `Hash`, `Json`, `Add`, `Sub`, `Mul`, `Div`, `Neg`, `Index` and `Copy`; see [Generics and Traits](../handbook/generics-and-traits.md) |
 | Concurrency | `par`, `Atomic[Int]` and `Chan[T]` under the `conc` effect; see [Concurrency](../handbook/concurrency.md) |
 

@@ -238,6 +238,15 @@ This page lists every code the compiler can emit, grouped by area. The test suit
 | `E_HTTP_SHADOW` | The program defines a constructor with the name of an `HttpErr` variant (`Dns`, `Connect`, `Tls`, `Timeout`, `HttpStatus`, `Io`) and uses the HTTP client | Rename your constructor |
 | `E_CONFIG_TYPE` | `config.load` of something other than a record, or of a record with a field JSON can't decode | `config.load(Config{...}, path, prefix)` with plain data fields |
 
+## Databases and data libraries
+
+| Code | Meaning | Fix |
+|---|---|---|
+| `E_SQL_PARAM` | A SQL parameter of a type SQLite has no value for, or parameters that aren't a list | `Int`, `F64`, `Str`, `Bool`, `Bytes`, `Time`, `Dec`, a newtype of one or an `Opt` of one, in a list: `[name, age]` |
+| `E_SQL_ROW` | `db.query[T]`, `one[T]` or `opt[T]` with a `T` rows can't be read as | A record of column types, a tuple alias, or one column type |
+| `E_DB_SHADOW` | The program defines a constructor with the name of a `DbErr` variant (`Sql`, `Constraint`, `Busy`, `NoRow`, `Mismatch`) and uses the database | Rename your constructor |
+| `E_CSV_TYPE` | `csv.decode[T]`, `read[T]`, `fold[T]` or `csv.encode` with a `T` that isn't a record of cell types | Fields of `Str`, `Int`, `F64`, `Bool`, `Time`, `Dec`, newtypes and `Opt`; `List[Str]` for raw rows |
+
 ## Packages and dependencies
 
 | Code | Meaning | Fix |

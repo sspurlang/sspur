@@ -18,7 +18,7 @@ Block lines: `x = e`, `(a, b) = e`, `var x = e`, `x := e`, `for x in xs`, `while
 - `effect ask() -> Int` (callers `! ask`); `handle e` + `| ask() => resume(21)` (once; `| return(r) =>`). `yield(x)` (`! yield[T]`) makes a generator for `for`.
 - `Item{sku: "a", qty: 1}`, `Item{sku, qty}`; `x with qty := 2, a.b := 3, xs[0] := v`.
 - Lambdas `x => e`, `(a, b) => e`, or `x => do` + a block indented past the lambda's line, its last line the value and `)` right after; `return` is not allowed inside. `_` makes the innermost call argument a lambda: `sort_by((-_.n, _.name))`; in `f(g(_.a))` it binds inside `g`, so write `x => f(g(x.a))`.
-- `"n={n} {x.name}"` interpolates, so a literal `{` is `\{` (`"\{\"a\":1}"`). Escapes: `\n \t \" \\ \{`, so regex `\d` is `"\\d"`. `+` joins Str and List.
+- `"n={n} {x.name}"` interpolates, so a literal `{` is `\{` (`"\{\"a\":1}"`). Escapes: `\n \r \t \" \\ \{`, so regex `\d` is `"\\d"`. `+` joins Str and List.
 - Low to high (no `&& || !`): `or, and, not, == != < <= > >=, .., + -, * / %, **`, unary `-`. Int `/` truncates; overflow, `/ 0` and bad `xs[i]` trap.
 
 ## Builtins
@@ -48,6 +48,12 @@ Leave `?name` where you don't know the expression yet: `./sspur check` lists up 
 - `! net`. `http.get(url) post(url, json) send(req)` give `Res[Response, HttpErr]` (a 404 is `ok`; `HttpErr` `Dns Connect Tls Timeout Io{msg}`, `HttpStatus{code, body}`); `http.fetch(url)` is the body, raising `HttpErr` unless 2xx. `http.req("PUT", url) with headers := [("a", "b")], body := s, timeout_ms := 5000, retries := 2, redirects := 0`. `r.status r.body r.header("x") r.json[T]`.
 - Server: a `svc` is the handler: `{id}` path params, GET/DELETE query params (`Opt` if optional), one JSON body param, a `Request` param for the raw request; a value is 200 (201 POST), `Unit` 204, `none` 404, a raised `NotFound` 404 (`Invalid` 400, else 422). `http.serve(8080, api)`, or any `req => resp` fn: `http.text(200, s) html json(200, v)`, `req.path query("q") header("h") json[T]`. `http.serve_with(http.server(port) with host := "0.0.0.0", cors := ["*"], gzip := true, files := [("/static", "public")], health := "/healthz", cert := c, key := k, workers := 8, max_body := n, timeout_ms := n, max_requests := n, access_log := false, h)`. Handlers can't assign outer `var`s.
 - `config.load(Config{port: 8080}, "app.json", "APP_")` is `Res[Config, Str] ! fs, env` (env `APP_PORT`, then the file, then the default). `log.debug/info/warn/error(m)`; `SSPUR_LOG=json`, `SSPUR_LOG_LEVEL=warn`.
+
+## Data, crypto, compression
+- `Bytes`: `bytes([1, 2])`, `s.to_bytes`, `b.len get(i) slice(a, b) concat(c) to_list to_str hex base64 base64url`, `from_hex(s) from_base64(s) from_base64url(s)` (Opt), `read_bin(p) write_bin(p, b)` `! fs`.
+- `! db`, raising `DbErr` (`Sql Constraint Busy Mismatch{msg}`, `NoRow`): `c = db.open("app.db")` (or `":memory:"`), `db.exec(c, sql, [a, b])` (rows changed), `db.query[T](c, sql, params)` (columns to `T`'s fields by name; or a column type), `db.one[T]` (`NoRow` if none), `db.opt[T]`, `db.tx(c, () => ...)` (rolls back on raise), `db.migrate(c, [sql1, sql2])`. Values only through `?` placeholders; `none` is NULL; `insert ... returning *`. Share one `Db` between server handlers.
+- `crypto.sha256 sha512 blake2b hmac256(key, data) hmac512 equal(a, b)` (pure; data is `Bytes` or `Str`, keys `Secret[Bytes]` or `Bytes`); `! rand`: `crypto.random(n) token(n) key() seal(key, data) keypair() hash_password(pw)`, `uuid.v4() v7()`; `crypto.open(key, sealed)` (Opt), `verify_password(pw, hash) sign(sk, data) verify(pk, data, sig)`.
+- `gzip.compress(b) decompress(b)` (Res), `compress_level(b, n)`, `compress_file(src, dst) decompress_file` `! fs`; the same in `zstd`, `deflate` (no files). `csv.parse(text) write(rows)`, `csv.decode[T](text)` (header names to fields, Res), `csv.read[T](path)`, `csv.fold[T](path, init, (acc, row) => ...)`, `csv.encode(xs)`.
 
 ## Elsewhere
 `./sspur spec --full` covers concurrency (`! conc`, `par`, `atomic`, `chan`), services (`store`, `db.get`, `svc`, `ep`, `migrate_S`), packages (`./sspur add`, `pub`, `use lib.{f}`) and C, sys, bare and GPU (`extern fn`, `profile`, `kernel fn`).

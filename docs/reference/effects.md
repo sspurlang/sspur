@@ -15,6 +15,8 @@ A function's effect row, after `!`, lists everything it may do besides return a 
 | `time` | `now_ms mono_ns sleep_ms now` |
 | `env` | `env_var args` |
 | `net` | `http.get post send fetch download serve serve_with` ([Networking](stdlib/network.md)) |
+| `db` | `db.open close exec query one opt tx migrate` on SQLite ([Databases](stdlib/data-libs.md)) |
+| `rand` | `crypto.random token key seal hash_password keypair`, `uuid.v4 v7` (the operating system's generator) |
 | `conc` | Creating or using an `Atomic[Int]` or a `Chan[T]` |
 | `yield[T]` | `yield(x)` with `x: T`, which makes a generator |
 | `db.read[S]`, `db.write[S]` | `db.get` and `db.scan`, and `db.put` and `db.del`, on the store `S` |
@@ -41,7 +43,7 @@ A function's effect row, after `!`, lists everything it may do besides return a 
 | Contracts (`pre`, `post`, `where`) | None: contracts are pure |
 | Functions passed to `Secret.map`, `check`, `validate` | None |
 | `par` tasks | Not `log` or handled effects (`E_PAR_EFFECT`) |
-| Service handlers | Deployed: `db.*`, `log`, `div`, `fail`, `time`, `env`; not `fs`, `io`, `proc` or `net` (`E_EP_EFFECT`). With `http.serve`: anything but `db.*` and user-defined effects (`E_SERVE_EFFECT`) |
+| Service handlers | Deployed: `db.*`, `log`, `div`, `fail`, `time`, `env`; not `fs`, `io`, `proc` or `net` (`E_EP_EFFECT`). With `http.serve`: anything but `db.*` (the deploy stores; SQLite's `db` is fine) and user-defined effects (`E_SERVE_EFFECT`) |
 | Kernels | `dev` only (`E_KERNEL_EFFECT`) |
 | `profile bare` | `div`, `unsafe`, `mmio` and `static` |
 | `extern fn` | Exactly `ffi` |

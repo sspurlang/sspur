@@ -26,6 +26,9 @@
   - [Collections and Pipelines](handbook/collections.md)
   - [Concurrency](handbook/concurrency.md)
   - [Networking](handbook/networking.md)
+  - [Databases](handbook/databases.md)
+  - [Security and Crypto](handbook/security.md)
+  - [Files, Compression and CSV](handbook/files-compression-csv.md)
   - [Packages](handbook/packages.md)
 
 # Reference
@@ -39,6 +42,7 @@
   - [Options, results and JSON](reference/stdlib/data.md)
   - [Files and processes](reference/stdlib/system.md)
   - [Networking](reference/stdlib/network.md)
+  - [Databases, crypto, compression and CSV](reference/stdlib/data-libs.md)
 - [Effects](reference/effects.md)
 - [Error codes](reference/errors.md)
 - [Command line](reference/cli.md)
@@ -118,6 +122,7 @@
   - [ADR 0034: Running an unchanged program from the cache](adr/0034-cached-run.md)
   - [ADR 0035: HTTP client and server](adr/0035-networking.md)
   - [ADR 0036: Source-level debugging with lldb and gdb](adr/0036-source-level-debugging.md)
+  - [ADR 0037: Databases, crypto, compression and CSV](adr/0037-data-and-security-libraries.md)
 - [Native performance versus C++](design/native-benchmarks.md)
 - [Agent benchmarks](design/agent-benchmarks.md)
 

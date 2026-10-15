@@ -1,0 +1,44 @@
+// ANCHOR: types
+type Todo = {id: Int, title: Str, done: Bool, due: Opt[Time]}
+// ANCHOR_END: types
+
+// ANCHOR: schema
+fn migrations() -> List[Str]
+= ["create table todos (id integer primary key, title text not null, done integer not null default 0, due text)", "create index todos_by_done on todos (done)"]
+// ANCHOR_END: schema
+
+// ANCHOR: queries
+fn add(c: Db, title: Str) -> Todo ! db, fail[DbErr]
+= db.one[Todo](c, "insert into todos (title) values (?) returning *", [title])
+
+fn open_todos(c: Db) -> List[Todo] ! db, fail[DbErr]
+= db.query[Todo](c, "select * from todos where done = ? order by id", [false])
+
+fn find(c: Db, id: Int) -> Opt[Todo] ! db, fail[DbErr]
+= db.opt[Todo](c, "select * from todos where id = ?", [id])
+// ANCHOR_END: queries
+
+// ANCHOR: tx
+fn finish(c: Db, ids: List[Int]) -> Int ! db, fail[DbErr]
+= db.tx(c, () => ids.fold(0, (n, id) => n + db.exec(c, "update todos set done = 1 where id = ?", [id])))
+// ANCHOR_END: tx
+
+// ANCHOR: errors
+fn as_numbers(c: Db) -> Str ! db
+= catch "{db.query[Int](c, \"select title from todos\")}"
+  | Mismatch{msg} => "mismatch: " + msg
+  | _ => "another database error"
+// ANCHOR_END: errors
+
+// ANCHOR: main
+fn main() -> Unit ! db, fail[DbErr], log
+= do
+  c = db.open("todos.db")
+  n = db.migrate(c, migrations())
+  a = add(c, "write the docs")
+  b = add(c, "ship it")
+  log("{n} migrations applied; added {a.id} and {b.id}")
+  log(open_todos(c).map(_.title).str)
+  log("finished {finish(c, [a.id])}; still open: {open_todos(c).len}; todo 9: {find(c, 9)}")
+  log(as_numbers(c))
+// ANCHOR_END: main

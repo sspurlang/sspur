@@ -1,0 +1,41 @@
+// ANCHOR: records
+type Sale = {region: Str, units: Int, price: F64, note: Opt[Str]}
+// ANCHOR_END: records
+
+// ANCHOR: csv
+fn report(text: Str) -> Str
+= match csv.decode[Sale](text)
+  | ok(sales) => "{sales.len} sales, {sales.map(s => s.units).sum} units"
+  | err(e) => "bad file: " + e
+// ANCHOR_END: csv
+
+// ANCHOR: stream
+fn units_in(path: Str) -> Res[Int, Str] ! fs
+= csv.fold[Sale](path, 0, (n, s) => n + s.units)
+// ANCHOR_END: stream
+
+// ANCHOR: compress
+fn shrink(path: Str) -> Str ! fs
+= do
+  data = read_bin(path).or(bytes([]))
+  gz = gzip.compress(data)
+  zs = zstd.compress(data)
+  same = gzip.decompress(gz) == ok(data) and zstd.decompress(zs) == ok(data)
+  "{data.len} bytes, gzip {gz.len < data.len}, zstd {zs.len < data.len}, round trip {same}"
+// ANCHOR_END: compress
+
+// ANCHOR: main
+fn main() -> Unit ! log, fs
+= do
+  log(report("region,units,price\nnorth,3,9.5\nsouth,\"1\",2\n"))
+  log(report("region,units,price\nnorth,three,9.5\n"))
+  w = write_file("sales.csv", csv.encode([Sale{region: "east, upper", units: 5, price: 1.25, note: some("says \"hi\"")}, Sale{region: "west", units: 7, price: 2.0, note: none}]))
+  log(read_file("sales.csv").or("").trim.replace("\r\n", " | "))
+  log("units: {units_in("sales.csv")}")
+  many = range(0, 500, 1).map(i => Sale{region: "region {i % 7}", units: i, price: 1.5, note: none})
+  w2 = write_file("many.csv", csv.encode(many))
+  log(shrink("many.csv"))
+  g = gzip.compress_file("sales.csv", "sales.csv.gz")
+  back = gzip.decompress_file("sales.csv.gz", "copy.csv")
+  log("files: {g}, {back}, same: {read_file("copy.csv") == read_file("sales.csv")}")
+// ANCHOR_END: main

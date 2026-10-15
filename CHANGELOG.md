@@ -4,6 +4,19 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+### Added
+- `Bytes`, an immutable byte string: `bytes(xs)`, `s.to_bytes`, `b.len`, `get`, `slice`, `concat`, `to_list`, `to_str`, `hex`, `base64` and `base64url`, `from_hex`, `from_base64` and `from_base64url`, and `read_bin` and `write_bin` for binary files. It compares byte by byte, shows as `0x` and hex, and is a base64 string in JSON. In the interpreter its memory is wiped when freed.
+- SQLite (ADR 0037), vendored as its amalgamation and compiled into the cache on first use, behind a new `db` effect: `db.open(path)` (or `":memory:"`), `db.exec(c, sql, params)`, `db.query[T]`, `db.one[T]` and `db.opt[T]`, which map columns to a record's fields by name (or to a tuple or one column type) and raise `Mismatch` with the column and the reason when a value doesn't fit, `db.tx(c, f)`, which commits or rolls back when `f` raises (savepoints when nested), and `db.migrate(c, steps)`, which applies ordered SQL steps and refuses applied steps that changed. Values reach SQL only through `?` parameters; a list literal of parameters may mix types. Errors are `DbErr` (`Sql`, `Constraint`, `Busy`, `NoRow`, `Mismatch`). Files use WAL, `synchronous=NORMAL`, foreign keys and a 5 second busy timeout; prepared statements are cached per connection; a database is a pool of connections that the HTTP server's concurrent handlers share, with transactions queued for the write lock, and opening the same file again returns the same pool. `http.serve` answers a raised `DbErr` with 404, 409, 503 or a 500 without SQL text.
+- Crypto (ADR 0037), from Monocypher and libsodium, compiled into the cache on first use: `crypto.sha256`, `sha512` and `blake2b`, `hmac256` and `hmac512`, `equal` (constant time), `seal` and `open` (XChaCha20-Poly1305 with a random nonce), `hash_password` and `verify_password` (Argon2id at OWASP's parameters, PHC strings), `keypair`, `public_key`, `sign` and `verify` (Ed25519), and `random`, `token` and `key`, with `uuid.v4()` and `uuid.v7()`. Randomness comes from the operating system behind a new `rand` effect; keys and passwords are `Secret` values, and a plain value is accepted where one is expected. Known-answer vectors from NIST and the RFCs are tested in both tiers.
+- Compression: `gzip`, `deflate` and `zstd` with `compress`, `compress_level` and `decompress` (a `Res`, capped at 1 GiB), and `compress_file` and `decompress_file` for gzip and zstd, which stream with constant memory and never leave a partial output file.
+- CSV: `csv.parse` and `csv.write` (RFC 4180, with CRLF output), `csv.decode[T]` and `csv.read[T]` for records by header name with errors that name the row and column, `csv.fold[T]` to stream a large file, and `csv.encode` for records.
+- The `\r` string escape.
+- Handbook chapters Databases, Security and Crypto, and Files, Compression and CSV; a reference page for the four libraries; ADR 0037; and `E_SQL_PARAM`, `E_SQL_ROW`, `E_CSV_TYPE` and `E_DB_SHADOW`.
+
+### Changed
+- The HTTP server's gzip encoding uses miniz (level 1) instead of a hand-written encoder; responses are as before.
+- `sspur fuzz` skips the functions of the network and library preludes.
+
 ## [0.10.0] - 2026-10-15
 
 ### Added

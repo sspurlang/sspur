@@ -13,7 +13,10 @@ The handbook teaches the language from the start. Read it in order: each page us
 9. [Collections and Pipelines](collections.md): list methods, maps and sets, loops and ranges.
 10. [Concurrency](concurrency.md): `par`, atomics and channels, and the race checks.
 11. [Networking](networking.md): HTTP servers and clients, TLS, configuration and structured logs.
-12. [Packages](packages.md): `sspur.toml`, `pub`, `use` and the lock file.
+12. [Databases](databases.md): SQLite with typed rows, parameters, transactions, migrations and servers.
+13. [Security and Crypto](security.md): password hashing, tokens, MACs, encryption, signatures and secrets.
+14. [Files, Compression and CSV](files-compression-csv.md): `Bytes`, gzip and zstd, and CSV with typed records.
+15. [Packages](packages.md): `sspur.toml`, `pub`, `use` and the lock file.
 
 Every code block in the handbook is a file in [`docs/snippets/handbook/`](https://github.com/utkarshavardhana/sspur/tree/main/docs/snippets/handbook), and every terminal session is run by the test suite against the current compiler. If a page and the compiler disagree, CI fails.
 

@@ -40,3 +40,4 @@ Every change that shapes the language, the compiler or the tools has an architec
 | [0034](0034-cached-run.md) | Running an unchanged program from the cache | Native |
 | [0035](0035-networking.md) | HTTP client and server, with TLS, configuration and structured logs | Library |
 | [0036](0036-source-level-debugging.md) | Source-level debugging with lldb and gdb | Tooling |
+| [0037](0037-data-and-security-libraries.md) | Databases, crypto, compression and CSV | Library |
