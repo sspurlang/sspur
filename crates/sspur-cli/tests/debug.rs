@@ -121,3 +121,27 @@ fn debug_init_writes_the_formatters_and_codebases_get_a_source_file() {
     let (_, projected) = sspur(&dir, &cache, &["src"]);
     assert_eq!(std::fs::read_to_string(src).unwrap(), projected);
 }
+
+#[test]
+fn elaborated_programs_keep_the_lines_of_their_file() {
+    if !on_path("clang") {
+        return;
+    }
+    let (dir, cache) = setup("elab");
+    let src = "// A comment above everything: elaboration prints the program again without it.\n\ntype Cfg = {name: Str}\n\nfn greet(who: Str) -> Str\n= do\n  msg = \"hello \" + who\n  msg + \"!\"\n\nfn main() -> Unit ! log, fs, env\n= log(greet(config.load(Cfg{name: \"x\"}, \"\", \"DBG_\").map(c => c.name).or(\"y\")))\n";
+    std::fs::write(dir.join("net.ssp"), src).unwrap();
+    let exe = env!("CARGO_BIN_EXE_sspur");
+    let o = if cfg!(target_os = "macos") && on_path("lldb") {
+        Command::new("lldb").args(["-b", "-o", "breakpoint set -f net.ssp -l 8", "-o", "run", "-o", "frame variable", "-o", "kill", "--", exe, "run", "--debug", "net.ssp"]).current_dir(&dir).env("SSPUR_CACHE", &cache).output().unwrap()
+    } else if cfg!(target_os = "linux") && on_path("gdb") {
+        Command::new("gdb").args(["-batch", "-nx", "-ex", "set breakpoint pending on", "-ex", "break net.ssp:8", "-ex", "run", "-ex", "info locals", "-ex", "kill", "--args", exe, "run", "--debug", "net.ssp"]).current_dir(&dir).env("SSPUR_CACHE", &cache).output().unwrap()
+    } else {
+        return;
+    };
+    let out = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    if cannot_launch(&out) {
+        eprintln!("skipped: the debugger can't start a process here");
+        return;
+    }
+    assert!(out.contains("greet") && out.contains("net.ssp:8") && out.contains("hello x"), "the breakpoint is on line 8 of the file:\n{out}");
+}

@@ -13,6 +13,9 @@ pub struct Source {
     pub text: String,
     /// Functions whose spans are not into `text` (those of dependencies).
     pub skip: HashSet<String>,
+    /// When `text` is the program as elaboration printed it, the line of the `.ssp` file for
+    /// each of its lines (index 0 is line 1; 0 means none). Empty when `text` is the file.
+    pub lines: Vec<usize>,
 }
 
 thread_local! {
@@ -59,6 +62,7 @@ pub(super) const RESET: &str = "#line 0 \"sspur:c\"";
 /// Line lookup for one program, held by the code generator.
 pub(super) struct Lines {
     starts: Vec<usize>,
+    map: Vec<usize>,
     len: usize,
     pub(super) skip: HashSet<String>,
     pub(super) path: String,
@@ -68,7 +72,7 @@ impl Lines {
     pub(super) fn new(s: &Source) -> Lines {
         let mut starts = vec![0];
         starts.extend(s.text.bytes().enumerate().filter(|(_, b)| *b == b'\n').map(|(i, _)| i + 1));
-        Lines { starts, len: s.text.len(), skip: s.skip.clone(), path: s.path.clone() }
+        Lines { starts, map: s.lines.clone(), len: s.text.len(), skip: s.skip.clone(), path: s.path.clone() }
     }
 
     pub(super) fn line(&self, start: u32, end: u32) -> Option<usize> {
@@ -76,7 +80,11 @@ impl Lines {
         if (start == 0 && end == 0) || at >= self.len {
             return None;
         }
-        Some(self.starts.partition_point(|&s| s <= at))
+        let line = self.starts.partition_point(|&s| s <= at);
+        if self.map.is_empty() {
+            return Some(line);
+        }
+        self.map.get(line - 1).copied().filter(|&l| l > 0)
     }
 }
 
@@ -610,7 +618,7 @@ mod tests {
             Some((lm, lc, _)) => (lm, lc),
             None => (&m, &check),
         };
-        set(debug, debug.then(|| Source { path: "/work/prog.ssp".into(), text: src.into(), skip: HashSet::new() }));
+        set(debug, debug.then(|| Source { path: "/work/prog.ssp".into(), text: src.into(), skip: HashSet::new(), lines: vec![] }));
         let r = super::super::generate(m, check, None, None, true, true).map(|(c, _)| c);
         set(false, None);
         r.unwrap()

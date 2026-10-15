@@ -34,8 +34,82 @@ pub fn source_path(label: &str, src: &str) -> Result<PathBuf, String> {
 pub fn enable(l: &Loaded, label: &str) -> Result<PathBuf, String> {
     let path = source_path(label, &l.src)?;
     let skip = l.module.defs[l.own.min(l.module.defs.len())..].iter().map(|d| d.name().to_string()).collect();
-    nd::set(true, Some(nd::Source { path: path.display().to_string().replace('\\', "/"), text: l.src.clone(), skip }));
+    let (text, lines) = match elaborated_lines(l) {
+        Some(x) => x,
+        None => (l.src.clone(), vec![]),
+    };
+    nd::set(true, Some(nd::Source { path: path.display().to_string().replace('\\', "/"), text, skip, lines }));
     Ok(path)
+}
+
+/// The starts of a definition's statements and match arms, in order: places that begin a line
+/// in the file and in the printed program alike.
+fn anchors(d: &sspur_syntax::Def) -> Vec<u32> {
+    use sspur_syntax::{ExprKind, Stmt};
+    let mut out = vec![d.span().start];
+    let mut visit = |e: &sspur_syntax::Expr| {
+        sspur_syntax::visit::walk_expr(e, &mut |x| {
+            match &x.kind {
+                ExprKind::Block(stmts) => out.extend(stmts.iter().filter_map(|s| match s {
+                    Stmt::Let(_, v) | Stmt::Var(_, v) | Stmt::Assign(_, v, _) | Stmt::Expr(v) | Stmt::For(_, v, _) | Stmt::While(v, _) => Some(v.span.start),
+                    Stmt::Fn(f) => Some(f.span.start),
+                })),
+                ExprKind::Match(_, arms, _) | ExprKind::Catch(_, arms) | ExprKind::Handle(_, arms) => out.extend(arms.iter().map(|a| a.body.span.start)),
+                _ => {}
+            }
+            true
+        })
+    };
+    match d {
+        sspur_syntax::Def::Fn(f) => visit(&f.body),
+        sspur_syntax::Def::Test(t) => visit(&t.body),
+        sspur_syntax::Def::Impl(i) => i.fns.iter().for_each(|f| visit(&f.body)),
+        _ => {}
+    }
+    out
+}
+
+/// A program that elaboration printed and parsed again (networking, the libraries, traits) has
+/// spans into that printed text, not into the file. This is the printed text and, for each of
+/// its lines, the file's line: definitions are matched in order, and within one the starts of its
+/// statements and arms, which elaboration leaves in place.
+fn elaborated_lines(l: &Loaded) -> Option<(String, Vec<usize>)> {
+    let orig = sspur_syntax::parse(&l.src).ok()?;
+    let own = l.own.min(l.module.defs.len());
+    let unchanged = orig.defs.len() >= own && l.module.defs[..own].iter().zip(&orig.defs).all(|(a, b)| a.span() == b.span());
+    if unchanged {
+        return None;
+    }
+    let text = sspur_syntax::print_module(&l.module);
+    let line_of = |src: &str, at: u32| sspur_syntax::line_col(src, at).0 as usize;
+    let n = text.lines().count() + 2;
+    let mut map = vec![0usize; n];
+    let mut marks: Vec<(usize, usize, bool)> = Vec::new();
+    for (e, o) in l.module.defs[..own].iter().zip(&orig.defs) {
+        if e.name() != o.name() {
+            return None;
+        }
+        let (pa, oa) = (anchors(e), anchors(o));
+        let start = line_of(&text, e.span().start);
+        let end = line_of(&text, e.span().end);
+        if pa.len() == oa.len() {
+            marks.extend(pa.iter().zip(&oa).map(|(p, q)| (line_of(&text, *p), line_of(&l.src, *q), true)));
+        } else {
+            marks.push((start, line_of(&l.src, o.span().start), true));
+        }
+        marks.push((end + 1, 0, false));
+    }
+    marks.sort_by_key(|m| (m.0, m.2));
+    let mut cur = 0;
+    let mut k = 0;
+    for (i, slot) in map.iter_mut().enumerate() {
+        while k < marks.len() && marks[k].0 <= i + 1 {
+            cur = if marks[k].2 { marks[k].1 } else { 0 };
+            k += 1;
+        }
+        *slot = cur;
+    }
+    Some((text, map))
 }
 
 /// Writes the formatter scripts into the cache and returns their paths (lldb, gdb).
