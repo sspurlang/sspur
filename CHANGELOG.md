@@ -4,6 +4,8 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-15
+
 ### Added
 - `Bytes`, an immutable byte string: `bytes(xs)`, `s.to_bytes`, `b.len`, `get`, `slice`, `concat`, `to_list`, `to_str`, `hex`, `base64` and `base64url`, `from_hex`, `from_base64` and `from_base64url`, and `read_bin` and `write_bin` for binary files. It compares byte by byte, shows as `0x` and hex, and is a base64 string in JSON. In the interpreter its memory is wiped when freed.
 - SQLite (ADR 0037), vendored as its amalgamation and compiled into the cache on first use, behind a new `db` effect: `db.open(path)` (or `":memory:"`), `db.exec(c, sql, params)`, `db.query[T]`, `db.one[T]` and `db.opt[T]`, which map columns to a record's fields by name (or to a tuple or one column type) and raise `Mismatch` with the column and the reason when a value doesn't fit, `db.tx(c, f)`, which commits or rolls back when `f` raises (savepoints when nested), and `db.migrate(c, steps)`, which applies ordered SQL steps and refuses applied steps that changed. Values reach SQL only through `?` parameters; a list literal of parameters may mix types. Errors are `DbErr` (`Sql`, `Constraint`, `Busy`, `NoRow`, `Mismatch`). Files use WAL, `synchronous=NORMAL`, foreign keys and a 5 second busy timeout; prepared statements are cached per connection; a database is a pool of connections that the HTTP server's concurrent handlers share, with transactions queued for the write lock, and opening the same file again returns the same pool. `http.serve` answers a raised `DbErr` with 404, 409, 503 or a 500 without SQL text.
@@ -350,7 +352,8 @@ This release covers Phases 3 to 7 of the roadmap and ADRs 0003 to 0024. SSPUR no
 - Language design spec, JSON schemas and the token benchmark.
 - Compiler core: parser, checker, content hashing, interpreter and the `sspur` CLI, with an 11-program suite.
 
-[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/utkarshavardhana/sspur/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/utkarshavardhana/sspur/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/utkarshavardhana/sspur/compare/v0.8.2...v0.9.0
 [0.8.2]: https://github.com/utkarshavardhana/sspur/compare/v0.8.1...v0.8.2
