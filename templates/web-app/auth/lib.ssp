@@ -17,8 +17,10 @@ pub type Session = {user: User, token: Str}
 fn decoy() -> Str
 = "$argon2id$v=19$m=19456,t=2,p=1$SxJvPSiePxvoK8fGbggfIQ$HFNbZuy2nCRudBalqMIrn4JnlbepCsrxWK6ST/U6H9o"
 
+// A new session for `user`; old sessions and login failures are swept out on the way.
 fn start(c: Db, user: User, p: Policy, now: Time) -> Session ! db, fail[DbErr], rand
 = do
+  _ = storage.sweep(c, now, now.sub(days(1)))
   t = sessions.new_token()
   _ = storage.add_session(c, user.id, t.digest, now, now.add(days(p.session_days)))
   Session{user, token: t.token}

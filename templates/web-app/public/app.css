@@ -1,20 +1,21 @@
 *{box-sizing:border-box}
 body{margin:0;font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;color:#1d2433;background:#f6f7f9}
-header{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.75rem 1.25rem;background:#1d2433;color:#fff}
+header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:.5rem 1rem;padding:.75rem 1.25rem;background:#1d2433;color:#fff}
 header a{color:#fff}
-header nav{display:flex;gap:.75rem;align-items:center}
+header nav{display:flex;gap:.75rem;align-items:center;min-width:0}
+header nav span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .home{font-weight:700;text-decoration:none}
 main{max-width:46rem;margin:0 auto;padding:1.25rem}
 h1{font-size:1.5rem}
 .card{display:grid;gap:.75rem;background:#fff;padding:1.25rem;border-radius:.5rem;box-shadow:0 1px 3px #0002}
 label{display:grid;gap:.25rem;font-weight:600}
-input,textarea{font:inherit;padding:.5rem;border:1px solid #c5cad3;border-radius:.375rem}
+input,textarea{font:inherit;font-weight:400;padding:.5rem;border:1px solid #c5cad3;border-radius:.375rem;width:100%;min-width:0}
 button,.button{font:inherit;padding:.45rem .9rem;border:0;border-radius:.375rem;background:#2f5bd3;color:#fff;cursor:pointer;text-decoration:none;display:inline-block}
 .danger{background:#b3261e;margin-top:1rem}
 .inline{display:inline}
 header .inline button{background:transparent;border:1px solid #fff6}
 .bar{display:flex;gap:.5rem;justify-content:space-between;flex-wrap:wrap}
-.search{display:flex;gap:.5rem;flex:1}
+.search{display:flex;gap:.5rem;flex:1;min-width:0}
 .search input{flex:1}
 .notes{list-style:none;padding:0;display:grid;gap:.75rem}
 .notes li{background:#fff;padding:.9rem 1rem;border-radius:.5rem;box-shadow:0 1px 3px #0002}
