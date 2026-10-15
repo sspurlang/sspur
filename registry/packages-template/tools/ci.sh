@@ -77,6 +77,8 @@ clone_package() {
   rm -rf "$WORK/pkg"
   git -c core.autocrlf=false clone -q --no-checkout "$GIT_BASE/$v_slug.git" "$WORK/pkg"
   git -C "$WORK/pkg" -c core.autocrlf=false checkout -q --detach "$v_commit"
+  # Dependencies resolve from the index, never from a lock the package ships.
+  rm -f "$WORK/pkg/sspur.lock"
 }
 
 cmd_check() {
