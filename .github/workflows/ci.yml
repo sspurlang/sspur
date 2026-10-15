@@ -214,6 +214,9 @@ jobs:
       - name: Clippy for the wasm build
         run: cargo clippy --release -p sspur-wasm --target wasm32-unknown-unknown -- -D warnings
 
+      - name: Clippy for the registry's browser checker
+        run: cargo clippy --release -p sspur-wasm --features registry --target wasm32-unknown-unknown -- -D warnings
+
       - name: Playground API (wasm build, compared with sspur run --interp)
         env:
           SSPUR_BIN: ${{ github.workspace }}/target/release/sspur
