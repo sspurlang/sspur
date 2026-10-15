@@ -1,0 +1,47 @@
+// Backs up the database to a zstd-compressed file, or restores one.
+//   sspur run tools/backup.ssp [DIR]                  writes DIR/notes-<time>.db.zst (DIR: backups)
+//   sspur run tools/backup.ssp restore FILE.db.zst    replaces the database; stop the server first
+// The copy is made with SQLite's VACUUM INTO, so it is consistent while the server runs.
+
+type Settings = {db: Str}
+
+fn db_path() -> Str ! fs, env
+= config.load(Settings{db: "notes.db"}, env_var("NOTES_CONFIG").or("app.json"), "NOTES_").map(s => s.db).or("notes.db")
+
+fn backup(dir: Str) -> Res[Str, Str] ! db, fs, env, time
+= do
+  _ = mkdir_all(dir)
+  stamp = now().format("%Y%m%dT%H%M%SZ")
+  copy = "{dir}/notes-{stamp}.db"
+  made = catch do
+      c = db.open(db_path())
+      _ = db.exec(c, "vacuum into ?", [copy])
+      ok(())
+    | Sql{msg} | Constraint{msg} | Busy{msg} | Mismatch{msg} => err(msg)
+    | NoRow => err("no row")
+  match made
+  | err(e) => err(e)
+  | ok(_) => do
+    packed = zstd.compress_file(copy, copy + ".zst")
+    _ = remove_file(copy)
+    packed.map(u => copy + ".zst")
+
+fn restore(file: Str) -> Res[Str, Str] ! fs, env
+= do
+  target = db_path()
+  for f in [target + "-wal", target + "-shm"]
+    _ = remove_file(f)
+  zstd.decompress_file(file, target).map(u => target)
+
+fn main() -> Unit ! db, fs, env, time, log, proc
+= do
+  r = match args()
+    | ["restore", file] => restore(file).map(t => "restored {t} from {file}")
+    | [dir] => backup(dir).map(f => "backed up to {f}")
+    | [] => backup("backups").map(f => "backed up to {f}")
+    | _ => err("usage: sspur run tools/backup.ssp [DIR] | restore FILE.db.zst")
+  match r
+  | ok(m) => log(m)
+  | err(e) => do
+    log.error(e)
+    exit(1)

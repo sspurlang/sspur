@@ -1,0 +1,7 @@
+[package]
+name = "views"
+version = "0.1.0"
+
+[deps]
+models = { path = "../models" }
+pagination = { path = "../packages/pagination" }

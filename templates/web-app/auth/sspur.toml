@@ -1,0 +1,9 @@
+[package]
+name = "auth"
+version = "0.1.0"
+
+[deps]
+models = { path = "../models" }
+storage = { path = "../storage" }
+sessions = { path = "../packages/sessions" }
+passwords = { path = "../packages/passwords" }

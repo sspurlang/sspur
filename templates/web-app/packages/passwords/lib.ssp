@@ -1,0 +1,52 @@
+// Password policy and storage, after NIST SP 800-63B: a length range, no well-known passwords,
+// nothing built from the account's own name, and Argon2id hashes. Published to the registry later.
+
+// How long a password must and may be.
+pub type Policy = {min: Int where _ >= 8, max: Int where _ >= 64 and _ <= 1024}
+
+// 10 to 128 characters.
+pub fn default_policy() -> Policy
+= Policy{min: 10, max: 128}
+
+fn common() -> List[Str]
+= ["password", "password1", "password12", "password123", "1234567890", "12345678910", "0123456789", "qwertyuiop", "qwerty1234", "1q2w3e4r5t", "iloveyou12", "letmein123", "welcome123", "abcdefghij", "administrator", "changeme123", "trustno1234", "passw0rd123", "superman123", "football123"]
+
+fn one_char(pw: Str) -> Bool
+= pw.chars.unique.len <= 2
+
+// The words of `w` worth avoiding: for an email address, those of the part before the `@`.
+fn personal(w: Str) -> List[Str]
+= (if w.contains("@") then w.split("@").first.or("") else w).lower.words.filter(_.len >= 4)
+
+// Why `pw` is not acceptable under `p`, or none. `avoid` holds words the password must not
+// contain, such as the user's email address and the site's name.
+pub fn problem(p: Policy, pw: Str, avoid: List[Str]) -> Opt[Str]
+= do
+  n = pw.len
+  low = pw.lower
+  if n < p.min then some("must be at least {p.min} characters")
+  else if n > p.max then some("must be at most {p.max} characters")
+  else if common().contains(low) or one_char(pw) then some("is too easy to guess")
+  else if avoid.flat_map(personal).any(w => low.contains(w)) then some("must not contain your name or email address")
+  else none
+
+// An Argon2id hash of `pw` with a random salt, as a PHC string.
+pub fn hash(pw: Secret[Str]) -> Str ! rand
+= crypto.hash_password(pw)
+
+// Whether `pw` matches `stored`, in constant time.
+pub fn verify(pw: Secret[Str], stored: Str) -> Bool
+= crypto.verify_password(pw, stored)
+
+// Whether `stored` was made with weaker parameters than `hash` uses now, so it should be
+// replaced the next time the password is known.
+pub fn needs_rehash(stored: Str) -> Bool
+= not stored.starts_with("$argon2id$v=19$m=19456,t=2,p=1$")
+
+test short = problem(default_policy(), "abc", []) == some("must be at least 10 characters")
+test long = problem(default_policy(), "a".repeat(129), []).is_some
+test common_one = problem(default_policy(), "Password123", []) == some("is too easy to guess")
+test repeated = problem(default_policy(), "aaaaaaaaaaaa", []).is_some
+test avoids_email = problem(default_policy(), "Lovelace-rocks-1815", ["ada.lovelace@example.com"]) == some("must not contain your name or email address")
+test good = problem(default_policy(), "correct horse battery staple", ["ada"]) == none
+test rehash = not needs_rehash("$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA") and needs_rehash("$argon2i$v=19$m=4096,t=3,p=1$c2FsdA$aGFzaA")

@@ -1,0 +1,70 @@
+// Accounts and sessions: sign up, log in with rate limiting, log out, and the user behind a
+// session token. Passwords are stored as Argon2id hashes and session tokens as SHA-256 digests.
+use models.{AppErr, User}
+
+// Session lifetime and the login rate limit: at most `max_failures` failed logins per account
+// and per client address within `window_mins` minutes.
+pub type Policy = {session_days: Int where _ >= 1, max_failures: Int where _ >= 1, window_mins: Int where _ >= 1}
+
+pub fn default_policy() -> Policy
+= Policy{session_days: 14, max_failures: 5, window_mins: 15}
+
+// A signed-in user and the token their client presents.
+pub type Session = {user: User, token: Str}
+
+// A valid hash of a password nobody has, checked when an email is unknown so that a login
+// takes as long whether or not the account exists.
+fn decoy() -> Str
+= "$argon2id$v=19$m=19456,t=2,p=1$SxJvPSiePxvoK8fGbggfIQ$HFNbZuy2nCRudBalqMIrn4JnlbepCsrxWK6ST/U6H9o"
+
+fn start(c: Db, user: User, p: Policy, now: Time) -> Session ! db, fail[DbErr], rand
+= do
+  t = sessions.new_token()
+  _ = storage.add_session(c, user.id, t.digest, now, now.add(days(p.session_days)))
+  Session{user, token: t.token}
+
+// Creates an account and signs it in. A weak password is `Invalid`, a taken email `Conflict`.
+pub fn sign_up(c: Db, p: Policy, email: Str, password: Str, now: Time) -> Session ! db, fail[DbErr], fail[AppErr], rand
+= do
+  e = models.normal_email(email)
+  match passwords.problem(passwords.default_policy(), password, [e])
+  | some(why) => raise Invalid{field: "password", why: "the password " + why}
+  | none => ()
+  user = storage.create_user(c, e, passwords.hash(secret(password)), now)
+  start(c, user, p, now)
+
+fn too_many(c: Db, p: Policy, key: Str, now: Time) -> Unit ! db, fail[DbErr], fail[AppErr]
+= do
+  (n, first) = storage.failures(c, key, now.sub(mins(p.window_mins)))
+  if n >= p.max_failures then raise TooMany{retry_after: max(first.map(f => f.add(mins(p.window_mins)).since(now).secs).or(60), 1)}
+
+// Signs in with an email and password. `client` is the caller's address when it is known (""
+// otherwise); failures count against the account and the address, and past the limit every
+// attempt is `TooMany` until the window passes. A wrong email or password is `Unauthorized`,
+// the same for both.
+pub fn log_in(c: Db, p: Policy, email: Str, password: Str, client: Str, now: Time) -> Session ! db, fail[DbErr], fail[AppErr], rand
+= do
+  e = models.normal_email(email)
+  keys = ["email:" + e] + (if client == "" then [] else ["client:" + client])
+  for k in keys
+    too_many(c, p, k, now)
+  match storage.account(c, e)
+  | some(a) if passwords.verify(secret(password), a.password) => do
+    _ = storage.clear_failures(c, "email:" + e)
+    _ = if passwords.needs_rehash(a.password) then storage.set_password(c, a.id, passwords.hash(secret(password))) else 0
+    start(c, User{id: a.id, email: a.email, created_at: a.created_at}, p, now)
+  | found => do
+    _ = found.is_some or passwords.verify(secret(password), decoy())
+    for k in keys
+      _ = storage.add_failure(c, k, now)
+    raise Unauthorized
+
+// Ends the session of `token`.
+pub fn log_out(c: Db, token: Str) -> Unit ! db, fail[DbErr]
+= do
+  _ = storage.drop_session(c, sessions.digest(token))
+  ()
+
+// The user signed in with `token`, unless the session ended or expired.
+pub fn user_of(c: Db, token: Str, now: Time) -> Opt[User] ! db, fail[DbErr]
+= if token == "" then none else storage.session_user(c, sessions.digest(token), now)

@@ -1,0 +1,7 @@
+# Caddy gets and renews the HTTPS certificate and forwards to the app on 127.0.0.1:8080.
+# Replace notes.example.com with your domain, whose DNS points at this machine.
+notes.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8080
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+}

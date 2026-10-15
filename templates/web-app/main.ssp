@@ -1,0 +1,374 @@
+// {{name}}: a notes service with accounts. This file has the configuration, the routes, the
+// request handlers and startup; the modules beside it hold the rest:
+//   models/   the data types and the rules for valid input
+//   storage/  SQLite: migrations and queries
+//   auth/     sign up, log in with rate limiting, sessions
+//   views/    the HTML pages
+//   packages/ sessions, pagination and passwords, written to be reused
+use models.{AppErr, Credentials, NewNote, Note, NotePatch, User}
+use pagination.{Page}
+
+// Settings: app.json, then NOTES_<FIELD> environment variables (NOTES_PORT=9000).
+type Config = {mode: Str where _ == "dev" or _ == "production", host: Str, port: Int where _ >= 0 and _ <= 65535, workers: Int where _ >= 0 and _ <= 64, db: Str where _ != "", secret: Secret[Str], secure_cookies: Opt[Bool], trust_proxy: Bool, static_dir: Str}
+
+fn defaults() -> Config
+= Config{mode: "dev", host: "127.0.0.1", port: 8080, workers: 0, db: "notes.db", secret: secret(""), secure_cookies: none, trust_proxy: false, static_dir: "public"}
+
+// What every handler gets: the database, the key that signs CSRF tokens, the cookie settings and
+// the login policy.
+type App = {db: Db, key: Secret[Str], session: sessions.CookieOpts, anon: sessions.CookieOpts, auth: auth.Policy, trust_proxy: Bool}
+
+// The JSON API and the HTML pages. Parameters named `app` get the App the server was started
+// with, `req` the request, `{id}` the path segment, other GET parameters the query string and
+// the other POST and PATCH parameter the JSON body.
+svc api(app: App)
+  ep get "/api/health" = health
+  ep post "/api/signup" = signup
+  ep post "/api/login" = login
+  ep post "/api/logout" = logout
+  ep get "/api/me" = me
+  ep get "/api/notes" = list_notes
+  ep post "/api/notes" = create_note
+  ep get "/api/notes/{id}" = get_note
+  ep patch "/api/notes/{id}" = update_note
+  ep delete "/api/notes/{id}" = delete_note
+  ep get "/" = home
+  ep get "/login" = login_page
+  ep post "/login" = login_submit
+  ep get "/signup" = signup_page
+  ep post "/signup" = signup_submit
+  ep post "/logout" = logout_submit
+  ep get "/notes/new" = new_note_page
+  ep post "/notes" = create_note_submit
+  ep get "/notes/{id}" = note_page
+  ep post "/notes/{id}" = update_note_submit
+  ep post "/notes/{id}/delete" = delete_note_submit
+
+// ---------- logging ----------
+
+// One structured log line per event: with SSPUR_LOG=json its fields are the line's fields.
+type Event = {event: Str, rid: Str, user: Opt[Int], note: Opt[Int]}
+
+fn event(req: Request, name: Str, user: Opt[Int], note: Opt[Int]) -> Unit ! log
+= log.info(json.encode(Event{event: name, rid: req.header("x-request-id").or(""), user, note}))
+
+// ---------- who is asking ----------
+
+// The caller's address for rate limiting: behind a proxy, the last X-Forwarded-For entry,
+// which the proxy wrote; otherwise unknown.
+fn client(app: App, req: Request) -> Str
+= if app.trust_proxy then req.header("x-forwarded-for").or("").split(",").last.or("").trim else ""
+
+fn unsafe_method(m: Str) -> Bool
+= not (m == "GET" or m == "HEAD" or m == "OPTIONS")
+
+// The signed-in user of an API request: a Bearer token, or the session cookie with the
+// x-csrf-token header on requests that change something.
+fn caller(app: App, req: Request) -> User ! db, fail[DbErr], fail[AppErr], time
+= do
+  (token, cookie) = match sessions.bearer(req)
+    | some(t) => (t, false)
+    | none => (req.cookie(app.session.name).or(""), true)
+  some(user) = auth.user_of(app.db, token, now()) else raise Unauthorized
+  if cookie and unsafe_method(req.method) and not sessions.csrf_ok(app.key, sessions.digest(token), req.header("x-csrf-token").or("")) then raise Forbidden{why: "a request with the session cookie needs the x-csrf-token header from /api/me"}
+  user
+
+// ---------- the JSON API ----------
+
+type Health = {status: Str, db: Bool}
+
+type SignedIn = {user: User, token: Str}
+
+type Me = {user: User, csrf: Str}
+
+fn health(app: App) -> Health ! db
+= do
+  up = storage.ping(app.db)
+  Health{status: if up then "ok" else "degraded", db: up}
+
+fn signup(app: App, req: Request, c: Credentials) -> SignedIn ! db, fail[DbErr], fail[AppErr], rand, time, log
+= do
+  s = auth.sign_up(app.db, app.auth, c.email, c.password, now())
+  event(req, "signup", some(s.user.id), none)
+  SignedIn{user: s.user, token: s.token}
+
+fn login(app: App, req: Request, c: Credentials) -> SignedIn ! db, fail[DbErr], fail[AppErr], rand, time, log
+= do
+  s = auth.log_in(app.db, app.auth, c.email, c.password, client(app, req), now())
+  event(req, "login", some(s.user.id), none)
+  SignedIn{user: s.user, token: s.token}
+
+fn logout(app: App, req: Request) -> Unit ! db, fail[DbErr], fail[AppErr], time, log
+= do
+  user = caller(app, req)
+  auth.log_out(app.db, sessions.bearer(req).or(req.cookie(app.session.name).or("")))
+  event(req, "logout", some(user.id), none)
+
+fn me(app: App, req: Request) -> Me ! db, fail[DbErr], fail[AppErr], time
+= do
+  user = caller(app, req)
+  token = sessions.bearer(req).or(req.cookie(app.session.name).or(""))
+  Me{user, csrf: sessions.csrf_token(app.key, sessions.digest(token))}
+
+fn list_notes(app: App, req: Request, q: Opt[Str], tag: Opt[Str], limit: Opt[Int], offset: Opt[Int]) -> Page[Note] ! db, fail[DbErr], fail[AppErr], time
+= storage.list_notes(app.db, caller(app, req).id, q.or(""), tag.or(""), pagination.request(limit, offset))
+
+fn create_note(app: App, req: Request, n: NewNote) -> Note ! db, fail[DbErr], fail[AppErr], time, log
+= do
+  user = caller(app, req)
+  note = storage.create_note(app.db, user.id, n, now())
+  event(req, "note.created", some(user.id), some(note.id))
+  note
+
+fn get_note(app: App, req: Request, id: Int) -> Opt[Note] ! db, fail[DbErr], fail[AppErr], time
+= storage.note(app.db, caller(app, req).id, id)
+
+fn update_note(app: App, req: Request, id: Int, p: NotePatch) -> Opt[Note] ! db, fail[DbErr], fail[AppErr], time, log
+= do
+  user = caller(app, req)
+  note = storage.update_note(app.db, user.id, id, p, now())
+  if note.is_some then event(req, "note.updated", some(user.id), some(id))
+  note
+
+fn delete_note(app: App, req: Request, id: Int) -> Unit ! db, fail[DbErr], fail[AppErr], time, log
+= do
+  user = caller(app, req)
+  if not storage.delete_note(app.db, user.id, id) then raise NotFound
+  event(req, "note.deleted", some(user.id), some(id))
+
+// ---------- the HTML pages ----------
+
+// Browsers get a strict content security policy: only this site's own styles and forms.
+fn page(status: Int, body: Str, cookies: List[(Str, Str)]) -> Response
+= Response{status, headers: [("content-type", "text/html; charset=utf-8"), ("content-security-policy", "default-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"), ("x-content-type-options", "nosniff"), ("referrer-policy", "same-origin"), ("cache-control", "no-store")] + cookies, body}
+
+fn redirect(to: Str, cookies: List[(Str, Str)]) -> Response
+= Response{status: 303, headers: [("location", to), ("cache-control", "no-store")] + cookies, body: ""}
+
+// The browser's session from its cookie, with the CSRF token for its forms.
+type Browser = {user: User, token: Str, csrf: Str}
+
+fn browser(app: App, req: Request) -> Opt[Browser] ! db, fail[DbErr], time
+= do
+  token = req.cookie(app.session.name).or("")
+  auth.user_of(app.db, token, now()).map(u => Browser{user: u, token, csrf: sessions.csrf_token(app.key, sessions.digest(token))})
+
+// Whether a form post carries the CSRF token of its session.
+fn form_ok(app: App, req: Request, b: Browser) -> Bool
+= sessions.csrf_ok(app.key, sessions.digest(b.token), req.form("csrf").or(""))
+
+// Login and signup forms have no session yet, so their CSRF token is bound to a random
+// `anon` cookie instead; this returns the cookie's value and the header that sets it, if new.
+fn anon(app: App, req: Request) -> (Str, List[(Str, Str)]) ! rand
+= match req.cookie(app.anon.name)
+  | some(v) if v != "" => (v, [])
+  | _ => do
+    v = crypto.token(16)
+    (v, [sessions.set_cookie(app.anon, v)])
+
+fn anon_ok(app: App, req: Request) -> Bool
+= sessions.csrf_ok(app.key, "anon:" + req.cookie(app.anon.name).or(""), req.form("csrf").or(""))
+
+fn forbidden() -> Response
+= page(403, views.page("Expired", none, "", "<h1>This form has expired</h1><p><a href=\"/\">Start again</a></p>"), [])
+
+// What a person should read for an invalid form field.
+fn why(field: Str, rule: Str) -> Str
+= match field
+  | "email" => "Enter an email address like name@example.com."
+  | "title" => "The title must not be blank, and at most 200 characters."
+  | "body" => "The text is too long: at most 20,000 characters."
+  | "tags" => "Tags are up to 10 words of letters, digits and dashes, separated by commas."
+  | _ => rule
+
+fn field_of(e: Str) -> Str
+= e.split(":").first.or("").split(".").first.or("").split("[").first.or("")
+
+fn home(app: App, req: Request, q: Opt[Str], tag: Opt[Str], offset: Opt[Int]) -> Response ! db, fail[DbErr], time
+= match browser(app, req)
+  | none => redirect("/login", [])
+  | some(b) => page(200, views.notes_page(b.user.email, b.csrf, storage.list_notes(app.db, b.user.id, q.or(""), tag.or(""), pagination.request(none, offset)), q.or(""), tag.or("")), [])
+
+fn login_page(app: App, req: Request) -> Response ! rand
+= do
+  (v, set) = anon(app, req)
+  page(200, views.account_form("/login", sessions.csrf_token(app.key, "anon:" + v), "", none), set)
+
+fn signup_page(app: App, req: Request) -> Response ! rand
+= do
+  (v, set) = anon(app, req)
+  page(200, views.account_form("/signup", sessions.csrf_token(app.key, "anon:" + v), "", none), set)
+
+fn account_submit(app: App, req: Request, action: Str) -> Response ! db, fail[DbErr], rand, time, log
+= do
+  if not anon_ok(app, req) then return forbidden()
+  email = req.form("email").or("")
+  csrf = sessions.csrf_token(app.key, "anon:" + req.cookie(app.anon.name).or(""))
+  retry = (status, msg) => page(status, views.account_form(action, csrf, email, some(msg)), [])
+  match json.decode[Credentials](json.encode(FormCredentials{email, password: req.form("password").or("")}))
+  | err(e) => retry(400, why(field_of(e), e))
+  | ok(c) => catch do
+      s = if action == "/signup" then auth.sign_up(app.db, app.auth, c.email, c.password, now()) else auth.log_in(app.db, app.auth, c.email, c.password, client(app, req), now())
+      event(req, if action == "/signup" then "signup" else "login", some(s.user.id), none)
+      redirect("/", [sessions.set_cookie(app.session, s.token), sessions.clear_cookie(app.anon)])
+    | Invalid{why} => retry(400, why.replace("the password", "The password") + ".")
+    | Conflict{why} => retry(409, "An account with this email already exists. Log in instead.")
+    | Unauthorized => retry(401, "The email or password is wrong.")
+    | TooMany{retry_after} => retry(429, "Too many failed attempts. Try again in {max(retry_after / 60, 1)} minutes.")
+    | Forbidden | NotFound => retry(400, "That didn't work. Try again.")
+
+type FormCredentials = {email: Str, password: Str}
+
+fn login_submit(app: App, req: Request) -> Response ! db, fail[DbErr], rand, time, log
+= account_submit(app, req, "/login")
+
+fn signup_submit(app: App, req: Request) -> Response ! db, fail[DbErr], rand, time, log
+= account_submit(app, req, "/signup")
+
+fn logout_submit(app: App, req: Request) -> Response ! db, fail[DbErr], time, log
+= match browser(app, req)
+  | some(b) if form_ok(app, req, b) => do
+    auth.log_out(app.db, b.token)
+    event(req, "logout", some(b.user.id), none)
+    redirect("/login", [sessions.clear_cookie(app.session)])
+  | some(_) => forbidden()
+  | none => redirect("/login", [])
+
+type FormNote = {title: Str, body: Opt[Str], tags: Opt[List[Str]]}
+
+// The note a form describes, checked by the same rules as the JSON API.
+fn note_input(req: Request) -> Res[NewNote, Str]
+= do
+  tags = req.form("tags").or("").split(",").map(_.trim).filter(_ != "")
+  json.decode[NewNote](json.encode(FormNote{title: req.form("title").or(""), body: some(req.form("body").or("")), tags: some(tags)}))
+
+fn new_note_page(app: App, req: Request) -> Response ! db, fail[DbErr], time
+= match browser(app, req)
+  | some(b) => page(200, views.note_form(b.user.email, b.csrf, none, "", "", "", none), [])
+  | none => redirect("/login", [])
+
+fn note_form_again(b: Browser, req: Request, note: Opt[Note], e: Str) -> Response
+= page(400, views.note_form(b.user.email, b.csrf, note, req.form("title").or(""), req.form("body").or(""), req.form("tags").or(""), some(why(field_of(e), e))), [])
+
+fn create_note_submit(app: App, req: Request) -> Response ! db, fail[DbErr], time, log
+= match browser(app, req)
+  | none => redirect("/login", [])
+  | some(b) if not form_ok(app, req, b) => forbidden()
+  | some(b) => match note_input(req)
+    | err(e) => note_form_again(b, req, none, e)
+    | ok(n) => do
+      note = storage.create_note(app.db, b.user.id, n, now())
+      event(req, "note.created", some(b.user.id), some(note.id))
+      redirect("/", [])
+
+fn note_page(app: App, req: Request, id: Int) -> Response ! db, fail[DbErr], time
+= match browser(app, req)
+  | none => redirect("/login", [])
+  | some(b) => match storage.note(app.db, b.user.id, id)
+    | some(n) => page(200, views.note_form(b.user.email, b.csrf, some(n), n.title, n.body, n.tags.join(", "), none), [])
+    | none => page(404, views.page("Not found", some(b.user.email), b.csrf, "<h1>No such note</h1><p><a href=\"/\">Your notes</a></p>"), [])
+
+fn update_note_submit(app: App, req: Request, id: Int) -> Response ! db, fail[DbErr], time, log
+= match browser(app, req)
+  | none => redirect("/login", [])
+  | some(b) if not form_ok(app, req, b) => forbidden()
+  | some(b) => match note_input(req)
+    | err(e) => note_form_again(b, req, storage.note(app.db, b.user.id, id), e)
+    | ok(n) => do
+      changed = storage.update_note(app.db, b.user.id, id, NotePatch{title: some(n.title), body: n.body, tags: n.tags}, now())
+      if changed.is_some then event(req, "note.updated", some(b.user.id), some(id))
+      redirect("/", [])
+
+fn delete_note_submit(app: App, req: Request, id: Int) -> Response ! db, fail[DbErr], time, log
+= match browser(app, req)
+  | none => redirect("/login", [])
+  | some(b) if not form_ok(app, req, b) => forbidden()
+  | some(b) => do
+    if storage.delete_note(app.db, b.user.id, id) then event(req, "note.deleted", some(b.user.id), some(id))
+    redirect("/", [])
+
+// ---------- startup ----------
+
+// The settings, or why they are not usable. In production the secret must be set: it signs the
+// CSRF tokens, and a random one would sign out everyone at every restart.
+fn load_config() -> Res[Config, Str] ! fs, env
+= match config.load(defaults(), env_var("NOTES_CONFIG").or("app.json"), "NOTES_")
+  | err(e) => err(e)
+  | ok(c) if c.mode == "production" and not c.secret.check(s => s.len >= 32) => err("NOTES_SECRET must be set to at least 32 random characters in production; make one with: openssl rand -base64 48")
+  | ok(c) => ok(c)
+
+type Started = {event: Str, mode: Str, db: Str, migrations: Int}
+
+fn start(c: Config) -> Unit ! net, log, db, fail[DbErr], rand, time
+= do
+  conn = db.open(c.db)
+  applied = db.migrate(conn, storage.migrations())
+  _ = storage.sweep(conn, now(), now().sub(days(1)))
+  key = if c.secret.check(s => s != "") then c.secret else do
+    log.warn("NOTES_SECRET is not set: using a random key, so sessions end when the server restarts")
+    secret(crypto.token(32))
+  secure = c.secure_cookies.or(c.mode == "production")
+  app = App{db: conn, key, session: sessions.cookie_opts(if secure then "__Host-session" else "session", 14, secure), anon: sessions.cookie_opts("anon", 1, secure), auth: auth.default_policy(), trust_proxy: c.trust_proxy}
+  log.info(json.encode(Started{event: "started", mode: c.mode, db: c.db, migrations: applied}))
+  http.serve_with(http.server(c.port) with host := c.host, workers := c.workers, gzip := true, health := "/healthz", files := [("/static", c.static_dir)], max_body := 65536, timeout_ms := 15000, api(app))
+  log.info("stopped")
+
+fn main() -> Unit ! net, log, env, fs, db, fail[DbErr], rand, time, proc
+= match load_config()
+  | ok(c) => start(c)
+  | err(e) => do
+    log.error("cannot start: " + e)
+    exit(2)
+
+// ---------- tests: the handlers, called directly, on an in-memory database ----------
+
+fn test_app() -> App ! db, fail[DbErr]
+= App{db: storage.open(":memory:"), key: secret("test key"), session: sessions.cookie_opts("session", 1, false), anon: sessions.cookie_opts("anon", 1, false), auth: auth.default_policy(), trust_proxy: false}
+
+fn call(app: App, method: Str, url: Str, headers: List[(Str, Str)], body: Str) -> Response ! db, rand, time, log
+= api(app)(Request{method, url, headers, body, timeout_ms: 0, retries: 0, redirects: 0})
+
+fn token_of(r: Response) -> Str
+= r.json[SignedIn].map(s => s.token).or("")
+
+test api_round_trip = catch do
+    app = test_app()
+    up = call(app, "POST", "/api/signup", [], "\{\"email\":\"ada@example.com\",\"password\":\"correct horse battery\"}")
+    auth = [("authorization", "Bearer " + token_of(up))]
+    made = call(app, "POST", "/api/notes", auth, "\{\"title\":\"Plan\",\"tags\":[\"work\"]}")
+    id = made.json[Note].map(n => n.id).or(0)
+    listed = call(app, "GET", "/api/notes?tag=work", auth, "").json[Page[Note]].map(p => p.total)
+    changed = call(app, "PATCH", "/api/notes/{id}", auth, "\{\"body\":\"ship it\"}").json[Note].map(n => n.body)
+    gone = call(app, "DELETE", "/api/notes/{id}", auth, "").status
+    up.status == 201 and made.status == 201 and listed == ok(1) and changed == ok("ship it") and gone == 204 and call(app, "GET", "/api/notes/{id}", auth, "").status == 404
+  | _ => false
+
+test api_needs_a_session = catch call(test_app(), "GET", "/api/notes", [], "").status == 401 and call(test_app(), "GET", "/api/notes", [("authorization", "Bearer nope")], "").status == 401
+  | _ => false
+
+test api_validates_bodies = catch do
+    app = test_app()
+    bad = call(app, "POST", "/api/signup", [], "\{\"email\":\"not an email\",\"password\":\"correct horse battery\"}")
+    weak = call(app, "POST", "/api/signup", [], "\{\"email\":\"ada@example.com\",\"password\":\"short\"}")
+    t = token_of(call(app, "POST", "/api/signup", [], "\{\"email\":\"ada@example.com\",\"password\":\"correct horse battery\"}"))
+    blank = call(app, "POST", "/api/notes", [("authorization", "Bearer " + t)], "\{\"title\":\" \"}")
+    bad.status == 400 and bad.body.contains("body.email") and weak.status == 400 and weak.body.contains("at least 10") and blank.status == 400 and blank.body.contains("body.title")
+  | _ => false
+
+test cookie_sessions_need_csrf = catch do
+    app = test_app()
+    t = token_of(call(app, "POST", "/api/signup", [], "\{\"email\":\"ada@example.com\",\"password\":\"correct horse battery\"}"))
+    cookie = ("cookie", "session=" + t)
+    csrf = call(app, "GET", "/api/me", [cookie], "").json[Me].map(m => m.csrf).or("")
+    no = call(app, "POST", "/api/notes", [cookie], "\{\"title\":\"x\"}").status
+    yes = call(app, "POST", "/api/notes", [cookie, ("x-csrf-token", csrf)], "\{\"title\":\"x\"}").status
+    no == 403 and yes == 201
+  | _ => false
+
+test pages_are_protected = catch do
+    app = test_app()
+    home = call(app, "GET", "/", [], "")
+    login = call(app, "GET", "/login", [], "")
+    forged = call(app, "POST", "/login", [("content-type", "application/x-www-form-urlencoded")], "csrf=forged&email=a%40b.co&password=x")
+    home.status == 303 and home.header("location") == some("/login") and login.status == 200 and login.header("content-security-policy").is_some and login.header("set-cookie").map(c => c.contains("HttpOnly") and c.contains("SameSite=Lax")) == some(true) and forged.status == 403
+  | _ => false

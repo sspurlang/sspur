@@ -1,0 +1,80 @@
+// Unit tests for the storage module, each on a fresh in-memory database:
+// sspur test tests/storage.ssp
+use models.{AppErr, NewNote, NotePatch}
+
+fn at(min: Int) -> Time
+= time_ms(1790000000000 + min * 60000)
+
+fn fresh() -> Db ! db, fail[DbErr]
+= storage.open(":memory:")
+
+fn user(c: Db, email: Str) -> Int ! db, fail[DbErr]
+= catch storage.create_user(c, email, "hash", at(0)).id
+  | Conflict | Invalid | Unauthorized | Forbidden | NotFound | TooMany => -1
+
+fn note(title: Str, tags: List[Str]) -> NewNote
+= NewNote{title, body: some("body of " + title), tags: some(tags)}
+
+test migrations_apply_once = catch do
+    c = db.open(":memory:")
+    db.migrate(c, storage.migrations()) == storage.migrations().len and db.migrate(c, storage.migrations()) == 0
+  | _ => false
+
+test emails_are_unique = catch do
+    c = fresh()
+    a = user(c, "ada@example.com")
+    b = user(c, "ada@example.com")
+    a > 0 and b == -1 and storage.account(c, "ada@example.com").map(_.password) == some("hash")
+  | _ => false
+
+test sessions_expire = catch do
+    c = fresh()
+    u = user(c, "ada@example.com")
+    _ = storage.add_session(c, u, "d1", at(0), at(10))
+    ok = storage.session_user(c, "d1", at(5)).map(_.id) == some(u)
+    late = storage.session_user(c, "d1", at(10)) == none
+    _ = storage.drop_session(c, "d1")
+    ok and late and storage.session_user(c, "d1", at(1)) == none
+  | _ => false
+
+test notes_belong_to_their_user = catch do
+    c = fresh()
+    a = user(c, "a@example.com")
+    b = user(c, "b@example.com")
+    n = storage.create_note(c, a, note(" First ", ["Work", "work", "home"]), at(1))
+    n.title == "First" and n.tags == ["home", "work"] and storage.note(c, a, n.id).is_some and storage.note(c, b, n.id) == none and not storage.delete_note(c, b, n.id) and storage.delete_note(c, a, n.id)
+  | _ => false
+
+test updates_keep_what_is_missing = catch do
+    c = fresh()
+    a = user(c, "a@example.com")
+    n = storage.create_note(c, a, note("t", ["x"]), at(1))
+    u = storage.update_note(c, a, n.id, NotePatch{title: none, body: some("new"), tags: none}, at(2))
+    u.map(x => (x.title, x.body, x.tags, x.updated_at > x.created_at)) == some(("t", "new", ["x"], true)) and storage.update_note(c, a, 999, NotePatch{title: some("x"), body: none, tags: none}, at(3)) == none
+  | _ => false
+
+test search_tags_and_pages = catch do
+    c = fresh()
+    a = user(c, "a@example.com")
+    for i in 0..25
+      _ = storage.create_note(c, a, note("note {i}" + (if i % 5 == 0 then " groceries" else ""), if i % 2 == 0 then ["even"] else []), at(i))
+    first = storage.list_notes(c, a, "", "", pagination.request(some(10), none))
+    last = storage.list_notes(c, a, "", "", pagination.request(some(10), some(20)))
+    found = storage.list_notes(c, a, "grocer", "", pagination.request(none, none))
+    even = storage.list_notes(c, a, "", "EVEN", pagination.request(none, none))
+    both = storage.list_notes(c, a, "groceries", "even", pagination.request(none, none))
+    first.items.len == 10 and first.total == 25 and first.next == some(10) and first.items[0].title == "note 24" and last.items.len == 5 and last.next == none and found.total == 5 and even.total == 13 and both.total == 3
+  | _ => false
+
+test search_ignores_query_syntax = catch storage.search_terms("\"drop\" OR (x* AND y") == "drop* or* x* and* y*" and storage.list_notes(fresh(), 1, "\") OR \"", "", pagination.request(none, none)).total == 0
+  | _ => false
+
+test failures_count_in_a_window = catch do
+    c = fresh()
+    _ = storage.add_failure(c, "email:a", at(0))
+    _ = storage.add_failure(c, "email:a", at(5))
+    _ = storage.add_failure(c, "email:b", at(5))
+    (n, first) = storage.failures(c, "email:a", at(1))
+    _ = storage.clear_failures(c, "email:a")
+    n == 1 and first == some(at(5)) and storage.failures(c, "email:a", at(0)).0 == 0 and storage.sweep(c, at(100), at(6)) == 1
+  | _ => false

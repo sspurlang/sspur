@@ -1,0 +1,60 @@
+// The HTML pages: plain server-rendered forms that work without JavaScript. Every value from a
+// user goes through `esc`, and every form carries the CSRF token it is given.
+use models.{Note}
+use pagination.{Page}
+
+// `s` with the characters that mean something in HTML replaced by entities.
+pub fn esc(s: Str) -> Str
+= if not (s.contains("&") or s.contains("<") or s.contains(">") or s.contains("\"") or s.contains("'")) then s else s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#39;")
+
+// The value of a query string parameter: letters, digits and `-_.~` stay, the rest is `%XX`.
+pub fn url_part(s: Str) -> Str
+= s.bytes.map(b => if (b >= 48 and b <= 57) or (b >= 65 and b <= 90) or (b >= 97 and b <= 122) or b == 45 or b == 95 or b == 46 or b == 126 then from_bytes([b]).or("") else "%" + b.format("02X")).join("")
+
+// A whole page: `user` is the signed-in email, shown with a logout button.
+pub fn page(title: Str, user: Opt[Str], csrf: Str, body: Str) -> Str
+= do
+  nav = match user
+    | some(email) => "<span>{esc(email)}</span> <form method=\"post\" action=\"/logout\" class=\"inline\"><input type=\"hidden\" name=\"csrf\" value=\"{esc(csrf)}\"><button>Log out</button></form>"
+    | none => "<a href=\"/login\">Log in</a> <a href=\"/signup\">Sign up</a>"
+  "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>{esc(title)} - Notes</title><link rel=\"stylesheet\" href=\"/static/app.css\"></head><body><header><a href=\"/\" class=\"home\">Notes</a><nav>{nav}</nav></header><main>{body}</main></body></html>\n"
+
+fn error_box(error: Opt[Str]) -> Str
+= match error
+  | some(e) => "<p class=\"error\" role=\"alert\">{esc(e)}</p>"
+  | none => ""
+
+// The login or signup form; `action` is "/login" or "/signup".
+pub fn account_form(action: Str, csrf: Str, email: Str, error: Opt[Str]) -> Str
+= do
+  (heading, button, other) = if action == "/signup" then ("Create an account", "Sign up", "<a href=\"/login\">I have an account</a>") else ("Log in", "Log in", "<a href=\"/signup\">Create an account</a>")
+  hint = if action == "/signup" then "<small>At least 10 characters.</small>" else ""
+  page(heading, none, csrf, "<h1>{heading}</h1>{error_box(error)}<form method=\"post\" action=\"{action}\" class=\"card\"><input type=\"hidden\" name=\"csrf\" value=\"{esc(csrf)}\"><label>Email <input type=\"email\" name=\"email\" value=\"{esc(email)}\" required autocomplete=\"email\"></label><label>Password <input type=\"password\" name=\"password\" required autocomplete=\"{if action == "/signup" then "new-password" else "current-password"}\"></label>{hint}<button>{button}</button></form><p>{other}</p>")
+
+fn tag_links(tags: List[Str]) -> Str
+= tags.map(t => "<a class=\"tag\" href=\"/?tag={url_part(t)}\">{esc(t)}</a>").join(" ")
+
+fn item(n: Note) -> Str
+= do
+  snippet = if n.body.len > 160 then n.body.take(160) + "..." else n.body
+  "<li><a href=\"/notes/{n.id}\"><strong>{esc(n.title)}</strong></a> {tag_links(n.tags)}<p>{esc(snippet)}</p><small>{n.updated_at.format("%Y-%m-%d %H:%M")} UTC</small></li>"
+
+fn link(q: Str, tag: Str, offset: Int, text: Str) -> Str
+= "<a href=\"/?q={url_part(q)}&amp;tag={url_part(tag)}&amp;offset={offset}\">{text}</a>"
+
+// The list of notes with the search form and links to the pages before and after.
+pub fn notes_page(email: Str, csrf: Str, notes: Page[Note], q: Str, tag: Str) -> Str
+= do
+  items = if notes.items.is_empty then "<p class=\"empty\">No notes yet.</p>" else "<ul class=\"notes\">{notes.items.map(item).join("")}</ul>"
+  prev = pagination.prev(notes).map(o => link(q, tag, o, "Newer")).or("")
+  next = notes.next.map(o => link(q, tag, o, "Older")).or("")
+  filter = if tag == "" then "" else "<p>Tagged <span class=\"tag\">{esc(tag)}</span> <a href=\"/\">show all</a></p>"
+  page("Your notes", some(email), csrf, "<div class=\"bar\"><form method=\"get\" action=\"/\" class=\"search\"><input type=\"search\" name=\"q\" value=\"{esc(q)}\" placeholder=\"Search notes\"><input type=\"hidden\" name=\"tag\" value=\"{esc(tag)}\"><button>Search</button></form><a class=\"button\" href=\"/notes/new\">New note</a></div>{filter}<p>{notes.total} {if notes.total == 1 then "note" else "notes"}</p>{items}<nav class=\"pages\">{prev} {next}</nav>")
+
+// The form for a new note (`note` is none) or for changing one.
+pub fn note_form(email: Str, csrf: Str, note: Opt[Note], title: Str, body: Str, tags: Str, error: Opt[Str]) -> Str
+= do
+  action = note.map(n => "/notes/{n.id}").or("/notes")
+  delete = note.map(n => "<form method=\"post\" action=\"/notes/{n.id}/delete\" class=\"inline\"><input type=\"hidden\" name=\"csrf\" value=\"{esc(csrf)}\"><button class=\"danger\">Delete</button></form>").or("")
+  heading = if note.is_some then "Edit note" else "New note"
+  page(heading, some(email), csrf, "<h1>{heading}</h1>{error_box(error)}<form method=\"post\" action=\"{action}\" class=\"card\"><input type=\"hidden\" name=\"csrf\" value=\"{esc(csrf)}\"><label>Title <input name=\"title\" value=\"{esc(title)}\" required maxlength=\"200\"></label><label>Text <textarea name=\"body\" rows=\"12\" maxlength=\"20000\">{esc(body)}</textarea></label><label>Tags <input name=\"tags\" value=\"{esc(tags)}\" placeholder=\"work, ideas\"></label><button>Save</button></form>{delete}")

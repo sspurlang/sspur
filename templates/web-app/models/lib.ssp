@@ -1,0 +1,59 @@
+// The data of the notes service and the rules for valid input. Request bodies are decoded into
+// these types, so a value that breaks a `where` clause never reaches a handler: the server
+// answers 400 with the field and the rule.
+
+// An email address as a person types it: one `@`, a dot in the domain, no spaces.
+pub type Email = Str where email_ok(_)
+
+// A note's title: not blank, at most 200 characters.
+pub type Title = Str where _.trim != "" and _.len <= 200
+
+// A note's text, at most 20,000 characters.
+pub type Body = Str where _.len <= 20000
+
+// A tag: 1 to 32 letters, digits or dashes.
+pub type Tag = Str where tag_ok(_)
+
+// At most 10 tags.
+pub type Tags = List[Tag] where _.len <= 10
+
+// What a client sends to sign up or log in.
+pub type Credentials = {email: Email, password: Str where _.len <= 1024}
+
+// A new note; `body` and `tags` may be left out.
+pub type NewNote = {title: Title, body: Opt[Body], tags: Opt[Tags]}
+
+// A change to a note: the fields that are present replace the note's.
+pub type NotePatch = {title: Opt[Title], body: Opt[Body], tags: Opt[Tags]}
+
+pub type Note = {id: Int, title: Str, body: Str, tags: List[Str], created_at: Time, updated_at: Time}
+
+pub type User = {id: Int, email: Str, created_at: Time}
+
+// The errors handlers raise. The server picks the status from the name: Invalid is 400,
+// Unauthorized 401, Forbidden 403, NotFound 404, Conflict 409 and TooMany 429.
+pub type AppErr = Invalid{field: Str, why: Str} | Unauthorized | Forbidden{why: Str} | NotFound | Conflict{why: Str} | TooMany{retry_after: Int}
+
+// Whether `s`, trimmed, looks like an email address.
+pub fn email_ok(s: Str) -> Bool
+= do
+  t = s.trim
+  match t.split("@")
+  | [local, domain] => local != "" and local.len <= 64 and t.len <= 254 and domain.contains(".") and not domain.starts_with(".") and not domain.ends_with(".") and not t.contains(" ")
+  | _ => false
+
+// Whether `s` is a valid tag.
+pub fn tag_ok(s: Str) -> Bool
+= s.len >= 1 and s.len <= 32 and s.chars.all(c => c.is_alpha or c == "-" or "0123456789".contains(c))
+
+// The form of an email address that accounts are keyed by.
+pub fn normal_email(s: Str) -> Str
+= s.trim.lower
+
+// Tags as they are stored: lower case, sorted, without repeats.
+pub fn normal_tags(ts: List[Str]) -> List[Str]
+= ts.map(_.lower).unique.sort
+
+test emails = email_ok("ada@example.com") and email_ok(" Ada@Example.org ") and not email_ok("ada") and not email_ok("a@b") and not email_ok("a b@c.de") and not email_ok("@x.io") and not email_ok("a@@x.io")
+test tags = tag_ok("work") and tag_ok("q3-2026") and not tag_ok("") and not tag_ok("two words") and not tag_ok("x".repeat(33))
+test normal = normal_email(" Ada@Example.COM ") == "ada@example.com" and normal_tags(["b", "A", "a"]) == ["a", "b"]

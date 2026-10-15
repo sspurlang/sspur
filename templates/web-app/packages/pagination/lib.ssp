@@ -1,0 +1,28 @@
+// Offset pagination for list endpoints: clamped request parameters and a page with the total and
+// the offset of the next page. Published to the registry later.
+
+// A page of `items` out of `total`, starting at `offset`; `next` is the offset of the next page.
+pub type Page[T] = {items: List[T], total: Int, limit: Int, offset: Int, next: Opt[Int]}
+
+// A checked page request.
+pub type PageReq = {limit: Int where _ >= 1 and _ <= 100, offset: Int where _ >= 0}
+
+// The page request for query parameters that may be missing or out of range: `limit` defaults to
+// 20 and is kept within 1 to 100, `offset` defaults to 0 and is never negative.
+pub fn request(limit: Opt[Int], offset: Opt[Int]) -> PageReq
+= PageReq{limit: clamp(limit.or(20), 1, 100), offset: max(offset.or(0), 0)}
+
+// The page of `items` (already limited by the query) for request `r` out of `total` rows.
+pub fn page[T](items: List[T], total: Int, r: PageReq) -> Page[T]
+  pre total >= 0
+= Page{items, total, limit: r.limit, offset: r.offset, next: if r.offset + items.len < total then some(r.offset + items.len) else none}
+
+// The offset of the page before `p`, if there is one.
+pub fn prev[T](p: Page[T]) -> Opt[Int]
+= if p.offset > 0 then some(max(p.offset - p.limit, 0)) else none
+
+test defaults = request(none, none) == PageReq{limit: 20, offset: 0}
+test clamped = request(some(1000), some(-5)) == PageReq{limit: 100, offset: 0} and request(some(0), none).limit == 1
+test next_page = page([1, 2], 5, request(some(2), some(0))).next == some(2)
+test last_page = page([5], 5, request(some(2), some(4))).next == none and prev(page([5], 5, request(some(2), some(4)))) == some(2)
+test first_page = prev(page([1], 1, request(none, none))) == none

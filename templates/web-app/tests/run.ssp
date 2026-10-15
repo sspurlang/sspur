@@ -1,0 +1,34 @@
+// Runs every test of the app, natively and in the interpreter: the packages' own tests, the
+// module and handler tests, and the end-to-end tests.
+//   sspur run tests/run.ssp           both tiers
+//   sspur run tests/run.ssp native    one tier (native or interp)
+// Run from the app's directory; SSPUR names the sspur binary if it isn't on PATH.
+
+fn last_line(s: Str) -> Str
+= s.trim.split("\n").last.or("").trim
+
+fn main() -> Unit ! proc, env, log
+= do
+  sspur = env_var("SSPUR").or("sspur")
+  tiers = match args().first
+    | some(t) => [t]
+    | none => ["native", "interp"]
+  files = ["packages/sessions/lib.ssp", "packages/pagination/lib.ssp", "packages/passwords/lib.ssp", "models/lib.ssp", "tests/storage.ssp", "tests/auth.ssp", "tests/views.ssp", "main.ssp"]
+  var failed = 0
+  for tier in tiers
+    flag = if tier == "interp" then ["--interp"] else []
+    for f in files
+      (ok, out) = match run_cmd(sspur, ["test"] + flag + [f], "")
+        | ok((code, o, e)) => (code == 0, if code == 0 then last_line(o) else o + e)
+        | err(e) => (false, e)
+      log("{tier.pad_right(7, " ")} {f.pad_right(28, " ")} {out}")
+      if not ok then failed := failed + 1
+    (ok, out) = match run_cmd(sspur, ["run"] + flag + ["tests/e2e.ssp", tier], "")
+      | ok((code, o, e)) => (code == 0, if code == 0 then last_line(o) else o + e)
+      | err(e) => (false, e)
+    log("{tier.pad_right(7, " ")} {"tests/e2e.ssp".pad_right(28, " ")} {out}")
+    if not ok then failed := failed + 1
+  if failed > 0 then do
+    log("{failed} test runs failed")
+    exit(1)
+  else log("all tests passed")

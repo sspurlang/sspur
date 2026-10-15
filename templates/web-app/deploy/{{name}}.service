@@ -1,0 +1,36 @@
+# systemd unit for {{name}}. Install: see "Deploy" in README.md.
+[Unit]
+Description={{name}} notes service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User={{name}}
+Group={{name}}
+WorkingDirectory=/opt/{{name}}
+# NOTES_SECRET=... lives here, readable only by root: install -m 600 /dev/null /etc/{{name}}/env
+EnvironmentFile=/etc/{{name}}/env
+Environment=NOTES_MODE=production NOTES_HOST=127.0.0.1 NOTES_PORT=8080 NOTES_DB=/var/lib/{{name}}/notes.db NOTES_TRUST_PROXY=true NOTES_SECURE_COOKIES=true
+Environment=SSPUR_LOG=json SSPUR_CACHE=/var/cache/{{name}}
+ExecStart=/usr/local/bin/sspur run main.ssp
+# SIGTERM: the server stops accepting, finishes the requests in flight, then exits.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=2
+StateDirectory={{name}}
+CacheDirectory={{name}}
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

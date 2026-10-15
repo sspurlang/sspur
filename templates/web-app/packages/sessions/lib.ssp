@@ -1,0 +1,57 @@
+// Session tokens, cookies and CSRF tokens for HTTP services. A token is 32 random bytes; the
+// client keeps the token and the server stores only its SHA-256, so a leaked table can't be
+// replayed. Published to the registry later.
+
+// A new session: `token` goes to the client, `digest` is what the server stores.
+pub type Token = {token: Str, digest: Str}
+
+// How the session cookie is set. `secure` should be true whenever the site is served over HTTPS.
+pub type CookieOpts = {name: Str where _.len > 0 and _.chars.all(c => c.is_alpha or c == "_" or c == "-"), path: Str, max_age: Int where _ >= 0, same_site: Str where _ == "Lax" or _ == "Strict", secure: Bool}
+
+// A new random token and its digest.
+pub fn new_token() -> Token ! rand
+= do
+  t = crypto.token(32)
+  Token{token: t, digest: digest(t)}
+
+// The digest a server stores for `token`.
+pub fn digest(token: Str) -> Str
+= crypto.sha256(token).hex
+
+// Secure defaults: HttpOnly always, SameSite=Lax, Path=/, and a lifetime of `days`.
+pub fn cookie_opts(name: Str, days: Int, secure: Bool) -> CookieOpts
+= CookieOpts{name, path: "/", max_age: days * 86400, same_site: "Lax", secure}
+
+// The `set-cookie` header that gives the client `value`.
+pub fn set_cookie(o: CookieOpts, value: Str) -> (Str, Str)
+= ("set-cookie", "{o.name}={value}; Path={o.path}; Max-Age={o.max_age}; HttpOnly; SameSite={o.same_site}" + (if o.secure then "; Secure" else ""))
+
+// The `set-cookie` header that removes the cookie.
+pub fn clear_cookie(o: CookieOpts) -> (Str, Str)
+= set_cookie(o with max_age := 0, "")
+
+// The token sent as `Authorization: Bearer <token>`, if any.
+pub fn bearer(req: Request) -> Opt[Str]
+= match req.header("authorization").or("").split_once(" ")
+  | some((scheme, t)) => if scheme.lower == "bearer" and t.trim != "" then some(t.trim) else none
+  | none => none
+
+// The CSRF token for a form or request bound to `binding` (a session digest, or the value of an
+// anonymous cookie): an HMAC under the server's key, so it can't be forged or moved to another
+// session.
+pub fn csrf_token(key: Secret[Str], binding: Str) -> Str
+= crypto.hmac256(key, "csrf\n" + binding).base64url
+
+// Whether `given` is the CSRF token for `binding`, compared in constant time.
+pub fn csrf_ok(key: Secret[Str], binding: Str, given: Str) -> Bool
+= binding != "" and crypto.equal(given, csrf_token(key, binding))
+
+fn rq(headers: List[(Str, Str)]) -> Request
+= Request{method: "GET", url: "/", headers, body: "", timeout_ms: 0, retries: 0, redirects: 0}
+
+test digests_are_hex = digest("abc").len == 64 and digest("abc") != digest("abd")
+test cookie_defaults = set_cookie(cookie_opts("sid", 7, true), "t1").1 == "sid=t1; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax; Secure"
+test cookie_dev = not set_cookie(cookie_opts("sid", 1, false), "t").1.contains("Secure")
+test clearing = clear_cookie(cookie_opts("sid", 7, true)).1.starts_with("sid=; Path=/; Max-Age=0;")
+test bearer_header = bearer(rq([("Authorization", "Bearer abc ")])) == some("abc") and bearer(rq([("authorization", "Basic x")])) == none and bearer(rq([])) == none
+test csrf_binds = csrf_ok(secret("k"), "s1", csrf_token(secret("k"), "s1")) and not csrf_ok(secret("k"), "s2", csrf_token(secret("k"), "s1")) and not csrf_ok(secret("other"), "s1", csrf_token(secret("k"), "s1")) and not csrf_ok(secret("k"), "", csrf_token(secret("k"), ""))

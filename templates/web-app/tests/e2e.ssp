@@ -1,0 +1,200 @@
+// End-to-end tests: start the server as its own process on a free port, then use the JSON API
+// and the HTML pages with the HTTP client, from many clients at once, and stop it.
+//   sspur run tests/e2e.ssp           the server and this client natively
+//   sspur run --interp tests/e2e.ssp interp   both interpreted
+// The first word after the file is the server's tier (native or interp). Run from the app's
+// directory; SSPUR names the sspur binary if it isn't on PATH.
+use models.{Note, User}
+use pagination.{Page}
+
+type E2eErr = Failed{step: Str, why: Str}
+
+type Running = {p: Proc, base: Str, log: Str}
+
+type SignedIn = {user: User, token: Str}
+
+fn check(step: Str, ok: Bool, why: Str) -> Unit ! fail[E2eErr]
+= if not ok then raise Failed{step, why}
+
+// The temporary directory: TMPDIR on macOS and Linux, TEMP on Windows.
+fn tmp_dir() -> Str ! env
+= env_var("TMPDIR").or(env_var("TEMP").or(".")).replace("\\", "/")
+
+// The port in a line like `info: listening on http://127.0.0.1:53211`.
+fn port_in(line: Str) -> Opt[Int]
+= match line.split_once("listening on http://")
+  | some((_, rest)) => rest.split(":").last.or("").chars.take_while(c => "0123456789".contains(c)).join("").to_int
+  | none => none
+
+// Starts `sspur run main.ssp` on port 0 and waits (up to 10 minutes, for a first native build
+// on a slow machine) for the line that says which port it got.
+fn start(sspur: Str, tier: Str, db: Str) -> Running ! proc, rand, time, div, fail[E2eErr]
+= do
+  args = ["run"] + (if tier == "interp" then ["--interp"] else []) + ["main.ssp"]
+  env = [("NOTES_PORT", "0"), ("NOTES_DB", db), ("NOTES_MODE", "production"), ("NOTES_SECURE_COOKIES", "false"), ("NOTES_SECRET", crypto.token(48)), ("NOTES_WORKERS", "8")]
+  p = match proc.spawn(sspur, args, env)
+    | ok(p) => p
+    | err(e) => raise Failed{step: "start", why: e}
+  deadline = now_ms() + 600000
+  var seen = ""
+  var port = 0
+  while port == 0 and now_ms() < deadline and p.running()
+    match p.line(1000)
+    | some(l) => do
+      seen := seen + l + "\n"
+      port := port_in(l).or(0)
+    | none => ()
+  if port == 0 then raise Failed{step: "start", why: "the server did not say where it listens:\n" + seen}
+  Running{p, base: "http://127.0.0.1:{port}", log: seen}
+
+fn send(base: Str, method: Str, path: Str, token: Str, body: Str) -> Response ! net, fail[E2eErr]
+= do
+  auth = if token == "" then [] else [("authorization", "Bearer " + token)]
+  r = http.send(http.req(method, base + path) with headers := auth + [("content-type", "application/json")], body := body, timeout_ms := 60000, redirects := 0)
+  match r
+  | ok(x) => x
+  | err(e) => raise Failed{step: "{method} {path}", why: "{e}"}
+
+fn signup(base: Str, email: Str) -> Str ! net, fail[E2eErr]
+= do
+  r = send(base, "POST", "/api/signup", "", "\{\"email\":\"{email}\",\"password\":\"correct horse battery staple\"}")
+  check("signup " + email, r.status == 201, "{r.status} {r.body}")
+  r.json[SignedIn].map(s => s.token).or("")
+
+fn note_json(title: Str, tag: Str) -> Str
+= "\{\"title\":\"{title}\",\"body\":\"written by the end-to-end test\",\"tags\":[\"{tag}\"]}"
+
+// One person's whole session with the API.
+fn api_flow(base: Str) -> Int ! net, fail[E2eErr]
+= do
+  health = send(base, "GET", "/api/health", "", "")
+  check("health", health.status == 200 and health.body.contains("\"db\":true"), health.body)
+  check("plain health", send(base, "GET", "/healthz", "", "").status == 200, "")
+  t = signup(base, "ada@example.com")
+  check("signup again", send(base, "POST", "/api/signup", "", "\{\"email\":\"ADA@example.com\",\"password\":\"another long passphrase\"}").status == 409, "a taken email is 409")
+  check("weak password", send(base, "POST", "/api/signup", "", "\{\"email\":\"bob@example.com\",\"password\":\"short\"}").status == 400, "")
+  check("no token", send(base, "GET", "/api/notes", "", "").status == 401, "")
+  login = send(base, "POST", "/api/login", "", "\{\"email\":\"ada@example.com\",\"password\":\"correct horse battery staple\"}")
+  check("login", login.status == 201, login.body)
+  t2 = login.json[SignedIn].map(s => s.token).or("")
+  for i in 0..30
+    check("create {i}", send(base, "POST", "/api/notes", t, note_json("note {i}", if i % 3 == 0 then "three" else "other")).status == 201, "")
+  first = send(base, "GET", "/api/notes?limit=10", t2, "").json[Page[Note]]
+  check("first page", first.map(p => (p.items.len, p.total, p.next)) == ok((10, 30, some(10))), "{first}")
+  last = send(base, "GET", "/api/notes?limit=10&offset=25", t2, "").json[Page[Note]]
+  check("last page", last.map(p => (p.items.len, p.next)) == ok((5, none)), "{last}")
+  tagged = send(base, "GET", "/api/notes?tag=three", t, "").json[Page[Note]].map(p => p.total)
+  check("tag filter", tagged == ok(10), "{tagged}")
+  found = send(base, "GET", "/api/notes?q=note%2012", t, "").json[Page[Note]].map(p => p.items.map(n => n.title))
+  check("search", found == ok(["note 12"]), "{found}")
+  id = first.map(p => p.items[0].id).or(0)
+  patched = send(base, "PATCH", "/api/notes/{id}", t, "\{\"title\":\"renamed\"}").json[Note].map(n => (n.title, n.tags))
+  check("patch", patched.map(x => x.0) == ok("renamed"), "{patched}")
+  check("bad patch", send(base, "PATCH", "/api/notes/{id}", t, "\{\"title\":\"\"}").status == 400, "")
+  check("delete", send(base, "DELETE", "/api/notes/{id}", t, "").status == 204, "")
+  check("deleted", send(base, "GET", "/api/notes/{id}", t, "").status == 404, "")
+  other = signup(base, "eve@example.com")
+  check("other user", send(base, "GET", "/api/notes/{id + 1}", other, "").status == 404 and send(base, "GET", "/api/notes", other, "").json[Page[Note]].map(p => p.total) == ok(0), "notes are private")
+  for i in 0..5
+    check("wrong password {i}", send(base, "POST", "/api/login", "", "\{\"email\":\"eve@example.com\",\"password\":\"not the password {i}\"}").status == 401, "")
+  limited = send(base, "POST", "/api/login", "", "\{\"email\":\"eve@example.com\",\"password\":\"correct horse battery staple\"}")
+  check("rate limit", limited.status == 429 and limited.body.contains("retry_after"), "{limited.status} {limited.body}")
+  check("logout", send(base, "POST", "/api/logout", t2, "").status == 204 and send(base, "GET", "/api/me", t2, "").status == 401, "the token ends")
+  check("first session still works", send(base, "GET", "/api/me", t, "").status == 200, "")
+  30
+
+// The HTML side: a redirect to the login page, a form with a CSRF token and secure headers,
+// and the stylesheet.
+fn page_flow(base: Str) -> Unit ! net, fail[E2eErr]
+= do
+  home = send(base, "GET", "/", "", "")
+  check("home redirects", home.status == 303 and home.header("location") == some("/login"), "{home.status}")
+  login = send(base, "GET", "/login", "", "")
+  check("login page", login.status == 200 and login.body.contains("name=\"csrf\"") and login.header("content-security-policy").is_some, "{login.status}")
+  check("anon cookie", login.header("set-cookie").map(c => c.contains("HttpOnly") and c.contains("SameSite=Lax")) == some(true), "{login.header("set-cookie")}")
+  css = send(base, "GET", "/static/app.css", "", "")
+  check("stylesheet", css.status == 200 and css.header("content-type").or("").contains("css"), "{css.status}")
+  forged = http.send(http.req("POST", base + "/login") with headers := [("content-type", "application/x-www-form-urlencoded")], body := "csrf=forged&email=ada%40example.com&password=x", redirects := 0)
+  check("csrf", forged.map(r => r.status) == ok(403), "{forged.map(r => r.status)}")
+
+fn make_notes(base: Str, token: Str, n: Int, failures: Atomic[Int]) -> Unit ! net, conc
+= do
+  for i in 0..n
+    r = http.send(http.req("POST", base + "/api/notes") with headers := [("authorization", "Bearer " + token)], body := note_json("parallel {i}", "par"), timeout_ms := 60000)
+    if not (r.map(x => x.status) == ok(201)) then failures.add(1)
+
+fn count(base: Str, token: Str, tag: Str) -> Int ! net, fail[E2eErr]
+= send(base, "GET", "/api/notes?tag={tag}&limit=1", token, "").json[Page[Note]].map(p => p.total).or(-1)
+
+// Many clients at once: 8 people each create 20 notes, and 8 more clients add 20 each to one
+// shared account. Every note must be there afterwards.
+fn concurrency(base: Str) -> Int ! net, conc, fail[E2eErr]
+= do
+  tokens = (0..8).map(i => signup(base, "user{i}@example.com"))
+  shared = signup(base, "shared@example.com")
+  failures = atomic(0)
+  for i in par(0..16)
+    make_notes(base, if i < 8 then tokens[i] else shared, 20, failures)
+  check("parallel requests", failures.load == 0, "{failures.load} requests failed")
+  for i in 0..8
+    check("user {i} notes", count(base, tokens[i], "par") == 20, "{count(base, tokens[i], "par")}")
+  check("shared notes", count(base, shared, "par") == 160, "{count(base, shared, "par")} of 160: writes were lost")
+  320
+
+fn hit(base: Str, token: Str, n: Int, failures: Atomic[Int]) -> Unit ! net, conc
+= do
+  for i in 0..n
+    path = if i % 2 == 0 then "/api/notes?limit=5" else "/api/health"
+    r = http.send(http.req("GET", base + path) with headers := [("authorization", "Bearer " + token)], timeout_ms := 60000)
+    if not (r.map(x => x.status) == ok(200)) then failures.add(1)
+
+// A load smoke test: 16 clients, 50 requests each. Every request must succeed; the time is
+// printed, not checked, so a slow machine passes too.
+fn load(base: Str) -> Int ! net, conc, time, fail[E2eErr]
+= do
+  t = signup(base, "load@example.com")
+  failures = atomic(0)
+  t0 = now_ms()
+  for i in par(0..16)
+    hit(base, t, 50, failures)
+  check("load", failures.load == 0, "{failures.load} of 800 requests failed")
+  max(now_ms() - t0, 1)
+
+fn run(r: Running) -> Str ! net, conc, time, fail[E2eErr]
+= do
+  a = api_flow(r.base)
+  page_flow(r.base)
+  c = concurrency(r.base)
+  ms = load(r.base)
+  "{a + c} notes, 800 requests in {ms} ms ({800 * 1000 / ms} a second)"
+
+fn remove_db(db: Str) -> Unit ! fs
+= do
+  for f in [db, db + "-wal", db + "-shm"]
+    _ = remove_file(f)
+
+fn main() -> Unit ! net, conc, time, proc, env, fs, log, rand, div
+= do
+  sspur = env_var("SSPUR").or("sspur")
+  tier = args().first.or("native")
+  db = tmp_dir() + "/notes-e2e-{uuid.v4()}.db"
+  outcome = catch do
+      r = start(sspur, tier, db)
+      summary = catch run(r)
+        | Failed{step, why} => do
+          _ = r.p.stop()
+          raise Failed{step, why}
+      code = r.p.stop()
+      var rest = ""
+      while r.p.line(2000) is some(l)
+        rest := rest + l + "\n"
+      windows = env_var("OS") == some("Windows_NT")
+      check("graceful shutdown", windows or (code == 0 and rest.contains("stopped")), "exit {code}\n{rest}")
+      ok(summary)
+    | Failed{step, why} => err("{step}: {why}")
+  remove_db(db)
+  match outcome
+  | ok(s) => log("e2e passed (server {tier}): {s}")
+  | err(e) => do
+    log("e2e FAILED (server {tier}): {e}")
+    exit(1)

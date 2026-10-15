@@ -1,0 +1,65 @@
+// Unit tests for the auth module, each on a fresh in-memory database:
+// sspur test tests/auth.ssp
+use models.{AppErr}
+
+fn at(min: Int) -> Time
+= time_ms(1790000000000 + min * 60000)
+
+fn policy() -> auth.Policy
+= auth.Policy{session_days: 1, max_failures: 3, window_mins: 10}
+
+fn fresh() -> Db ! db, fail[DbErr]
+= storage.open(":memory:")
+
+// What `f` returns, or the name of the error it raises.
+fn code(f: () -> Str ! db, fail[DbErr], fail[AppErr], rand) -> Str ! db, fail[DbErr], rand
+= catch f()
+  | Invalid{why} => "Invalid: " + why
+  | Conflict{why} => "Conflict"
+  | Unauthorized => "Unauthorized"
+  | TooMany{retry_after} => "TooMany {retry_after}"
+  | Forbidden | NotFound => "other"
+
+// Whether `f` holds, counting any error as a failure.
+fn holds(f: () -> Bool ! db, fail[DbErr], fail[AppErr], rand) -> Bool ! db, rand
+= catch code(() => if f() then "yes" else "no") == "yes"
+  | _ => false
+
+test sign_up_then_log_in = holds(() => do
+    c = fresh()
+    s = auth.sign_up(c, policy(), " Ada@Example.com", "correct horse battery", at(0))
+    t = auth.log_in(c, policy(), "ada@example.com", "correct horse battery", "", at(1))
+    s.user.email == "ada@example.com" and t.user.id == s.user.id and t.token != s.token and auth.user_of(c, t.token, at(2)).map(_.id) == some(s.user.id))
+
+test passwords_are_hashed = holds(() => do
+    c = fresh()
+    _ = auth.sign_up(c, policy(), "ada@example.com", "correct horse battery", at(0))
+    storage.account(c, "ada@example.com").map(a => a.password.starts_with("$argon2id$") and not a.password.contains("horse")) == some(true))
+
+test weak_and_taken = holds(() => do
+    c = fresh()
+    weak = code(() => auth.sign_up(c, policy(), "ada@example.com", "short", at(0)).token)
+    ok = code(() => auth.sign_up(c, policy(), "ada@example.com", "correct horse battery", at(0)).token).len > 20
+    taken = code(() => auth.sign_up(c, policy(), "ADA@example.com", "another good passphrase", at(0)).token)
+    weak == "Invalid: the password must be at least 10 characters" and ok and taken == "Conflict")
+
+test wrong_password_and_unknown_email_look_the_same = holds(() => do
+    c = fresh()
+    _ = auth.sign_up(c, policy(), "ada@example.com", "correct horse battery", at(0))
+    code(() => auth.log_in(c, policy(), "ada@example.com", "nope nope nope", "", at(1)).token) == "Unauthorized" and code(() => auth.log_in(c, policy(), "who@example.com", "nope nope nope", "", at(1)).token) == "Unauthorized")
+
+test logins_are_rate_limited = holds(() => do
+    c = fresh()
+    _ = auth.sign_up(c, policy(), "ada@example.com", "correct horse battery", at(0))
+    tries = (0..3).map(i => code(() => auth.log_in(c, policy(), "ada@example.com", "wrong {i} password", "10.0.0.1", at(1)).token))
+    limited = code(() => auth.log_in(c, policy(), "ada@example.com", "correct horse battery", "10.0.0.2", at(2)).token)
+    other = code(() => auth.log_in(c, policy(), "bob@example.com", "anything goes here", "10.0.0.1", at(2)).token)
+    later = code(() => auth.log_in(c, policy(), "ada@example.com", "correct horse battery", "10.0.0.2", at(12)).token).len > 20
+    tries.all(_ == "Unauthorized") and limited == "TooMany 540" and other == "TooMany 540" and later)
+
+test sessions_end = holds(() => do
+    c = fresh()
+    s = auth.sign_up(c, policy(), "ada@example.com", "correct horse battery", at(0))
+    expired = auth.user_of(c, s.token, at(24 * 60)) == none
+    auth.log_out(c, s.token)
+    expired and auth.user_of(c, s.token, at(1)) == none and auth.user_of(c, "", at(1)) == none)

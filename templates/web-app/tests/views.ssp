@@ -1,0 +1,7 @@
+// Unit tests for the HTML views: sspur test tests/views.ssp
+use models.{Note}
+
+test escapes = views.esc("<a href=\"x\">'&'</a>") == "&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;" and views.esc("plain") == "plain"
+test url_parts = views.url_part("a b&c/é") == "a%20b%26c%2F%C3%A9" and views.url_part("ok-_.~9") == "ok-_.~9"
+test pages_escape_what_users_wrote = views.notes_page("a@b.co", "t", pagination.page([Note{id: 1, title: "<script>", body: "<b>", tags: ["x\"y"], created_at: time_ms(0), updated_at: time_ms(0)}], 1, pagination.request(none, none)), "", "").contains("&lt;script&gt;") and not views.notes_page("a@b.co", "t", pagination.page([], 0, pagination.request(none, none)), "\"<x-q>", "<x-tag>").contains("<x-")
+test forms_carry_the_csrf_token = views.account_form("/login", "tok123", "", none).contains("name=\"csrf\" value=\"tok123\"") and views.note_form("a@b.co", "tok456", none, "", "", "", none).contains("value=\"tok456\"")

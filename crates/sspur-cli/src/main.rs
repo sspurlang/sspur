@@ -7,6 +7,7 @@ mod genfuzz;
 #[cfg(feature = "lsp")]
 mod lsp;
 mod mcp;
+mod newcmd;
 mod pkgcmd;
 mod publish;
 mod registry;
@@ -29,6 +30,7 @@ pub const AGENT_SPEC: &str = include_str!("../../../docs/agent/agent-spec.md");
 pub const AGENT_SPEC_MORE: &str = include_str!("../../../docs/agent/agent-spec-more.md");
 
 const USAGE: &str = "usage:
+  sspur new web-app NAME | --list       create a project from a template: web-app is a notes service with accounts (README.md inside)
   sspur init [file.ssp] [--pkg NAME]    create a codebase in .sspur/ (optionally import a file; --pkg also writes sspur.toml)
   sspur add <name[@^1.2]|path|git-url[@rev]>  add a dependency (a published package, a path or a git URL) to sspur.toml and pin it in sspur.lock
   sspur deps fetch | update [NAME...] [--force] | tree   verify and fetch locked deps; upgrade with a semantic diff (refused if it breaks the build); show the graph
@@ -147,6 +149,7 @@ fn real_main() -> ExitCode {
             ExitCode::SUCCESS
         }
         "init" => init(args.pos.get(1), args.val("--pkg"), args.has("--json")),
+        "new" => newcmd::run(&args.pos[1..], args.has("--list")),
         "add" => pkgcmd::add(args.pos.get(1)),
         "deps" => pkgcmd::deps(&args.pos[1..], args.has("--force")),
         "update" => pkgcmd::deps(&[vec!["update".to_string()], args.pos[1..].to_vec()].concat(), args.has("--force")),

@@ -1,0 +1,104 @@
+// SQLite storage: the schema as migrations, and one function per query. Values reach SQL only
+// as `?` parameters, rows come back as records, and changes that read before they write run in a
+// transaction. The connection pool lets the server's handlers use one `Db` at the same time.
+use models.{AppErr, NewNote, Note, NotePatch, User}
+use pagination.{Page, PageReq}
+
+// A user with the hash of their password.
+pub type Account = {id: Int, email: Str, password: Str, created_at: Time}
+
+type NoteRow = {id: Int, title: Str, body: Str, tags: Str, created_at: Time, updated_at: Time}
+
+// The schema, one step per change. Applied steps never change: to change the schema, add a step.
+pub fn migrations() -> List[Str]
+= ["create table users (id integer primary key, email text not null unique, password text not null, created_at text not null); create table sessions (digest text primary key, user_id integer not null references users (id) on delete cascade, created_at text not null, expires_at text not null); create index sessions_by_user on sessions (user_id)", "create table notes (id integer primary key, user_id integer not null references users (id) on delete cascade, title text not null, body text not null, tags text not null default '[]', created_at text not null, updated_at text not null); create index notes_by_user on notes (user_id, updated_at desc, id desc)", "create virtual table notes_fts using fts5 (title, body, content = 'notes', content_rowid = 'id'); create trigger notes_ai after insert on notes begin insert into notes_fts (rowid, title, body) values (new.id, new.title, new.body); end; create trigger notes_ad after delete on notes begin insert into notes_fts (notes_fts, rowid, title, body) values ('delete', old.id, old.title, old.body); end; create trigger notes_au after update on notes begin insert into notes_fts (notes_fts, rowid, title, body) values ('delete', old.id, old.title, old.body); insert into notes_fts (rowid, title, body) values (new.id, new.title, new.body); end", "create table login_failures (key text not null, at text not null); create index login_failures_by_key on login_failures (key, at)"]
+
+// Opens the database at `path` (":memory:" for a fresh one) and applies the migrations it lacks.
+pub fn open(path: Str) -> Db ! db, fail[DbErr]
+= do
+  c = db.open(path)
+  db.migrate(c, migrations())
+  c
+
+// Whether the database answers.
+pub fn ping(c: Db) -> Bool ! db
+= catch db.one[Int](c, "select 1") == 1
+  | _ => false
+
+// Creates an account; an email that is taken is `Conflict`.
+pub fn create_user(c: Db, email: Str, password_hash: Str, now: Time) -> User ! db, fail[DbErr], fail[AppErr]
+= catch db.one[User](c, "insert into users (email, password, created_at) values (?, ?, ?) returning id, email, created_at", [email, password_hash, now])
+  | Constraint{msg} => raise Conflict{why: "an account with this email already exists"}
+  | e => raise e
+
+// The account with this (normalized) email.
+pub fn account(c: Db, email: Str) -> Opt[Account] ! db, fail[DbErr]
+= db.opt[Account](c, "select id, email, password, created_at from users where email = ?", [email])
+
+pub fn set_password(c: Db, user: Int, password_hash: Str) -> Int ! db, fail[DbErr]
+= db.exec(c, "update users set password = ? where id = ?", [password_hash, user])
+
+// Records a session by the digest of its token.
+pub fn add_session(c: Db, user: Int, digest: Str, now: Time, expires: Time) -> Int ! db, fail[DbErr]
+= db.exec(c, "insert into sessions (digest, user_id, created_at, expires_at) values (?, ?, ?, ?)", [digest, user, now, expires])
+
+// The user of the session with this digest, unless it expired.
+pub fn session_user(c: Db, digest: Str, now: Time) -> Opt[User] ! db, fail[DbErr]
+= db.opt[User](c, "select u.id, u.email, u.created_at from sessions s join users u on u.id = s.user_id where s.digest = ? and s.expires_at > ?", [digest, now])
+
+pub fn drop_session(c: Db, digest: Str) -> Int ! db, fail[DbErr]
+= db.exec(c, "delete from sessions where digest = ?", [digest])
+
+// Removes expired sessions and old login failures; returns how many rows went.
+pub fn sweep(c: Db, now: Time, keep_failures: Time) -> Int ! db, fail[DbErr]
+= db.exec(c, "delete from sessions where expires_at <= ?", [now]) + db.exec(c, "delete from login_failures where at < ?", [keep_failures])
+
+pub fn add_failure(c: Db, key: Str, now: Time) -> Int ! db, fail[DbErr]
+= db.exec(c, "insert into login_failures (key, at) values (?, ?)", [key, now])
+
+// How many logins failed for `key` since `since`, and the time of the first of them.
+pub fn failures(c: Db, key: Str, since: Time) -> (Int, Opt[Time]) ! db, fail[DbErr]
+= do
+  n = db.one[Int](c, "select count(*) from login_failures where key = ? and at >= ?", [key, since])
+  first = db.one[Opt[Time]](c, "select min(at) from login_failures where key = ? and at >= ?", [key, since])
+  (n, first)
+
+pub fn clear_failures(c: Db, key: Str) -> Int ! db, fail[DbErr]
+= db.exec(c, "delete from login_failures where key = ?", [key])
+
+fn to_note(r: NoteRow) -> Note
+= Note{id: r.id, title: r.title, body: r.body, tags: json.decode[List[Str]](r.tags).or([]), created_at: r.created_at, updated_at: r.updated_at}
+
+// Adds a note for `user`.
+pub fn create_note(c: Db, user: Int, n: NewNote, now: Time) -> Note ! db, fail[DbErr]
+= to_note(db.one[NoteRow](c, "insert into notes (user_id, title, body, tags, created_at, updated_at) values (?, ?, ?, ?, ?, ?) returning id, title, body, tags, created_at, updated_at", [user, n.title.trim, n.body.or(""), json.encode(models.normal_tags(n.tags.or([]))), now, now]))
+
+// The note `id` if it belongs to `user`.
+pub fn note(c: Db, user: Int, id: Int) -> Opt[Note] ! db, fail[DbErr]
+= db.opt[NoteRow](c, "select id, title, body, tags, created_at, updated_at from notes where id = ? and user_id = ?", [id, user]).map(to_note)
+
+// Applies `p` to the note `id` of `user`, reading and writing in one transaction so that two
+// changes at once can't lose either.
+pub fn update_note(c: Db, user: Int, id: Int, p: NotePatch, now: Time) -> Opt[Note] ! db, fail[DbErr]
+= db.tx(c, () => do
+  some(old) = note(c, user, id) else none
+  tags = p.tags.map(models.normal_tags).or(old.tags)
+  r = db.one[NoteRow](c, "update notes set title = ?, body = ?, tags = ?, updated_at = ? where id = ? and user_id = ? returning id, title, body, tags, created_at, updated_at", [p.title.map(_.trim).or(old.title), p.body.or(old.body), json.encode(tags), now, id, user])
+  some(to_note(r)))
+
+// Deletes the note `id` of `user`; whether there was one.
+pub fn delete_note(c: Db, user: Int, id: Int) -> Bool ! db, fail[DbErr]
+= db.exec(c, "delete from notes where id = ? and user_id = ?", [id, user]) > 0
+
+// The full-text query for what a person typed: each word as a prefix, all of them required.
+pub fn search_terms(q: Str) -> Str
+= q.lower.words.map(w => w + "*").join(" ")
+
+// A page of `user`'s notes, newest first, matching the search `q` and the tag `tag` when they
+// are not empty.
+pub fn list_notes(c: Db, user: Int, q: Str, tag: Str, r: PageReq) -> Page[Note] ! db, fail[DbErr]
+= do
+  m = search_terms(q)
+  total = db.one[Int](c, "select count(*) from notes n where n.user_id = ?1 and (?2 = '' or n.id in (select rowid from notes_fts where notes_fts match ?2)) and (?3 = '' or exists (select 1 from json_each(n.tags) where value = ?3))", [user, m, tag.lower])
+  rows = db.query[NoteRow](c, "select n.id, n.title, n.body, n.tags, n.created_at, n.updated_at from notes n where n.user_id = ?1 and (?2 = '' or n.id in (select rowid from notes_fts where notes_fts match ?2)) and (?3 = '' or exists (select 1 from json_each(n.tags) where value = ?3)) order by n.updated_at desc, n.id desc limit ?4 offset ?5", [user, m, tag.lower, r.limit, r.offset])
+  pagination.page(rows.map(to_note), total, r)

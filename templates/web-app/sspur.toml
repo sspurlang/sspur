@@ -1,0 +1,13 @@
+[package]
+name = "{{name}}"
+version = "0.1.0"
+src = "main.ssp"
+
+[deps]
+models = { path = "models" }
+storage = { path = "storage" }
+auth = { path = "auth" }
+views = { path = "views" }
+sessions = { path = "packages/sessions" }
+pagination = { path = "packages/pagination" }
+passwords = { path = "packages/passwords" }
