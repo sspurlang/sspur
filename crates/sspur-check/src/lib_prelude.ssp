@@ -169,6 +169,11 @@ fn __csv_col(header: List[Str], name: Str) -> Int ! fail[SspurCsvErr]
 fn __csv_cell(r: List[Str], i: Int, row: Int) -> Str ! fail[SspurCsvErr]
 = r.get(i).ok_or(SspurCsvBad{msg: "row " + row.str + " has " + r.len.str + " fields, fewer than the header"})
 
+fn __csv_maybe(r: List[Str], i: Opt[Int]) -> Str
+= match i
+  | some(k) => r.get(k).or("")
+  | none => ""
+
 fn __csv_bad(row: Int, col: Str, want: Str, s: Str) -> SspurCsvErr
 = SspurCsvBad{msg: "row " + row.str + ", column " + col + ": expected " + want + ", found \"" + s + "\""}
 

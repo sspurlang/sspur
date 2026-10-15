@@ -1,0 +1,81 @@
+// Crypto (ADR 0037): known-answer vectors from NIST, RFC 4231, RFC 7693, RFC 8032, RFC 9106 and
+// draft-irtf-cfrg-xchacha, then the high-level API.
+
+fn h(s: Str) -> Bytes
+= from_hex(s).get
+
+fn rep(b: Int, n: Int) -> Bytes
+= bytes(range(0, n, 1).map(i => b))
+
+test sha256_nist = crypto.sha256("abc").hex == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" and crypto.sha256("").hex == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" and crypto.sha256("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq").hex == "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
+test sha256_million = crypto.sha256("a".repeat(1000000)).hex == "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0"
+test sha512_nist = crypto.sha512("abc").hex == "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f" and crypto.sha512("").hex == "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e" and crypto.sha512("abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu").hex == "8e959b75dae313da8cf4f72814fc143f8f7779c6eb9f7fa17299aeadb6889018501d289e4900f7e4331b99dec4b5433ac7d329eeb6dd26545e96e55b874be909"
+test blake2b_rfc7693 = crypto.blake2b("abc").hex == "ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923"
+test hmac_rfc4231_case1 = crypto.hmac256(rep(11, 20), "Hi There").hex == "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7" and crypto.hmac512(rep(11, 20), "Hi There").hex == "87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cdedaa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854"
+test hmac_rfc4231_case2 = crypto.hmac256(secret("Jefe"), "what do ya want for nothing?").hex == "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843" and crypto.hmac512(secret("Jefe"), "what do ya want for nothing?").hex == "164b7a7bfcf819e2e395fbe73b56e0a387bd64222e831fd610270cd7ea2505549758bf75c05a994a6d034f65f8f0e6fdcaeab1a34d4a6b4b636e070a38bce737"
+test hmac_rfc4231_case6 = crypto.hmac256(rep(170, 131), "Test Using Larger Than Block-Size Key - Hash Key First").hex == "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54" and crypto.hmac512(rep(170, 131), "Test Using Larger Than Block-Size Key - Hash Key First").hex == "80b24263c7c1a3ebb71493c1dd7be8b49b46d1f41b4aeec1121b013783f8f3526b56d037e05f2598bd0fd2215d6a1e5295e64f73f63f0aec8b915a985d786598"
+
+fn xkey() -> Bytes
+= h("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f")
+
+fn xnonce() -> Bytes
+= h("404142434445464748494a4b4c4d4e4f5051525354555657")
+
+fn xad() -> Bytes
+= h("50515253c0c1c2c3c4c5c6c7")
+
+fn xplain() -> Bytes
+= "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.".to_bytes
+
+test xchacha_draft_a31 = __crypto_aead(true, xkey(), xnonce(), xad(), xplain()).map(_.hex) == some("bd6d179d3e83d43b9576579493c0e939572a1700252bfaccbed2902c21396cbb731c7f1b0b4aa6440bf3a82f4eda7e39ae64c6708c54c216cb96b72e1213b4522f8c9ba40db5d945b11b69b982c1bb9e3f3fac2bc369488f76b2383565d3fff921f9664c97637da9768812f615c68b13b52ec0875924c1c7987947deafd8780acf49")
+test xchacha_opens_and_rejects = do
+  c = __crypto_aead(true, xkey(), xnonce(), xad(), xplain()).get
+  ok = __crypto_aead(false, xkey(), xnonce(), xad(), c) == some(xplain())
+  bad_ad = __crypto_aead(false, xkey(), xnonce(), h("50"), c) == none
+  flipped = bytes(c.to_list.enumerate.map(p => if p.0 == 3 then p.1.bxor(1) else p.1))
+  ok and bad_ad and __crypto_aead(false, xkey(), xnonce(), xad(), flipped) == none
+
+test ed25519_rfc8032_test1 = do
+  sk = h("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
+  pk = crypto.public_key(sk)
+  sig = crypto.sign(sk, bytes([]))
+  pk.hex == "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a" and sig.hex == "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b" and crypto.verify(pk, bytes([]), sig)
+test ed25519_rfc8032_test2 = do
+  sk = h("4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb")
+  pk = crypto.public_key(sk)
+  sig = crypto.sign(sk, bytes([114]))
+  pk.hex == "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c" and sig.hex == "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00" and crypto.verify(pk, bytes([114]), sig) and not crypto.verify(pk, bytes([115]), sig) and not crypto.verify(pk, bytes([114]), sig.slice(0, 63))
+
+test argon2id_rfc9106 = __crypto_argon2(2, rep(1, 32), rep(2, 16), rep(3, 8), rep(4, 12), 32, 3, 4, 32).map(_.hex) == some("0d640df58d78766c08c037a34a8b53c9d01ef0452d75b65eb52520e96b01e659")
+test argon2id_one_lane = __crypto_argon2(2, rep(1, 32), rep(2, 16), bytes([]), bytes([]), 32, 3, 1, 32).map(_.hex) == some("30e0b44b7e23423b7282859ea36f02825b5828dde3c25f124d59d42d7235e132")
+test argon2_bad_params = __crypto_argon2(2, rep(1, 4), rep(2, 4), bytes([]), bytes([]), 32, 3, 1, 32) == none and __crypto_argon2(2, rep(1, 4), rep(2, 16), bytes([]), bytes([]), 4, 1, 1, 32) == none
+
+test passwords = do
+  ph = crypto.hash_password("correct horse")
+  parts = ph.split("$")
+  ph.starts_with("$argon2id$v=19$m=19456,t=2,p=1$") and parts.len == 6 and crypto.verify_password("correct horse", ph) and crypto.verify_password(secret("correct horse"), ph) and not crypto.verify_password("Correct horse", ph) and crypto.hash_password("correct horse") != ph
+test password_from_the_rfc_parameters = crypto.verify_password("pw", "$argon2id$v=19$m=32,t=3,p=1$" + rep(2, 16).base64.replace("=", "") + "$" + __crypto_argon2(2, "pw".to_bytes, rep(2, 16), bytes([]), bytes([]), 32, 3, 1, 32).get.base64.replace("=", ""))
+test malformed_hashes_never_verify = ["", "$argon2id$v=19$m=19456,t=2,p=1$$", "$argon2id$v=16$m=32,t=3,p=1$AgICAgICAgICAgICAgICAg$AAAA", "$scrypt$v=19$m=32,t=3,p=1$AgICAgICAgICAgICAgICAg$MOC0S34jQjtygoWeo28Cglt", "$argon2id$v=19$m=99999999,t=3,p=1$AgICAgICAgICAgICAgICAg$MOC0S34jQjtygoWeo28Cglt", "plain"].all(x => not crypto.verify_password("pw", x))
+
+test seal_and_open = do
+  k = crypto.key()
+  c = crypto.seal(k, "attack at dawn")
+  c.len == 24 + 14 + 16 and crypto.open(k, c).map(_.to_str) == some(some("attack at dawn")) and crypto.open(crypto.key(), c) == none and crypto.open(k, c.slice(0, 39)) == none and crypto.seal(k, "attack at dawn") != c
+test seal_with_a_string_key = do
+  k = crypto.sha256("a passphrase that was stretched elsewhere")
+  crypto.open(k, crypto.seal(k, bytes([1, 2, 3]))) == some(bytes([1, 2, 3]))
+test signatures = do
+  (sk, pk) = crypto.keypair()
+  sig = crypto.sign(sk, "message")
+  pk.len == 32 and sig.len == 64 and crypto.verify(pk, "message", sig) and not crypto.verify(pk, "massage", sig) and crypto.public_key(sk) == pk
+test equal_is_exact = crypto.equal("abc", "abc") and not crypto.equal("abc", "abd") and not crypto.equal("abc", "ab") and crypto.equal(bytes([]), "")
+test randomness = do
+  a = crypto.random(32)
+  t = crypto.token(32)
+  a.len == 32 and a != crypto.random(32) and t.len == 43 and from_base64url(t).map(_.len) == some(32) and crypto.random(0) == bytes([])
+test uuids = do
+  u = uuid.v4()
+  w = uuid.v7()
+  ok4 = u.len == 36 and u.get(14) == some("4") and ["8", "9", "a", "b"].contains(u.get(19).or("")) and u.split("-").map(_.len) == [8, 4, 4, 4, 12]
+  ok7 = w.len == 36 and w.get(14) == some("7") and ["8", "9", "a", "b"].contains(w.get(19).or("")) and u != uuid.v4()
+  ok4 and ok7 and uuid.v7() >= w.take(8)

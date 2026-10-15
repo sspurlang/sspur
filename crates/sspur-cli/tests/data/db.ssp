@@ -1,0 +1,130 @@
+// SQLite (ADR 0037): typed queries, parameters, errors, transactions and migrations.
+
+type User = {id: Int, name: Str, email: Opt[Str], score: F64, admin: Bool}
+type UserId = new Int
+type Named = {id: UserId, name: Str}
+type Pair = (Int, Str)
+type Note = {body: Str, data: Bytes, at: Time, cost: Dec}
+
+fn setup() -> Db ! db, fail[DbErr]
+= do
+  c = db.open(":memory:")
+  db.exec(c, "create table users (id integer primary key, name text not null unique, email text, score real not null default 0, admin integer not null default 0)")
+  db.exec(c, "insert into users (name, email, score, admin) values (?, ?, ?, ?)", ["ann", some("ann@example.com"), 2.5, true])
+  db.exec(c, "insert into users (name, email, score, admin) values (?, ?, ?, ?)", ["bob", none, 1.0, false])
+  c
+
+fn try[T](f: () -> T ! db, fail[DbErr]) -> Res[T, DbErr] ! db
+= catch ok(f())
+  | e => err(e)
+
+test typed_rows = do
+  c = setup()
+  db.query[User](c, "select * from users order by id") == [User{id: 1, name: "ann", email: some("ann@example.com"), score: 2.5, admin: true}, User{id: 2, name: "bob", email: none, score: 1.0, admin: false}]
+test columns_by_name_and_scalars = do
+  c = setup()
+  db.query[Named](c, "select name, id from users where score > ?", [2.0]) == [Named{id: UserId(1), name: "ann"}] and db.one[Int](c, "select count(*) from users") == 2 and db.opt[Str](c, "select name from users where id = ?", [9]) == none and db.query[Pair](c, "select id, name from users order by id desc") == [(2, "bob"), (1, "ann")]
+test exec_counts_changes = do
+  c = setup()
+  db.exec(c, "update users set score = score + 1") == 2 and db.exec(c, "delete from users where name = ?", ["nobody"]) == 0
+test parameters_are_bound_not_spliced = do
+  c = setup()
+  evil = "x'); drop table users; --"
+  n = db.exec(c, "insert into users (name) values (?)", [evil])
+  n == 1 and db.one[Int](c, "select count(*) from users") == 3 and db.one[Str](c, "select name from users where id = 3") == evil
+test list_parameters = do
+  c = setup()
+  ids = [2, 1]
+  db.query[Str](c, "select name from users where id in (?, ?) order by name", ids) == ["ann", "bob"]
+test types_round_trip = do
+  c = db.open(":memory:")
+  db.exec(c, "create table notes (body text, data blob, at text, cost text)")
+  t = date(2026, 10, 15).get
+  db.exec(c, "insert into notes values (?, ?, ?, ?)", ["héllo", bytes([0, 255, 7]), t, decimal("12.50").get])
+  db.one[Note](c, "select * from notes") == Note{body: "héllo", data: bytes([0, 255, 7]), at: t, cost: decimal("12.50").get}
+test no_row_and_too_many = do
+  c = setup()
+  a = try(() => db.one[Str](c, "select name from users where id = 99"))
+  b = try(() => db.one[Str](c, "select name from users"))
+  d = try(() => db.opt[Str](c, "select name from users"))
+  a == err(NoRow) and b == err(Mismatch{msg: "db.one: the query returned more than one row"}) and d == err(Mismatch{msg: "db.opt: the query returned more than one row"})
+test typed_errors = do
+  c = setup()
+  null = try(() => db.query[Str](c, "select email from users order by id"))
+  kind = try(() => db.query[Int](c, "select name from users"))
+  missing = try(() => db.query[Named](c, "select id from users"))
+  null == err(Mismatch{msg: "the first column is NULL; make it Opt[Str] to allow NULL"}) and kind == err(Mismatch{msg: "the first column: expected Int, found TEXT"}) and missing == err(Mismatch{msg: "the query has no column 'name' for Named.name"})
+test sql_errors = do
+  c = setup()
+  syntax = try(() => db.exec(c, "selct 1"))
+  dup = try(() => db.exec(c, "insert into users (name) values (?)", ["ann"]))
+  count = try(() => db.exec(c, "insert into users (name) values (?)", []))
+  syntax == err(Sql{msg: "near \"selct\": syntax error"}) and dup == err(Constraint{msg: "UNIQUE constraint failed: users.name"}) and count == err(Sql{msg: "the SQL has 1 parameter but 0 values were given"})
+test several_statements = do
+  c = db.open(":memory:")
+  db.exec(c, "create table a (x integer); create table b (y integer); insert into a values (1); insert into b values (2);")
+  db.one[Int](c, "select x + (select y from b) from a") == 3
+
+type Err = Broke{why: Str}
+
+fn move(c: Db, fail_after: Bool) -> Int ! db, fail[DbErr], fail[Err]
+= db.tx(c, () => do
+  db.exec(c, "update users set score = score - 1 where name = 'ann'")
+  if fail_after then raise Broke{why: "no"}
+  db.exec(c, "update users set score = score + 1 where name = 'bob'"))
+
+fn try_move(c: Db, fail_after: Bool) -> Str ! db, fail[DbErr]
+= catch "ok {move(c, fail_after)}"
+  | Broke{why} => "rolled back: {why}"
+
+test transactions = do
+  c = setup()
+  a = try_move(c, true)
+  after_a = db.query[F64](c, "select score from users order by id")
+  b = try_move(c, false)
+  after_b = db.query[F64](c, "select score from users order by id")
+  a == "rolled back: no" and after_a == [2.5, 1.0] and b == "ok 1" and after_b == [1.5, 2.0]
+test db_errors_roll_back = do
+  c = setup()
+  r = try(() => db.tx(c, () => do
+    db.exec(c, "insert into users (name) values ('cat')")
+    db.exec(c, "insert into users (name) values ('ann')")))
+  r == err(Constraint{msg: "UNIQUE constraint failed: users.name"}) and db.one[Int](c, "select count(*) from users") == 2
+test nested_transactions = do
+  c = setup()
+  inner = db.tx(c, () => do
+    db.exec(c, "insert into users (name) values ('dan')")
+    try(() => db.tx(c, () => do
+      db.exec(c, "insert into users (name) values ('eve')")
+      db.exec(c, "insert into users (name) values ('ann')"))))
+  inner.is_err and db.query[Str](c, "select name from users order by id") == ["ann", "bob", "dan"]
+
+fn steps() -> List[Str]
+= ["create table t (x integer)", "insert into t values (1)", "alter table t add column y text"]
+
+test migrations = do
+  c = db.open(":memory:")
+  a = db.migrate(c, steps())
+  b = db.migrate(c, steps())
+  more = db.migrate(c, steps() + ["insert into t values (2, 'two')"])
+  changed = try(() => db.migrate(c, ["create table t (x integer, z integer)"] + steps().drop(1)))
+  a == 3 and b == 0 and more == 1 and db.one[Int](c, "select count(*) from t") == 2 and changed == err(Mismatch{msg: "migration 1 changed after it was applied; add a new step instead"})
+test failing_migration_rolls_back = do
+  c = db.open(":memory:")
+  r = try(() => db.migrate(c, ["create table t (x integer)", "insert into nowhere values (1)"]))
+  r == err(Sql{msg: "migration 2: no such table: nowhere"}) and db.one[Int](c, "select count(*) from sspur_migrations") == 1
+test files_use_wal = do
+  path = env_var("DATATEST_TMP").or("/tmp") + "/app.db"
+  e = remove_file(path)
+  c = db.open(path)
+  mode = db.one[Str](c, "pragma journal_mode")
+  db.exec(c, "create table if not exists kv (k text primary key, v text)")
+  n = range(0, 200, 1).fold(0, (a, i) => a + db.exec(c, "insert or replace into kv values (?, ?)", ["k{i % 50}", "v{i}"]))
+  db.close(c)
+  c2 = db.open(path)
+  n == 200 and mode == "wal" and db.one[Int](c2, "select count(*) from kv") == 50 and db.one[Int](c2, "pragma foreign_keys") == 1 and db.one[Int](c2, "pragma busy_timeout") == 5000
+test closed = do
+  c = setup()
+  db.close(c)
+  try(() => db.one[Int](c, "select 1")) == err(Sql{msg: "the database is closed"})
+test bad_path = try(() => db.open("/nonexistent-dir-for-sspur/x.db")) == err(Sql{msg: "unable to open database file"})

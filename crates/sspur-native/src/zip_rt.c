@@ -106,8 +106,10 @@ static const uint8_t SZ_GZ_HEAD[10] = {0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 255};
 
 /// The length of the gzip header at `p`, 0 when more bytes are needed, or -1 when it isn't one.
 static int64_t sz_gz_head(const uint8_t* p, int64_t n) {
+    static const uint8_t magic[3] = {0x1f, 0x8b, 8};
+    for (int64_t k = 0; k < 3 && k < n; k++) if (p[k] != magic[k]) return -1;
     if (n < 10) return 0;
-    if (p[0] != 0x1f || p[1] != 0x8b || p[2] != 8 || (p[3] & 0xe0)) return -1;
+    if (p[3] & 0xe0) return -1;
     int fl = p[3];
     int64_t i = 10;
     if (fl & 4) {
@@ -192,6 +194,7 @@ static int64_t sz_inflate(const uint8_t* p, int64_t n, SzBuf* out, int64_t* used
 SZ_EXPORT int64_t sz_unpack(int64_t fmt, const uint8_t* p, int64_t n, SzBuf* out, char* err, int64_t errn) {
     memset(out, 0, sizeof *out);
     if (fmt == 3) {
+        if (n == 0) { sz_err(err, errn, "empty input is not zstd data"); return 1; }
         ZSTD_DStream* ds = ZSTD_createDStream();
         if (!ds) { sz_err(err, errn, "out of memory"); return 1; }
         ZSTD_inBuffer in = {p, (size_t)n, 0};
@@ -215,7 +218,6 @@ SZ_EXPORT int64_t sz_unpack(int64_t fmt, const uint8_t* p, int64_t n, SzBuf* out
             if (o.pos == 0 && last != 0) { ZSTD_freeDStream(ds); sz_err(err, errn, "the compressed data ends early"); return 1; }
         }
         ZSTD_freeDStream(ds);
-        if (n == 0) { sz_err(err, errn, "empty input is not zstd data"); return 1; }
         return 0;
     }
     if (fmt == 2) {

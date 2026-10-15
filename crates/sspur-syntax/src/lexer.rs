@@ -268,6 +268,7 @@ fn lex_string(src: &str, start: usize) -> Result<(String, usize), SyntaxError> {
             '\\' => match chars.next() {
                 Some((_, 'n')) => out.push('\n'),
                 Some((_, 't')) => out.push('\t'),
+                Some((_, 'r')) => out.push('\r'),
                 Some((_, '"')) => out.push('"'),
                 Some((_, '\\')) => out.push('\\'),
                 Some((_, '{')) => out.push_str("\\{"),

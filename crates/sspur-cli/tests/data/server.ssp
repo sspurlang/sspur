@@ -1,0 +1,40 @@
+// An HTTP server over SQLite for the concurrency test: every POST adds a row in a transaction
+// that reads the count first, so lost updates or interleaved transactions show as duplicate or
+// missing sequence numbers.
+
+type Cfg = {port: Int, path: Str, workers: Int}
+type Item = {id: Int, name: Str, seq: Int}
+type NewItem = {name: Str}
+type Check = {rows: Int, distinct_seq: Int, max_seq: Int}
+
+fn migrations() -> List[Str]
+= ["create table items (id integer primary key, name text not null, seq integer not null unique)"]
+
+fn add(c: Db, body: NewItem) -> Item ! db, fail[DbErr]
+= db.tx(c, () => do
+  n = db.one[Int](c, "select count(*) from items")
+  db.one[Item](c, "insert into items (name, seq) values (?, ?) returning id, name, seq", [body.name, n + 1]))
+
+fn check(c: Db) -> Check ! db, fail[DbErr]
+= db.one[Check](c, "select count(*) as rows, count(distinct seq) as distinct_seq, coalesce(max(seq), 0) as max_seq from items")
+
+fn post_item(c: Db, req: Request) -> Response ! db, fail[DbErr]
+= match req.json[NewItem]
+  | ok(b) => http.json(201, add(c, b))
+  | err(e) => http.text(400, e)
+
+fn route(c: Db, req: Request) -> Response ! db, fail[DbErr]
+= match (req.method, req.path)
+  | ("POST", "/items") => post_item(c, req)
+  | ("GET", "/check") => http.json(200, check(c))
+  | ("GET", "/missing") => http.json(200, db.one[Item](c, "select * from items where id = -1"))
+  | ("POST", "/dup") => http.json(200, db.exec(c, "insert into items (name, seq) values ('x', 1)"))
+  | _ => http.text(404, "no route")
+
+fn main() -> Unit ! net, log, fs, env, db, fail[DbErr]
+= do
+  d = Cfg{port: 0, path: "", workers: 8}
+  cfg = config.load(d, "", "DBTEST_").or(d)
+  c = db.open(cfg.path)
+  n = db.migrate(c, migrations())
+  http.serve_with(http.server(cfg.port) with workers := cfg.workers, req => route(c, req))

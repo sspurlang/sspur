@@ -123,7 +123,11 @@ impl Gen<'_> {
             for (k, (f, ft)) in fs.iter().enumerate() {
                 let conv = self.sql_col(ft)?;
                 let what = format!("column {f} of {ts}");
-                idx.push_str(&format!("  i{k} = __db_idx(cols, {}, {})\n", lit(f), lit(&format!("{ts}.{f}"))));
+                if matches!(ft, Type::Con(n, _) if n == "Opt") {
+                    idx.push_str(&format!("  i{k} = cols.index_of({}).or(-1)\n", lit(f)));
+                } else {
+                    idx.push_str(&format!("  i{k} = __db_idx(cols, {}, {})\n", lit(f), lit(&format!("{ts}.{f}"))));
+                }
                 parts.push(format!("{f}: {conv}(__db_cell(r, i{k}), {})", lit(&what)));
             }
             format!("{ts}{{{}}}", parts.join(", "))
@@ -269,7 +273,8 @@ impl Gen<'_> {
             let mut parts = Vec::new();
             for (f, ft) in &fs {
                 let conv = self.csv_cell(ft)?;
-                parts.push(format!("{f}: {conv}(__csv_cell(r, __csv_col(h, {}), row), row, {})", lit(f), lit(f)));
+                let cell = if matches!(ft, Type::Con(n, _) if n == "Opt") { format!("__csv_maybe(r, h.index_of({}))", lit(f)) } else { format!("__csv_cell(r, __csv_col(h, {}), row)", lit(f)) };
+                parts.push(format!("{f}: {conv}({cell}, row, {})", lit(f)));
             }
             format!("{ts}{{{}}}", parts.join(", "))
         };

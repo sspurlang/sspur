@@ -1,0 +1,47 @@
+// Compression (ADR 0037): gzip, raw DEFLATE and zstd in memory and file to file.
+
+fn sample(n: Int) -> Bytes
+= bytes(range(0, n, 1).map(i => (i * 7 + i / 300) % 251))
+
+fn rt_gzip(b: Bytes) -> Bytes
+  post r == b
+= gzip.decompress(gzip.compress(b)).or(bytes([1]))
+
+fn rt_deflate(b: Bytes) -> Bytes
+  post r == b
+= deflate.decompress(deflate.compress(b)).or(bytes([1]))
+
+fn rt_zstd(b: Bytes) -> Bytes
+  post r == b
+= zstd.decompress(zstd.compress(b)).or(bytes([1]))
+
+test round_trips = [bytes([]), bytes([0]), "hello".to_bytes, sample(100000), "ab".repeat(50000).to_bytes].all(b => rt_gzip(b) == b and rt_deflate(b) == b and rt_zstd(b) == b)
+test levels = do
+  b = "the same words over and over ".repeat(2000).to_bytes
+  [0, 1, 9].all(l => gzip.decompress(gzip.compress_level(b, l)) == ok(b) and deflate.decompress(deflate.compress_level(b, l)) == ok(b)) and [1, 19, -5].all(l => zstd.decompress(zstd.compress_level(b, l)) == ok(b)) and gzip.compress_level(b, 9).len < b.len / 20 and zstd.compress(b).len < b.len / 20
+test from_the_system_tools = gzip.decompress(from_base64("H4sIAAAAAAAAA8tIzcnJ5wIAIDA6NgYAAAA=").get) == ok("hello\n".to_bytes) and zstd.decompress(from_base64("KLUv/QRYMQAAaGVsbG8KU4i9kQ==").get) == ok("hello\n".to_bytes)
+test gzip_members_concatenate = gzip.decompress(gzip.compress("ab").concat(gzip.compress("cd"))) == ok("abcd".to_bytes)
+test gzip_header_is_fixed = gzip.compress("x").slice(0, 10).hex == "1f8b08000000000000ff"
+test errors = gzip.decompress("not gzip") == err("not gzip data") and gzip.decompress(gzip.compress("hello").slice(0, 12)).is_err and zstd.decompress("nope").is_err and zstd.decompress(bytes([])) == err("empty input is not zstd data") and deflate.decompress(bytes([255, 255, 255])).is_err
+test damaged_checksum = do
+  g = gzip.compress("hello world")
+  bad = bytes(g.to_list.enumerate.map(p => if p.0 == g.len - 6 then p.1.bxor(1) else p.1))
+  gzip.decompress(bad) == err("the gzip checksum does not match")
+test trailing_data = gzip.decompress(gzip.compress("a").concat("zz".to_bytes)) == err("trailing data after the gzip stream") and deflate.decompress(deflate.compress("a").concat("z".to_bytes)) == err("trailing data after the compressed stream")
+test files = do
+  dir = env_var("DATATEST_TMP").or("/tmp")
+  src = dir + "/plain.bin"
+  w = write_bin(src, sample(300000))
+  a = gzip.compress_file(src, dir + "/plain.gz")
+  b = gzip.decompress_file(dir + "/plain.gz", dir + "/back.bin")
+  c = zstd.compress_file(src, dir + "/plain.zst")
+  d = zstd.decompress_file(dir + "/plain.zst", dir + "/back2.bin")
+  same = read_bin(dir + "/back.bin") == ok(sample(300000)) and read_bin(dir + "/back2.bin") == ok(sample(300000))
+  in_memory = gzip.decompress(read_bin(dir + "/plain.gz").get) == ok(sample(300000)) and zstd.decompress(read_bin(dir + "/plain.zst").get) == ok(sample(300000))
+  w.is_ok and a.is_ok and b.is_ok and c.is_ok and d.is_ok and same and in_memory and not exists(dir + "/back.bin.part")
+test file_errors = do
+  dir = env_var("DATATEST_TMP").or("/tmp")
+  w = write_file(dir + "/junk.gz", "this is not gzip")
+  e1 = gzip.decompress_file(dir + "/junk.gz", dir + "/out.bin")
+  e2 = gzip.compress_file(dir + "/missing", dir + "/out.gz")
+  e1 == err(dir + "/junk.gz: not gzip data") and e2 == err(dir + "/missing: not found") and not exists(dir + "/out.bin") and not exists(dir + "/out.bin.part")

@@ -37,10 +37,14 @@ static void sd_lock(sd_mutex* m) { AcquireSRWLockExclusive(m); }
 static void sd_unlock(sd_mutex* m) { ReleaseSRWLockExclusive(m); }
 static void sd_cv_init(sd_cond* c) { InitializeConditionVariable(c); }
 static void sd_cv_wait(sd_cond* c, sd_mutex* m) { SleepConditionVariableSRW(c, m, INFINITE, 0); }
+static void sd_cv_wait_ms(sd_cond* c, sd_mutex* m, int64_t ms) { SleepConditionVariableSRW(c, m, (DWORD)ms, 0); }
+static void sd_cv_broadcast(sd_cond* c) { WakeAllConditionVariable(c); }
+static int64_t sd_now_ms(void) { return (int64_t)GetTickCount64(); }
 static void sd_cv_signal(sd_cond* c) { WakeConditionVariable(c); }
 static sd_mutex sd_global_mu = SRWLOCK_INIT;
 #else
 #include <pthread.h>
+#include <time.h>
 #define SD_EXPORT __attribute__((visibility("default")))
 #define SD_TLS __thread
 typedef pthread_mutex_t sd_mutex;
@@ -51,6 +55,14 @@ static void sd_unlock(sd_mutex* m) { pthread_mutex_unlock(m); }
 static void sd_cv_init(sd_cond* c) { pthread_cond_init(c, 0); }
 static void sd_cv_wait(sd_cond* c, sd_mutex* m) { pthread_cond_wait(c, m); }
 static void sd_cv_signal(sd_cond* c) { pthread_cond_signal(c); }
+static void sd_cv_broadcast(sd_cond* c) { pthread_cond_broadcast(c); }
+static void sd_cv_wait_ms(sd_cond* c, sd_mutex* m, int64_t ms) {
+    struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_sec += (time_t)(ms / 1000); ts.tv_nsec += (long)(ms % 1000) * 1000000L;
+    if (ts.tv_nsec >= 1000000000L) { ts.tv_sec++; ts.tv_nsec -= 1000000000L; }
+    pthread_cond_timedwait(c, m, &ts);
+}
+static int64_t sd_now_ms(void) { struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts); return (int64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000; }
 static sd_mutex sd_global_mu = PTHREAD_MUTEX_INITIALIZER;
 #endif
 
@@ -84,6 +96,8 @@ typedef struct SdConn {
 typedef struct {
     char* path;
     int64_t max, n, closed;
+    int64_t writing;   // a transaction of this process holds the write lock
+    sd_cond wcv;
     SdConn* idle;
     SdConn** all;
     sd_mutex mu;
@@ -187,6 +201,7 @@ SD_EXPORT int64_t sd_open(const char* path, int64_t n, char* err, int64_t errn) 
     d->all = (SdConn**)calloc((size_t)d->max, sizeof(SdConn*));
     sd_mu_init(&d->mu);
     sd_cv_init(&d->cv);
+    sd_cv_init(&d->wcv);
     SdConn* c = sd_connect(d, err, errn);
     if (!c) { free(d->all); free(d->path); free(d); return 0; }
     d->all[d->n++] = c;
@@ -203,6 +218,13 @@ SD_EXPORT int64_t sd_open(const char* path, int64_t n, char* err, int64_t errn) 
     int64_t id = sd_ndbs;
     sd_unlock(&sd_global_mu);
     return id;
+}
+
+static void sd_end_write(SdDb* d) {
+    sd_lock(&d->mu);
+    d->writing = 0;
+    sd_cv_broadcast(&d->wcv);
+    sd_unlock(&d->mu);
 }
 
 static SdHeld* sd_find_held(int64_t id) {
@@ -478,11 +500,19 @@ SD_EXPORT int64_t sd_tx(int64_t id, int64_t op, char* err, int64_t errn) {
     if (op == 0) {
         if (!h) {
             if (sd_nheld >= 16) { sd_set(err, errn, "too many databases in transactions on one thread"); return SD_SQL; }
+            // Transactions in this process queue here rather than in SQLite's busy handler,
+            // which sleeps; other processes still wait in the busy timeout.
+            sd_lock(&d->mu);
+            int64_t until = sd_now_ms() + 5000;
+            while (d->writing && sd_now_ms() < until) sd_cv_wait_ms(&d->wcv, &d->mu, until - sd_now_ms() > 0 ? until - sd_now_ms() : 1);
+            if (d->writing) { sd_unlock(&d->mu); sd_set(err, errn, "database is locked"); return SD_BUSY; }
+            d->writing = 1;
+            sd_unlock(&d->mu);
             int borrowed = 0;
             SdConn* c = sd_acquire(d, id, &borrowed, err, errn);
-            if (!c) return SD_SQL;
+            if (!c) { sd_end_write(d); return SD_SQL; }
             int rc = sd_run(c, "BEGIN IMMEDIATE", err, errn);
-            if (rc != SQLITE_OK) { sd_release(d, c); return sd_kind(rc); }
+            if (rc != SQLITE_OK) { sd_release(d, c); sd_end_write(d); return sd_kind(rc); }
             c->depth = 1;
             sd_held[sd_nheld].id = id;
             sd_held[sd_nheld].c = c;
@@ -514,6 +544,7 @@ SD_EXPORT int64_t sd_tx(int64_t id, int64_t op, char* err, int64_t errn) {
     c->depth = 0;
     *h = sd_held[--sd_nheld];
     sd_release(d, c);
+    sd_end_write(d);
     return kind;
 }
 
@@ -525,7 +556,7 @@ SD_EXPORT void sd_release_thread(void) {
         SdDb* d = sd_get(h.id);
         if (!sqlite3_get_autocommit(h.c->db)) sqlite3_exec(h.c->db, "ROLLBACK", 0, 0, 0);
         h.c->depth = 0;
-        if (d) sd_release(d, h.c);
+        if (d) { sd_release(d, h.c); sd_end_write(d); }
     }
 }
 

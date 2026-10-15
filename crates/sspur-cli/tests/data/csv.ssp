@@ -1,0 +1,45 @@
+// CSV (ADR 0037): RFC 4180 reading and writing, typed records by header name, streaming.
+
+type Item = {sku: Str, qty: Int, price: F64, note: Opt[Str]}
+type Sku = new Str
+type Flag = {sku: Sku, on: Bool, at: Opt[Time], cost: Dec}
+
+fn rt(rows: List[List[Str]]) -> List[List[Str]]
+  pre rows.all(r => not r.is_empty)
+  post r == rows
+= csv.parse(csv.write(rows)).or([])
+
+test rfc4180 = csv.parse("a,b,c\r\n1,\"x, y\",\"say \"\"hi\"\"\"\r\n2,\"two\r\nlines\",\r\n") == ok([["a", "b", "c"], ["1", "x, y", "say \"hi\""], ["2", "two\r\nlines", ""]])
+test line_endings = csv.parse("a,b\nc,d\re,f\r\ng,h") == ok([["a", "b"], ["c", "d"], ["e", "f"], ["g", "h"]])
+test empty_lines_and_bom = csv.parse(from_codes([65279]).get + "a,b\n\n\nc,d\n\n") == ok([["a", "b"], ["c", "d"]]) and csv.parse("") == ok([]) and csv.parse("\"\"") == ok([[""]]) and csv.parse(",") == ok([["", ""]])
+test quotes_inside_plain_fields = csv.parse("a\"b,c\n") == ok([["a\"b", "c"]])
+test errors = csv.parse("a,\"open\n") == err("row 1: a quoted field is not closed") and csv.parse("x\n\"a\"b,c\n") == err("row 2: a quoted field must end at a comma or the end of the line")
+test writing = csv.write([["a", "b"], ["x, y", "say \"hi\""], ["two\nlines", ""], [""], []]) == "a,b\r\n\"x, y\",\"say \"\"hi\"\"\"\r\n\"two\nlines\",\r\n\"\"\r\n"
+test round_trip_cases = [[["a"]], [[""]], [["", ""]], [["\"", ","], ["\r", "\n"], ["é", " sp "]]].all(x => rt(x) == x)
+
+test typed = csv.decode[Item]("sku,price,qty,note,extra\nA1,2.5,3,,x\nB2, 1e2 ,10,fragile,y\n") == ok([Item{sku: "A1", qty: 3, price: 2.5, note: none}, Item{sku: "B2", qty: 10, price: 100.0, note: some("fragile")}])
+test typed_errors = csv.decode[Item]("sku,qty,price\nA1,three,2.5\n") == err("row 2, column qty: expected Int, found \"three\"") and csv.decode[Item]("sku,qty\nA1,3\n") == err("no column 'price' in the header") and csv.decode[Item]("sku,qty,price\nA1,3\n") == err("row 2 has 2 fields, fewer than the header")
+test newtypes_and_more = csv.decode[Flag]("sku,on,at,cost\nx,true,2026-10-15T09:30:00Z,12.50\ny,0,,1\n").map(fs => fs.map(f => "{f.sku.raw} {f.on} {f.at.map(_.iso)} {f.cost}")) == ok(["x true some(\"2026-10-15T09:30:00Z\") 12.50", "y false none 1"])
+test empty_and_header_only = csv.decode[Item]("") == ok([]) and csv.decode[Item]("sku,qty,price\n") == ok([])
+test raw_rows = csv.decode[List[Str]]("a,b\n1,2\n") == ok([["a", "b"], ["1", "2"]])
+test encode = csv.encode([Item{sku: "A,1", qty: 3, price: 2.5, note: none}, Item{sku: "B", qty: -1, price: 0.1, note: some("q\"")}]) == "sku,qty,price,note\r\nA,1\",3,2.5,\r\n".replace("A,1\"", "\"A,1\"") + "B,-1,0.1,\"q\"\"\"\r\n"
+test encode_decode = do
+  xs = [Item{sku: "a", qty: 1, price: 1.5, note: some("n")}, Item{sku: "b\nc", qty: 2, price: -0.25, note: none}]
+  csv.decode[Item](csv.encode(xs)) == ok(xs)
+
+fn big(n: Int) -> Str
+= "sku,qty,price,note\n" + range(0, n, 1).map(i => "s{i},{i},{i}.5,\"line {i}\nmore\"").join("\n") + "\n"
+
+test files_stream = do
+  dir = env_var("DATATEST_TMP").or("/tmp")
+  path = dir + "/items.csv"
+  w = write_file(path, big(5000))
+  total = csv.fold[Item](path, 0, (acc, it) => acc + it.qty)
+  count = csv.fold[List[Str]](path, 0, (acc, r) => acc + 1)
+  all = csv.read[Item](path)
+  w.is_ok and total == ok(12497500) and count == ok(5001) and all.map(_.len) == ok(5000) and all.map(xs => xs.get(4999).map(_.note)) == ok(some(some("line 4999\nmore")))
+test missing_optional_columns = csv.decode[Item]("sku,qty,price\nA,1,2\n") == ok([Item{sku: "A", qty: 1, price: 2.0, note: none}])
+test file_errors = do
+  dir = env_var("DATATEST_TMP").or("/tmp")
+  w = write_file(dir + "/bad.csv", "sku,qty,price\nA,1,2\nB,x,3\n")
+  w.is_ok and csv.fold[Item](dir + "/bad.csv", 0, (a, it) => a + it.qty) == err("row 3, column qty: expected Int, found \"x\"") and csv.fold[Item](dir + "/none.csv", 0, (a, it) => a) == err(dir + "/none.csv: not found")

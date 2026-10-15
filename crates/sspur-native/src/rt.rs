@@ -423,7 +423,7 @@ fn records(z: &Zip, mut r: SvRes) -> Result<Vec<Vec<String>>, String> {
             let mut row = Vec::with_capacity(end - f);
             while f < end {
                 let e = unsafe { *r.ends.add(f) };
-                let b = unsafe { std::slice::from_raw_parts(r.text.add(start as usize), (e - start) as usize) };
+                let b = if e > start { unsafe { std::slice::from_raw_parts(r.text.add(start as usize), (e - start) as usize) } } else { &[][..] };
                 row.push(String::from_utf8_lossy(b).into_owned());
                 start = e;
                 f += 1;

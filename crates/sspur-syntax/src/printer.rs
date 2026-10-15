@@ -314,6 +314,7 @@ pub fn expr(e: &Expr, ind: usize) -> String {
                                 '\\' => s.push_str("\\\\"),
                                 '\n' => s.push_str("\\n"),
                                 '\t' => s.push_str("\\t"),
+                                '\r' => s.push_str("\\r"),
                                 '{' => s.push_str("\\{"),
                                 c => s.push(c),
                             }

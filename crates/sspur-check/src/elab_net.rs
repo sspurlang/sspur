@@ -76,6 +76,14 @@ impl Gen<'_> {
             let effs = if eff.is_empty() { String::new() } else { format!(" ! {}", eff.join(", ")) };
             let mut arms = String::new();
             match t {
+                Type::Con(n, _) if n == "#DbErr" => {
+                    // A database error answers without SQL text, except a constraint, which
+                    // is the client's to fix.
+                    arms.push_str("  | Constraint{msg} => __http_error(409, json.encode(Constraint{msg}))\n");
+                    arms.push_str("  | NoRow => __http_error(404, \"\\\"not found\\\"\")\n");
+                    arms.push_str("  | Busy{msg} => __http_error(503, \"\\\"busy\\\"\")\n");
+                    arms.push_str("  | _ => __http_error(500, \"\\\"internal error\\\"\")\n");
+                }
                 Type::Con(n, _) if self.out.sums.contains_key(n) => {
                     for (v, fs) in &self.out.sums[n].1 {
                         let st = status_for(sspur_syntax::display_name(v));
