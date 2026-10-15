@@ -372,3 +372,6 @@ fn __proc_stop(p: Proc) -> Int ! proc
 
 fn __proc_wait(p: Proc) -> Int ! proc
 = __proc_op(3, p.id, "").0
+
+fn __proc_running(p: Proc) -> Bool ! proc
+= __proc_op(4, p.id, "").0 == 1

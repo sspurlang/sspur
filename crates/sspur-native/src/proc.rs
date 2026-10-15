@@ -176,7 +176,8 @@ fn line(id: i64, timeout_ms: i64) -> (i64, String) {
 /// One operation: 0 spawns (`arg` packs the program, the argument count, the arguments and the
 /// environment pairs; gives the id and the pid, or -1 and the error), 1 reads a line within `arg`
 /// milliseconds (0 and the line, 1 at the end of the output, 2 on timeout), 2 stops the child
-/// within a grace period of `arg` milliseconds and 3 waits for it (both give the exit status).
+/// within a grace period of `arg` milliseconds and 3 waits for it (both give the exit status),
+/// 4 tells whether it is still running (1) or has exited (0).
 pub fn op(op: i64, id: i64, arg: &str) -> (i64, String) {
     match op {
         0 => match spawn(arg) {
@@ -186,6 +187,7 @@ pub fn op(op: i64, id: i64, arg: &str) -> (i64, String) {
         1 => line(id, arg.parse().unwrap_or(0)),
         2 => (stop(id, arg.parse().unwrap_or(10_000)), String::new()),
         3 => (wait(id, None).unwrap_or(-1), String::new()),
+        4 => (i64::from(wait(id, Some(Duration::ZERO)).is_none() && table().lock().unwrap_or_else(|e| e.into_inner()).1.contains_key(&id)), String::new()),
         _ => (-1, "unknown process operation".into()),
     }
 }
