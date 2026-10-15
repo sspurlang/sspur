@@ -891,10 +891,37 @@ static void new_id(char* out) {
 
 typedef struct { sn_cond cv; } SnWait;
 
+static void sb_jstr(SnBuf* b, const char* p, int64_t n) {
+    sb_c(b, '"');
+    for (int64_t i = 0; i < n; i++) {
+        unsigned char c = (unsigned char)p[i];
+        if (c == '"' || c == '\\') { sb_c(b, '\\'); sb_c(b, (char)c); }
+        else if (c < 0x20 || c == 0x7f) { char t[8]; snprintf(t, sizeof t, "\\u%04x", c); sb_s(b, t); }
+        else sb_c(b, (char)c);
+    }
+    sb_c(b, '"');
+}
+
+/* With SSPUR_LOG=json the access line is an object of fields, which the log line carries as is. */
+static int log_json(void) {
+    static int v = -1;
+    if (v < 0) { const char* e = getenv("SSPUR_LOG"); v = e && (e[0] == 'j' || e[0] == 'J') && (e[1] == 's' || e[1] == 'S') && (e[2] == 'o' || e[2] == 'O') && (e[3] == 'n' || e[3] == 'N') && !e[4]; }
+    return v;
+}
+
 static void access_log(SnServer* s, SnHead* h, int64_t status, int64_t ms, const char* id) {
     if (!s->cfg.access_log || !s->cfg.log) return;
     SnBuf b = {0};
     sb_s(&b, status >= 500 ? "error: " : "info: ");
+    if (log_json() && sn_utf8(h->method, h->method_n) && sn_utf8(h->target, h->target_n > 200 ? 200 : h->target_n)) {
+        sb_s(&b, "{\"method\":"); sb_jstr(&b, h->method, h->method_n);
+        sb_s(&b, ",\"path\":"); sb_jstr(&b, h->target, h->target_n > 200 ? 200 : h->target_n);
+        sb_s(&b, ",\"status\":"); sb_i(&b, status); sb_s(&b, ",\"ms\":"); sb_i(&b, ms);
+        sb_s(&b, ",\"id\":"); sb_jstr(&b, id, (int64_t)strlen(id)); sb_c(&b, '}');
+        sn_log(s, b.p, b.n);
+        free(b.p);
+        return;
+    }
     sb_add(&b, h->method, h->method_n); sb_c(&b, ' ');
     sb_add(&b, h->target, h->target_n > 200 ? 200 : h->target_n); sb_c(&b, ' ');
     sb_i(&b, status); sb_c(&b, ' '); sb_i(&b, ms); sb_s(&b, "ms id="); sb_s(&b, id);

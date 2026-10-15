@@ -40,7 +40,7 @@ The `Server` fields cover what usually takes middleware:
 | `cert`, `key` | `""` | PEM files to serve HTTPS (needs OpenSSL 3 on the machine) |
 | `access_log` | `true` | One log line per request with method, path, status, time and id |
 
-A handler is also just a function from `Request` to `Response`, so anything else a middleware would do is a function in front of the svc: `http.serve(8080, req => if authorized(req) then api(req) else http.text(401, "no"))`. `req.path`, `req.query(name)` and `req.header(name)` read the request, `req.json[T]` decodes its body, and `http.text`, `http.html` and `http.json(status, value)` build responses. Handlers run concurrently, so like `par` tasks they can't assign variables from outside (`E_PAR_RACE`); share counters through an `Atomic[Int]`.
+A handler is also just a function from `Request` to `Response`, so anything else a middleware would do is a function in front of the svc: `http.serve(8080, req => if authorized(req) then api(req) else http.text(401, "no"))`. `req.path`, `req.query(name)`, `req.header(name)` and `req.cookie(name)` read the request, `req.json[T]` decodes its body and `req.form(name)` reads a field of an HTML form, and `http.text`, `http.html` and `http.json(status, value)` build responses. Handlers run concurrently, so like `par` tasks they can't assign variables from outside (`E_PAR_RACE`); share counters through an `Atomic[Int]`.
 
 ## A client
 
@@ -74,7 +74,7 @@ A handler is also just a function from `Request` to `Response`, so anything else
 {{#include ../snippets/handbook/net/app.json}}
 ```
 
-`log.debug`, `log.info`, `log.warn` and `log.error` write a line with that level in front (`warn: ...`), which a `handle` of `log` sees like any other line. `SSPUR_LOG_LEVEL=warn` drops the lower levels, and `SSPUR_LOG=json` prints each line as a JSON object with the time, the level and the message, for log collectors:
+`log.debug`, `log.info`, `log.warn` and `log.error` write a line with that level in front (`warn: ...`), which a `handle` of `log` sees like any other line. `SSPUR_LOG_LEVEL=warn` drops the lower levels, and `SSPUR_LOG=json` prints each line as a JSON object with the time, the level and the message, for log collectors. A message that is a JSON object, `log.info(json.encode(event))`, puts its fields in the line instead, and the access log then has `method`, `path`, `status`, `ms` and the request `id` as fields:
 
 ```console
 {{#include ../snippets/handbook/net/net.out:config}}
