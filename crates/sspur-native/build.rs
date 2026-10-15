@@ -41,6 +41,26 @@ fn main() {
             writeln!(arms, "        {name:?} => Some(({}, {})),", blob.len(), blob.len() + z.len()).unwrap();
             blob.extend_from_slice(&z);
         }
+        // The project templates of `sspur new`, in the same blob so they cost no pages a run
+        // touches: every file of the directory as its path, a newline, its text and a NUL.
+        for (name, dir) in [("web-app", "../../templates/web-app")] {
+            println!("cargo:rerun-if-changed={dir}");
+            let mut files = Vec::new();
+            walk(Path::new(dir), Path::new(dir), &mut files);
+            files.sort();
+            let mut text = Vec::new();
+            for rel in &files {
+                let p = Path::new(dir).join(rel);
+                println!("cargo:rerun-if-changed={}", p.display());
+                text.extend_from_slice(rel.as_bytes());
+                text.push(b'\n');
+                text.extend_from_slice(&std::fs::read(&p).unwrap_or_else(|e| panic!("{}: {e}", p.display())));
+                text.push(0);
+            }
+            let z = miniz_oxide::deflate::compress_to_vec(&text, 10);
+            writeln!(arms, "        {name:?} => Some(({}, {})),", blob.len(), blob.len() + z.len()).unwrap();
+            blob.extend_from_slice(&z);
+        }
         blob.resize(blob.len().div_ceil(128 << 10) * (128 << 10), 0);
     }
     std::fs::write(Path::new(&out).join("vendor.z"), &blob).unwrap();
@@ -55,6 +75,19 @@ fn main() {
         "{decl}\n/// Where a part's deflated text is in `BLOB`.\npub fn range(name: &str) -> Option<(usize, usize)> {{\n    match name {{\n{arms}        _ => None,\n    }}\n}}\n"
     );
     std::fs::write(Path::new(&out).join("vendor.rs"), rs).unwrap();
+}
+
+/// The files under `dir`, as paths relative to `base` with `/` separators.
+fn walk(base: &Path, dir: &Path, out: &mut Vec<String>) {
+    let entries = std::fs::read_dir(dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display()));
+    for e in entries.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            walk(base, &p, out);
+        } else {
+            out.push(p.strip_prefix(base).unwrap().to_string_lossy().replace('\\', "/"));
+        }
+    }
 }
 
 fn drop_includes(src: &str, drop: Option<&[&str]>) -> String {

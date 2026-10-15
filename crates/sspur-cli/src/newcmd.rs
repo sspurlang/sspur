@@ -3,25 +3,15 @@
 use std::path::Path;
 use std::process::ExitCode;
 
-macro_rules! files {
-    ($dir:literal: $($p:literal),* $(,)?) => {
-        concat!($($p, "\n", include_str!(concat!("../../../templates/", $dir, "/", $p)), "\u{0}"),*)
-    };
-}
-
-/// The web-app template, one file after another: its path, a newline, its text and a NUL.
-const WEB_APP: &str = files!("web-app":
-    "sspur.toml", "app.json", "main.ssp", "README.md", ".gitignore",
-    "models/sspur.toml", "models/lib.ssp", "storage/sspur.toml", "storage/lib.ssp", "auth/sspur.toml", "auth/lib.ssp", "views/sspur.toml", "views/lib.ssp",
-    "packages/sessions/sspur.toml", "packages/sessions/lib.ssp", "packages/pagination/sspur.toml", "packages/pagination/lib.ssp", "packages/passwords/sspur.toml", "packages/passwords/lib.ssp",
-    "tests/storage.ssp", "tests/auth.ssp", "tests/views.ssp", "tests/e2e.ssp", "tests/run.ssp", "tools/backup.ssp",
-    "deploy/{{name}}.service", "deploy/Caddyfile", "public/app.css",
-);
-
 const LIST: &str = "web-app    a notes service with accounts: JSON API and HTML pages, SQLite, sessions, CSRF, rate limits, tests and a deploy guide";
 
-fn template(name: &str) -> Option<&'static str> {
-    (name == "web-app").then_some(WEB_APP)
+/// A template's files, one after another: each one's path, a newline, its text and a NUL. They
+/// are packed into the binary with the vendored C sources (`sspur-native/build.rs`).
+fn template(name: &str) -> Option<String> {
+    if name != "web-app" {
+        return None;
+    }
+    sspur_native::rt::part(name).ok()
 }
 
 fn usage() -> ExitCode {
@@ -61,7 +51,7 @@ pub fn run(pos: &[String], list: bool) -> ExitCode {
         eprintln!("{} already exists and is not empty", dir.display());
         return ExitCode::FAILURE;
     }
-    for (p, body) in render(text, &name) {
+    for (p, body) in render(&text, &name) {
         let path = dir.join(&p);
         let made = path.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|()| std::fs::write(&path, body));
         if let Err(e) = made {
@@ -77,7 +67,7 @@ pub fn run(pos: &[String], list: bool) -> ExitCode {
 mod tests {
     #[test]
     fn the_template_fills_in_the_name_everywhere() {
-        let files = super::render(super::WEB_APP, "notes");
+        let files = super::render(&super::template("web-app").unwrap(), "notes");
         assert!(files.len() >= 25, "{}", files.len());
         assert!(files.iter().all(|(p, b)| !p.contains("{{") && !b.contains("{{name}}") && !b.contains("ANCHOR")));
         assert!(files.iter().any(|(p, _)| p == "deploy/notes.service"));
