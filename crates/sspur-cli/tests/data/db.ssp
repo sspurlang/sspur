@@ -117,12 +117,13 @@ test files_use_wal = do
   path = env_var("DATATEST_TMP").or("/tmp") + "/app.db"
   e = remove_file(path)
   c = db.open(path)
+  same = db.open(path) == c and db.open(":memory:") != db.open(":memory:")
   mode = db.one[Str](c, "pragma journal_mode")
   db.exec(c, "create table if not exists kv (k text primary key, v text)")
   n = range(0, 200, 1).fold(0, (a, i) => a + db.exec(c, "insert or replace into kv values (?, ?)", ["k{i % 50}", "v{i}"]))
   db.close(c)
   c2 = db.open(path)
-  n == 200 and mode == "wal" and db.one[Int](c2, "select count(*) from kv") == 50 and db.one[Int](c2, "pragma foreign_keys") == 1 and db.one[Int](c2, "pragma busy_timeout") == 5000
+  same and n == 200 and mode == "wal" and db.one[Int](c2, "select count(*) from kv") == 50 and db.one[Int](c2, "pragma foreign_keys") == 1 and db.one[Int](c2, "pragma busy_timeout") == 5000
 test closed = do
   c = setup()
   db.close(c)

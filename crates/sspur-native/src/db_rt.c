@@ -186,9 +186,24 @@ static void sd_disconnect(SdConn* c) {
     free(c);
 }
 
+static int memmem_mode(const char* p, int64_t n) {
+    for (int64_t i = 0; i + 11 <= n; i++) if (memcmp(p + i, "mode=memory", 11) == 0) return 1;
+    return 0;
+}
+
 /// Opens a database (and its first connection, so a bad path fails here). Returns its id, or 0
 /// with the reason in `err`.
 SD_EXPORT int64_t sd_open(const char* path, int64_t n, char* err, int64_t errn) {
+    // A file opened again (by each request's handler, say) is the same pool; ":memory:" is
+    // always a new database.
+    if (!(n == 8 && memcmp(path, ":memory:", 8) == 0) && !memmem_mode(path, n)) {
+        sd_lock(&sd_global_mu);
+        for (int64_t i = 0; i < sd_ndbs; i++) {
+            SdDb* d = sd_dbs[i];
+            if (!d->closed && (int64_t)strlen(d->path) == n && memcmp(d->path, path, (size_t)n) == 0) { sd_unlock(&sd_global_mu); return i + 1; }
+        }
+        sd_unlock(&sd_global_mu);
+    }
     SdDb* d = (SdDb*)calloc(1, sizeof *d);
     if (!d) { sd_set(err, errn, "out of memory"); return 0; }
     d->path = (char*)malloc((size_t)n + 1);
