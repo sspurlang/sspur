@@ -44,48 +44,15 @@ pub enum LibSite {
 
 pub const NAMESPACES: &[&str] = &["crypto", "uuid", "gzip", "deflate", "zstd", "csv"];
 
-static SIGS: &[(&str, &str)] = &[
-    ("crypto", "sha256(data: Bytes) -> Bytes"),
-    ("crypto", "sha512(data: Bytes) -> Bytes"),
-    ("crypto", "blake2b(data: Bytes) -> Bytes"),
-    ("crypto", "hmac256(key: Secret[Bytes], data: Bytes) -> Bytes"),
-    ("crypto", "hmac512(key: Secret[Bytes], data: Bytes) -> Bytes"),
-    ("crypto", "equal(a: Bytes, b: Bytes) -> Bool"),
-    ("crypto", "random(n: Int) -> Bytes ! rand"),
-    ("crypto", "token(n: Int) -> Str ! rand"),
-    ("crypto", "key() -> Secret[Bytes] ! rand"),
-    ("crypto", "seal(key: Secret[Bytes], data: Bytes) -> Bytes ! rand"),
-    ("crypto", "open(key: Secret[Bytes], sealed: Bytes) -> Opt[Bytes]"),
-    ("crypto", "hash_password(pw: Secret[Str]) -> Str ! rand"),
-    ("crypto", "verify_password(pw: Secret[Str], hash: Str) -> Bool"),
-    ("crypto", "keypair() -> (Secret[Bytes], Bytes) ! rand"),
-    ("crypto", "public_key(sk: Secret[Bytes]) -> Bytes"),
-    ("crypto", "sign(sk: Secret[Bytes], data: Bytes) -> Bytes"),
-    ("crypto", "verify(pk: Bytes, data: Bytes, sig: Bytes) -> Bool"),
-    ("uuid", "v4() -> Str ! rand"),
-    ("uuid", "v7() -> Str ! rand, time"),
-    ("gzip", "compress(data: Bytes) -> Bytes"),
-    ("gzip", "compress_level(data: Bytes, level: Int) -> Bytes"),
-    ("gzip", "decompress(data: Bytes) -> Res[Bytes, Str]"),
-    ("gzip", "compress_file(src: Str, dst: Str) -> Res[Unit, Str] ! fs"),
-    ("gzip", "decompress_file(src: Str, dst: Str) -> Res[Unit, Str] ! fs"),
-    ("deflate", "compress(data: Bytes) -> Bytes"),
-    ("deflate", "compress_level(data: Bytes, level: Int) -> Bytes"),
-    ("deflate", "decompress(data: Bytes) -> Res[Bytes, Str]"),
-    ("zstd", "compress(data: Bytes) -> Bytes"),
-    ("zstd", "compress_level(data: Bytes, level: Int) -> Bytes"),
-    ("zstd", "decompress(data: Bytes) -> Res[Bytes, Str]"),
-    ("zstd", "compress_file(src: Str, dst: Str) -> Res[Unit, Str] ! fs"),
-    ("zstd", "decompress_file(src: Str, dst: Str) -> Res[Unit, Str] ! fs"),
-    ("csv", "parse(text: Str) -> Res[List[List[Str]], Str]"),
-    ("csv", "write(rows: List[List[Str]]) -> Str"),
-    ("db", "open(path: Str) -> Db ! db, fail[DbErr]"),
-    ("db", "close(c: Db) -> Unit ! db"),
-    ("db", "migrate(c: Db, steps: List[Str]) -> Int ! db, fail[DbErr]"),
-];
+/// `namespace signature` lines.
+static SIGS: &str = "crypto sha256(data: Bytes) -> Bytes\ncrypto sha512(data: Bytes) -> Bytes\ncrypto blake2b(data: Bytes) -> Bytes\ncrypto hmac256(key: Secret[Bytes], data: Bytes) -> Bytes\ncrypto hmac512(key: Secret[Bytes], data: Bytes) -> Bytes\ncrypto equal(a: Bytes, b: Bytes) -> Bool\ncrypto random(n: Int) -> Bytes ! rand\ncrypto token(n: Int) -> Str ! rand\ncrypto key() -> Secret[Bytes] ! rand\ncrypto seal(key: Secret[Bytes], data: Bytes) -> Bytes ! rand\ncrypto open(key: Secret[Bytes], sealed: Bytes) -> Opt[Bytes]\ncrypto hash_password(pw: Secret[Str]) -> Str ! rand\ncrypto verify_password(pw: Secret[Str], hash: Str) -> Bool\ncrypto keypair() -> (Secret[Bytes], Bytes) ! rand\ncrypto public_key(sk: Secret[Bytes]) -> Bytes\ncrypto sign(sk: Secret[Bytes], data: Bytes) -> Bytes\ncrypto verify(pk: Bytes, data: Bytes, sig: Bytes) -> Bool\nuuid v4() -> Str ! rand\nuuid v7() -> Str ! rand, time\ngzip compress(data: Bytes) -> Bytes\ngzip compress_level(data: Bytes, level: Int) -> Bytes\ngzip decompress(data: Bytes) -> Res[Bytes, Str]\ngzip compress_file(src: Str, dst: Str) -> Res[Unit, Str] ! fs\ngzip decompress_file(src: Str, dst: Str) -> Res[Unit, Str] ! fs\ndeflate compress(data: Bytes) -> Bytes\ndeflate compress_level(data: Bytes, level: Int) -> Bytes\ndeflate decompress(data: Bytes) -> Res[Bytes, Str]\nzstd compress(data: Bytes) -> Bytes\nzstd compress_level(data: Bytes, level: Int) -> Bytes\nzstd decompress(data: Bytes) -> Res[Bytes, Str]\nzstd compress_file(src: Str, dst: Str) -> Res[Unit, Str] ! fs\nzstd decompress_file(src: Str, dst: Str) -> Res[Unit, Str] ! fs\ncsv parse(text: Str) -> Res[List[List[Str]], Str]\ncsv write(rows: List[List[Str]]) -> Str\ndb open(path: Str) -> Db ! db, fail[DbErr]\ndb close(c: Db) -> Unit ! db\ndb migrate(c: Db, steps: List[Str]) -> Int ! db, fail[DbErr]";
+
+fn sigs() -> impl Iterator<Item = (&'static str, &'static str)> {
+    SIGS.lines().filter_map(|l| l.split_once(' '))
+}
 
 fn hint(ns: &str) -> String {
-    let names: Vec<String> = SIGS.iter().filter(|(n, _)| *n == ns).map(|(_, s)| s.split('(').next().unwrap_or("").to_string()).collect();
+    let names: Vec<String> = sigs().filter(|(n, _)| *n == ns).map(|(_, s)| s.split('(').next().unwrap_or("").to_string()).collect();
     let extra = match ns {
         "csv" => ", decode[T], read[T], fold[T], encode",
         "db" => ", exec, query[T], one[T], opt[T], tx (and get, put, del, scan on a store)",
@@ -148,7 +115,7 @@ impl Checker {
 
     /// `ns.name(args)` for the simple signatures in `SIGS`.
     fn lib_call(&mut self, ns: &str, name: &str, args: &[Expr], span: Span) -> Option<Type> {
-        let src = SIGS.iter().find(|(n, s)| *n == ns && s.starts_with(&format!("{name}(")))?.1;
+        let src = sigs().find(|(n, s)| *n == ns && s.starts_with(&format!("{name}(")))?.1;
         let (_, s) = self.builtin_scheme(src);
         let what = format!("{ns}.{name}");
         if args.len() != s.params.len() {

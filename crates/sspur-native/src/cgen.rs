@@ -990,7 +990,7 @@ pub fn compile_release(m: &Module, check: &CheckOutput, opt: &str) -> Result<Com
     let fids: HashMap<i64, usize> = fn_defs.iter().enumerate().filter_map(|(i, f)| plan.fids.get(&f.name).map(|id| (*id as i64, i))).collect();
     let defs: Vec<FnDef> = fn_defs.iter().map(|f| FnDef { name: lower::original_name(&f.name).to_string(), ..(*f).clone() }).collect();
     let set_host: libloading::Symbol<unsafe extern "C" fn(*const crate::HostApi)> = unsafe { library.get(b"sspur_set_host") }.map_err(|e| e.to_string())?;
-    unsafe { set_host(&crate::HOST) };
+    unsafe { set_host(crate::HOST.api()) };
     if let Ok(set_args) = unsafe { library.get::<unsafe extern "C" fn(*const [usize; 2], i64)>(b"sspur_set_args") } {
         let args = crate::program_args();
         let views: Vec<[usize; 2]> = args.iter().map(|a| [a.len(), a.as_ptr() as usize]).collect();

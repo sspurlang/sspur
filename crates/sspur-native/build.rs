@@ -21,7 +21,11 @@ const PARTS: &[Part] = &[
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     let out = std::env::var("OUT_DIR").unwrap();
-    let mut rs = String::from("pub const PARTS: &[(&str, &[u8])] = &[\n");
+    // One page-aligned blob whose size is a multiple of 128 KiB, located by a `match`: it adds no
+    // pointers for the dynamic linker to fix up, and the sections after it keep their alignment
+    // to the clusters the kernel reads ahead, so a run touches the same pages as without it.
+    let mut blob: Vec<u8> = Vec::new();
+    let mut arms = String::new();
     if std::env::var_os("CARGO_FEATURE_JIT").is_some() {
         for (name, files, drop) in PARTS {
             let mut text = String::new();
@@ -33,13 +37,17 @@ fn main() {
                 text.push_str(&strip(&drop_includes(&src, *drop)));
             }
             let bytes: Vec<u8> = text.chars().map(|c| c as u32 as u8).collect();
-            let z = miniz_oxide::deflate::compress_to_vec(&bytes, 9);
-            let file = format!("vendor_{name}.z");
-            std::fs::write(Path::new(&out).join(&file), z).unwrap();
-            writeln!(rs, "    ({name:?}, include_bytes!(concat!(env!(\"OUT_DIR\"), \"/{file}\"))),").unwrap();
+            let z = miniz_oxide::deflate::compress_to_vec(&bytes, 10);
+            writeln!(arms, "        {name:?} => Some(({}, {})),", blob.len(), blob.len() + z.len()).unwrap();
+            blob.extend_from_slice(&z);
         }
+        blob.resize(blob.len().div_ceil(128 << 10) * (128 << 10), 0);
     }
-    rs.push_str("];\n");
+    std::fs::write(Path::new(&out).join("vendor.z"), &blob).unwrap();
+    let rs = format!(
+        "#[repr(C, align(16384))]\npub struct Blob(pub [u8; {n}]);\npub static BLOB: Blob = Blob(*include_bytes!(concat!(env!(\"OUT_DIR\"), \"/vendor.z\")));\n\n/// Where a part's deflated text is in `BLOB`.\npub fn range(name: &str) -> Option<(usize, usize)> {{\n    match name {{\n{arms}        _ => None,\n    }}\n}}\n",
+        n = blob.len()
+    );
     std::fs::write(Path::new(&out).join("vendor.rs"), rs).unwrap();
 }
 
@@ -65,7 +73,7 @@ fn drop_includes(src: &str, drop: Option<&[&str]>) -> String {
 /// Removes comments the way translation phase 3 does (each becomes one space), keeping the first
 /// block comment. String and character literals are copied as they are; one that reaches the
 /// end of its line unclosed (an apostrophe in `#error` text or in an `#if 0` block) is ordinary
-/// text. Trailing blanks and empty lines go too.
+/// text. Blanks around lines and empty lines go too.
 fn strip(s: &str) -> String {
     let b: Vec<char> = s.chars().collect();
     let n = b.len();
@@ -130,10 +138,13 @@ fn strip(s: &str) -> String {
         out.push(c);
         i += 1;
     }
+    // Indentation goes too, except on a line that continues the one before it (a string or a
+    // macro after a backslash), where it could be part of a literal.
     let mut tidy = String::with_capacity(out.len());
     for line in out.split('\n') {
-        let l = line.trim_end();
-        if !l.is_empty() || tidy.ends_with("\\\n") {
+        let cont = tidy.ends_with("\\\n");
+        let l = if cont { line.trim_end() } else { line.trim() };
+        if !l.is_empty() || cont {
             tidy.push_str(l);
             tidy.push('\n');
         }

@@ -61,13 +61,16 @@ impl Kind {
 
 /// The vendored part `name`, decompressed.
 pub fn part(name: &str) -> Result<String, String> {
-    let (_, z) = vendor::PARTS.iter().find(|(n, _)| *n == name).ok_or_else(|| format!("no vendored part {name}"))?;
+    let z = part_bytes(name);
+    if z.is_empty() {
+        return Err(format!("no vendored part {name}"));
+    }
     let bytes = miniz_oxide::inflate::decompress_to_vec(z).map_err(|e| format!("vendored part {name} is damaged: {e:?}"))?;
     String::from_utf8(bytes).map_err(|_| format!("vendored part {name} is not UTF-8"))
 }
 
 fn part_bytes(name: &str) -> &'static [u8] {
-    vendor::PARTS.iter().find(|(n, _)| *n == name).map_or(&[], |(_, z)| z)
+    vendor::range(name).map_or(&[], |(a, b)| &vendor::BLOB.0[a..b])
 }
 
 /// The parts a glue file names on `//@part NAME` lines.

@@ -514,11 +514,11 @@ fn shown(k: &str) -> &str {
 }
 
 fn methods_of(key: &str) -> impl Iterator<Item = &'static str> + '_ {
-    sspur_check::METHODS.iter().chain(sspur_check::std_methods()).filter(move |(r, _)| *r == key).map(|(_, s)| *s)
+    sspur_check::METHODS.iter().copied().chain(sspur_check::std_methods()).filter(move |(r, _)| *r == key).map(|(_, s)| s)
 }
 
 fn globals() -> impl Iterator<Item = &'static str> {
-    sspur_check::GLOBALS.iter().chain(sspur_check::std_globals()).copied().filter(|s| !s.starts_with("__"))
+    sspur_check::GLOBALS.iter().copied().chain(sspur_check::std_globals()).filter(|s| !s.starts_with("__"))
 }
 
 const EFFECTS: &[&str] = &["log", "fail", "div", "fs", "io", "proc", "time", "env", "net", "db", "rand", "conc", "yield", "ffi", "dev", "unsafe", "db.read", "db.write"];
@@ -532,7 +532,7 @@ pub fn builtins_json() -> J {
         })
         .collect();
     let mut methods = Vec::new();
-    for (r, s) in sspur_check::METHODS.iter().chain(sspur_check::std_methods()) {
+    for (r, s) in sspur_check::METHODS.iter().copied().chain(sspur_check::std_methods()) {
         if let Some((n, _, _)) = split_sig(s) {
             methods.push(json!({ "recv": shown(r), "name": n, "sig": method_sig(s), "doc": d.by_method.get(&(shown(r).to_string(), n.to_string())) }));
         }

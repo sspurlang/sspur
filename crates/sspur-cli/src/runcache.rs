@@ -7,8 +7,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-/// Environment variables besides `SSPUR_*` that can change what the compiler builds.
-const ENV: &[&str] = &["CC", "PATH", "HOME", "LOCALAPPDATA", "ProgramFiles", "SDKROOT", "MACOSX_DEPLOYMENT_TARGET", "CPATH", "C_INCLUDE_PATH", "LIBRARY_PATH"];
+/// Environment variables besides `SSPUR_*` that can change what the compiler builds. One string
+/// rather than a table of pointers, so reading it at every start touches no relocated data page.
+const ENV: &str = " CC PATH HOME LOCALAPPDATA ProgramFiles SDKROOT MACOSX_DEPLOYMENT_TARGET CPATH C_INCLUDE_PATH LIBRARY_PATH ";
 
 /// What the normal path learned about a program that the cached path needs.
 pub struct Entry {
@@ -40,7 +41,7 @@ fn key(src: &[u8]) -> Option<String> {
     h.update(exe_id()?.as_bytes());
     let mut vars: Vec<(String, String)> = std::env::vars_os()
         .filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?)))
-        .filter(|(k, _)| k.starts_with("SSPUR_") || ENV.contains(&k.as_str()))
+        .filter(|(k, _)| k.starts_with("SSPUR_") || ENV.split(' ').any(|e| !e.is_empty() && e == k))
         .collect();
     vars.sort();
     for (k, v) in vars {

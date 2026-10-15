@@ -133,7 +133,19 @@ extern "C" fn host_log(p: *const u8, len: i64) {
     }
 }
 
-pub(crate) static HOST: HostApi = HostApi { fmt_f64: host_fmt_f64, fmt_f64_display: host_fmt_f64_display, str_op: host_str_op, str_class: host_str_class, str_spans: host_str_spans, log: host_log };
+/// The host functions native code calls. Writable storage puts it in the data page a run
+/// touches anyway instead of a read-only page of relocated pointers it may not.
+pub(crate) struct Host(std::cell::UnsafeCell<HostApi>);
+
+unsafe impl Sync for Host {}
+
+impl Host {
+    pub(crate) fn api(&self) -> *const HostApi {
+        self.0.get()
+    }
+}
+
+pub(crate) static HOST: Host = Host(std::cell::UnsafeCell::new(HostApi { fmt_f64: host_fmt_f64, fmt_f64_display: host_fmt_f64_display, str_op: host_str_op, str_class: host_str_class, str_spans: host_str_spans, log: host_log }));
 
 pub enum NativeError {
     Trap(String),
@@ -201,7 +213,7 @@ pub fn run_cached_main(lib: &std::path::Path, scalar: bool, max_depth: i64) -> R
     let entry = *unsafe { library.get::<unsafe extern "C" fn()>(sym) }.map_err(|e| e.to_string())? as *const u8;
     let free = *unsafe { library.get::<unsafe extern "C" fn(*mut i64)>(b"sspur_buf_free") }.map_err(|e| e.to_string())?;
     let set_host = unsafe { library.get::<unsafe extern "C" fn(*const HostApi)>(b"sspur_set_host") }.map_err(|e| e.to_string())?;
-    unsafe { set_host(&HOST) };
+    unsafe { set_host(HOST.api()) };
     if let Ok(set_args) = unsafe { library.get::<unsafe extern "C" fn(*const [usize; 2], i64)>(b"sspur_set_args") } {
         let args = crate::program_args();
         let views: Vec<[usize; 2]> = args.iter().map(|a| [a.len(), a.as_ptr() as usize]).collect();
