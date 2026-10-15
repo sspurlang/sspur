@@ -8,6 +8,8 @@ mod genfuzz;
 mod lsp;
 mod mcp;
 mod pkgcmd;
+mod publish;
+mod registry;
 mod runcache;
 mod sync;
 mod verify;
@@ -28,8 +30,12 @@ pub const AGENT_SPEC_MORE: &str = include_str!("../../../docs/agent/agent-spec-m
 
 const USAGE: &str = "usage:
   sspur init [file.ssp] [--pkg NAME]    create a codebase in .sspur/ (optionally import a file; --pkg also writes sspur.toml)
-  sspur add <path|git-url>[@rev]        add a dependency to sspur.toml and pin it in sspur.lock by the hash of its exports
+  sspur add <name[@^1.2]|path|git-url[@rev]>  add a dependency (a published package, a path or a git URL) to sspur.toml and pin it in sspur.lock
   sspur deps fetch | update [NAME...] [--force] | tree   verify and fetch locked deps; upgrade with a semantic diff (refused if it breaks the build); show the graph
+  sspur update [NAME...] [--force]      the same as deps update: newest matching versions, with the semantic diff
+  sspur search [QUERY] [--json]         published packages; sspur source NAME[@VERSION] [DIR] downloads one, verified, without running it
+  sspur publish [--dry-run] [--ack net,fs] [--ref TAG] [--no-tests]   run the registry checks here, then open the publish request
+  sspur yank NAME@VERSION [--undo] [--deprecate MSG]   request a yank (or deprecation); sspur api [--json] shows the public API and the facts the checks use
   sspur edit [file|-] [-e SRC] [--test] replace or add definitions by name (also 'rename A B', 'remove A' lines)
   sspur apply [tx.json|-] [-e JSON] [--test] apply a transaction of ops
   sspur q <query> [target] [--budget N] query the codebase (list [types|fns|tests] sig body callers callees effects find grep pack why impact holes diag log; body and pack take A,B,C)
@@ -91,7 +97,7 @@ fn parse_args() -> Args {
     let mut it = std::env::args().skip(1).peekable();
     while let Some(a) = it.next() {
         if a.starts_with("--") || a == "-e" || a == "-o" {
-            let takes = matches!(a.as_str(), "--budget" | "--cases" | "--seed" | "-e" | "-o" | "--lib" | "--prefix" | "--out" | "--port" | "--target" | "--record" | "--weight" | "--store" | "--emit" | "--max" | "--agent" | "--backend" | "--lto" | "--gen" | "--group" | "--keep" | "--modes" | "--reduce" | "--want-skip" | "--want-build" | "--want-hang" | "--from" | "--pkg" | "--dir" | "--fill-ms" | "--debugger");
+            let takes = matches!(a.as_str(), "--budget" | "--cases" | "--seed" | "-e" | "-o" | "--lib" | "--prefix" | "--out" | "--port" | "--target" | "--record" | "--weight" | "--store" | "--emit" | "--max" | "--agent" | "--backend" | "--lto" | "--gen" | "--group" | "--keep" | "--modes" | "--reduce" | "--want-skip" | "--want-build" | "--want-hang" | "--from" | "--pkg" | "--dir" | "--fill-ms" | "--debugger" | "--ack" | "--ref" | "--repo" | "--rev" | "--reason" | "--deprecate");
             flags.push(a);
             if takes
                 && let Some(v) = it.next() {
@@ -114,6 +120,7 @@ fn real_main() -> ExitCode {
         println!("sspur {}", env!("CARGO_PKG_VERSION"));
         return ExitCode::SUCCESS;
     }
+    pkg::set_registry(Box::new(registry::Client::default()));
     let Some(cmd) = args.pos.first().cloned() else {
         eprintln!("{USAGE}");
         return ExitCode::from(2);
@@ -142,6 +149,14 @@ fn real_main() -> ExitCode {
         "init" => init(args.pos.get(1), args.val("--pkg"), args.has("--json")),
         "add" => pkgcmd::add(args.pos.get(1)),
         "deps" => pkgcmd::deps(&args.pos[1..], args.has("--force")),
+        "update" => pkgcmd::deps(&[vec!["update".to_string()], args.pos[1..].to_vec()].concat(), args.has("--force")),
+        "api" => publish::api(args.has("--json"), args.val("--rev").map(String::as_str)),
+        "publish" if args.has("--tests-json") => publish::tests_json(),
+        "publish" => publish::publish(publish::PublishOpts { dry_run: args.has("--dry-run"), json: args.has("--json"), no_tests: args.has("--no-tests"), no_gh: args.has("--no-gh"), ack: args.val("--ack"), git_ref: args.val("--ref"), repo: args.val("--repo") }),
+        "yank" => publish::yank(args.pos.get(1), args.has("--undo"), args.val("--deprecate"), args.val("--reason"), args.has("--no-gh")),
+        "search" => publish::search(&args.pos[1..], args.has("--json")),
+        "source" => publish::source(args.pos.get(1), args.pos.get(2)),
+        "archive" => publish::archive(args.val("--rev"), args.val("-o")),
         "apply" => apply(&args),
         "edit" => edit(&args),
         "q" => {

@@ -29,6 +29,8 @@ fn quote(s: &str) -> String {
 pub enum Source {
     Path(String),
     Git { url: String, rev: Option<String> },
+    /// A published package, `{ version = "^1.2" }`, resolved through the index (ADR 0038).
+    Registry { req: String },
 }
 
 impl Source {
@@ -49,6 +51,7 @@ impl Source {
             Source::Path(p) => format!("{{ path = {} }}", quote(p)),
             Source::Git { url, rev: Some(r) } => format!("{{ git = {}, rev = {} }}", quote(url), quote(r)),
             Source::Git { url, rev: None } => format!("{{ git = {} }}", quote(url)),
+            Source::Registry { req } => format!("{{ version = {} }}", quote(req)),
         }
     }
 
@@ -56,11 +59,18 @@ impl Source {
         match self {
             Source::Path(p) => format!("path+{p}"),
             Source::Git { url, .. } => format!("git+{url}"),
+            Source::Registry { .. } => "registry".into(),
         }
     }
 
+    /// The git revision, or for a registry dependency its version requirement: what the lock
+    /// records as `ref` and compares with the manifest.
     pub fn rev(&self) -> Option<&str> {
-        if let Source::Git { rev, .. } = self { rev.as_deref() } else { None }
+        match self {
+            Source::Git { rev, .. } => rev.as_deref(),
+            Source::Registry { req } => Some(req),
+            Source::Path(_) => None,
+        }
     }
 }
 
@@ -105,12 +115,16 @@ impl Manifest {
                         valid_name(k)?;
                         let src = match v {
                             TVal::Str(p) => Source::Path(p.clone()),
-                            TVal::Table(t) => match (t.get("path").and_then(TVal::str), t.get("git").and_then(TVal::str)) {
-                                (Some(p), None) => Source::Path(p.into()),
-                                (None, Some(g)) => Source::Git { url: g.into(), rev: t.get("rev").or_else(|| t.get("tag")).and_then(TVal::str).map(String::from) },
-                                _ => return Err(format!("dependency {k} needs exactly one of path or git")),
+                            TVal::Table(t) => match (t.get("path").and_then(TVal::str), t.get("git").and_then(TVal::str), t.get("version").and_then(TVal::str)) {
+                                (Some(p), None, None) => Source::Path(p.into()),
+                                (None, Some(g), None) => Source::Git { url: g.into(), rev: t.get("rev").or_else(|| t.get("tag")).and_then(TVal::str).map(String::from) },
+                                (None, None, Some(v)) => {
+                                    sspur_registry::semver::Req::parse(v).map_err(|e| format!("dependency {k}: {e}"))?;
+                                    Source::Registry { req: v.into() }
+                                }
+                                _ => return Err(format!("dependency {k} needs exactly one of path, git or version")),
                             },
-                            TVal::Arr(_) => return Err(format!("dependency {k} must be {{ path = \"..\" }} or {{ git = \"..\", rev = \"..\" }}")),
+                            TVal::Arr(_) => return Err(format!("dependency {k} must be {{ version = \"^1.0\" }}, {{ path = \"..\" }} or {{ git = \"..\", rev = \"..\" }}")),
                         };
                         m.deps.insert(k.clone(), src);
                     }
@@ -211,6 +225,11 @@ pub struct LockEntry {
     pub rev: Option<String>,
     pub hash: String,
     pub deps: Vec<String>,
+    /// Registry dependencies: the git repository, the snapshot URL and its SHA-256, so a locked
+    /// version can be fetched again without the index.
+    pub git: Option<String>,
+    pub snapshot: Option<String>,
+    pub sha256: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -237,6 +256,9 @@ impl Lock {
                     Some(TVal::Arr(xs)) => xs.clone(),
                     _ => vec![],
                 },
+                git: g("git"),
+                snapshot: g("snapshot"),
+                sha256: g("sha256"),
             };
             l.entries.insert(e.name.clone(), e);
         }
@@ -254,6 +276,11 @@ impl Lock {
                 s.push_str(&format!("rev = {}\n", quote(r)));
             }
             s.push_str(&format!("hash = {}\n", quote(&e.hash)));
+            for (k, v) in [("git", &e.git), ("snapshot", &e.snapshot), ("sha256", &e.sha256)] {
+                if let Some(v) = v {
+                    s.push_str(&format!("{k} = {}\n", quote(v)));
+                }
+            }
             let ds: Vec<String> = e.deps.iter().map(|d| quote(d)).collect();
             s.push_str(&format!("deps = [{}]\n", ds.join(", ")));
         }
@@ -686,6 +713,57 @@ pub fn build_pkg(m: &Manifest, src: &str, deps: &BTreeMap<String, Arc<Pkg>>) -> 
     Ok(Pkg { name: m.name.clone(), version: m.version.clone(), hash, profile: loaded.module.profile.clone(), deps: direct, piece, items, exports })
 }
 
+// ---------- the registry ----------
+
+/// One published version, as the index lists it or the lock pins it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RegVersion {
+    pub name: String,
+    pub version: String,
+    pub git: String,
+    pub tag: String,
+    pub commit: String,
+    pub hash: String,
+    pub snapshot: Option<String>,
+    pub sha256: Option<String>,
+    pub deps: BTreeMap<String, String>,
+}
+
+impl RegVersion {
+    fn from_lock(e: &LockEntry) -> Option<RegVersion> {
+        Some(RegVersion { name: e.name.clone(), version: e.version.clone(), git: e.git.clone()?, tag: String::new(), commit: e.rev.clone()?, hash: e.hash.clone(), snapshot: e.snapshot.clone(), sha256: e.sha256.clone(), deps: BTreeMap::new() })
+    }
+}
+
+/// The index and the download of published packages. The CLI provides it; a resolution that
+/// needs it without one fails with a message instead.
+pub trait Registry: Send + Sync {
+    /// One version per package for `roots` (name, requirement, who asks) and their registry
+    /// dependencies, the highest that meets every requirement in the graph. `keep` holds locked
+    /// versions to keep while they still meet the requirements.
+    fn plan(&self, roots: &[(String, String, String)], keep: &BTreeMap<String, String>) -> Result<BTreeMap<String, RegVersion>, String>;
+    /// Writes the files of `v` into the empty directory `into`, verified against the version's
+    /// snapshot SHA-256 and commit: from the snapshot, else from its git repository.
+    fn fetch(&self, v: &RegVersion, into: &Path) -> Result<(), String>;
+}
+
+static REGISTRY: std::sync::OnceLock<Box<dyn Registry>> = std::sync::OnceLock::new();
+
+pub fn set_registry(r: Box<dyn Registry>) {
+    let _ = REGISTRY.set(r);
+}
+
+fn registry() -> Result<&'static dyn Registry, String> {
+    REGISTRY.get().map(|b| &**b).ok_or_else(|| "registry dependencies need the sspur command".to_string())
+}
+
+fn req_matches(req: &str, version: &str) -> bool {
+    match (sspur_registry::semver::Req::parse(req), sspur_registry::semver::Version::parse(version)) {
+        (Ok(r), Some(v)) => r.matches(&v),
+        _ => false,
+    }
+}
+
 // ---------- fetching and resolution ----------
 
 struct Checkout {
@@ -735,6 +813,7 @@ fn checkout(src: &Source, base: &Path, pin: Option<&str>) -> Result<Checkout, St
             co.sha = Some(sha);
             Ok(co)
         }
+        Source::Registry { .. } => Err("internal: a registry dependency has no checkout".into()),
     }
 }
 
@@ -760,6 +839,8 @@ pub struct Resolver<'a> {
     update: Option<BTreeSet<String>>,
     pub out: BTreeMap<String, (LockEntry, Arc<Pkg>)>,
     pub fetched: Vec<String>,
+    plan: BTreeMap<String, RegVersion>,
+    asked: BTreeMap<String, Vec<(String, String)>>,
 }
 
 impl Resolver<'_> {
@@ -794,6 +875,86 @@ impl Resolver<'_> {
     }
 
     pub fn dep(&mut self, name: &str, src: &Source, base: &Path, direct: bool) -> Result<Arc<Pkg>, String> {
+        self.dep_from(name, src, base, direct, "this package")
+    }
+
+    /// A registry dependency: the locked version while it still meets the requirement, else the
+    /// planned or newest matching version, checked against the one-version rule.
+    fn registry_dep(&mut self, name: &str, req: &str, direct: bool, from: &str) -> Result<Arc<Pkg>, String> {
+        self.asked.entry(name.to_string()).or_default().push((req.to_string(), from.to_string()));
+        let pinned = self.lock.entries.get(name).filter(|e| !self.unpinned(name) && e.source == "registry" && req_matches(req, &e.version) && (!direct || e.reference.as_deref() == Some(req))).cloned();
+        if let Some((e, p)) = self.out.get(name).map(|(e, p)| (e.clone(), p.clone())) {
+            if req_matches(req, &e.version) {
+                if direct {
+                    self.out.get_mut(name).unwrap().0.reference = Some(req.to_string());
+                }
+                return Ok(p);
+            }
+            let asks: Vec<String> = self.asked[name].iter().map(|(r, f)| format!("{f} needs {r}")).collect();
+            return Err(format!("E_DEP_CONFLICT {name}: {} is in the graph, but {}; a graph holds one version of each package, so update the package that needs the older version", e.version, asks.join(", ")));
+        }
+        if pinned.is_some()
+            && let Some(p) = self.cached_closure(name) {
+                return Ok(p);
+            }
+        let v = match pinned.as_ref().and_then(RegVersion::from_lock) {
+            Some(v) => v,
+            None => match self.plan.get(name).filter(|v| req_matches(req, &v.version)) {
+                Some(v) => v.clone(),
+                None => {
+                    let keep = BTreeMap::new();
+                    let mut got = registry()?.plan(&[(name.to_string(), req.to_string(), from.to_string())], &keep)?;
+                    for (n, v) in std::mem::take(&mut got) {
+                        self.plan.entry(n).or_insert(v);
+                    }
+                    self.plan.get(name).cloned().ok_or_else(|| format!("no version of {name} matches {req}"))?
+                }
+            },
+        };
+        let root = cache_root().join("tmp");
+        std::fs::create_dir_all(&root).map_err(|e| format!("cannot create {}: {e}", root.display()))?;
+        let tmp = unique_tmp(&root.join("reg"));
+        let co = Checkout { dir: tmp.clone(), sha: Some(v.commit.clone()), tmp: Some(tmp.clone()) };
+        std::fs::create_dir_all(&tmp).map_err(|e| format!("cannot create {}: {e}", tmp.display()))?;
+        registry()?.fetch(&v, &tmp)?;
+        let m = Manifest::read(&co.dir)?.ok_or_else(|| format!("{name} {}: no sspur.toml in the published source", v.version))?;
+        if m.name != name || m.version != v.version {
+            return Err(format!("the published source of {name} {} names itself {} {}", v.version, m.name, m.version));
+        }
+        let text = read_src(&co.dir, &m)?;
+        for (dn, ds) in &m.deps {
+            let who = format!("{name} {}", v.version);
+            match ds {
+                Source::Registry { req } => {
+                    self.registry_dep(dn, req, false, &who)?;
+                }
+                _ => return Err(format!("{who} depends on {dn} by {}; published packages depend only on published packages", ds.key())),
+            }
+        }
+        let mut deps = BTreeMap::new();
+        let mut todo: Vec<String> = m.deps.keys().cloned().collect();
+        while let Some(d) = todo.pop() {
+            if deps.contains_key(&d) {
+                continue;
+            }
+            let p = self.out[&d].1.clone();
+            todo.extend(p.deps.keys().cloned());
+            deps.insert(d, p);
+        }
+        let p = build_pkg(&m, &text, &deps)?;
+        if p.hash != v.hash {
+            return Err(format!("E_DEP_HASH {name} {}: the published source hashes to #{}, but {} says #{}; the package is not what was published", v.version, &p.hash[..12], if pinned.is_some() { LOCK } else { "the index" }, &v.hash[..v.hash.len().min(12)]));
+        }
+        store_cached(&p, &text, &m.text)?;
+        self.fetched.push(name.to_string());
+        let entry = LockEntry { name: name.into(), version: v.version.clone(), source: "registry".into(), reference: Some(req.to_string()), rev: Some(v.commit.clone()), hash: p.hash.clone(), deps: m.deps.keys().cloned().collect(), git: Some(v.git.clone()), snapshot: v.snapshot.clone(), sha256: v.sha256.clone() };
+        self.record(entry, Arc::new(p), direct)
+    }
+
+    fn dep_from(&mut self, name: &str, src: &Source, base: &Path, direct: bool, from: &str) -> Result<Arc<Pkg>, String> {
+        if let Source::Registry { req } = src {
+            return self.registry_dep(name, req, direct, from);
+        }
         let key = if direct {
             src.key()
         } else {
@@ -821,7 +982,7 @@ impl Resolver<'_> {
         let text = read_src(&co.dir, &m)?;
         let mut deps = BTreeMap::new();
         for (dn, ds) in &m.deps {
-            self.dep(dn, ds, &co.dir, false)?;
+            self.dep_from(dn, ds, &co.dir, false, name)?;
         }
         let mut todo: Vec<String> = m.deps.keys().cloned().collect();
         while let Some(d) = todo.pop() {
@@ -844,7 +1005,7 @@ impl Resolver<'_> {
             }
         store_cached(&p, &text, &m.text)?;
         self.fetched.push(name.to_string());
-        let entry = LockEntry { name: name.into(), version: m.version.clone(), source: key, reference: src.rev().map(String::from), rev: co.sha.clone(), hash: p.hash.clone(), deps: m.deps.keys().cloned().collect() };
+        let entry = LockEntry { name: name.into(), version: m.version.clone(), source: key, reference: src.rev().map(String::from), rev: co.sha.clone(), hash: p.hash.clone(), deps: m.deps.keys().cloned().collect(), ..Default::default() };
         self.record(entry, Arc::new(p), direct)
     }
 }
@@ -856,9 +1017,28 @@ pub fn resolve(root: &Path, m: &Manifest, lock: &Lock, update: Option<BTreeSet<S
 }
 
 pub fn resolve_with(root: &Path, m: &Manifest, lock: &Lock, update: Option<BTreeSet<String>>) -> Result<(Lock, Env, Vec<String>), String> {
-    let mut r = Resolver { lock, update, out: BTreeMap::new(), fetched: vec![] };
+    let mut r = Resolver { lock, update, out: BTreeMap::new(), fetched: vec![], plan: BTreeMap::new(), asked: BTreeMap::new() };
+    let mut roots = Vec::new();
+    let mut keep = BTreeMap::new();
     for (n, s) in &m.deps {
-        r.dep(n, s, root, true)?;
+        if let Source::Registry { req } = s {
+            let locked = lock.entries.get(n).filter(|e| e.source == "registry" && !r.unpinned(n) && req_matches(req, &e.version));
+            match locked {
+                Some(e) if load_cached(&e.hash).is_some() => {}
+                _ => roots.push((n.clone(), req.clone(), m.name.clone())),
+            }
+        }
+    }
+    if !roots.is_empty() {
+        for (n, e) in &lock.entries {
+            if e.source == "registry" && !r.unpinned(n) {
+                keep.insert(n.clone(), e.version.clone());
+            }
+        }
+        r.plan = registry()?.plan(&roots, &keep)?;
+    }
+    for (n, s) in &m.deps {
+        r.dep_from(n, s, root, true, &m.name)?;
     }
     let lock = Lock { entries: r.out.iter().map(|(n, (e, _))| (n.clone(), e.clone())).collect() };
     let env = Env { name: Some(m.name.clone()), direct: m.deps.keys().cloned().collect(), all: r.out.into_iter().map(|(n, (_, p))| (n, p)).collect() };
@@ -919,6 +1099,7 @@ pub fn bundle(root: &Path) -> serde_json::Value {
 }
 
 fn absolute(s: &Source, root: &Path) -> Source {
+    // Registry and git sources are already absolute.
     match s {
         Source::Path(p) => Source::Path(root.join(p).canonicalize().map(|p| p.display().to_string()).unwrap_or_else(|_| p.clone())),
         g => g.clone(),

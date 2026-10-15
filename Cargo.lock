@@ -563,6 +563,7 @@ dependencies = [
  "sspur-hash",
  "sspur-ide",
  "sspur-native",
+ "sspur-registry",
  "sspur-smt",
  "sspur-store",
  "sspur-syntax",

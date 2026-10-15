@@ -36,13 +36,38 @@ fn rel_to(root: &Path, p: &Path) -> String {
     if out.is_empty() { ".".into() } else { out.join("/") }
 }
 
+/// `money`, `money@^1.2`: a published package, when no file or directory has that name.
+fn registry_spec(arg: &str) -> Option<(String, Option<String>)> {
+    let (name, req) = match arg.split_once('@') {
+        Some((n, r)) => (n, Some(r.to_string())),
+        None => (arg, None),
+    };
+    (pkg::valid_name(name).is_ok() && !Path::new(arg).exists() && !Path::new(name).exists()).then(|| (name.to_string(), req))
+}
+
 pub fn add(arg: Option<&String>) -> ExitCode {
-    let Some(arg) = arg else { return fail("usage: sspur add <path|git-url>[@rev]") };
+    let Some(arg) = arg else { return fail("usage: sspur add <name[@^1.2]|path|git-url[@rev]>") };
     let (root, m) = match root() {
         Ok(x) => x,
         Err(e) => return fail(e),
     };
-    let src = match Source::parse_arg(arg) {
+    let reg = if arg.contains("://") || arg.contains('/') || arg.ends_with(".git") { None } else { registry_spec(arg) };
+    let src = if let Some((name, req)) = reg {
+        let req = match req {
+            Some(r) => match sspur_registry::semver::Req::parse(&r) {
+                Ok(_) => r,
+                Err(e) => return fail(e),
+            },
+            None => match crate::publish::pick(&name, None) {
+                Ok(v) => format!("^{}", v.version),
+                Err(e) => return fail(e),
+            },
+        };
+        return add_dep(&root, &m, &name, Source::Registry { req });
+    } else {
+        Source::parse_arg(arg)
+    };
+    let src = match src {
         Source::Path(p) => {
             let (path, rev) = match p.rsplit_once('@') {
                 Some((a, _)) if Path::new(a).exists() && !Path::new(&p).exists() => (a.to_string(), true),
@@ -59,20 +84,29 @@ pub fn add(arg: Option<&String>) -> ExitCode {
         Ok(n) => n,
         Err(e) => return fail(e),
     };
+    add_dep(&root, &m, &name, src)
+}
+
+fn add_dep(root: &Path, m: &Manifest, name: &str, src: Source) -> ExitCode {
+    let name = name.to_string();
     let text = m.with_dep(&name, Some(&src));
     let m2 = match Manifest::parse(&text) {
         Ok(m) => m,
         Err(e) => return fail(e),
     };
-    let lock = Lock::read(&root).unwrap_or_default();
-    match pkg::resolve(&root, &m2, &lock, Some(BTreeSet::from([name.clone()]))) {
+    let lock = Lock::read(root).unwrap_or_default();
+    match pkg::resolve(root, &m2, &lock, Some(BTreeSet::from([name.clone()]))) {
         Ok((lock2, env)) => {
-            if let Err(e) = pkg::write_atomic(&root.join(pkg::MANIFEST), &text).and_then(|_| lock2.write(&root)) {
+            if let Err(e) = pkg::write_atomic(&root.join(pkg::MANIFEST), &text).and_then(|_| lock2.write(root)) {
                 return fail(e);
             }
             let p = &env.all[&name];
             let ex: Vec<&str> = p.exports.keys().map(String::as_str).collect();
-            println!("added {name} {} #{} ({}): {}", p.version, short(&p.hash), src.key(), if ex.is_empty() { "no exports".into() } else { ex.join(", ") });
+            let from = match &src {
+                Source::Registry { req } => format!("registry {req}"),
+                s => s.key(),
+            };
+            println!("added {name} {} #{} ({from}): {}", p.version, short(&p.hash), if ex.is_empty() { "no exports".into() } else { ex.join(", ") });
             ExitCode::SUCCESS
         }
         Err(e) => fail(e),
@@ -81,6 +115,7 @@ pub fn add(arg: Option<&String>) -> ExitCode {
 
 fn probe_name(src: &Source, root: &Path) -> Result<String, String> {
     let dir = match src {
+        Source::Registry { .. } => return Err("internal: a registry dependency is added by name".into()),
         Source::Path(p) => root.join(p),
         Source::Git { url, rev } => {
             let tmp = sspur_store::unique_tmp(&sspur_store::cache::cache_root().join("tmp").join("probe"));

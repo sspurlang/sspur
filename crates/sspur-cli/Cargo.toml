@@ -26,6 +26,7 @@ sspur-native.workspace = true
 sspur-smt.workspace = true
 sspur-deploy.workspace = true
 sspur-ide = { workspace = true, optional = true }
+sspur-registry.workspace = true
 serde_json.workspace = true
 blake3.workspace = true
 lsp-server = { version = "0.10", optional = true }
