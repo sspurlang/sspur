@@ -171,6 +171,54 @@ static int ss_from_codes(const int64_t* d, int64_t n, Str* out) {
     for (int64_t i = 0; i < n; i++) { int64_t c = d[i]; if (c < 0 || c > 0x10FFFF || (c >= 0xD800 && c < 0xE000)) return 0; k += ss_utf8_put(o + k, (uint32_t)c); }
     *out = (Str){k, o}; return 1;
 }
+//@ bytes fail utf8
+static Str ss_by_new(int64_t n) { char* p = (char*)sspur_alloc_atomic((size_t)n + 1); return (Str){n, p}; }
+static Str ss_by_copy(Str s) { Str o = ss_by_new(s.len); if (s.len) memcpy((char*)o.p, s.p, (size_t)s.len); return o; }
+static const char ss_by_hexd[] = "0123456789abcdef";
+static void ss_by_show(SB* b, Str v) { sb_put(b, "0x", 2); for (int64_t i = 0; i < v.len; i++) { unsigned char c = (unsigned char)v.p[i]; char t[2] = {ss_by_hexd[c >> 4], ss_by_hexd[c & 15]}; sb_put(b, t, 2); } }
+static Str ss_by_hex(Str v) { Str o = ss_by_new(v.len * 2); char* d = (char*)o.p; for (int64_t i = 0; i < v.len; i++) { unsigned char c = (unsigned char)v.p[i]; d[2 * i] = ss_by_hexd[c >> 4]; d[2 * i + 1] = ss_by_hexd[c & 15]; } return o; }
+static int ss_by_nib(char c) { return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1; }
+static int ss_by_unhex(Str s, Str* out) {
+    if (s.len % 2) return 0;
+    Str o = ss_by_new(s.len / 2); char* d = (char*)o.p;
+    for (int64_t i = 0; i < s.len; i += 2) { int a = ss_by_nib(s.p[i]), b = ss_by_nib(s.p[i + 1]); if (a < 0 || b < 0) return 0; d[i / 2] = (char)(a << 4 | b); }
+    *out = o; return 1;
+}
+static const char* ss_by_alpha(int url) { return url ? "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_" : "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"; }
+static Str ss_by_b64(Str v, int url) {
+    const char* a = ss_by_alpha(url);
+    Str o = ss_by_new((v.len + 2) / 3 * 4); char* d = (char*)o.p; int64_t k = 0;
+    const unsigned char* p = (const unsigned char*)v.p;
+    for (int64_t i = 0; i < v.len; i += 3) {
+        int64_t m = v.len - i < 3 ? v.len - i : 3;
+        uint32_t n = (uint32_t)p[i] << 16 | (m > 1 ? (uint32_t)p[i + 1] << 8 : 0) | (m > 2 ? p[i + 2] : 0);
+        for (int j = 0; j < 4; j++) { if (j <= m) d[k++] = a[n >> (18 - 6 * j) & 63]; else if (!url) d[k++] = '='; }
+    }
+    o.len = k; return o;
+}
+static int ss_by_unb64(Str s, int url, Str* out) {
+    const char* a = ss_by_alpha(url);
+    int64_t n = s.len;
+    if (n && s.p[n - 1] == '=') { if (n % 4) return 0; n--; if (n && s.p[n - 1] == '=') n--; }
+    if (n % 4 == 1) return 0;
+    Str o = ss_by_new(n * 3 / 4 + 3); char* d = (char*)o.p; int64_t k = 0;
+    for (int64_t i = 0; i < n; i += 4) {
+        int64_t m = n - i < 4 ? n - i : 4; uint32_t v = 0;
+        for (int64_t j = 0; j < m; j++) { const char* f = memchr(a, s.p[i + j], 64); if (!f || !s.p[i + j]) return 0; v |= (uint32_t)(f - a) << (18 - 6 * j); }
+        int64_t got = m - 1;
+        uint32_t mask = got == 1 ? 0xffff : got == 2 ? 0xff : 0;
+        if (v & mask) return 0;
+        for (int64_t j = 0; j < got; j++) d[k++] = (char)(v >> (16 - 8 * j) & 255);
+    }
+    o.len = k; *out = o; return 1;
+}
+static Str ss_by_of(const int64_t* x, int64_t n, Status* st) {
+    Str o = ss_by_new(n); char* d = (char*)o.p;
+    for (int64_t i = 0; i < n; i++) { if (x[i] < 0 || x[i] > 255) { char m[80]; snprintf(m, sizeof m, "bytes: %lld is not a byte (0 to 255)", (long long)x[i]); ss_fail(st, m); } d[i] = (char)x[i]; }
+    return o;
+}
+static RawL ss_by_list(Str s) { RawL r = raw_alloc_a(s.len, 8, 1); int64_t* d = (int64_t*)r.data; for (int64_t i = 0; i < s.len; i++) d[i] = (unsigned char)s.p[i]; r.len = s.len; r.hdr[1] = s.len; return r; }
+static Str ss_by_slice(Str s, int64_t a, int64_t b) { if (a < 0) a = 0; if (a > s.len) a = s.len; if (b < 0) b = 0; if (b > s.len) b = s.len; if (b <= a) return (Str){0, ""}; return (Str){b - a, s.p + a}; }
 //@ front
 static RawL raw_push_front(RawL l, const void* v, size_t es) {
     if (l.hdr) {
@@ -457,6 +505,22 @@ static inline uint64_t ss_rng(uint64_t* s) { uint64_t m = *s + 0x9E3779B97F4A7C1
 static inline double ss_rng_f64(uint64_t* s) { return (double)(ss_rng(s) >> 11) * (1.0 / 9007199254740992.0); }
 static inline int64_t ss_rng_below(uint64_t* s, int64_t n) { return (int64_t)(((unsigned __int128)ss_rng(s) * (unsigned __int128)(uint64_t)n) >> 64); }
 static double ss_rng_normal(uint64_t* s, double mean, double sd) { double u1 = ss_rng_f64(s); double u2 = ss_rng_f64(s); double r = sqrt(-2.0 * log(1.0 - u1)); double c = cos(6.283185307179586 * u2); double z = r * c; double t = sd * z; return mean + t; }
+//@ bin fs
+static int ss_read_bin(Str path, Str* out, Str* err) {
+    char* c = ss_cpath(path); if (!c) { *err = ss_why(path, -1); return 0; }
+    int fd = open(c, O_RDONLY | O_CLOEXEC); if (fd < 0) { *err = ss_why(path, errno); return 0; }
+    int64_t cap = 4096, n = 0; char* buf = (char*)malloc((size_t)cap);
+    for (;;) {
+        if (n == cap) { cap *= 2; buf = (char*)realloc(buf, (size_t)cap); }
+        ssize_t k = read(fd, buf + n, (size_t)(cap - n));
+        if (k < 0) { if (errno == EINTR) continue; int e = errno; close(fd); free(buf); *err = ss_why(path, e); return 0; }
+        if (k == 0) break;
+        n += k;
+    }
+    close(fd);
+    char* o = (char*)sspur_alloc_atomic((size_t)n + 1); memcpy(o, buf, (size_t)n); free(buf);
+    *out = (Str){n, o}; return 1;
+}
 //@ fsx fs
 #include <sys/stat.h>
 #include <stdio.h>

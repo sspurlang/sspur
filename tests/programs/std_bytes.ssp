@@ -1,0 +1,28 @@
+// std_bytes
+
+type Blob = {name: Str, data: Bytes, tag: Opt[Bytes]}
+
+fn texts(b: Bytes) -> Str
+= "{b.len} {b.hex} {b.base64} {b.base64url} {b}"
+
+fn parts(b: Bytes) -> List[Bytes]
+= [b.slice(0, 2), b.slice(2, 99), b.slice(-5, 1), b.slice(3, 1), b.concat(bytes([33]))]
+
+fn decoded() -> List[Opt[Bytes]]
+= [from_hex("00ff10"), from_hex("0F"), from_hex("0"), from_hex("zz"), from_base64("Zm9vYg=="), from_base64("Zm9vYg"), from_base64("Zm9vYg="), from_base64("Zh=="), from_base64url("-_8"), from_base64url("+/8")]
+
+test text_forms = texts("héllo".to_bytes) == "6 68c3a96c6c6f aMOpbGxv aMOpbGxv 0x68c3a96c6c6f"
+test empty = texts(bytes([])) == "0    0x" and bytes([]).is_empty
+test byte_access = "abc".to_bytes.get(1) == some(98) and "abc".to_bytes.get(3) == none and "abc".to_bytes.get(-1) == none
+test slices = parts("hello".to_bytes).map(_.to_str.or("?")) == ["he", "llo", "h", "", "hello!"]
+test utf8 = bytes([104, 105]).to_str == some("hi") and bytes([255, 0]).to_str == none
+test lists = bytes([0, 128, 255]).to_list == [0, 128, 255]
+test decode = decoded().map(o => o.map(_.hex).or("-")) == ["00ff10", "0f", "-", "-", "666f6f62", "666f6f62", "-", "-", "fbff", "-"]
+test round_trips = [bytes([]), bytes([0]), bytes([1, 2]), bytes([250, 251, 252]), "any text".to_bytes].all(b => from_base64(b.base64) == some(b) and from_base64url(b.base64url) == some(b) and from_hex(b.hex) == some(b))
+test equality_and_order = "ab".to_bytes == bytes([97, 98]) and [bytes([2]), bytes([1, 0]), bytes([1])].sort == [bytes([1]), bytes([1, 0]), bytes([2])]
+test as_json = do
+  v = Blob{name: "x", data: bytes([1, 2, 3]), tag: none}
+  j = json.encode(v)
+  j == "\{\"name\":\"x\",\"data\":\"AQID\",\"tag\":null}" and json.decode[Blob](j) == ok(v)
+test bad_json = json.decode[Blob]("\{\"name\":\"x\",\"data\":\"!!\"}") == err("data: expected Bytes, found a string")
+test in_maps = [("a".to_bytes, 1), ("b".to_bytes, 2)].to_hash_map.get("b".to_bytes) == some(2)

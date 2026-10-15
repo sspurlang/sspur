@@ -1,6 +1,7 @@
 //! Native code for SSPUR. The value, number, time, locale and JSON modules are plain Rust and
 //! build everywhere; the Cranelift JIT and the C and LLVM back ends sit behind the `jit` feature.
 pub mod bigint;
+pub mod bytes;
 pub mod chrono;
 pub mod json;
 pub mod locale;

@@ -72,7 +72,7 @@ impl Checker {
                     return Some(x);
                 }
                 match n.as_str() {
-                    "Int" | "F64" | "Bool" | "Str" | "Unit" | "List" | "Opt" | "Map" | "Pii" | "#Set" | "#Heap" | "#StrBuf" | "#Time" | "#Duration" | "#Bits" | "#HashMap" | "#HashSet" | "#BigInt" | "#Dec" => None,
+                    "Int" | "F64" | "Bool" | "Str" | "Unit" | "List" | "Opt" | "Map" | "Pii" | "#Set" | "#Heap" | "#StrBuf" | "#Time" | "#Duration" | "#Bits" | "#Bytes" | "#HashMap" | "#HashSet" | "#BigInt" | "#Dec" => None,
                     "Secret" => Some("secrets cannot be encoded".into()),
                     "#Regex" | "#Zone" | "#File" | "#View" => Some(format!("{} has no JSON form", &n[1..])),
                     "#Locale" if decode => Some("decoding cannot check the locale tag; decode a Str and call locale".into()),

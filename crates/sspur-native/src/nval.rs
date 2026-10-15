@@ -24,6 +24,7 @@ pub enum NVal {
     Time(i64),
     Dur(i64),
     Bits(i64, Vec<u64>),
+    Bytes(Vec<u8>),
     Big(crate::bigint::Big),
     Dec(crate::bigint::Big, i64),
     Regex(String),
@@ -83,6 +84,14 @@ impl Layouts {
             }
             (NVal::Bool(b), _) => out.push(i64::from(*b)),
             (NVal::Float(x), _) => out.push(x.to_bits() as i64),
+            (NVal::Bytes(b), _) => {
+                out.push(b.len() as i64);
+                for chunk in b.chunks(8) {
+                    let mut w = [0u8; 8];
+                    w[..chunk.len()].copy_from_slice(chunk);
+                    out.push(i64::from_le_bytes(w));
+                }
+            }
             (NVal::Str(s) | NVal::Regex(s), _) => {
                 let b = s.as_bytes();
                 out.push(b.len() as i64);
@@ -209,14 +218,14 @@ impl Layouts {
                     NVal::Str(s) => NVal::Regex(s),
                     _ => return None,
                 },
-                "Str" | "#StrBuf" => {
+                "Str" | "#StrBuf" | "#Bytes" => {
                     let len = next()? as usize;
-                    let mut bytes = Vec::with_capacity(len);
+                    let mut bytes = Vec::with_capacity(len.min(1 << 24));
                     for _ in 0..len.div_ceil(8) {
                         bytes.extend_from_slice(&next()?.to_le_bytes());
                     }
                     bytes.truncate(len);
-                    NVal::Str(String::from_utf8(bytes).ok()?)
+                    if n == "#Bytes" { NVal::Bytes(bytes) } else { NVal::Str(String::from_utf8(bytes).ok()?) }
                 }
                 "Unit" => {
                     next()?;
@@ -372,6 +381,7 @@ impl fmt::Display for NVal {
             NVal::Big(b) => write!(f, "{b}"),
             NVal::Regex(s) => write!(f, "/{s}/"),
             NVal::Dec(m, s) => write!(f, "{}", crate::bigint::dec_str(m, *s)),
+            NVal::Bytes(b) => write!(f, "{}", crate::bytes::show(b)),
             NVal::Bits(n, w) => {
                 let items: Vec<String> = (0..*n).filter(|&i| w[(i / 64) as usize] >> (i % 64) & 1 == 1).map(|i| i.to_string()).collect();
                 write!(f, "bits({n}){{{}}}", items.join(", "))

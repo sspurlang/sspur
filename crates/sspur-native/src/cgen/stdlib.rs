@@ -2,7 +2,7 @@ use super::*;
 
 pub(super) const STD_RT: &str = include_str!("std_rt.c");
 
-pub(super) const STD_CONS: &[&str] = &["#Set", "#Heap", "#StrBuf", "Res", "#Time", "#Duration", "#Bits", "#HashMap", "#HashSet", "#BigInt", "#Dec", "#Regex", "#View"];
+pub(super) const STD_CONS: &[&str] = &["#Set", "#Heap", "#StrBuf", "Res", "#Time", "#Duration", "#Bits", "#Bytes", "#HashMap", "#HashSet", "#BigInt", "#Dec", "#Regex", "#View"];
 
 fn section(key: &str, win: bool) -> (Vec<&'static str>, &'static str) {
     if let Some(s) = win.then(|| super::win::section(key)).flatten() {
@@ -63,6 +63,7 @@ impl Cx<'_> {
             "#Time" => "TM".into(),
             "#Duration" => "DU".into(),
             "#Bits" => "BI".into(),
+            "#Bytes" => "BY".into(),
             "#BigInt" => "BG".into(),
             "#Regex" => "RX".into(),
             "#Dec" => "DC".into(),
@@ -77,6 +78,7 @@ impl Cx<'_> {
         let Type::Con(n, a) = t else { return Err("bad std type".into()) };
         match n.as_str() {
             "#Time" | "#Duration" => Ok("int64_t".into()),
+            "#Bytes" => Ok("Str".into()),
             "#View" => self.view_cty(t, m),
             "#Regex" => {
                 if self.helpers_done.insert("regex_type".into()) {
@@ -186,6 +188,7 @@ impl Cx<'_> {
                 format!("RawL xa = hsorted_{hm}(a.root), xb = hsorted_{hm}(b.root); int64_t n = xa.len < xb.len ? xa.len : xb.len; for (int64_t i = 0; i < n; i++) {{ int c = {c}((({ec}*)xa.data)[i], (({ec}*)xb.data)[i]); if (c) return c; }} return cmp_I(xa.len, xb.len);")
             }
             "#StrBuf" => "return cmp_S((Str){a.len, a.data}, (Str){b.len, b.data});".into(),
+            "#Bytes" => "return cmp_S(a, b);".into(),
             "#Time" | "#Duration" => "return cmp_I(a, b);".into(),
             "#Regex" => {
                 self.std("regex");
@@ -233,6 +236,7 @@ impl Cx<'_> {
             }
             "#StrBuf" => "buf_push(b, v.len); for (int64_t i = 0; i < v.len; i += 8) { int64_t w = 0; memcpy(&w, v.data + i, (size_t)(v.len - i < 8 ? v.len - i : 8)); buf_push(b, w); }".into(),
             "#Time" | "#Duration" => "buf_push(b, v);".into(),
+            "#Bytes" => "buf_push(b, v.len); for (int64_t i = 0; i < v.len; i += 8) { int64_t w = 0; memcpy(&w, v.p + i, (size_t)(v.len - i < 8 ? v.len - i : 8)); buf_push(b, w); }".into(),
             "#Regex" => {
                 self.std("regex");
                 let e = self.helper_enc(&Type::str())?;
@@ -269,6 +273,7 @@ impl Cx<'_> {
                 format!("int64_t n = *(*p)++; {c} h = {{0}}; for (int64_t i = 0; i < n; i++) {{ __auto_type x = {d}(p); h.root = hpush_{hm}(h.root, x); }} return h;")
             }
             "#Time" | "#Duration" => "return *(*p)++;".into(),
+            "#Bytes" => "int64_t n = *(*p)++; char* s = (char*)sspur_alloc_atomic((size_t)n + 1); for (int64_t i = 0; i < n; i += 8) { int64_t w = *(*p)++; memcpy(s + i, &w, (size_t)(n - i < 8 ? n - i : 8)); } return (Str){n, s};".into(),
             "#Regex" => {
                 self.std("regex");
                 let d = self.helper_dec(&Type::str())?;
@@ -326,6 +331,10 @@ impl Cx<'_> {
                 self.std("bits");
                 "(void)q; ss_bits_show(b, v);".into()
             }
+            "#Bytes" => {
+                self.std("bytes");
+                "(void)q; ss_by_show(b, v);".into()
+            }
             "#BigInt" => {
                 self.std("big");
                 "(void)q; ss_big_put(b, v);".into()
@@ -367,6 +376,7 @@ impl Cx<'_> {
                 format!("RawL x = hsorted_{hm}(v.root); for (int64_t i = 0; i < x.len; i++) h = hmix(h * 31 + {he}((({ec}*)x.data)[i])); h = hmix(h ^ (uint64_t)x.len);")
             }
             "#StrBuf" => "h = hash_S((Str){v.len, v.data});".into(),
+            "#Bytes" => "h = hash_S(v);".into(),
             "#Time" | "#Duration" => "h = hash_I(v);".into(),
             "#Regex" => {
                 self.std("regex");
@@ -506,6 +516,27 @@ impl Cx<'_> {
                 let lt = arg0(t);
                 let lc = self.cty(&lt)?;
                 format!("({{ Str p_ = {}; RawL o_; Str e_ = {{0, 0}}; int k_ = ss_list_dir(p_, &o_, &e_); {}}})", v(0), res("k_", "e_").replace("r_.ok = 1;", &format!("{{ r_.ok = 1; r_.v = ({lc}){{o_.len, (Str*)o_.data, o_.hdr}}; }}")))
+            }
+            "bytes" => {
+                self.std("bytes");
+                format!("({{ __auto_type l_ = {}; ss_by_of(l_.data, l_.len, st); }})", v(0))
+            }
+            "from_hex" | "from_base64" | "from_base64url" => {
+                self.std("bytes");
+                let call = match n {
+                    "from_hex" => "ss_by_unhex(s_, &o_.v)",
+                    "from_base64" => "ss_by_unb64(s_, 0, &o_.v)",
+                    _ => "ss_by_unb64(s_, 1, &o_.v)",
+                };
+                format!("({{ Str s_ = {}; {c} o_ = {{0}}; if ({call}) o_.some = 1; else o_.v = (Str){{0, \"\"}}; o_; }})", v(0))
+            }
+            "read_bin" => {
+                self.std("bin");
+                format!("({{ Str p_ = {}; Str o_ = {{0, 0}}; Str e_ = {{0, 0}}; int k_ = ss_read_bin(p_, &o_, &e_); {}}})", v(0), res("k_", "e_").replace("r_.ok = 1;", "{ r_.ok = 1; r_.v = o_; }"))
+            }
+            "write_bin" => {
+                self.std("fs");
+                format!("({{ Str p_ = {}; Str b_ = {}; Str e_ = {{0, 0}}; int k_ = ss_write_file(p_, b_, 0, &e_); {}}})", v(0), v(1), res("k_", "e_"))
             }
             "read_bytes" => {
                 self.std("fsx");
@@ -775,6 +806,30 @@ impl Cx<'_> {
                     _ => return Err(format!("uses Dec.{name}")),
                 })
             }
+            "#Bytes" => {
+                self.std("bytes");
+                Ok(match name {
+                    "len" => format!("(({r}).len)"),
+                    "is_empty" => format!("((int64_t)(({r}).len == 0))"),
+                    "get" => {
+                        let oc = self.cty(t)?;
+                        format!("({{ Str b_ = {r}; int64_t i_ = {}; {oc} o_ = {{0}}; if (i_ >= 0 && i_ < b_.len) {{ o_.some = 1; o_.v = (int64_t)(unsigned char)b_.p[i_]; }} o_; }})", vals[0])
+                    }
+                    "slice" => format!("ss_by_slice({r}, {}, {})", vals[0], vals[1]),
+                    "concat" => format!("({{ Str a_ = {r}; Str b_ = {}; if (UNLIKELY(a_.len + b_.len > ((int64_t)1 << 31))) TRAPV({T_OOM}, 0, 0); str_cat(a_, b_); }})", vals[0]),
+                    "to_list" => {
+                        let lc = self.cty(t)?;
+                        format!("({{ RawL r_ = ss_by_list({r}); ({lc}){{r_.len, (int64_t*)r_.data, r_.hdr}}; }})")
+                    }
+                    "to_str" => {
+                        let oc = self.cty(t)?;
+                        format!("({{ Str b_ = {r}; {oc} o_ = {{0}}; if (ss_utf8_ok((const unsigned char*)b_.p, b_.len)) {{ o_.some = 1; o_.v = ss_by_copy(b_); }} o_; }})")
+                    }
+                    "hex" => format!("ss_by_hex({r})"),
+                    "base64" | "base64url" => format!("ss_by_b64({r}, {})", i32::from(name == "base64url")),
+                    _ => return Err(format!("uses Bytes.{name}")),
+                })
+            }
             "#Bits" => {
                 self.std("bits");
                 Ok(match name {
@@ -853,6 +908,10 @@ impl Cx<'_> {
             "format" => {
                 self.std("fmtspec");
                 format!("({{ Str s_ = {r}; Str f_ = {}; ss_format_str(s_, f_, st); }})", vals[0])
+            }
+            "to_bytes" => {
+                self.std("bytes");
+                format!("ss_by_copy({r})")
             }
             "bytes" | "codes" => {
                 self.std("strx");
@@ -1204,6 +1263,10 @@ impl Cx<'_> {
                 self.std("bits");
                 "ss_bits_json(b, v);".to_string()
             }
+            Type::Con(n, _) if n == "#Bytes" => {
+                self.std("bytes");
+                "sj_quote(b, ss_by_b64(v, 0));".to_string()
+            }
             Type::Con(n, _) if n == "#Time" => {
                 self.std("chrono");
                 "sj_quote(b, ss_iso(v));".to_string()
@@ -1333,6 +1396,10 @@ impl Cx<'_> {
             Type::Con(n, _) if n == "#Bits" => {
                 self.std("bits");
                 format!("if (!v || v->t != SJ_STR || !ss_bits_unjson(v->s, out)) {bad} return 1;")
+            }
+            Type::Con(n, _) if n == "#Bytes" => {
+                self.std("bytes");
+                format!("if (!v || v->t != SJ_STR || !ss_by_unb64(v->s, 0, out)) {bad} return 1;")
             }
             Type::Con(n, _) if n == "#Time" => {
                 self.std("chrono");

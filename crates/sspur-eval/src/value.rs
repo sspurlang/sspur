@@ -37,11 +37,32 @@ pub enum Value {
     Time(i64),
     Dur(i64),
     Bits(i64, Rc<Vec<u64>>),
+    Bytes(Rc<ByteBuf>),
     Big(Rc<sspur_native::bigint::Big>),
     Dec(Rc<sspur_native::bigint::Big>, i64),
     Regex(Rc<crate::stdre::Re>),
     Dev(Rc<crate::kernel::DevCell>),
     View(Rc<crate::stdview::Node>),
+}
+
+/// The contents of a `Bytes` value. They are wiped when the last reference goes, so key material
+/// (a `Secret[Bytes]`) doesn't linger in freed memory.
+#[derive(Default)]
+pub struct ByteBuf(pub Vec<u8>);
+
+impl Drop for ByteBuf {
+    fn drop(&mut self) {
+        for b in self.0.iter_mut() {
+            unsafe { std::ptr::write_volatile(b, 0) };
+        }
+        std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+impl Value {
+    pub fn bytes(b: Vec<u8>) -> Value {
+        Value::Bytes(Rc::new(ByteBuf(b)))
+    }
 }
 
 pub struct AtomCell {
@@ -117,6 +138,7 @@ impl Value {
             Value::Time(_) => 21,
             Value::Dur(_) => 22,
             Value::Bits(..) => 23,
+            Value::Bytes(_) => 29,
             Value::Big(_) => 24,
             Value::Dec(..) => 25,
             Value::Regex(_) => 26,
@@ -188,6 +210,7 @@ impl Ord for Value {
             (Chan(a), Chan(b)) => a.id.cmp(&b.id),
             (Time(a), Time(b)) | (Dur(a), Dur(b)) => a.cmp(b),
             (Bits(n, a), Bits(m, b)) => n.cmp(m).then_with(|| a.cmp(b)),
+            (Bytes(a), Bytes(b)) => a.0.cmp(&b.0),
             (Big(a), Big(b)) => a.compare(b),
             (Regex(a), Regex(b)) => a.src.cmp(&b.src),
             (Dev(a), Dev(b)) => a.id.cmp(&b.id),
@@ -315,6 +338,7 @@ impl fmt::Display for Value {
             Value::Dev(d) => write!(f, "<devbuf {} x{}>", d.ty.name(), d.data.borrow().len()),
             Value::View(_) => write!(f, "<view>"),
             Value::Dec(m, s) => write!(f, "{}", sspur_native::bigint::dec_str(m, *s)),
+            Value::Bytes(b) => write!(f, "{}", sspur_native::bytes::show(&b.0)),
             Value::Bits(n, w) => {
                 let items: Vec<String> = crate::stdx::bits_items(*n, w).iter().map(|i| i.to_string()).collect();
                 write!(f, "bits({n}){{{}}}", items.join(", "))

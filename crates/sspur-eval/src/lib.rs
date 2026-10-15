@@ -11,6 +11,7 @@ pub mod kernel;
 mod sched;
 mod stdlib;
 mod stdbig;
+mod stdbytes;
 mod stdcx;
 mod stdratio;
 mod stdlocale;
@@ -1859,6 +1860,7 @@ pub fn to_nval(v: &Value) -> Option<sspur_native::nval::NVal> {
         Value::Time(t) => NVal::Time(*t),
         Value::Dur(d) => NVal::Dur(*d),
         Value::Bits(n, w) => NVal::Bits(*n, (**w).clone()),
+        Value::Bytes(b) => NVal::Bytes(b.0.clone()),
         Value::Big(b) => NVal::Big((**b).clone()),
         Value::Regex(r) => NVal::Regex(r.src.clone()),
         Value::Dec(m, s) => NVal::Dec((**m).clone(), *s),
@@ -1897,6 +1899,7 @@ pub fn from_nval(v: sspur_native::nval::NVal) -> Value {
         NVal::Time(t) => Value::Time(t),
         NVal::Dur(d) => Value::Dur(d),
         NVal::Bits(n, w) => Value::Bits(n, Rc::new(w)),
+        NVal::Bytes(b) => Value::bytes(b),
         NVal::Big(b) => Value::Big(Rc::new(b)),
         NVal::Regex(s) => match stdre::compile(&s) {
             Ok(r) => Value::Regex(Rc::new(r)),

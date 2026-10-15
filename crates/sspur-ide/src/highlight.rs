@@ -52,7 +52,7 @@ const CONTRACTS: &[&str] = &["pre", "post", "where", "ex"];
 const OPERATORS: &[&str] = &["and", "or", "not"];
 const DEF_AFTER: &[&str] = &["fn", "test", "type", "effect", "trait", "rule", "store", "svc"];
 pub const BUILTIN_TYPES: &[&str] = &[
-    "Int", "F64", "F32", "Bool", "Str", "Unit", "List", "Opt", "Res", "Map", "Set", "Heap", "StrBuf", "Time", "Duration", "Bits", "HashMap", "HashSet", "BigInt", "Dec", "Regex", "Rng", "Complex", "Ratio", "Locale", "Zone", "File", "View", "FlatMap", "MdSpan", "DevBuf", "Atomic", "Chan", "Secret", "Pii", "Untrusted", "Guess", "Ptr", "Array", "Mmio", "Self", "I8", "I16", "I32", "U8", "U16", "U32", "U64",
+    "Int", "F64", "F32", "Bool", "Str", "Unit", "List", "Opt", "Res", "Map", "Set", "Heap", "StrBuf", "Time", "Duration", "Bits", "Bytes", "HashMap", "HashSet", "BigInt", "Dec", "Regex", "Rng", "Complex", "Ratio", "Locale", "Zone", "File", "View", "FlatMap", "MdSpan", "DevBuf", "Atomic", "Chan", "Secret", "Pii", "Untrusted", "Guess", "Ptr", "Array", "Mmio", "Self", "I8", "I16", "I32", "U8", "U16", "U32", "U64",
 ];
 const EFFECTS: &[&str] = &["log", "fail", "div", "conc", "fs", "io", "time", "env", "proc", "net", "ffi", "db", "yield", "dev", "unsafe", "mmio", "static"];
 const OPS: &[&str] = &["=>", "->", ":=", "==", "!=", "<=", ">=", "...", "..", "**", "+", "-", "*", "/", "%", "<", ">", "=", "&", "@", ";"];

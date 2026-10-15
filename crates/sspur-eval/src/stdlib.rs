@@ -417,6 +417,9 @@ impl Interp {
         if let Some(v) = crate::stdview::global(n, &a)? {
             return Ok(v);
         }
+        if let Some(v) = crate::stdbytes::global(n, &a)? {
+            return Ok(v);
+        }
         match n {
             "empty_flat_map" => return Ok(crate::stdflat::empty_flat()),
             "mdspan" => return crate::stdflat::mdspan(&a[0], &a[1]),
@@ -554,6 +557,15 @@ impl Interp {
             "read_bytes" => {
                 let p = s(&a[0])?;
                 io_res(p, std::fs::read(p).map_err(|e| open_err(p, e)).map(|b| ints(b.into_iter().map(i64::from))))
+            }
+            "read_bin" => {
+                let p = s(&a[0])?;
+                io_res(p, std::fs::read(p).map_err(|e| open_err(p, e)).map(Value::bytes))
+            }
+            "write_bin" => {
+                let p = s(&a[0])?;
+                let b = crate::stdbytes::of(&a[1])?;
+                io_res(p, std::fs::write(p, b).map_err(|e| open_err(p, e)).map(|_| Value::Unit))
             }
             "write_bytes" => {
                 let p = s(&a[0])?;
@@ -982,6 +994,7 @@ pub(crate) fn std_str(name: &str, x: &str, a: Vec<Value>) -> R {
         }
         "format" => Value::str(&crate::stdx::format_str(x, s(&a[0])?)?),
         "bytes" => ints(x.bytes().map(i64::from)),
+        "to_bytes" => Value::bytes(x.as_bytes().to_vec()),
         "codes" => ints(x.chars().map(|c| c as i64)),
         _ => return trap(format!("no method '{name}' on Str")),
     })

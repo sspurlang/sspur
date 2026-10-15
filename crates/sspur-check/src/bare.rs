@@ -69,7 +69,7 @@ impl Cx<'_> {
                 "Atomic" | "Chan" => Some(format!("{n} needs the thread runtime")),
                 "#DevBuf" => Some("device buffers need the GPU runtime".into()),
                 "#Time" | "#Duration" => Some(format!("{} values need the app runtime", &n[1..])),
-                "#Set" | "#Heap" | "#StrBuf" | "#Bits" | "#HashMap" | "#HashSet" | "#BigInt" | "#Dec" | "#Regex" | "#View" => Some(format!("{} values need the GC heap; bare code has none", &n[1..])),
+                "#Set" | "#Heap" | "#StrBuf" | "#Bits" | "#Bytes" | "#HashMap" | "#HashSet" | "#BigInt" | "#Dec" | "#Regex" | "#View" => Some(format!("{} values need the GC heap; bare code has none", &n[1..])),
                 "Array" => self.type_why(&a[0], depth + 1),
                 "Opt" | "Secret" | "Pii" | "Untrusted" => a.iter().find_map(|x| self.type_why(x, depth + 1)),
                 _ if self.t.newtypes.contains_key(n) => self.type_why(&self.t.newtypes[n], depth + 1),

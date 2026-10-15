@@ -454,6 +454,15 @@ pub fn builtin(n: &str, a: &[Value]) -> R<Option<Value>> {
             let p = s(&a[0])?;
             res(p, with(|fs| fs.read_all(p)).map(|b| Value::list(b.into_iter().map(|x| Value::Int(i64::from(x))).collect())))
         }
+        "read_bin" => {
+            let p = s(&a[0])?;
+            res(p, with(|fs| fs.read_all(p)).map(Value::bytes))
+        }
+        "write_bin" => {
+            let p = s(&a[0])?;
+            let b = crate::stdbytes::of(&a[1])?.to_vec();
+            res(p, unit(with(|fs| fs.write_all(p, &b, false))))
+        }
         "write_bytes" => {
             let p = s(&a[0])?;
             match bytes(p, &a[1])? {
