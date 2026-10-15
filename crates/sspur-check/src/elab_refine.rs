@@ -25,7 +25,7 @@ fn lit(s: &str) -> String {
 
 /// The clause with its `_` replaced by `x`. The program is printed and parsed again, so `x` may
 /// be any expression text, such as `x.title`.
-fn clause(pred: &Expr, x: &str) -> String {
+pub(crate) fn clause(pred: &Expr, x: &str) -> String {
     let mut e = pred.clone();
     visit::walk_expr_mut(&mut e, &mut |y| {
         if matches!(y.kind, ExprKind::Placeholder) {
@@ -184,6 +184,29 @@ impl Gen<'_> {
         self.extra.push(format!("fn {f}_v(x: {r}) -> Res[{ts}, Str]\n= catch ok({c})\n  | SspurJsonBad{{msg}} => err(msg)"));
         self.extra.push(format!("fn {f}(s: Str) -> Res[{ts}, Str]\n= match json.decode[{r}](s)\n  | ok(x) => {f}_v(x)\n  | err(e) => err(e)"));
         Ok(f)
+    }
+}
+
+impl Gen<'_> {
+    /// For `config.load`: a line per `where` clause of a field of `tn`, on the value bound to
+    /// `__c_<field>`, that makes the load an `err` naming the field instead of a trap.
+    pub(crate) fn config_checks(&self, tn: &str, fields: &[String]) -> String {
+        let Some(TypeDef { body: TypeBody::Record(fs), .. }) = self.tdef(tn) else { return String::new() };
+        let mut out = String::new();
+        for f in fields {
+            let Some(fd) = fs.iter().find(|x| x.name == *f) else { continue };
+            let alias = match &fd.ty {
+                Ty::Named { name, .. } => match self.tdef(name).map(|t| &t.body) {
+                    Some(TypeBody::Alias(_, Some(p))) => Some(p),
+                    _ => None,
+                },
+                _ => None,
+            };
+            for p in fd.refine.iter().chain(alias) {
+                writeln!(out, "  if not ({}) then raise SspurBadConfig{{msg: {}}}", clause(p, &format!("__c_{f}")), lit(&format!("{f}: must satisfy {}", printer::expr(p, 0)))).unwrap();
+            }
+        }
+        out
     }
 }
 

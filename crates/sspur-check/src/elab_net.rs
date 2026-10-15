@@ -325,7 +325,17 @@ impl Gen<'_> {
             inits.push(format!("{f}: {fname}_{f}(d, p, prefix)"));
         }
         self.extra.push(format!("type {part} = {{{}}}", pfields.join(", ")));
-        self.extra.push(format!("fn {fname}_all(d: {tn}, p: {part}, prefix: Str) -> {tn} ! env, fail[SspurConfigErr]\n= {tn}{{{}}}", inits.join(", ")));
+        #[cfg(not(target_family = "wasm"))]
+        let checks = self.config_checks(tn, &fields.iter().map(|(f, _)| f.clone()).collect::<Vec<_>>());
+        #[cfg(target_family = "wasm")]
+        let checks = String::new();
+        if checks.is_empty() {
+            self.extra.push(format!("fn {fname}_all(d: {tn}, p: {part}, prefix: Str) -> {tn} ! env, fail[SspurConfigErr]\n= {tn}{{{}}}", inits.join(", ")));
+        } else {
+            let binds: String = fields.iter().map(|(f, _)| format!("  __c_{f} = {fname}_{f}(d, p, prefix)\n")).collect();
+            let names: Vec<String> = fields.iter().map(|(f, _)| format!("{f}: __c_{f}")).collect();
+            self.extra.push(format!("fn {fname}_all(d: {tn}, p: {part}, prefix: Str) -> {tn} ! env, fail[SspurConfigErr]\n= do\n{binds}{checks}  {tn}{{{}}}", names.join(", ")));
+        }
         self.extra.push(format!("fn {fname}_try(d: {tn}, p: {part}, prefix: Str) -> Res[{tn}, Str] ! env\n= catch ok({fname}_all(d, p, prefix))\n  | SspurBadConfig{{msg}} => err(msg)"));
         self.extra.push(format!("fn {fname}_parsed(d: {tn}, path: Str, prefix: Str, f: Res[{part}, Str]) -> Res[{tn}, Str] ! env\n= match f\n  | err(e) => err(path + \": \" + e)\n  | ok(p) => {fname}_try(d, p, prefix)"));
         self.extra.push(format!("fn {fname}(d: {tn}, path: Str, prefix: Str) -> Res[{tn}, Str] ! fs, env\n= match __config_text(path)\n  | err(e) => err(e)\n  | ok(text) => {fname}_parsed(d, path, prefix, json.decode[{part}](text))"));
