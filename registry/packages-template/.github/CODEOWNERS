@@ -1,0 +1,11 @@
+# Changes to how the registry works need a maintainer's review. Package entries
+# (packages/**) and index.json are not listed: the publish workflow merges them
+# when every blocking check passes.
+/.github/        @utkarshavardhana
+/tools/          @utkarshavardhana
+/schema/         @utkarshavardhana
+/site/           @utkarshavardhana
+/.sspur-version  @utkarshavardhana
+/CONTRIBUTING.md @utkarshavardhana
+/README.md       @utkarshavardhana
+/SECURITY.md     @utkarshavardhana

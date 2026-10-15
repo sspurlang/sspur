@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: SSPUR documentation
+    url: https://utkarshavardhana.github.io/sspur/handbook/publishing.html
+    about: How to publish a package, and what the checks look for.

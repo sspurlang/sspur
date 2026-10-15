@@ -1,0 +1,32 @@
+name: Guard
+
+# Every pull request: package files may only grow (new versions, yanked and deprecated flags),
+# and index.json must match them. Branch protection requires the index-guard check; the
+# publish workflow reports the same check as a commit status on the pull requests it opens.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  index-guard:
+    name: index-guard
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install sspur
+        run: tools/install-sspur.sh "$(git show "origin/${{ github.base_ref }}:.sspur-version" | tr -d '[:space:]')"
+      - name: Check the change against main with main's tools
+        env:
+          WORK: ${{ runner.temp }}/guard
+          BASE: origin/${{ github.base_ref }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/base-tools"
+          git archive "$BASE" tools | tar -x -C "$RUNNER_TEMP/base-tools"
+          INDEX_DIR="$PWD" "$RUNNER_TEMP/base-tools/tools/ci.sh" guard "$BASE"

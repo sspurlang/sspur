@@ -1,0 +1,34 @@
+name: Sweep
+
+# Rechecks open publish requests whose ref moved since their last check, for example a branch
+# that got new commits or a tag that was moved before the version was published.
+
+on:
+  schedule:
+    - cron: "41 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  sweep:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      actions: write
+    concurrency:
+      group: sweep
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install sspur
+        run: tools/install-sspur.sh
+      - name: Rerun requests whose ref moved
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORK: ${{ runner.temp }}/sweep
+        run: tools/ci.sh sweep

@@ -1,0 +1,39 @@
+name: Yank or deprecate a version
+description: Flag a published version. A yanked version is never chosen for a new lock; existing locks keep working.
+title: "yank: "
+labels: ["yank"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Only an owner of the package can yank, unyank, deprecate or undeprecate. `sspur yank NAME@VERSION` opens this form for you.
+        Keep the title as `yank: NAME VERSION`.
+  - type: input
+    id: name
+    attributes:
+      label: Package name
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: action
+    attributes:
+      label: Action
+      options:
+        - yank
+        - unyank
+        - deprecate
+        - undeprecate
+    validations:
+      required: true
+  - type: input
+    id: reason
+    attributes:
+      label: Reason
+      description: Shown to users. For deprecate, the message (for example "use money2").

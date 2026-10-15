@@ -1,0 +1,161 @@
+name: Publish
+
+# A publish or yank request is an issue made from the forms in .github/ISSUE_TEMPLATE. This
+# workflow checks it, turns it into a pull request that adds the index entry, and merges that
+# pull request when every blocking check passes. It runs again when the request is edited,
+# when someone comments /recheck, and when the sweep workflow sees that the request's ref moved.
+#
+# Nothing here uses a secret: every job has the built-in GITHUB_TOKEN with only the permissions
+# it lists. Package code runs only in the tests job, which can read and nothing else, and whose
+# only output is the test counts. The job that writes never runs package code.
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: Request issue number
+        required: true
+
+permissions: {}
+
+env:
+  WORK: ${{ github.workspace }}/../registry-work
+
+jobs:
+  request:
+    name: Read the request
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' && (startsWith(github.event.issue.title, 'publish:') || startsWith(github.event.issue.title, 'yank:'))) ||
+      (github.event_name == 'issue_comment' && !github.event.issue.pull_request && github.event.issue.state == 'open' &&
+       (startsWith(github.event.issue.title, 'publish:') || startsWith(github.event.issue.title, 'yank:')) &&
+       startsWith(github.event.comment.body, '/recheck'))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      issues: read
+    concurrency:
+      group: request-${{ github.event.issue.number || inputs.issue }}
+      cancel-in-progress: true
+    outputs:
+      ok: ${{ steps.parse.outputs.ok }}
+      kind: ${{ steps.parse.outputs.kind }}
+      name: ${{ steps.parse.outputs.name }}
+      version: ${{ steps.parse.outputs.version }}
+      commit: ${{ steps.parse.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install sspur
+        run: tools/install-sspur.sh
+      - name: Parse the request and resolve its ref
+        id: parse
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number || inputs.issue }}
+        run: tools/ci.sh request "$ISSUE"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: request
+          path: ${{ env.WORK }}/*.json
+          include-hidden-files: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: request-vars
+          path: ${{ env.WORK }}/vars.txt
+
+  check:
+    name: Check the package
+    needs: request
+    if: needs.request.outputs.ok == 'true' && needs.request.outputs.kind == 'publish' && needs.request.outputs.commit != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    concurrency:
+      group: package-${{ needs.request.outputs.name }}-check
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install sspur
+        run: tools/install-sspur.sh
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: request*
+          path: ${{ env.WORK }}
+          merge-multiple: true
+      - name: Facts and source snapshot (static; no package code runs)
+        run: tools/ci.sh check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: check
+          path: |
+            ${{ env.WORK }}/facts.json
+            ${{ env.WORK }}/previous.json
+            ${{ env.WORK }}/summary.json
+            ${{ env.WORK }}/snapshot.json
+            ${{ env.WORK }}/snapshot.tar
+          if-no-files-found: ignore
+
+  tests:
+    name: Run the package's tests
+    needs: request
+    if: needs.request.outputs.ok == 'true' && needs.request.outputs.kind == 'publish' && needs.request.outputs.commit != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install sspur
+        run: tools/install-sspur.sh
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: request*
+          path: ${{ env.WORK }}
+          merge-multiple: true
+      - name: Tests, native and interpreted
+        run: tools/ci.sh tests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tests
+          path: ${{ env.WORK }}/tests.json
+
+  write:
+    name: Update the pull request
+    needs: [request, check, tests]
+    if: always() && needs.request.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      statuses: write
+      # Starts the Pages workflow after a merge: pushes made with GITHUB_TOKEN start no workflows.
+      actions: write
+    # One writer at a time: index.json is shared by every package.
+    concurrency:
+      group: index-write
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install sspur
+        run: tools/install-sspur.sh
+      - uses: actions/download-artifact@v4
+        with:
+          path: ${{ env.WORK }}
+          merge-multiple: true
+      - name: Decide, update the pull request, merge when every blocking check passes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: tools/ci.sh write

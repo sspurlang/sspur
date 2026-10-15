@@ -1,0 +1,61 @@
+name: Publish a package
+description: Add a version of an SSPUR package to the index. The checks run on this request and answer here.
+title: "publish: "
+labels: ["publish"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Run `sspur publish` in the package first: it runs the same checks and opens this form for you, filled in.
+        The standards are in [CONTRIBUTING.md](https://github.com/utkarshavardhana/sspur-packages/blob/main/CONTRIBUTING.md).
+        Keep the title as `publish: NAME VERSION`.
+  - type: input
+    id: name
+    attributes:
+      label: Package name
+      description: The name in sspur.toml.
+      placeholder: money
+    validations:
+      required: true
+  - type: input
+    id: repository
+    attributes:
+      label: Repository
+      description: The public GitHub repository with sspur.toml at its top. The first version must be requested by its owner.
+      placeholder: https://github.com/OWNER/REPO
+    validations:
+      required: true
+  - type: input
+    id: ref
+    attributes:
+      label: Ref
+      description: The tag of the version. The index pins the tag and its commit.
+      placeholder: v1.0.0
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: MAJOR.MINOR.PATCH, the same as in sspur.toml.
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: input
+    id: effects
+    attributes:
+      label: Effects
+      description: Capability effects this version adds since the previous one (fs, io, proc, env, net, db, ffi, unsafe, dev), comma separated. Listing one acknowledges that the package uses it. Leave empty if there are none.
+      placeholder: net, fs
+  - type: checkboxes
+    id: standards
+    attributes:
+      label: Standards
+      options:
+        - label: I have read the standards in CONTRIBUTING.md, and I may publish this code under its licence.
+          required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Anything the maintainers should know. Optional.

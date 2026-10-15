@@ -46,7 +46,7 @@ type Package = {schema: Int, name: Str, description: Str, repository: Str, owner
 
 // What `check` reads. `files` defaults to the facts' files, and `names` (every package in the
 // index) can come as the index summary.
-type CheckRaw = {facts: Facts, files: Opt[List[FileInfo]], request: Request, previous: Opt[Package], names: Opt[List[Str]], summary: Opt[Summary], tests: Opt[Tests], env: Str}
+type CheckRaw = {facts: Facts, files: Opt[List[FileInfo]], request: Opt[Request], parsed: Opt[Parsed], previous: Opt[Package], names: Opt[List[Str]], summary: Opt[Summary], tests: Opt[Tests], env: Str}
 
 type CheckIn = {facts: Facts, files: List[FileInfo], request: Request, previous: Opt[Package], names: List[Str], tests: Opt[Tests], env: Str}
 
@@ -465,7 +465,10 @@ fn check_review(i: CheckIn) -> List[Check]
   [holes, todo, cmds, contracts, naming, derive, tested]
 
 fn check_input(r: CheckRaw) -> CheckIn
-= CheckIn{facts: r.facts, files: r.files.or(r.facts.files.or([])), request: r.request, previous: r.previous, names: r.names.or([]) + r.summary.map(s => s.packages.map(_.name)).or([]), tests: r.tests, env: r.env}
+= CheckIn{facts: r.facts, files: r.files.or(r.facts.files.or([])), request: r.request.or(r.parsed.map(_.request).or(empty_request())), previous: r.previous, names: r.names.or([]) + r.summary.map(s => s.packages.map(_.name)).or([]), tests: r.tests, env: r.env}
+
+fn empty_request() -> Request
+= Request{kind: "publish", name: "", repository: "", ref: "", version: "", effects: [], author: "", issue: 0, commit: "", tag: false, action: "", reason: ""}
 
 fn run_checks(raw: CheckRaw) -> Report
 = do
@@ -524,21 +527,42 @@ fn effects_md(r: Report) -> List[Str]
   table + news
 
 fn change_md(prefix: Str, c: Change) -> Str
-= if c.before != "" and c.after != "" then "- {prefix} {md_code(c.before)} → {md_code(c.after)}" else "- {prefix} {md_code(if c.after != "" then c.after else c.before)}"
+= do
+  lead = if prefix == "" then "- " else "- {prefix} "
+  if c.before != "" and c.after != "" then "{lead}{md_code(c.before)} → {md_code(c.after)}" else "{lead}{md_code(if c.after != "" then c.after else c.before)}"
 
 fn api_md(d: ApiDiff) -> List[Str]
 = match d.previous
   | none => ["First version: {plural(d.added.len, "public definition", "public definitions")}."] + d.added.take(40).map(c => change_md("", c))
   | some(p) => ["Compared with {p}: {d.added.len} added, {d.removed.len} removed, {d.changed.len} changed, {d.body.len} with new bodies only. A {d.required} release is needed."] + d.removed.map(c => change_md("removed", c)) + d.changed.map(c => change_md("changed", c)) + d.added.take(40).map(c => change_md("added", c)) + (if d.body.is_empty() then [] else ["- new bodies: " + d.body.map(md_code).join(", ")])
 
-type RenderIn = {report: Report, request: Request, repo: Str, pr: Opt[Int], part: Opt[Str]}
+type RenderIn = {report: Opt[Report], request: Opt[Request], parsed: Opt[Parsed], repo: Str, pr: Opt[Int], part: Opt[Str], note: Opt[Str]}
 
 type Rendered = {title: Str, body: Str, comment: Str, merge: Bool, labels: List[Str]}
 
-fn render(i: RenderIn) -> Rendered
+fn render_request(i: RenderIn) -> Request
+= i.request.or(i.parsed.map(_.request).or(empty_request()))
+
+// Answers to requests that never reach the checks: a form with errors, a yank, a refusal.
+fn render_plain(i: RenderIn) -> Rendered
 = do
-  r = i.report
-  q = i.request
+  q = render_request(i)
+  errs = i.parsed.map(_.errors).or([])
+  note = i.note.or("")
+  pr = i.pr.map(n => " in #{n}").or("")
+  comment = if not errs.is_empty() then "This request can't be processed yet:\n\n" + errs.map(e => "- {e}").join("\n") + "\n\nEdit the request to fix it; the workflow runs again on every edit." else if note != "" then md_text(note) else "{md_text(q.action)} {md_text(q.name)} {md_text(q.version)}: done{pr}."
+  title = if q.kind == "yank" then "{q.action.upper.take(1)}{q.action.drop(1)} {q.name} {q.version}" else "Publish {q.name} {q.version}"
+  body = ["## {md_text(title)}", "", "Request #{q.issue} by @{q.author.replace("@", "")}.", "", if q.reason != "" then "Reason: {md_text(q.reason)}" else "", "", "<!-- sspur-registry kind={q.kind} -->"].join("\n")
+  Rendered{title, body, comment, merge: errs.is_empty(), labels: [q.kind]}
+
+fn render(i: RenderIn) -> Rendered
+= match i.report
+  | none => render_plain(i)
+  | some(r) => render_report(i, r)
+
+fn render_report(i: RenderIn, r: Report) -> Rendered
+= do
+  q = render_request(i)
   short_commit = q.commit.take(12)
   failed = r.checks.filter(c => c.status == "fail" and c.severity == "blocking")
   verdict = if r.ok then "**Every blocking check passed.** The workflow merges this pull request." else if failed.is_empty() then "**Some blocking checks did not run.** See below." else "**{plural(failed.len, "blocking check", "blocking checks")} failed.** This pull request stays open until they pass."
@@ -587,7 +611,7 @@ fn parse_request(x: IssueIn) -> Parsed
   action = form_field(body, "Action").lower
   reason = form_field(body, "Reason")
   req = Request{kind, name, repository: repo.trim, ref: rf.trim, version, effects, author: i.user.login, issue: i.number, commit: x.commit.or(""), tag: x.tag.or(false), action: if action == "" then (if kind == "yank" then "yank" else "") else action, reason}
-  errs = (if kind != "" and not valid_name(name) then ["the Package name field must be a valid package name"] else []) + (if kind == "" then ["the title must start with `publish:` or `yank:`"] else []) + (if name == "" then ["the Package name field is empty"] else []) + (if version == "" then ["the Version field is empty"] else []) + (if kind == "publish" and github_slug(repo).is_none() then ["the Repository field must be a GitHub URL like https://github.com/OWNER/REPO"] else []) + (if kind == "publish" and rf.trim == "" then ["the Ref field is empty"] else []) + (if kind == "yank" and not ["yank", "unyank", "deprecate", "undeprecate"].contains(req.action) then ["the Action must be yank, unyank, deprecate or undeprecate"] else [])
+  errs = (if kind != "" and not valid_name(name) then ["the Package name field must be a valid package name"] else []) + (if kind == "" then ["the title must start with `publish:` or `yank:`"] else []) + (if name == "" then ["the Package name field is empty"] else []) + (if version == "" then ["the Version field is empty"] else if parse_version(version).is_none() then ["the Version must be MAJOR.MINOR.PATCH, like 1.0.0"] else []) + (if kind == "publish" and github_slug(repo).is_none() then ["the Repository field must be a GitHub URL like https://github.com/OWNER/REPO"] else []) + (if kind == "publish" and rf.trim == "" then ["the Ref field is empty"] else []) + (if kind == "yank" and not ["yank", "unyank", "deprecate", "undeprecate"].contains(req.action) then ["the Action must be yank, unyank, deprecate or undeprecate"] else [])
   Parsed{ok: errs.is_empty(), errors: errs, request: req}
 
 fn trim_matches_v(s: Str) -> Str
@@ -597,28 +621,31 @@ fn trim_matches_v(s: Str) -> Str
 
 // ---------- index entries ----------
 
-type EntryIn = {report: Report, facts: Facts, request: Request, snapshot: Opt[Snapshot], now: Str}
+type EntryIn = {facts: Facts, request: Opt[Request], parsed: Opt[Parsed], snapshot: Opt[Snapshot], now: Str, git_base: Opt[Str]}
 
 fn make_entry(i: EntryIn) -> Entry
 = do
-  q = i.request
+  q = i.request.or(i.parsed.map(_.request).or(empty_request()))
   m = i.facts.manifest
   deps = m.map(x => x.deps.filter(_.kind == "registry").fold(empty_map(), (acc, d) => acc.put(d.name, d.req))).or(empty_map())
   slug = github_slug(q.repository).or("")
-  Entry{version: q.version, git: "https://github.com/{slug}.git", tag: q.ref, commit: q.commit, hash: i.facts.hash.or(""), snapshot: i.snapshot, effects: caps_of(effect_rows(i.facts).map(_.effects)), deps, license: m.map(_.license).or(""), yanked: false, deprecated: none, published: i.now, publisher: q.author, request: some(q.issue), api: api_of(i.facts)}
+  Entry{version: q.version, git: "{i.git_base.or("https://github.com")}/{slug}.git", tag: q.ref, commit: q.commit, hash: i.facts.hash.or(""), snapshot: i.snapshot, effects: caps_of(effect_rows(i.facts).map(_.effects)), deps, license: m.map(_.license).or(""), yanked: false, deprecated: none, published: i.now, publisher: q.author, request: some(q.issue), api: api_of(i.facts)}
 
-type ApplyIn = {package: Opt[Package], entry: Opt[Entry], request: Request, facts: Opt[Facts]}
+type ApplyIn = {package: Opt[Package], entry: Opt[Entry], request: Opt[Request], parsed: Opt[Parsed], facts: Opt[Facts]}
 
 type Applied = {ok: Bool, error: Str, package: Opt[Package], changed: Bool}
 
+fn apply_request(i: ApplyIn) -> Request
+= i.request.or(i.parsed.map(_.request).or(empty_request()))
+
 fn apply(i: ApplyIn) -> Applied
 = do
-  q = i.request
+  q = apply_request(i)
   if q.kind == "publish" then apply_publish(i) else apply_flag(i)
 
 fn apply_publish(i: ApplyIn) -> Applied
 = do
-  q = i.request
+  q = apply_request(i)
   some(e) = i.entry else Applied{ok: false, error: "no entry", package: none, changed: false}
   m = i.facts.map(_.manifest).or(none)
   base = i.package.or(Package{schema: 1, name: q.name, description: m.map(_.description).or(""), repository: "https://github.com/" + github_slug(q.repository).or(""), owners: [q.author], keywords: m.map(_.keywords).or([]), versions: []})
@@ -635,7 +662,7 @@ fn set_flag(e: Entry, action: Str, reason: Str) -> Entry
 
 fn apply_flag(i: ApplyIn) -> Applied
 = do
-  q = i.request
+  q = apply_request(i)
   some(p) = i.package else Applied{ok: false, error: "{q.name} is not in the index", package: none, changed: false}
   if not p.owners.map(_.lower).contains(q.author.lower) then Applied{ok: false, error: "@{q.author} is not an owner of {q.name} (owners: {p.owners.join(", ")})", package: none, changed: false} else do
     some(old) = p.versions.find(_.version == q.version) else Applied{ok: false, error: "{q.name} has no version {q.version}", package: none, changed: false}
@@ -695,6 +722,14 @@ fn guard_version(path: Str, o: Entry, p: Package) -> List[Str]
   | none => ["{path}: {o.version} was removed; published versions stay in the index (yank them instead)"]
   | some(n) => if without_flags(n) == without_flags(o) then [] else ["{path}: {o.version} changed; only `yanked` and `deprecated` may change after publishing"]
 
+// ---------- the site's sources ----------
+
+type LatestIn = {packages: List[Package]}
+
+// `name version` lines: the newest version of each package that is not yanked.
+fn latest_lines(i: LatestIn) -> Str
+= i.packages.flat_map(p => latest_entry(p).map(e => ["{p.name} {e.version}"]).or([])).filter(l => l.chars.all(c => "abcdefghijklmnopqrstuvwxyz0123456789_. ".contains(c))).join("\n")
+
 // ---------- JSON as the index stores it ----------
 
 fn indent(n: Int) -> Str
@@ -736,13 +771,16 @@ fn pretty(s: Str) -> Str
 type VarsIn = {parsed: Opt[Parsed], report: Opt[Report]}
 
 // `key=value` lines for `$GITHUB_OUTPUT`. Only checked values: names, versions, hex commits.
+fn safe_ref(r: Str) -> Bool
+= r.len > 0 and r.len <= 100 and r.chars.all(c => "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-/".contains(c)) and not r.starts_with("-") and not r.contains("..")
+
 fn vars(i: VarsIn) -> Str
 = do
   var out = []
   if i.parsed is some(p) then do
     q = p.request
     safe = p.ok and valid_name(q.name) and parse_version(q.version).is_some()
-    out := out + ["ok={safe}", "kind={if safe then q.kind else "invalid"}", "name={if safe then q.name else "invalid"}", "version={if safe then q.version else "0.0.0"}", "commit={if safe and q.commit.len == 40 and q.commit.chars.all(c => "0123456789abcdef".contains(c)) then q.commit else ""}", "issue={q.issue}"]
+    out := out + ["slug={if safe then github_slug(q.repository).or("") else ""}", "ref={if safe and safe_ref(q.ref) then q.ref else ""}", "ok={safe}", "kind={if safe then q.kind else "invalid"}", "name={if safe then q.name else "invalid"}", "version={if safe then q.version else "0.0.0"}", "commit={if safe and q.commit.len == 40 and q.commit.chars.all(c => "0123456789abcdef".contains(c)) then q.commit else ""}", "issue={q.issue}"]
   if i.report is some(r) then out := out + ["passed={r.ok}", "blocking_failed={r.blocking_failed}", "failed={r.checks.filter(c => c.status == "fail" and c.severity == "blocking").map(_.id).join(",")}"]
   out.join("\n")
 
@@ -787,7 +825,9 @@ fn dispatch(cmd: Str, text: Str) -> Str
   | ok(v) => pretty(json.encode(summary(v)))
   | err(e) => bad("summary input", e)) else if cmd == "guard" then (match json.decode[GuardIn](text)
   | ok(v) => json.encode(guard(v))
-  | err(e) => bad("guard input", e)) else bad("input", "unknown command '{cmd}'")
+  | err(e) => bad("guard input", e)) else if cmd == "latest" then (match json.decode[LatestIn](text)
+  | ok(v) => latest_lines(v)
+  | err(e) => bad("latest input", e)) else bad("input", "unknown command '{cmd}'")
 
 fn main() -> Unit ! io, log
 = do
