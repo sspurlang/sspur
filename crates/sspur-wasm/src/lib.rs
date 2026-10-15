@@ -123,6 +123,26 @@ pub fn fmt(src: &str) -> String {
     }
 }
 
+/// The facts the registry checks read, for the Publish page. `input` is
+/// `{"manifest": "<sspur.toml>", "files": {"lib.ssp": "<text>", ...}}`. A package with
+/// dependencies is parsed and formatted here but typechecked only by the registry workflow.
+#[cfg(feature = "registry")]
+#[wasm_bindgen]
+pub fn pkg_facts(input: &str) -> String {
+    use sspur_registry::facts;
+    let v: J = serde_json::from_str(input).unwrap_or(J::Null);
+    let mf = facts::manifest(v["manifest"].as_str().unwrap_or(""));
+    let files = &v["files"];
+    let path = mf["src"].as_str().filter(|s| !s.is_empty()).map(String::from).or_else(|| ["lib.ssp", "main.ssp"].into_iter().find(|f| files.get(*f).is_some()).map(String::from)).unwrap_or_else(|| "lib.ssp".into());
+    let has_deps = mf["deps"].as_array().is_some_and(|d| !d.is_empty());
+    let mut f = match files[path.as_str()].as_str() {
+        Some(src) => facts::facts(&path, src, if has_deps { facts::Check::Skip } else { facts::Check::Here }),
+        None => json!({"source": path, "parse": false, "checked": false, "diags": [{"code": "E_NO_SOURCE", "severity": "error", "file": path, "line": 0, "col": 0, "msg": format!("no {path} in the repository"), "hint": "Set src in sspur.toml, or add lib.ssp."}], "fmt": {"clean": false}, "defs": [], "holes": [], "run_cmd": [], "tests": 0, "tested": []}),
+    };
+    f["manifest"] = mf;
+    f.to_string()
+}
+
 /// A rough token count: about four characters per token. The token benchmark uses real
 /// tokenizers, which are too big to ship to the page.
 #[wasm_bindgen]

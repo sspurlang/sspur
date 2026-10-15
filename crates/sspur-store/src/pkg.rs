@@ -1022,10 +1022,10 @@ pub fn resolve_with(root: &Path, m: &Manifest, lock: &Lock, update: Option<BTree
     let mut keep = BTreeMap::new();
     for (n, s) in &m.deps {
         if let Source::Registry { req } = s {
-            let locked = lock.entries.get(n).filter(|e| e.source == "registry" && !r.unpinned(n) && req_matches(req, &e.version));
-            match locked {
-                Some(e) if load_cached(&e.hash).is_some() => {}
-                _ => roots.push((n.clone(), req.clone(), m.name.clone())),
+            // A locked version that still meets the requirement is fetched from the lock alone.
+            let locked = lock.entries.get(n).is_some_and(|e| e.source == "registry" && !r.unpinned(n) && req_matches(req, &e.version) && e.reference.as_deref() == Some(req.as_str()));
+            if !locked {
+                roots.push((n.clone(), req.clone(), m.name.clone()));
             }
         }
     }

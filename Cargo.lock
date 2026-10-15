@@ -675,6 +675,7 @@ dependencies = [
  "sspur-check",
  "sspur-eval",
  "sspur-ide",
+ "sspur-registry",
  "sspur-syntax",
  "wasm-bindgen",
 ]

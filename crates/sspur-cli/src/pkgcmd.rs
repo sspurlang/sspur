@@ -274,6 +274,11 @@ fn update(root: &Path, m: &Manifest, names: &[String], force: bool) -> ExitCode 
         lines.extend(diff(n, old.all.get(n).map(|p| &**p), env.all.get(n).map(|p| &**p)));
     }
     if lines.is_empty() {
+        if lock2 != lock
+            && let Err(e) = lock2.write(root)
+        {
+            return fail(e);
+        }
         println!("up to date: {} dependencies", env.all.len());
         return ExitCode::SUCCESS;
     }

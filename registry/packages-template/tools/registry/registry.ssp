@@ -299,7 +299,8 @@ fn check_version(i: CheckIn, diff: ApiDiff) -> List[Check]
 fn semver_check(diff: ApiDiff, prev: V, v: V) -> Check
 = do
   kind = bump_kind(prev, v)
-  need = diff.required
+  // In a 0.x line the second number breaks compatibility and the third adds or fixes.
+  need = if prev.major == 0 and diff.required == "minor" then "patch" else diff.required
   ok = rank(kind) >= rank(need)
   hint = if need == "major" then vstr(next_breaking(prev)) else if need == "minor" then vstr(next_feature(prev)) else vstr(V{major: prev.major, minor: prev.minor, patch: prev.patch + 1})
   what = if need == "major" then "breaks the API ({plural(diff.removed.len + diff.changed.len, "removed or changed definition", "removed or changed definitions")})" else if need == "minor" then "adds to the API ({plural(diff.added.len, "new definition", "new definitions")})" else "keeps the API"
@@ -834,3 +835,105 @@ fn main() -> Unit ! io, log
   text = read_lines().join("\n")
   cmd = json.decode[Cmd](text).map(_.cmd).or("")
   out(dispatch(cmd, text))
+
+// ---------- tests ----------
+
+fn v(s: Str) -> V
+= parse_version(s).or(V{major: 0, minor: 0, patch: 0})
+
+fn item(name: Str, sig: Str, body: Str) -> ApiItem
+= ApiItem{name, kind: "fn", sig, sig_hash: sig, hash: sig + body, effects: [], doc: ""}
+
+test versions_parse = parse_version("1.2.3") == some(V{major: 1, minor: 2, patch: 3}) and parse_version("1.2").is_none() and parse_version("01.2.3").is_none() and parse_version("1.2.3-rc1").is_none() and parse_version(" 0.10.0 ") == some(V{major: 0, minor: 10, patch: 0})
+
+test versions_order = v("1.10.0") > v("1.9.9") and v("2.0.0") > v("1.99.99") and [v("1.0.1"), v("0.9.0"), v("1.0.0")].sort == [v("0.9.0"), v("1.0.0"), v("1.0.1")]
+
+test bump_kinds = bump_kind(v("1.2.3"), v("2.0.0")) == "major" and bump_kind(v("1.2.3"), v("1.3.0")) == "minor" and bump_kind(v("1.2.3"), v("1.2.4")) == "patch" and bump_kind(v("0.2.3"), v("0.3.0")) == "major" and bump_kind(v("0.2.3"), v("0.2.4")) == "patch" and bump_kind(v("0.0.3"), v("0.0.4")) == "major"
+
+test next_versions = vstr(next_breaking(v("1.4.2"))) == "2.0.0" and vstr(next_breaking(v("0.4.2"))) == "0.5.0" and vstr(next_feature(v("1.4.2"))) == "1.5.0" and vstr(next_feature(v("0.4.2"))) == "0.4.3"
+
+test diff_added_is_minor = api_diff([item("a", "fn a() -> Int", "1")], [item("a", "fn a() -> Int", "1"), item("b", "fn b() -> Int", "2")], some("1.0.0")).required == "minor"
+
+test diff_removed_is_major = do
+  d = api_diff([item("a", "fn a() -> Int", "1"), item("b", "fn b() -> Int", "2")], [item("a", "fn a() -> Int", "1")], some("1.0.0"))
+  d.required == "major" and d.removed.map(_.name) == ["b"]
+
+test diff_signature_change_is_major = do
+  d = api_diff([item("a", "fn a() -> Int", "1")], [item("a", "fn a(x: Int) -> Int", "1")], some("1.0.0"))
+  d.required == "major" and d.changed.map(_.after) == ["fn a(x: Int) -> Int"]
+
+test diff_body_only_is_patch = do
+  d = api_diff([item("a", "fn a() -> Int", "1")], [item("a", "fn a() -> Int", "2")], some("1.0.0"))
+  d.required == "patch" and d.body == ["a"]
+
+test diff_first_version = api_diff([], [item("a", "fn a() -> Int", "1")], none).required == "none"
+
+test semver_rule = semver_check(api_diff([item("a", "fn a() -> Int", "1")], [], some("1.0.0")), v("1.0.0"), v("1.1.0")).status == "fail" and semver_check(api_diff([item("a", "fn a() -> Int", "1")], [], some("1.0.0")), v("1.0.0"), v("2.0.0")).status == "pass" and semver_check(api_diff([], [item("a", "fn a() -> Int", "1")], some("1.0.0")), v("1.0.0"), v("1.0.1")).status == "fail" and semver_check(api_diff([], [item("a", "fn a() -> Int", "1")], some("0.3.0")), v("0.3.0"), v("0.3.1")).status == "pass"
+
+test names = valid_name("money") and valid_name("big_int2") and not valid_name("Money") and not valid_name("a") and not valid_name("a__b") and not valid_name("x_") and not valid_name("9lives") and reserved_names().contains("std")
+
+test typosquat = lev("money", "mоney") == 1 and lev("money", "monye") == 2 and lev("", "abc") == 3 and skeleton("rn0ney") == skeleton("money") and skeleton("big_int") == skeleton("bigint")
+
+test effects_base = base_effect("fail[money.Err]") == "fail" and base_effect("db.read[Todos]") == "db" and base_effect("net") == "net" and caps_of([["net", "log"], ["fs", "fail[E]"]]) == ["fs", "net"]
+
+test slugs = github_slug("https://github.com/Alice/money.git") == some("alice/money") and github_slug("https://github.com/alice/money/") == some("alice/money") and github_slug("https://gitlab.com/a/b").is_none() and github_slug("https://github.com/a").is_none()
+
+test markdown_is_escaped = md_text("<script>@bob") == "&lt;script&gt;@&#8203;bob" and md_code("a`b|c") == "`a'b\\|c`"
+
+test form_fields = do
+  body = "### Package name\n\nmoney\n\n### Repository\n\nhttps://github.com/alice/money\n\n### Effects\n\n_No response_\n\n### Version\n\nv1.2.0"
+  form_field(body, "Package name") == "money" and form_field(body, "effects") == "" and form_field(body, "Missing") == "" and trim_matches_v(form_field(body, "Version")) == "1.2.0"
+
+test requests_parse = do
+  i = IssueIn{issue: GhIssue{number: 4, title: "publish: money 1.0.0", body: some("### Package name\n\nmoney\n\n### Repository\n\nhttps://github.com/alice/money\n\n### Ref\n\nv1.0.0\n\n### Version\n\n1.0.0\n\n### Effects\n\nnet, FS"), user: GhUser{login: "alice"}}, commit: some("abc"), tag: some(true)}
+  p = parse_request(i)
+  p.ok and p.request.effects == ["net", "fs"] and p.request.author == "alice" and p.request.commit == "abc" and p.request.tag
+
+test bad_requests = do
+  i = IssueIn{issue: GhIssue{number: 5, title: "please add my package", body: none, user: GhUser{login: "bob"}}, commit: none, tag: none}
+  p = parse_request(i)
+  not p.ok and p.errors.len >= 3
+
+fn entry_of(version: Str, commit: Str) -> Entry
+= Entry{version, git: "g", tag: "v" + version, commit, hash: "h", snapshot: none, effects: [], deps: empty_map(), license: "MIT", yanked: false, deprecated: none, published: "", publisher: "alice", request: none, api: []}
+
+fn pkg_of(es: List[Entry]) -> Package
+= Package{schema: 1, name: "money", description: "", repository: "https://github.com/alice/money", owners: ["alice"], keywords: [], versions: es}
+
+test guard_allows_append_and_flags = do
+  c = "0123456789012345678901234567890123456789"
+  old = pkg_of([entry_of("1.0.0", c)])
+  appended = pkg_of([entry_of("1.0.0", c), entry_of("1.1.0", c)])
+  yanked = pkg_of([entry_of("1.0.0", c) with yanked := true])
+  guard(GuardIn{path: "packages/mo/money.json", base: some(old), head: some(appended)}).ok and guard(GuardIn{path: "packages/mo/money.json", base: some(old), head: some(yanked)}).ok and guard(GuardIn{path: "packages/mo/money.json", base: none, head: some(old)}).ok
+
+test guard_refuses_rewrites = do
+  c = "0123456789012345678901234567890123456789"
+  d = "9123456789012345678901234567890123456789"
+  old = pkg_of([entry_of("1.0.0", c)])
+  moved = pkg_of([entry_of("1.0.0", d)])
+  dropped = pkg_of([])
+  not guard(GuardIn{path: "packages/mo/money.json", base: some(old), head: some(moved)}).ok and not guard(GuardIn{path: "packages/mo/money.json", base: some(old), head: some(dropped)}).ok and not guard(GuardIn{path: "packages/mo/money.json", base: some(old), head: none}).ok and not guard(GuardIn{path: "packages/xx/money.json", base: none, head: some(old)}).ok
+
+test pretty_json = pretty("\{\"a\":[1,2],\"b\":\{},\"c\":\"x,\\\"y\\\":z\"}") == "\{\n  \"a\": [\n    1,\n    2\n  ],\n  \"b\": \{},\n  \"c\": \"x,\\\"y\\\":z\"\n}"
+
+test latest_skips_yanked = do
+  c = "0123456789012345678901234567890123456789"
+  p = pkg_of([entry_of("1.0.0", c), entry_of("1.2.0", c) with yanked := true, entry_of("1.1.0", c)])
+  latest_entry(p).map(_.version) == some("1.1.0")
+
+test yank_needs_an_owner = do
+  c = "0123456789012345678901234567890123456789"
+  q = empty_request() with kind := "yank", name := "money", version := "1.0.0", action := "yank", author := "mallory"
+  a = apply(ApplyIn{package: some(pkg_of([entry_of("1.0.0", c)])), entry: none, request: some(q), parsed: none, facts: none})
+  b = apply(ApplyIn{package: some(pkg_of([entry_of("1.0.0", c)])), entry: none, request: some(q with author := "Alice"), parsed: none, facts: none})
+  not a.ok and b.ok and b.package.map(p => p.versions.all(_.yanked)).or(false)
+
+test publish_appends_once = do
+  c = "0123456789012345678901234567890123456789"
+  q = empty_request() with name := "money", version := "1.1.0", author := "alice", repository := "https://github.com/alice/money"
+  base = pkg_of([entry_of("1.0.0", c)])
+  a = apply(ApplyIn{package: some(base), entry: some(entry_of("1.1.0", c)), request: some(q), parsed: none, facts: none})
+  again = apply(ApplyIn{package: a.package, entry: some(entry_of("1.1.0", c)), request: some(q), parsed: none, facts: none})
+  other = apply(ApplyIn{package: a.package, entry: some(entry_of("1.1.0", "f" + c.drop(1))), request: some(q), parsed: none, facts: none})
+  a.ok and a.changed and a.package.map(_.versions.len).or(0) == 2 and again.ok and not again.changed and not other.ok

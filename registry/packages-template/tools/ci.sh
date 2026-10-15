@@ -151,8 +151,9 @@ cmd_write() {
       return 0
     fi
     [ -s "$WORK/facts.json" ] || { echo "no facts from the check job" >&2; return 1; }
+    # The index as it is now, not as the check job saw it: another version may have merged since.
     printf '{"cmd":"check","facts":%s,"parsed":%s,"previous":%s,"summary":%s,"tests":%s,"env":"ci"}' \
-      "$(cat "$WORK/facts.json")" "$(cat "$WORK/parsed.json")" "$(json_or_null "$WORK/previous.json")" "$(json_or_null "$WORK/summary.json")" "$(json_or_null "$WORK/tests.json")" | reg > "$WORK/report.json"
+      "$(cat "$WORK/facts.json")" "$(cat "$WORK/parsed.json")" "$(json_or_null "$old")" "$(json_or_null index.json)" "$(json_or_null "$WORK/tests.json")" | reg > "$WORK/report.json"
     if grep -q '^{"error"' "$WORK/report.json"; then cat "$WORK/report.json" >&2; return 1; fi
     printf '{"cmd":"vars","report":%s}' "$(cat "$WORK/report.json")" | reg > "$WORK/report-vars.txt"
     load_vars "$WORK/report-vars.txt"
@@ -192,6 +193,7 @@ cmd_write() {
     comment "$issue" "$WORK/comment.md"
     "$GH" issue close "$issue" --repo "$REPO" > /dev/null || true
     git checkout -q --detach origin/main
+    echo "already in the index: $name $version"
     return 0
   fi
   git push -q -f origin "$branch"

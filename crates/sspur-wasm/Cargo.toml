@@ -16,3 +16,9 @@ sspur-ide.workspace = true
 sspur-eval = { path = "../sspur-eval", default-features = false }
 serde_json.workspace = true
 wasm-bindgen = "0.2"
+sspur-registry = { workspace = true, optional = true }
+
+[features]
+# The browser checker of the registry's Publish page: the playground's API plus package facts.
+# A separate build (tools/build_registry_checker.sh), so the playground's wasm does not grow.
+registry = ["dep:sspur-registry"]
