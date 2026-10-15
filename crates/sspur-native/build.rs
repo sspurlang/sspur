@@ -44,9 +44,15 @@ fn main() {
         blob.resize(blob.len().div_ceil(128 << 10) * (128 << 10), 0);
     }
     std::fs::write(Path::new(&out).join("vendor.z"), &blob).unwrap();
+    // Windows builds keep a plain reference: rustc on the Windows runners crashes (an illegal
+    // instruction, no message) on the page-aligned array value, and the layout gain is a macOS one.
+    let decl = if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        "pub struct Blob(pub &'static [u8]);\npub static BLOB: Blob = Blob(include_bytes!(concat!(env!(\"OUT_DIR\"), \"/vendor.z\")));\n".to_string()
+    } else {
+        format!("#[repr(C, align(16384))]\npub struct Blob(pub [u8; {n}]);\npub static BLOB: Blob = Blob(*include_bytes!(concat!(env!(\"OUT_DIR\"), \"/vendor.z\")));\n", n = blob.len())
+    };
     let rs = format!(
-        "#[repr(C, align(16384))]\npub struct Blob(pub [u8; {n}]);\npub static BLOB: Blob = Blob(*include_bytes!(concat!(env!(\"OUT_DIR\"), \"/vendor.z\")));\n\n/// Where a part's deflated text is in `BLOB`.\npub fn range(name: &str) -> Option<(usize, usize)> {{\n    match name {{\n{arms}        _ => None,\n    }}\n}}\n",
-        n = blob.len()
+        "{decl}\n/// Where a part's deflated text is in `BLOB`.\npub fn range(name: &str) -> Option<(usize, usize)> {{\n    match name {{\n{arms}        _ => None,\n    }}\n}}\n"
     );
     std::fs::write(Path::new(&out).join("vendor.rs"), rs).unwrap();
 }
