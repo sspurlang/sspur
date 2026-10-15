@@ -509,7 +509,7 @@ fn globals() -> impl Iterator<Item = &'static str> {
     sspur_check::GLOBALS.iter().chain(sspur_check::STD_GLOBALS).copied().filter(|s| !s.starts_with("__"))
 }
 
-const EFFECTS: &[&str] = &["log", "fail", "div", "fs", "io", "proc", "time", "env", "net", "conc", "yield", "ffi", "dev", "unsafe", "db.read", "db.write"];
+const EFFECTS: &[&str] = &["log", "fail", "div", "fs", "io", "proc", "time", "env", "net", "db", "rand", "conc", "yield", "ffi", "dev", "unsafe", "db.read", "db.write"];
 
 pub fn builtins_json() -> J {
     let d = docs();

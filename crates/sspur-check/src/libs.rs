@@ -193,6 +193,9 @@ impl Checker {
     /// A program that defines a constructor with the name of a `DbErr` variant can't use the
     /// database, whose prelude builds and matches them.
     fn db_shadow(&mut self, span: Span) {
+        if self.diags.iter().any(|d| d.code == "E_DB_SHADOW") {
+            return;
+        }
         let Some((_, src)) = builtins::STD_SUMS.iter().find(|(n, _)| *n == "#DbErr") else { return };
         let shadowed: Vec<String> = self.ctors.iter().filter(|(_, c)| !c.ty.starts_with('#')).map(|(n, _)| n.clone()).filter(|n| src.contains(&format!(" {n}{{")) || src.contains(&format!("= {n}{{")) || src.contains(&format!("| {n} ")) || src.ends_with(&format!("| {n}"))).collect();
         if let Some(n) = shadowed.first() {

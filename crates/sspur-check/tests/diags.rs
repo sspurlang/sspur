@@ -395,3 +395,18 @@ fn upper_case_fields_are_field_accesses() {
     assert_eq!(d[0].hint.as_deref(), Some("did you mean 'OBJECT_NAME'?"));
     assert_eq!(codes(&format!("{ty}fn f(g: Omm) -> Int\n= g.OBJECT_NAME")), vec!["E_TYPE_MISMATCH"]);
 }
+
+#[test]
+fn data_libraries_are_typed() {
+    let ok = "type U = {id: Int, email: Opt[Str]}\nfn f() -> List[U] ! db, fail[DbErr]\n= do\n  c = db.open(\":memory:\")\n  db.query[U](c, \"select * from u where id = ? and name = ?\", [1, \"a\"])\nfn g(s: Str) -> Bytes\n= crypto.sha256(s)\nfn h() -> Str ! rand\n= crypto.token(16)\nfn k(t: Str) -> Res[List[U], Str]\n= csv.decode[U](t)";
+    assert!(codes(ok).iter().all(|c| c.starts_with('W')), "{:?}", diags(ok));
+    assert_eq!(codes("fn f() -> Int ! db, fail[DbErr]\n= db.exec(db.open(\"x\"), \"x\", 5)"), vec!["E_SQL_PARAM"]);
+    assert_eq!(codes("fn f() -> Int ! db, fail[DbErr]\n= db.exec(db.open(\"x\"), \"x\", [[1]])"), vec!["E_SQL_PARAM"]);
+    assert_eq!(codes("type U = {f: List[Int]}\nfn f() -> List[U] ! db, fail[DbErr]\n= db.query[U](db.open(\"x\"), \"x\")"), vec!["E_SQL_ROW"]);
+    assert_eq!(codes("type U = {f: List[Int]}\nfn f(t: Str) -> Res[List[U], Str]\n= csv.decode[U](t)"), vec!["E_CSV_TYPE"]);
+    assert_eq!(codes("fn f() -> Bytes\n= crypto.sha256(5)"), vec!["E_TYPE_MISMATCH"]);
+    assert_eq!(codes("fn f() -> Bytes\n= crypto.random(5)"), vec!["E_EFFECT_MISSING"]);
+    assert_eq!(codes("type E = Sql{x: Int}\nfn f() -> Db ! db, fail[DbErr]\n= do\n  a = db.open(\"x\")\n  db.open(\"y\")"), vec!["E_DB_SHADOW"]);
+    assert_eq!(codes("fn f() -> Int\n= db.frob(1)"), vec!["E_UNKNOWN_METHOD"]);
+    assert_eq!(codes("fn f() -> Int ! db, fail[DbErr]\n= db.tx(db.open(\"x\"), () => 1)"), Vec::<String>::new());
+}

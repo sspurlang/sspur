@@ -51,14 +51,15 @@ pub(crate) fn is_input_error(msg: &str) -> bool {
 
 impl Interp {
     pub fn fuzz(&self, opts: &Options) -> Vec<Report> {
-        let mut names: Vec<&String> = self.fns.keys().collect();
+        // `__` names are the library and network preludes and the code generated for them.
+        let mut names: Vec<&String> = self.fns.keys().filter(|n| !n.starts_with("__")).collect();
         names.sort();
         let mut rng = Rng(opts.seed.max(1));
         names.into_iter().map(|n| self.fuzz_fn(&self.fns[n].clone(), opts, &mut rng)).collect()
     }
 
     pub fn differential(&self, opts: &Options) -> Vec<DiffReport> {
-        let mut names: Vec<String> = self.fns.keys().filter(|n| self.native_has(n)).cloned().collect();
+        let mut names: Vec<String> = self.fns.keys().filter(|n| self.native_has(n) && !n.starts_with("__")).cloned().collect();
         names.sort();
         let mut rng = Rng(opts.seed.max(1));
         let saved = self.output.replace(Some(vec![]));
