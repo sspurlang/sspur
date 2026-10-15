@@ -1,0 +1,8 @@
+// An amount of money in cents.
+pub type Money = {cents: Int} derive Eq, Show
+
+// The sum of two amounts.
+pub fn add(a: Money, b: Money) -> Money
+= Money{cents: a.cents + b.cents}
+
+test t_add = add(Money{cents: 1}, Money{cents: 2}) == Money{cents: 3}

@@ -1,0 +1,4 @@
+use money.{Money, add}
+
+fn main() -> Unit ! log
+= log("{add(Money{cents: 2}, Money{cents: 40}).cents}")

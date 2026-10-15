@@ -4,80 +4,49 @@ The SSPUR registry is [sspur-packages](https://github.com/utkarshavardhana/sspur
 
 ## Using a published package
 
+`sspur search` finds packages and `sspur add` adds one. This example reads a local copy of an index, the `SSPUR_INDEX` directory next to it; without `SSPUR_INDEX`, `sspur` reads sspur-packages.
+
 ```console
-$ sspur search money
-money                    1.2.0      Amounts of money in cents
-$ sspur add money
-added money 1.2.0 #33pnngsyjpwa (registry ^1.2.0): Money, add, neg
+{{#include ../snippets/handbook/publish/publish.out:add}}
 ```
 
-`sspur add money` picks the newest version and writes `money = { version = "^1.2.0" }` to `sspur.toml`. Give a requirement to choose: `sspur add money@^1.1`, `money@~1.2.0` (patches only), `money@=1.2.0`. `^1.2` accepts any 1.x from 1.2.0 on, and in a 0.x line, `^0.3` accepts 0.3.x only, as in Cargo.
+`sspur add money` picks the newest version and writes `money = { version = "^1.0.0" }` to `sspur.toml`. Give a requirement to choose: `sspur add money@^1.1`, `money@~1.2.0` (patches only), `money@=1.2.0`. `^1.2` accepts any 1.x from 1.2.0 on, and in a 0.x line `^0.3` accepts 0.3.x only, as in Cargo.
 
-The lock pins the version by its commit, the SHA-256 of its source snapshot, and the hash of its exports:
+The lock pins the version by its commit, the hash of its exports, and the SHA-256 of its source snapshot. From sspur-packages the snapshot is a release asset, `https://github.com/utkarshavardhana/sspur-packages/releases/download/money-1.0.0/money-1.0.0.tar`; here it is the file next to the index:
 
-```toml
-[[dep]]
-name = "money"
-version = "1.2.0"
-source = "registry"
-ref = "^1.2.0"
-rev = "272332a18e90501d70a91d38729fd5dad8ea52ca"
-hash = "33pnngsyjpwa2kanfmgj2gi53dzugrczxi3awxezzjm6s44i4yqq"
-git = "https://github.com/alice/money.git"
-snapshot = "https://github.com/utkarshavardhana/sspur-packages/releases/download/money-1.2.0/money-1.2.0.tar"
-sha256 = "9d9320f4a6ce6ff9d62fcd6077ac17d6e5e4cca13020905b5d13adb33da61dd5"
-deps = []
+```console
+{{#include ../snippets/handbook/publish/publish.out:lock}}
 ```
 
-Builds read only the lock and the cache, so they work offline and give the same program every time. Nothing in a package runs when it is installed: `sspur` downloads the snapshot, checks its SHA-256, typechecks the package and checks that it hashes to the published hash. If the snapshot is missing it uses the author's repository at the pinned commit, which must give exactly the same bytes. A snapshot that doesn't match is refused. `sspur source money@1.2.0` downloads and verifies a version into a directory without building it, so you can read it first.
+Builds read only the lock and the cache, so they work offline and give the same program every time. Nothing in a package runs when it is installed: `sspur` downloads the snapshot, checks its SHA-256, typechecks the package and checks that it hashes to the published hash. If the snapshot is missing it uses the author's repository at the pinned commit, which must give exactly the same bytes. A snapshot that doesn't match is refused. `sspur source money@1.0.0` downloads and verifies a version into a directory without building it, so you can read it first.
 
 `sspur update` moves every registry dependency to the newest version its requirement allows (or `sspur update money` just one), prints what changed in each export, typechecks your code against it, and refuses if your code no longer checks. Each package has one version in a graph: the highest that meets every requirement on it, from your manifest and from your dependencies'. When none does, `E_DEP_CONFLICT` says who needs what.
 
 ## Before you publish
 
-A published package is a public GitHub repository with `sspur.toml` at its top:
+A published package is a public GitHub repository with `sspur.toml` at its top, with a description and a licence:
 
 ```toml
-[package]
-name = "money"
-version = "1.0.0"
-description = "Amounts of money in cents"
-license = "MIT"
-src = "lib.ssp"
+{{#include ../snippets/handbook/publish/money/sspur.toml}}
 ```
 
 It needs a LICENSE file with an OSI-approved licence, a README.md, a doc comment on every public definition (the `//` lines directly above it), and at least one test. Its dependencies must be published packages too:
 
 ```sspur
-// An amount of money in cents.
-pub type Money = {cents: Int} derive Eq, Show
-
-// The sum of two amounts.
-pub fn add(a: Money, b: Money) -> Money
-= Money{cents: a.cents + b.cents}
-
-test t_add = add(Money{cents: 1}, Money{cents: 2}) == Money{cents: 3}
+{{#include ../snippets/handbook/publish/money/lib.ssp}}
 ```
 
-Commit, tag the version, and push both:
+`sspur api` shows the public API as the registry will list it, with the doc comments:
 
 ```console
-$ git tag v1.0.0 && git push origin main v1.0.0
+{{#include ../snippets/handbook/publish/publish.out:api}}
 ```
+
+Commit, tag the version (`git tag v1.0.0`), and push the branch and the tag.
 
 ## Publishing
 
-```console
-$ sspur publish
-running the tests, native and interpreted ...
-ok    build.parse  The source parses
-...
-API: first version, 2 public definitions
-money 1.0.0: every blocking check passed, 0 warnings
-opened https://github.com/utkarshavardhana/sspur-packages/issues/12
-```
-
-`sspur publish` runs the registry's checks on the committed package, the same program the registry runs. With the [GitHub CLI](https://cli.github.com/) installed and signed in, it opens the publish request for you; otherwise it prints a link to the request form, filled in. `sspur publish --dry-run` only checks. The [Publish page](https://utkarshavardhana.github.io/sspur-packages/publish/) does the same in a browser: enter your GitHub username, pick the repository and the tag, and it runs the checks it can run there (all but the tests) before you submit.
+Run `sspur publish` in the package. It runs the registry's checks on the committed package, the same program the registry runs, including the tests natively and in the interpreter. It prints a line per check (`ok    build.parse  The source parses`, or `FAIL  pkg.docs` with the file, the line and the fix) and ends with `money 1.0.0: every blocking check passed`. With the [GitHub CLI](https://cli.github.com/) installed and signed in, it opens the publish request for you; otherwise it prints a link to the request form, filled in. `sspur publish --dry-run` only checks. The [Publish page](https://utkarshavardhana.github.io/sspur-packages/publish/) does the same in a browser: enter your GitHub username, pick the repository and the tag, and it runs the checks it can run there (all but the tests) before you submit.
 
 The request is an issue in sspur-packages. Its workflow checks the version again, runs the tests, and opens a pull request that adds the version to the index. The description lists every check, the effects of each public function and the API changes since the last version. When every blocking check passes, the workflow stores a snapshot of the source as a release asset and merges the pull request. Within a few minutes `sspur add` sees the new version.
 
@@ -94,6 +63,20 @@ The [standards](https://github.com/utkarshavardhana/sspur-packages/blob/main/CON
 - the first version comes from the repository's owner, and later ones from the package's owners;
 - an OSI licence, a README, docs and tests; no binaries, no secrets, no build or install hooks, within the size limits;
 - no holes left in the code, a reason next to every `run_cmd`, and the naming conventions.
+
+## What the registry stores
+
+The index is one JSON file per package. The entry of each version pins its tag, commit, export hash and snapshot, and records its effects, dependencies, licence and public API, which the package page and the API diff of the next version use:
+
+```json
+{{#include ../snippets/handbook/publish/index/packages/mo/money.json}}
+```
+
+`index.json` sums up every package for `sspur search` and the site:
+
+```json
+{{#include ../snippets/handbook/publish/index/index.json}}
+```
 
 ## Yanking and deprecating
 

@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "name": "money",
+  "description": "Amounts of money in cents",
+  "repository": "https://github.com/alice/money",
+  "owners": [
+    "alice"
+  ],
+  "keywords": [],
+  "versions": [
+    {
+      "version": "1.0.0",
+      "git": "https://github.com/alice/money.git",
+      "tag": "v1.0.0",
+      "commit": "57c0821dba1d2eda9551d69bb0edb7bbfdfde1bd",
+      "hash": "33pnngsyjpwa2kanfmgj2gi53dzugrczxi3awxezzjm6s44i4yqq",
+      "snapshot": {
+        "url": "../index/money-1.0.0.tar",
+        "sha256": "12df3c1f9bff6230559c0cb05edbd996ee8e2b7d581f57503b372f092f34cc03",
+        "size": 3072
+      },
+      "effects": [],
+      "deps": {},
+      "license": "MIT",
+      "yanked": false,
+      "deprecated": null,
+      "published": "2026-10-16T00:00:00Z",
+      "publisher": "alice",
+      "request": 1,
+      "api": [
+        {
+          "name": "Money",
+          "kind": "type",
+          "sig": "pub type Money = {cents: Int} derive Eq, Show",
+          "sig_hash": "6ihg53i2inlz3szh7cttn66vfy",
+          "hash": "hfvfubcxmqiswfgotgbugouc43jjtmenxfexempzjcxxsjqa757q",
+          "effects": [],
+          "doc": "An amount of money in cents."
+        },
+        {
+          "name": "add",
+          "kind": "fn",
+          "sig": "fn add(a: Money, b: Money) -> Money",
+          "sig_hash": "nz5nqlv4q2jpi6sk7rg6gs5waq",
+          "hash": "rb32qyrp2s7b2gnaigumjosg6xpjai5sedd47pocadh2oo5kftwa",
+          "effects": [],
+          "doc": "The sum of two amounts."
+        }
+      ]
+    }
+  ]
+}

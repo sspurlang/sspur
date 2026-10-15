@@ -122,6 +122,7 @@ pub fn api(json_out: bool, rev: Option<&str>) -> ExitCode {
     for d in f["defs"].as_array().into_iter().flatten().filter(|d| d["public"] == true && d["kind"] != "test") {
         let sig = d["sig"].as_str().unwrap_or(d["name"].as_str().unwrap_or(""));
         let first = sig.lines().next().unwrap_or("");
+        let first = if first.starts_with("pub ") || d["kind"] == "impl" { first.to_string() } else { format!("pub {first}") };
         println!("  {}:{}  {first}", f["source"].as_str().unwrap_or(""), d["line"]);
         if let Some(doc) = d["doc"].as_str().filter(|s| !s.is_empty()) {
             println!("      {}", doc.lines().next().unwrap_or(""));
