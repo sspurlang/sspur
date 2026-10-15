@@ -230,6 +230,7 @@ impl<'a> Hasher<'a> {
                 exprs.push(&s.init);
             }
             Def::Svc(sv) => {
+                #[cfg(not(target_family = "wasm"))]
                 tys.extend(sv.params.iter().map(|p| &p.ty));
                 sv.eps.iter().for_each(|e| add(&e.handler));
             }
@@ -526,6 +527,7 @@ impl<'a> Hasher<'a> {
             }
             Def::Svc(sv) => {
                 enc.tag(b'V');
+                #[cfg(not(target_family = "wasm"))]
                 if !sv.params.is_empty() {
                     enc.tag(b'(');
                     enc.uint(sv.params.len() as u64);

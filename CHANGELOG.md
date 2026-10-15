@@ -24,9 +24,10 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 - svc endpoints may return and take any type `http.serve` can encode and decode, generic records such as `Page[Note]` and `Time` included, instead of only the types a deployed service supported.
 - `Time` values bound as SQL parameters are ISO 8601 text with milliseconds (`2026-10-15T09:30:00.000Z`), so text order in SQL is time order.
 - Commands run in a package without `src` in its manifest use `lib.ssp`, as dependents do, before `main.ssp`.
+- The playground, which can't serve, leaves out svc parameters, refined JSON decoding and the interpreter's typed `catch` below, so its WebAssembly stays at 972 KiB gzipped.
 
 ### Fixed
-- In the interpreter a `catch` whose arms name constructors of one error type also caught other error types in its `_` arm, unlike native code. A svc endpoint that raised its own error type next to `DbErr` answered 500 interpreted; it now answers as in native code.
+- In the interpreter a `catch` whose arms name constructors of one error type also caught other error types in its `_` arm, unlike native code (the playground still does). A svc endpoint that raised its own error type next to `DbErr` answered 500 interpreted; it now answers as in native code.
 - Debug builds of programs that elaboration rewrites (networking, the data libraries, traits) mapped their lines to the rewritten program rather than the file, so with comments or other formatting above a function a breakpoint by line stopped in the wrong place. Lines now map to the file.
 
 ## [0.11.0] - 2026-10-15

@@ -277,7 +277,7 @@ fn std_system_calls_need_their_effects() {
 fn json_rejects_types_without_a_wire_form() {
     assert!(codes("type P = {x: Int, tags: Set[Str]}\nfn f(p: P) -> Res[P, Str]\n= json.decode[P](json.encode(p))").is_empty());
     assert_eq!(codes("fn f(g: Int -> Int) -> Str\n= json.encode(g)"), vec!["E_JSON"]);
-    assert_eq!(codes("type Q = {n: Int where _ > 0}\nfn f(s: Str) -> Bool\n= json.decode[Q](s).is_ok"), vec!["E_JSON"]);
+    assert!(codes("type Q = {n: Int where _ > 0}\nfn f(s: Str) -> Bool\n= json.decode[Q](s).is_ok").is_empty(), "refinements are checked after decoding");
     assert_eq!(codes("fn f[T](x: T) -> Str\n= json.encode(x)"), vec!["E_JSON"]);
     assert_eq!(codes("fn f() -> Str\n= json.nope(1)"), vec!["E_UNKNOWN_METHOD"]);
 }

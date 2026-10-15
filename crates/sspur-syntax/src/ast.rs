@@ -268,7 +268,8 @@ pub struct StaticDef {
 pub struct SvcDef {
     pub name: String,
     /// `svc api(app: App)`: values the svc is given when it is served, which endpoint parameters
-    /// of the same name receive.
+    /// of the same name receive. The playground, which can't serve, leaves them out.
+    #[cfg(not(target_family = "wasm"))]
     pub params: Vec<Param>,
     pub eps: Vec<Endpoint>,
     pub span: Span,

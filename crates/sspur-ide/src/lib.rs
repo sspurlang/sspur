@@ -388,6 +388,7 @@ const DOC_SOURCES: &[&str] = &[
     include_str!("../../../docs/reference/stdlib/time.md"),
     include_str!("../../../docs/reference/stdlib/data.md"),
     include_str!("../../../docs/reference/stdlib/system.md"),
+    include_str!("../../../docs/reference/stdlib/system-spawn.md"),
     include_str!("../../../docs/reference/stdlib/data-libs.md"),
 ];
 const EFFECT_DOCS: &str = include_str!("../../../docs/reference/effects.md");

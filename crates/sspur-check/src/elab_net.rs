@@ -35,6 +35,7 @@ pub fn status_for(variant: &str) -> u16 {
 }
 
 pub(crate) struct Gen<'a> {
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
     pub(crate) m: &'a Module,
     pub(crate) out: &'a CheckOutput,
     pub(crate) extra: Vec<String>,
@@ -157,23 +158,10 @@ impl Gen<'_> {
     #[cfg(target_family = "wasm")]
     fn svc(&mut self, name: &str) -> Result<String, String> {
         let fname = format!("__svc_{name}");
-        let ps = self.svc_ctx(name).unwrap_or_default();
         if self.done.insert(fname.clone()) {
             self.extra.push(format!("fn {fname}(__rq: Request) -> Response\n= __http_text(503, \"\")"));
-            if !ps.is_empty() {
-                self.extra.push(format!("fn {fname}_with({ps}) -> (Request -> Response)\n= {fname}"));
-            }
         }
-        Ok(if ps.is_empty() { fname } else { format!("{fname}_with") })
-    }
-
-    /// The parameters of `svc name(...)` as source text.
-    #[cfg(target_family = "wasm")]
-    fn svc_ctx(&self, name: &str) -> Option<String> {
-        self.m.defs.iter().find_map(|d| match d {
-            Def::Svc(s) if s.name == name => Some(s.params.iter().map(|p| format!("{}: {}", p.name, printer::ty(&p.ty))).collect::<Vec<_>>().join(", ")),
-            _ => None,
-        })
+        Ok(fname)
     }
 
     /// `__svc_<name>`, the dispatcher of a svc, with one function per endpoint.

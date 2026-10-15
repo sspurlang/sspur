@@ -201,7 +201,7 @@ impl Interp {
         (args, msg)
     }
 
-    fn type_of_ctor(&self, ctor: &str) -> Option<&str> {
+    pub(crate) fn type_of_ctor(&self, ctor: &str) -> Option<&str> {
         self.types.values().find(|t| matches!(&t.body, TypeBody::Sum(vs) if vs.iter().any(|v| v.name == ctor))).map(|t| t.name.as_str())
     }
 

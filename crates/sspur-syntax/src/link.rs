@@ -194,7 +194,7 @@ impl R<'_> {
                 self.ty(&mut st.val, span);
             }
             Def::Svc(sv) => {
-                self.tps.clear();
+                #[cfg(not(target_family = "wasm"))]
                 for p in &mut sv.params {
                     self.ty(&mut p.ty, span);
                 }

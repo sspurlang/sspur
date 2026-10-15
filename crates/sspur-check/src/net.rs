@@ -102,8 +102,11 @@ impl Checker {
         let ok = match &rt {
             Type::Con(n, a) if a.is_empty() && !n.starts_with('#') => match self.types.get(n) {
                 Some(TypeInfo { kind: TypeKind::Record(fs), .. }) => {
-                    let secret = Type::app("Secret", vec![Type::str()]);
-                    let bad = fs.iter().filter(|(_, ft)| *ft != secret).find_map(|(f, ft)| self.json_bad(ft, true, &mut vec![]).map(|why| format!("field {f}: {why}")));
+                    #[cfg(not(target_family = "wasm"))]
+                    let skip = |ft: &Type| *ft == Type::app("Secret", vec![Type::str()]);
+                    #[cfg(target_family = "wasm")]
+                    let skip = |_: &Type| false;
+                    let bad = fs.iter().filter(|(_, ft)| !skip(ft)).find_map(|(f, ft)| self.json_bad(ft, true, &mut vec![]).map(|why| format!("field {f}: {why}")));
                     match bad {
                         Some(why) => {
                             self.push_diag("E_CONFIG_TYPE", "error", args[0].span, format!("config.load cannot read {rt}: {why}"), None, vec![]);
@@ -247,7 +250,11 @@ impl Checker {
             let names = self.svc_params.get(&ep.handler).cloned().unwrap_or_default();
             if !matches!(ep.method.as_str(), "get" | "delete") {
                 for (p, t) in names.iter().zip(&s.params) {
-                    if path.contains(p) || matches!(t, Type::Con(c, _) if c == "#Request") || sv.params.iter().any(|q| q.name == *p) {
+                    #[cfg(not(target_family = "wasm"))]
+                    if sv.params.iter().any(|q| q.name == *p) {
+                        continue;
+                    }
+                    if path.contains(p) || matches!(t, Type::Con(c, _) if c == "#Request") {
                         continue;
                     }
                     if let Some(why) = self.json_bad_r(t, true, cfg!(not(target_family = "wasm")), &mut vec![]) {
@@ -261,11 +268,12 @@ impl Checker {
         }
         self.net_site(span, NetSite::Svc(n.to_string()));
         let h = Type::Fn(vec![Type::con("#Request")], Box::new(Type::con("#Response")), Row::closed(atoms));
-        if sv.params.is_empty() {
-            return h;
+        #[cfg(not(target_family = "wasm"))]
+        if !sv.params.is_empty() {
+            let ps = sv.params.iter().map(|p| self.conv_ty(&p.ty)).collect();
+            return Type::Fn(ps, Box::new(h), Row::closed(BTreeSet::new()));
         }
-        let ps = sv.params.iter().map(|p| self.conv_ty(&p.ty)).collect();
-        Type::Fn(ps, Box::new(h), Row::closed(BTreeSet::new()))
+        h
     }
 
     /// `x.json[T]` on a `Request` or `Response`.

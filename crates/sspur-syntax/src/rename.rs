@@ -118,6 +118,7 @@ impl Renamer<'_> {
             }
             Def::Svc(sv) => {
                 self.hit(&mut sv.name);
+                #[cfg(not(target_family = "wasm"))]
                 sv.params.iter_mut().for_each(|p| self.ty(&mut p.ty));
                 sv.eps.iter_mut().for_each(|e| self.hit(&mut e.handler));
             }

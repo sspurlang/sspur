@@ -230,6 +230,7 @@ pub fn strip_spans(m: &mut Module) {
             }
             Def::Svc(sv) => {
                 sv.span = z;
+                #[cfg(not(target_family = "wasm"))]
                 sv.params.iter_mut().for_each(|p| strip_ty(&mut p.ty));
                 sv.eps.iter_mut().for_each(|e| e.span = z);
             }
