@@ -35,6 +35,11 @@ pub(crate) fn clause(pred: &Expr, x: &str) -> String {
     printer::expr(&e, 0)
 }
 
+/// The clause as the program wrote it, with dependencies' names as `pkg.name`.
+fn shown(pred: &Expr) -> String {
+    sspur_syntax::link::demangle(&printer::expr(pred, 0), &|p: &str| !p.is_empty())
+}
+
 fn ident(s: &str) -> String {
     s.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect()
 }
@@ -133,7 +138,7 @@ impl Gen<'_> {
                 if self.done.insert(f.clone()) {
                     let r = self.jraw(target)?;
                     let inner = self.jconv(target, "v", "at", 1)?;
-                    let check = format!("if not ({}) then raise SspurJsonBad{{msg: __jmsg(at, {})}}", clause(pred, "v"), lit(&printer::expr(pred, 0)));
+                    let check = format!("if not ({}) then raise SspurJsonBad{{msg: __jmsg(at, {})}}", clause(pred, "v"), lit(&shown(pred)));
                     self.extra.push(format!("fn {f}(v: {r}, at: Str) -> {name} ! fail[SspurJsonErr]\n= do\n  {check}\n  {inner}"));
                 }
                 Ok(format!("{f}({x}, {at})"))
@@ -160,7 +165,7 @@ impl Gen<'_> {
             raw.push(format!("{}: {}", fd.name, self.jraw(&fd.ty)?));
             let at = format!("__jat(at, {})", lit(&fd.name));
             if let Some(p) = &fd.refine {
-                writeln!(checks, "  if not ({}) then raise SspurJsonBad{{msg: __jmsg({at}, {})}}", clause(p, &format!("x.{}", fd.name)), lit(&printer::expr(p, 0))).unwrap();
+                writeln!(checks, "  if not ({}) then raise SspurJsonBad{{msg: __jmsg({at}, {})}}", clause(p, &format!("x.{}", fd.name)), lit(&shown(p))).unwrap();
             }
             inits.push(format!("{}: {}", fd.name, self.jconv(&fd.ty, &format!("x.{}", fd.name), &at, 1)?));
         }
@@ -203,7 +208,7 @@ impl Gen<'_> {
                 _ => None,
             };
             for p in fd.refine.iter().chain(alias) {
-                writeln!(out, "  if not ({}) then raise SspurBadConfig{{msg: {}}}", clause(p, &format!("__c_{f}")), lit(&format!("{f}: must satisfy {}", printer::expr(p, 0)))).unwrap();
+                writeln!(out, "  if not ({}) then raise SspurBadConfig{{msg: {}}}", clause(p, &format!("__c_{f}")), lit(&format!("{f}: must satisfy {}", shown(p)))).unwrap();
             }
         }
         out
