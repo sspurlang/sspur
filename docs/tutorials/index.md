@@ -4,6 +4,7 @@ Each tutorial builds one real thing from start to finish. They assume you have r
 
 | Tutorial | What you build | Needs |
 |---|---|---|
+| [Build a web app](web-app.md) | The reference app from `sspur new web-app`: accounts, notes, SQLite, sessions and CSRF, with its tests and a deploy guide | `clang` |
 | [Build and deploy a CRUD service](crud-service.md) | An HTTP service over a table, its IAM policies, and a local run | `clang` |
 | [Migrations and hot swap](migrations.md) | A schema change with a migration, a recorded replay, a live swap and a rollback | `clang` |
 | [Calling C](ffi.md) | Calls into libm and libc, generated bindings, and a C library built from SSPUR | `clang` |

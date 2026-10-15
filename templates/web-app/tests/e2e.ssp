@@ -26,6 +26,7 @@ fn port_in(line: Str) -> Opt[Int]
   | some((_, rest)) => rest.split(":").last.or("").chars.take_while(c => "0123456789".contains(c)).join("").to_int
   | none => none
 
+// ANCHOR: start
 // Starts `sspur run main.ssp` on port 0 and waits (up to 10 minutes, for a first native build
 // on a slow machine) for the line that says which port it got.
 fn start(sspur: Str, tier: Str, db: Str) -> Running ! proc, rand, time, div, fail[E2eErr]
@@ -46,6 +47,7 @@ fn start(sspur: Str, tier: Str, db: Str) -> Running ! proc, rand, time, div, fai
     | none => ()
   if port == 0 then raise Failed{step: "start", why: "the server did not say where it listens:\n" + seen}
   Running{p, base: "http://127.0.0.1:{port}", log: seen}
+// ANCHOR_END: start
 
 fn send(base: Str, method: Str, path: Str, token: Str, body: Str) -> Response ! net, fail[E2eErr]
 = do
@@ -126,6 +128,7 @@ fn make_notes(base: Str, token: Str, n: Int, failures: Atomic[Int]) -> Unit ! ne
 fn count(base: Str, token: Str, tag: Str) -> Int ! net, fail[E2eErr]
 = send(base, "GET", "/api/notes?tag={tag}&limit=1", token, "").json[Page[Note]].map(p => p.total).or(-1)
 
+// ANCHOR: concurrency
 // Many clients at once: 8 people each create 20 notes, and 8 more clients add 20 each to one
 // shared account. Every note must be there afterwards.
 fn concurrency(base: Str) -> Int ! net, conc, fail[E2eErr]
@@ -140,6 +143,7 @@ fn concurrency(base: Str) -> Int ! net, conc, fail[E2eErr]
     check("user {i} notes", count(base, tokens[i], "par") == 20, "{count(base, tokens[i], "par")}")
   check("shared notes", count(base, shared, "par") == 160, "{count(base, shared, "par")} of 160: writes were lost")
   320
+// ANCHOR_END: concurrency
 
 fn hit(base: Str, token: Str, n: Int, failures: Atomic[Int]) -> Unit ! net, conc
 = do
@@ -166,7 +170,7 @@ fn run(r: Running) -> Str ! net, conc, time, fail[E2eErr]
   page_flow(r.base)
   c = concurrency(r.base)
   ms = load(r.base)
-  "{a + c} notes, 800 requests in {ms} ms ({800 * 1000 / ms} a second)"
+  "{a + c} notes, 800 requests\nload: 800 requests in {ms} ms, {800 * 1000 / ms} a second"
 
 fn remove_db(db: Str) -> Unit ! fs
 = do

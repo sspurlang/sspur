@@ -1,0 +1,35 @@
+// ANCHOR: new
+$ sspur new web-app notes
+created notes from the web-app template
+
+  cd notes
+  sspur run              # then open http://127.0.0.1:8080
+  sspur run tests/run.ssp
+
+README.md has the rest: configuration, debugging, backups and deploying.
+// ANCHOR_END: new
+$ cd notes
+// ANCHOR: test
+$ sspur test
+5 passed, 0 failed
+$ sspur test tests/storage.ssp
+8 passed, 0 failed
+$ sspur run tests/e2e.ssp
+e2e passed (server native): 350 notes, 800 requests
+...
+// ANCHOR_END: test
+// ANCHOR: serve
+$ NOTES_PORT=8080 NOTES_SECRET=use-openssl-rand-base64-48-for-a-real-one sspur run &
+info: {"event":"started","mode":"dev","db":"notes.db","migrations":4}
+info: listening on http://127.0.0.1:8080
+// ANCHOR_END: serve
+// ANCHOR: curl
+$ curl -s -w ' %{http_code}\n' localhost:8080/api/health
+{"status":"ok","db":true} 200
+$ curl -s -w ' %{http_code}\n' localhost:8080/api/signup -d '{"email":"ada","password":"correct horse battery"}'
+{"error":"invalid request","detail":"body.email: must satisfy models.email_ok(_)"} 400
+$ curl -s -w ' %{http_code}\n' localhost:8080/api/signup -d '{"email":"ada@example.com","password":"password123"}'
+{"error":{"tag":"Invalid","field":"password","why":"the password is too easy to guess"}} 400
+$ curl -s -w ' %{http_code}\n' localhost:8080/api/notes
+{"error":"Unauthorized"} 401
+// ANCHOR_END: curl

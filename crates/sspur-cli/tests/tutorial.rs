@@ -6,9 +6,11 @@
 // are mdBook markers and are skipped. Commands: `sspur ...`, `cd DIR`, `cat FILE`, and
 // `curl` against the server started by `sspur deploy local ... --port 8080` or by a
 // `sspur run server.ssp &` (with PORT=0) earlier in the same transcript; later commands that say
-// `8080` get that server's real port. `NAME=value` before a command sets its environment.
+// `8080` get that server's real port. `NAME=value` before a command sets its environment, and
+// SSPUR names the sspur under test, for programs that start it themselves.
 //
-// Pages may only show code that is a file under docs/snippets (see doc_code_blocks_are_checked_files),
+// Pages may only show code that is a file under docs/snippets, or part of the web-app template,
+// whose generated app runs its own tests (see doc_code_blocks_are_checked_files),
 // and every diagnostic code the compiler can emit is listed in docs/reference/errors.md.
 
 use std::io::{BufRead, BufReader, Read};
@@ -207,7 +209,8 @@ fn run_transcript(file: &Path) {
             "curl" => curl(&args[1..], server.as_ref().unwrap_or_else(|| panic!("{rel}: curl before sspur deploy local")).1),
             "sspur" if background || (args.get(1).map(String::as_str) == Some("deploy") && args.get(2).map(String::as_str) == Some("local")) => {
                 let a: Vec<&str> = args[1..].iter().map(|a| if a == PORT { "0" } else { a.as_str() }).collect();
-                let child = Command::new(env!("CARGO_BIN_EXE_sspur")).args(&a).envs(env.iter().cloned()).env("PORT", "0").current_dir(&cwd).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+                let env = env.iter().map(|(k, v)| (k.clone(), if v == PORT { "0".to_string() } else { v.clone() }));
+                let child = Command::new(env!("CARGO_BIN_EXE_sspur")).args(&a).envs(env).env("PORT", "0").env("SSPUR", env!("CARGO_BIN_EXE_sspur")).current_dir(&cwd).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
                 let mut child = Kill(child);
                 drain(child.0.stderr.take().unwrap());
                 let mut out = BufReader::new(child.0.stdout.take().unwrap());
@@ -218,7 +221,7 @@ fn run_transcript(file: &Path) {
                     got.push(l);
                 }
                 drain(out);
-                let first = got.first().cloned().unwrap_or_default();
+                let first = got.iter().find(|l| l.contains("listening on")).or(got.first()).cloned().unwrap_or_default();
                 let port: u16 = first.trim().rsplit(':').next().unwrap().parse().unwrap_or_else(|_| panic!("{rel}: {first}"));
                 server = Some((child, port));
                 got.concat().replace(&port.to_string(), PORT)
@@ -234,7 +237,7 @@ fn run_transcript(file: &Path) {
                     _ => a.as_str(),
                 }).collect();
                 let stdin = input.map_or_else(Stdio::null, |f| Stdio::from(std::fs::File::open(&f).unwrap_or_else(|e| panic!("{rel}: {}: {e}", f.display()))));
-                let r = Command::new(env!("CARGO_BIN_EXE_sspur")).args(&a).envs(env.iter().cloned()).current_dir(&cwd).stdin(stdin).output().unwrap();
+                let r = Command::new(env!("CARGO_BIN_EXE_sspur")).args(&a).envs(env.iter().cloned()).env("SSPUR", env!("CARGO_BIN_EXE_sspur")).current_dir(&cwd).stdin(stdin).output().unwrap();
                 let out = format!("{}{}", String::from_utf8_lossy(&r.stdout), String::from_utf8_lossy(&r.stderr));
                 match &port {
                     Some(p) => out.replace(p.as_str(), PORT),
@@ -334,7 +337,7 @@ fn doc_code_blocks_are_checked_files() {
                 match fence.take() {
                     Some(lang) => {
                         if strict || (strict_sspur && ["sspur", "console", "toml", ""].contains(&lang.as_str())) {
-                            assert!(body.len() == 1 && body[0].starts_with("{{#include ") && body[0].contains("snippets/"), "{page}: a code block that is not one include of a docs/snippets file: {body:?}");
+                            assert!(body.len() == 1 && body[0].starts_with("{{#include ") && (body[0].contains("snippets/") || body[0].contains("templates/web-app/")), "{page}: a code block that is not one include of a docs/snippets or templates/web-app file: {body:?}");
                         }
                     }
                     None => fence = Some(info.trim().to_string()),

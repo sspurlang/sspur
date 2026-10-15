@@ -25,11 +25,13 @@ pub fn ping(c: Db) -> Bool ! db
 = catch db.one[Int](c, "select 1") == 1
   | _ => false
 
+// ANCHOR: create_user
 // Creates an account; an email that is taken is `Conflict`.
 pub fn create_user(c: Db, email: Str, password_hash: Str, now: Time) -> User ! db, fail[DbErr], fail[AppErr]
 = catch db.one[User](c, "insert into users (email, password, created_at) values (?, ?, ?) returning id, email, created_at", [email, password_hash, now])
   | Constraint{msg} => raise Conflict{why: "an account with this email already exists"}
   | e => raise e
+// ANCHOR_END: create_user
 
 // The account with this (normalized) email.
 pub fn account(c: Db, email: Str) -> Opt[Account] ! db, fail[DbErr]
@@ -77,6 +79,7 @@ pub fn create_note(c: Db, user: Int, n: NewNote, now: Time) -> Note ! db, fail[D
 pub fn note(c: Db, user: Int, id: Int) -> Opt[Note] ! db, fail[DbErr]
 = db.opt[NoteRow](c, "select id, title, body, tags, created_at, updated_at from notes where id = ? and user_id = ?", [id, user]).map(to_note)
 
+// ANCHOR: update
 // Applies `p` to the note `id` of `user`, reading and writing in one transaction so that two
 // changes at once can't lose either.
 pub fn update_note(c: Db, user: Int, id: Int, p: NotePatch, now: Time) -> Opt[Note] ! db, fail[DbErr]
@@ -85,6 +88,7 @@ pub fn update_note(c: Db, user: Int, id: Int, p: NotePatch, now: Time) -> Opt[No
   tags = p.tags.map(models.normal_tags).or(old.tags)
   r = db.one[NoteRow](c, "update notes set title = ?, body = ?, tags = ?, updated_at = ? where id = ? and user_id = ? returning id, title, body, tags, created_at, updated_at", [p.title.map(_.trim).or(old.title), p.body.or(old.body), json.encode(tags), now, id, user])
   some(to_note(r)))
+// ANCHOR_END: update
 
 // Deletes the note `id` of `user`; whether there was one.
 pub fn delete_note(c: Db, user: Int, id: Int) -> Bool ! db, fail[DbErr]
@@ -94,6 +98,7 @@ pub fn delete_note(c: Db, user: Int, id: Int) -> Bool ! db, fail[DbErr]
 pub fn search_terms(q: Str) -> Str
 = q.lower.words.map(w => w + "*").join(" ")
 
+// ANCHOR: list
 // A page of `user`'s notes, newest first, matching the search `q` and the tag `tag` when they
 // are not empty.
 pub fn list_notes(c: Db, user: Int, q: Str, tag: Str, r: PageReq) -> Page[Note] ! db, fail[DbErr]
@@ -102,3 +107,4 @@ pub fn list_notes(c: Db, user: Int, q: Str, tag: Str, r: PageReq) -> Page[Note] 
   total = db.one[Int](c, "select count(*) from notes n where n.user_id = ?1 and (?2 = '' or n.id in (select rowid from notes_fts where notes_fts match ?2)) and (?3 = '' or exists (select 1 from json_each(n.tags) where value = ?3))", [user, m, tag.lower])
   rows = db.query[NoteRow](c, "select n.id, n.title, n.body, n.tags, n.created_at, n.updated_at from notes n where n.user_id = ?1 and (?2 = '' or n.id in (select rowid from notes_fts where notes_fts match ?2)) and (?3 = '' or exists (select 1 from json_each(n.tags) where value = ?3)) order by n.updated_at desc, n.id desc limit ?4 offset ?5", [user, m, tag.lower, r.limit, r.offset])
   pagination.page(rows.map(to_note), total, r)
+// ANCHOR_END: list

@@ -10,6 +10,7 @@ Everything SSPUR does goes through one binary, `sspur`. This is its usage text, 
 
 | Task | Commands |
 |---|---|
+| Start a project | `sspur new web-app NAME` (the reference web app, see [Build a web app](../tutorials/web-app.md)), `sspur new --list` |
 | Run and test a file | `sspur run FILE`, `sspur test FILE`, `sspur check FILE [--json]`, `sspur fmt FILE [--write]` |
 | Find bugs and prove properties | `sspur fuzz FILE` (contracts as property tests), `sspur fuzz --differential FILE` (native against the interpreter), `sspur verify FILE` (Z3) |
 | Write code and contracts from tests | `sspur fill [FILE] [?HOLE] [--apply]` (typed holes), `sspur suggest [FILE] [FN] [--apply]` (`pre` and `post` from runs) |
@@ -23,6 +24,10 @@ Everything SSPUR does goes through one binary, `sspur`. This is its usage text, 
 | Bare metal and GPU | `sspur build --target riscv64-qemu\|aarch64-qemu\|thumbv7em-mps2 FILE`, `sspur gpu FILE --emit metal\|opencl\|spirv\|ptx` |
 | Services | `sspur deploy plan`, `local`, `migrate`, `replay`, `swap`, `promote`, `rollback`, `backfill`, `status` |
 | Many agents and replicas | `sspur sync serve`, `push`, `pull`, `status`, `resolve` |
+
+## Starting a project
+
+`sspur new web-app NAME` writes a new directory `NAME` (which must not exist or be empty; its last component is the package name, so `notes` or `my_notes`) with SSPUR's reference application, a notes service with accounts: `main.ssp` with the routes and handlers, module packages for the data types, SQLite storage, accounts and HTML views, three reusable packages, tests that `sspur run tests/run.ssp` runs in both tiers, a backup tool, a systemd unit and a Caddyfile, and a README that covers running, testing, debugging, configuring, backups and deploying. The template is built into `sspur`, so nothing is downloaded. `sspur new --list` lists the templates.
 
 ## Execution tiers
 

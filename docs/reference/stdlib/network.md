@@ -45,7 +45,7 @@ Certificates are verified against the system's roots, or the certificates in the
 | `req.form(name)` | `Opt[Str]`: the first field of that name in a form body (`application/x-www-form-urlencoded`), decoded |
 | `req.cookie(name)` | `Opt[Str]`: the cookie of that name in the `Cookie` header |
 
-The handler is a function from `Request` to `Response`, a lambda, or a `svc` name. Errors a handler raises become responses; it can't perform `db.*` or user-defined effects (`E_SERVE_EFFECT`), assign variables from outside it (`E_PAR_RACE`) or use function values from outside it (`E_PAR_SHARE`), because handlers run concurrently.
+The handler is a function from `Request` to `Response`, a lambda, or a `svc` name; a `svc api(app: App)` with parameters is the handler `api(app)`, and its endpoints' parameters named `app` receive the value. Errors a handler raises become responses; it can't perform `db.*` or user-defined effects (`E_SERVE_EFFECT`), assign variables from outside it (`E_PAR_RACE`) or use function values from outside it (`E_PAR_SHARE`), because handlers run concurrently.
 
 A svc endpoint binds `{name}` path segments (`Str`, `Int` or a newtype over them, percent-decoded), query parameters for GET and DELETE (`Str`, `Int`, `F64`, `Bool`, an `Opt` of them, or a newtype), a JSON body for the one other parameter of POST, PUT and PATCH, and a `Request` parameter to the request itself. `HEAD` is answered by the `GET` route without its body. A path no route matches is `404 {"error":"no route"}`, a route with another method `405` with `Allow`. The same svc works with `sspur deploy`, except for query parameters and raw `Request` and `Response` endpoints, which only `http.serve` supports.
 

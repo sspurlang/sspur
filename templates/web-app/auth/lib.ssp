@@ -35,11 +35,14 @@ pub fn sign_up(c: Db, p: Policy, email: Str, password: Str, now: Time) -> Sessio
   user = storage.create_user(c, e, passwords.hash(secret(password)), now)
   start(c, user, p, now)
 
+// ANCHOR: limit
 fn too_many(c: Db, p: Policy, key: Str, now: Time) -> Unit ! db, fail[DbErr], fail[AppErr]
 = do
   (n, first) = storage.failures(c, key, now.sub(mins(p.window_mins)))
   if n >= p.max_failures then raise TooMany{retry_after: max(first.map(f => f.add(mins(p.window_mins)).since(now).secs).or(60), 1)}
+// ANCHOR_END: limit
 
+// ANCHOR: login
 // Signs in with an email and password. `client` is the caller's address when it is known (""
 // otherwise); failures count against the account and the address, and past the limit every
 // attempt is `TooMany` until the window passes. A wrong email or password is `Unauthorized`,
@@ -60,6 +63,7 @@ pub fn log_in(c: Db, p: Policy, email: Str, password: Str, client: Str, now: Tim
     for k in keys
       _ = storage.add_failure(c, k, now)
     raise Unauthorized
+// ANCHOR_END: login
 
 // Ends the session of `token`.
 pub fn log_out(c: Db, token: Str) -> Unit ! db, fail[DbErr]

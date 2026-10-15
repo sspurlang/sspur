@@ -65,8 +65,8 @@ fn the_template_is_all_embedded_and_its_readme_is_current() {
     want.sort();
     have.sort();
     assert_eq!(have, want, "every file of templates/web-app is in the binary");
-    let main = std::fs::read_to_string(root.join("main.ssp")).unwrap();
-    let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
+    let main = std::fs::read_to_string(d.join("jot/main.ssp")).unwrap();
+    let readme = std::fs::read_to_string(d.join("jot/README.md")).unwrap();
     let line: usize = readme.split("--line ").nth(1).and_then(|r| r.split_whitespace().next()).and_then(|n| n.parse().ok()).unwrap();
     assert!(main.lines().nth(line - 1).unwrap().contains("note = storage.create_note("), "README's breakpoint line {line} is the handler's create_note call");
 }

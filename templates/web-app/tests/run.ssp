@@ -7,6 +7,10 @@
 fn last_line(s: Str) -> Str
 = s.trim.split("\n").last.or("").trim
 
+// The line of the end-to-end run's output that says how it went.
+fn e2e_line(s: Str) -> Str
+= s.split("\n").find(_.starts_with("e2e")).or(last_line(s)).trim
+
 fn main() -> Unit ! proc, env, log
 = do
   sspur = env_var("SSPUR").or("sspur")
@@ -24,7 +28,7 @@ fn main() -> Unit ! proc, env, log
       log("{tier.pad_right(7, " ")} {f.pad_right(28, " ")} {out}")
       if not ok then failed := failed + 1
     (ok, out) = match run_cmd(sspur, ["run"] + flag + ["tests/e2e.ssp", tier], "")
-      | ok((code, o, e)) => (code == 0, if code == 0 then last_line(o) else o + e)
+      | ok((code, o, e)) => (code == 0, if code == 0 then e2e_line(o) else o + e)
       | err(e) => (false, e)
     log("{tier.pad_right(7, " ")} {"tests/e2e.ssp".pad_right(28, " ")} {out}")
     if not ok then failed := failed + 1

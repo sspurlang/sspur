@@ -191,6 +191,12 @@ sspur check tests/programs/core.ssp      # add --json for machine-readable diagn
 sspur fmt   tests/programs/core.ssp
 ```
 
+Start a web app: the reference application, a notes service with accounts, SQLite, sessions and its own tests ([tutorial](https://utkarshavardhana.github.io/sspur/tutorials/web-app.html)):
+
+```
+sspur new web-app notes && cd notes && sspur run
+```
+
 Find bugs and prove properties:
 
 ```
@@ -233,6 +239,7 @@ More examples:
 
 | Example | What it shows |
 |---|---|
+| [`templates/web-app/`](templates/web-app) | The reference app that `sspur new web-app` writes: accounts, notes, SQLite, CSRF, rate limits, end-to-end tests, systemd and Caddy files |
 | [`examples/crud/`](examples/crud) | A CRUD HTTP service, with `sspur deploy plan` and `sspur deploy local` |
 | [`examples/ffi/`](examples/ffi) | Calling libc and libm, and calling SSPUR from C |
 | [`examples/packages/`](examples/packages) | A text library and an app that depends on it by path, with its lockfile |
@@ -266,7 +273,7 @@ The documentation is an mdBook in [`docs/`](docs/), published at [utkarshavardha
 | [Editor setup](https://utkarshavardhana.github.io/sspur/get-started/editors.html) | `sspur lsp` in VS Code (the extension in [`packaging/vscode/`](packaging/vscode/)) and its forks, Zed (the extension in [`packaging/zed/`](packaging/zed/)), Neovim, Vim, Helix, Emacs, Sublime Text, JetBrains IDEs, Kate and Eclipse |
 | [Handbook](https://utkarshavardhana.github.io/sspur/handbook/index.html) | The language in fifteen pages, from the basics to traits, concurrency, networking, databases, crypto and packages |
 | [Reference](https://utkarshavardhana.github.io/sspur/reference/language.html) | The [full language reference](docs/reference/language.md) (what `sspur spec --full` prints), the [standard library](https://utkarshavardhana.github.io/sspur/reference/stdlib.html), [effects](https://utkarshavardhana.github.io/sspur/reference/effects.html), [error codes](https://utkarshavardhana.github.io/sspur/reference/errors.html), the [command line](https://utkarshavardhana.github.io/sspur/reference/cli.html), the [agent reference](docs/agent/agent-spec.md) and [JSON schemas](https://utkarshavardhana.github.io/sspur/reference/schema.html) |
-| [Tutorials](https://utkarshavardhana.github.io/sspur/tutorials/index.html) | A CRUD service, migrations and hot swap, calling C, bare metal, GPU kernels, and a multi-agent codebase |
+| [Tutorials](https://utkarshavardhana.github.io/sspur/tutorials/index.html) | A web app with accounts (`sspur new web-app`), a CRUD service, migrations and hot swap, calling C, bare metal, GPU kernels, and a multi-agent codebase |
 | [Project Configuration](https://utkarshavardhana.github.io/sspur/config/sspur-toml.html) | `sspur.toml`, `sspur.lock`, build options and environment variables |
 | [Cheat Sheet](https://utkarshavardhana.github.io/sspur/cheat-sheet.html) | The everyday syntax on one page |
 | [Design and Performance](https://utkarshavardhana.github.io/sspur/design/index.html) | The [design documents](docs/design/), the [decision records](docs/adr/), and the native and agent benchmarks |

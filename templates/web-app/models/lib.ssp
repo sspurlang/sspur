@@ -2,6 +2,7 @@
 // these types, so a value that breaks a `where` clause never reaches a handler: the server
 // answers 400 with the field and the rule.
 
+// ANCHOR: types
 // An email address as a person types it: one `@`, a dot in the domain, no spaces.
 pub type Email = Str where email_ok(_)
 
@@ -25,6 +26,7 @@ pub type NewNote = {title: Title, body: Opt[Body], tags: Opt[Tags]}
 
 // A change to a note: the fields that are present replace the note's.
 pub type NotePatch = {title: Opt[Title], body: Opt[Body], tags: Opt[Tags]}
+// ANCHOR_END: types
 
 pub type Note = {id: Int, title: Str, body: Str, tags: List[Str], created_at: Time, updated_at: Time}
 

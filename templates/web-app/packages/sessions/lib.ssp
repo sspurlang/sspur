@@ -36,6 +36,7 @@ pub fn bearer(req: Request) -> Opt[Str]
   | some((scheme, t)) => if scheme.lower == "bearer" and t.trim != "" then some(t.trim) else none
   | none => none
 
+// ANCHOR: csrf
 // The CSRF token for a form or request bound to `binding` (a session digest, or the value of an
 // anonymous cookie): an HMAC under the server's key, so it can't be forged or moved to another
 // session.
@@ -45,6 +46,7 @@ pub fn csrf_token(key: Secret[Str], binding: Str) -> Str
 // Whether `given` is the CSRF token for `binding`, compared in constant time.
 pub fn csrf_ok(key: Secret[Str], binding: Str, given: Str) -> Bool
 = binding != "" and crypto.equal(given, csrf_token(key, binding))
+// ANCHOR_END: csrf
 
 fn rq(headers: List[(Str, Str)]) -> Request
 = Request{method: "GET", url: "/", headers, body: "", timeout_ms: 0, retries: 0, redirects: 0}

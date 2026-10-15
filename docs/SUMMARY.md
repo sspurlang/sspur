@@ -56,6 +56,7 @@
 # Tutorials
 
 - [Tutorials](tutorials/index.md)
+  - [Build a web app](tutorials/web-app.md)
   - [Build and deploy a CRUD service](tutorials/crud-service.md)
   - [Migrations and hot swap](tutorials/migrations.md)
   - [Calling C](tutorials/ffi.md)

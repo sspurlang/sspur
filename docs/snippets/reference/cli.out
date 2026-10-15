@@ -1,5 +1,6 @@
 $ sspur --help
 usage:
+  sspur new web-app NAME | --list       create a project from a template: web-app is a notes service with accounts (README.md inside)
   sspur init [file.ssp] [--pkg NAME]    create a codebase in .sspur/ (optionally import a file; --pkg also writes sspur.toml)
   sspur add <name[@^1.2]|path|git-url[@rev]>  add a dependency (a published package, a path or a git URL) to sspur.toml and pin it in sspur.lock
   sspur deps fetch | update [NAME...] [--force] | tree   verify and fetch locked deps; upgrade with a semantic diff (refused if it breaks the build); show the graph

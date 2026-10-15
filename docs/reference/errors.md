@@ -218,7 +218,7 @@ This page lists every code the compiler can emit, grouped by area. The test suit
 | `E_UNKNOWN_FN` | An endpoint handler that isn't a function | Define it, or fix the name |
 | `E_EP_METHOD` | An unknown HTTP method | `get post put patch delete` |
 | `E_EP_PATH` | A malformed endpoint path | `"/items/{id}"` |
-| `E_EP_PARAM` | A path parameter that isn't `Str`, `Int` or a newtype over them | Change the parameter type |
+| `E_EP_PARAM` | A path parameter that isn't `Str`, `Int` or a newtype over them, an endpoint parameter named like a svc parameter but of another type, or a deployed svc with parameters | Change the parameter type; a deployed service reads settings with `env_var` |
 | `E_EP_BODY` | More than one request body parameter; a GET or DELETE parameter that can't come from the query string; a query parameter in a deployed service | One body parameter at most; query parameters are `Str`, `Int`, `F64`, `Bool` or an `Opt` of them |
 | `E_EP_TYPE` | A request body type that can't be decoded from JSON, or a raw `Request` or `Response` in a deployed service | Use a data type |
 | `E_EP_EFFECT` | A handler performing a user-defined effect, or, in a deployed service, an effect no deploy target provides (`fs`, `io`, `proc`, `net`, ...) | Keep deployed handlers to `db.*`, `log`, `time`, `env`, `div` and `fail` |

@@ -40,6 +40,8 @@ The `Server` fields cover what usually takes middleware:
 | `cert`, `key` | `""` | PEM files to serve HTTPS (needs OpenSSL 3 on the machine) |
 | `access_log` | `true` | One log line per request with method, path, status, time and id |
 
+A svc can take parameters for what its handlers share, such as the database and the settings: with `svc api(app: App)`, `http.serve(8080, api(app))` serves it, and every endpoint parameter named `app` of type `App` gets that value, the same way `{id}` gets the path segment. `api(app)` is an ordinary function from `Request` to `Response`, so a test can call it with a request it builds. [Build a web app](../tutorials/web-app.md) uses this for its whole API.
+
 A handler is also just a function from `Request` to `Response`, so anything else a middleware would do is a function in front of the svc: `http.serve(8080, req => if authorized(req) then api(req) else http.text(401, "no"))`. `req.path`, `req.query(name)`, `req.header(name)` and `req.cookie(name)` read the request, `req.json[T]` decodes its body and `req.form(name)` reads a field of an HTML form, and `http.text`, `http.html` and `http.json(status, value)` build responses. Handlers run concurrently, so like `par` tasks they can't assign variables from outside (`E_PAR_RACE`); share counters through an `Atomic[Int]`.
 
 ## A client

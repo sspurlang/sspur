@@ -29,9 +29,16 @@ fn usage() -> ExitCode {
     ExitCode::from(2)
 }
 
-/// The files of `text` with `{{name}}` filled in, as (relative path, contents).
+/// The files of `text` with `{{name}}` filled in, as (relative path, contents), without the
+/// `// ANCHOR:` lines the documentation includes parts of the template by.
 pub fn render(text: &str, name: &str) -> Vec<(String, String)> {
-    text.split('\u{0}').filter_map(|f| f.split_once('\n')).map(|(p, body)| (p.replace("{{name}}", name), body.replace("{{name}}", name))).collect()
+    let clean = |body: &str| -> String {
+        if !body.contains("// ANCHOR") {
+            return body.replace("{{name}}", name);
+        }
+        body.split_inclusive('\n').filter(|l| !l.trim_start().starts_with("// ANCHOR")).collect::<String>().replace("{{name}}", name)
+    };
+    text.split('\u{0}').filter_map(|f| f.split_once('\n')).map(|(p, body)| (p.replace("{{name}}", name), clean(body))).collect()
 }
 
 pub fn run(pos: &[String], list: bool) -> ExitCode {
@@ -72,7 +79,7 @@ mod tests {
     fn the_template_fills_in_the_name_everywhere() {
         let files = super::render(super::WEB_APP, "notes");
         assert!(files.len() >= 25, "{}", files.len());
-        assert!(files.iter().all(|(p, b)| !p.contains("{{") && !b.contains("{{name}}")));
+        assert!(files.iter().all(|(p, b)| !p.contains("{{") && !b.contains("{{name}}") && !b.contains("ANCHOR")));
         assert!(files.iter().any(|(p, _)| p == "deploy/notes.service"));
         assert!(files.iter().any(|(p, b)| p == "sspur.toml" && b.contains("name = \"notes\"")));
     }

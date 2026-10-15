@@ -8,6 +8,7 @@
 use models.{AppErr, Credentials, NewNote, Note, NotePatch, User}
 use pagination.{Page}
 
+// ANCHOR: config
 // Settings: app.json, then NOTES_<FIELD> environment variables (NOTES_PORT=9000).
 type Config = {mode: Str where _ == "dev" or _ == "production", host: Str, port: Int where _ >= 0 and _ <= 65535, workers: Int where _ >= 0 and _ <= 64, db: Str where _ != "", secret: Secret[Str], secure_cookies: Opt[Bool], trust_proxy: Bool, static_dir: Str}
 
@@ -17,7 +18,9 @@ fn defaults() -> Config
 // What every handler gets: the database, the key that signs CSRF tokens, the cookie settings and
 // the login policy.
 type App = {db: Db, key: Secret[Str], session: sessions.CookieOpts, anon: sessions.CookieOpts, auth: auth.Policy, trust_proxy: Bool}
+// ANCHOR_END: config
 
+// ANCHOR: svc
 // The JSON API and the HTML pages. Parameters named `app` get the App the server was started
 // with, `req` the request, `{id}` the path segment, other GET parameters the query string and
 // the other POST and PATCH parameter the JSON body.
@@ -43,6 +46,7 @@ svc api(app: App)
   ep get "/notes/{id}" = note_page
   ep post "/notes/{id}" = update_note_submit
   ep post "/notes/{id}/delete" = delete_note_submit
+// ANCHOR_END: svc
 
 // ---------- logging ----------
 
@@ -62,6 +66,7 @@ fn client(app: App, req: Request) -> Str
 fn unsafe_method(m: Str) -> Bool
 = not (m == "GET" or m == "HEAD" or m == "OPTIONS")
 
+// ANCHOR: caller
 // The signed-in user of an API request: a Bearer token, or the session cookie with the
 // x-csrf-token header on requests that change something.
 fn caller(app: App, req: Request) -> User ! db, fail[DbErr], fail[AppErr], time
@@ -72,6 +77,7 @@ fn caller(app: App, req: Request) -> User ! db, fail[DbErr], fail[AppErr], time
   some(user) = auth.user_of(app.db, token, now()) else raise Unauthorized
   if cookie and unsafe_method(req.method) and not sessions.csrf_ok(app.key, sessions.digest(token), req.header("x-csrf-token").or("")) then raise Forbidden{why: "a request with the session cookie needs the x-csrf-token header from /api/me"}
   user
+// ANCHOR_END: caller
 
 // ---------- the JSON API ----------
 
@@ -113,12 +119,14 @@ fn me(app: App, req: Request) -> Me ! db, fail[DbErr], fail[AppErr], time
 fn list_notes(app: App, req: Request, q: Opt[Str], tag: Opt[Str], limit: Opt[Int], offset: Opt[Int]) -> Page[Note] ! db, fail[DbErr], fail[AppErr], time
 = storage.list_notes(app.db, caller(app, req).id, q.or(""), tag.or(""), pagination.request(limit, offset))
 
+// ANCHOR: json
 fn create_note(app: App, req: Request, n: NewNote) -> Note ! db, fail[DbErr], fail[AppErr], time, log
 = do
   user = caller(app, req)
   note = storage.create_note(app.db, user.id, n, now())
   event(req, "note.created", some(user.id), some(note.id))
   note
+// ANCHOR_END: json
 
 fn get_note(app: App, req: Request, id: Int) -> Opt[Note] ! db, fail[DbErr], fail[AppErr], time
 = storage.note(app.db, caller(app, req).id, id)
@@ -153,9 +161,11 @@ fn browser(app: App, req: Request) -> Opt[Browser] ! db, fail[DbErr], time
   token = req.cookie(app.session.name).or("")
   auth.user_of(app.db, token, now()).map(u => Browser{user: u, token, csrf: sessions.csrf_token(app.key, sessions.digest(token))})
 
+// ANCHOR: csrf
 // Whether a form post carries the CSRF token of its session.
 fn form_ok(app: App, req: Request, b: Browser) -> Bool
 = sessions.csrf_ok(app.key, sessions.digest(b.token), req.form("csrf").or(""))
+// ANCHOR_END: csrf
 
 // Login and signup forms have no session yet, so their CSRF token is bound to a random
 // `anon` cookie instead; this returns the cookie's value and the header that sets it, if new.
@@ -250,6 +260,7 @@ fn new_note_page(app: App, req: Request) -> Response ! db, fail[DbErr], time
 fn note_form_again(b: Browser, req: Request, note: Opt[Note], e: Str) -> Response
 = page(400, views.note_form(b.user.email, b.csrf, note, req.form("title").or(""), req.form("body").or(""), req.form("tags").or(""), some(why(field_of(e), e))), [])
 
+// ANCHOR: form
 fn create_note_submit(app: App, req: Request) -> Response ! db, fail[DbErr], time, log
 = match browser(app, req)
   | none => redirect("/login", [])
@@ -260,6 +271,7 @@ fn create_note_submit(app: App, req: Request) -> Response ! db, fail[DbErr], tim
       note = storage.create_note(app.db, b.user.id, n, now())
       event(req, "note.created", some(b.user.id), some(note.id))
       redirect("/", [])
+// ANCHOR_END: form
 
 fn note_page(app: App, req: Request, id: Int) -> Response ! db, fail[DbErr], time
 = match browser(app, req)
@@ -289,6 +301,7 @@ fn delete_note_submit(app: App, req: Request, id: Int) -> Response ! db, fail[Db
 
 // ---------- startup ----------
 
+// ANCHOR: start
 // The settings, or why they are not usable. In production the secret must be set: it signs the
 // CSRF tokens, and a random one would sign out everyone at every restart.
 fn load_config() -> Res[Config, Str] ! fs, env
@@ -319,6 +332,7 @@ fn main() -> Unit ! net, log, env, fs, db, fail[DbErr], rand, time, proc
   | err(e) => do
     log.error("cannot start: " + e)
     exit(2)
+// ANCHOR_END: start
 
 // ---------- tests: the handlers, called directly, on an in-memory database ----------
 
@@ -331,6 +345,7 @@ fn call(app: App, method: Str, url: Str, headers: List[(Str, Str)], body: Str) -
 fn token_of(r: Response) -> Str
 = r.json[SignedIn].map(s => s.token).or("")
 
+// ANCHOR: test
 test api_round_trip = catch do
     app = test_app()
     up = call(app, "POST", "/api/signup", [], "\{\"email\":\"ada@example.com\",\"password\":\"correct horse battery\"}")
@@ -342,6 +357,7 @@ test api_round_trip = catch do
     gone = call(app, "DELETE", "/api/notes/{id}", auth, "").status
     up.status == 201 and made.status == 201 and listed == ok(1) and changed == ok("ship it") and gone == 204 and call(app, "GET", "/api/notes/{id}", auth, "").status == 404
   | _ => false
+// ANCHOR_END: test
 
 test api_needs_a_session = catch call(test_app(), "GET", "/api/notes", [], "").status == 401 and call(test_app(), "GET", "/api/notes", [("authorization", "Bearer nope")], "").status == 401
   | _ => false
