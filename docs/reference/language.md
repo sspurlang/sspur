@@ -190,7 +190,7 @@ Every function declares what it does after `!`. Undeclared effects are compile e
 | `dev` | Calling a `kernel fn`, `dev_f32 dev_f64 dev_i32 dev_u32 dev_int`, `DevBuf.to_list`, `gpu_sync()` |
 | `fs` | `read_file write_file append_file remove_file list_dir read_bytes write_bytes mkdir mkdir_all remove_dir rename exists is_dir file_size modified_ms` |
 | `io` | `read_line read_lines` (stdin), `eprint` (stderr) |
-| `proc` | `run_cmd exit` |
+| `proc` | `run_cmd exit proc.spawn`, and the `Proc` methods |
 | `time` | `now_ms mono_ns sleep_ms now` |
 | `env` | `env_var args` |
 | `net` | `http.get post send fetch download serve serve_with` |
@@ -638,6 +638,9 @@ Regex syntax: literals, `.` (not newline), `[a-z]`, `[^...]`, `\d \w \s` (ASCII)
 | `now()` | `Time ! time` |
 | `run_cmd(prog, args, input)` | `Res[(Int, Str, Str), Str] ! proc`: runs `prog` (searched in `PATH`) with `input` on stdin and gives the exit status (128 + signal when killed), stdout and stderr; `"prog: not found"` style errors |
 | `exit(code)` | `Unit ! proc`: ends the program with that status |
+| `proc.spawn(prog, args, env)` | `Res[Proc, Str] ! proc`: starts `prog` (searched in `PATH`) with the extra environment pairs `env`, without waiting for it; stdin is empty and stdout and stderr are read line by line |
+| `p.line(timeout_ms)` | `Opt[Str] ! proc`: the next line `p` printed, or `none` at the end of its output or after `timeout_ms` |
+| `p.stop()`, `p.wait()` | `Int ! proc`: the exit status; `stop` sends SIGTERM and, after 10 seconds, SIGKILL (Windows terminates the process at once), `wait` waits. `p.pid` is the process id |
 
 Errors are `"{path}: not found"`, `permission denied`, `is a directory`, `not a directory`, `already exists`, `directory not empty`, `invalid UTF-8`, `invalid path`, `byte out of range`, `not a symlink`, `same file`, `mode out of range` or `os error N`. Deployed service endpoints may perform `time` and `env` but not `fs`, `io`, `proc` or `net`.
 

@@ -353,3 +353,22 @@ fn __db_apply(c: Db, version: Int, sql: Str) -> Int ! db, fail[DbErr]
   __db_exec_n(c, sql, [])
   __db_exec_n(c, "insert into sspur_migrations (version, sql) values (?, ?)", [__db_pi(version), __db_ps(sql)])
   1
+
+fn __proc_pack(xs: List[Str]) -> Str
+= xs.map(x => "{x.byte_len}:{x}").join("")
+
+fn __proc_spawn(prog: Str, args: List[Str], env: List[(Str, Str)]) -> Res[Proc, Str] ! proc
+= do
+  (id, msg) = __proc_op(0, 0, __proc_pack([prog, args.len.str].concat(args).concat(env.flat_map(kv => [kv.0, kv.1]))))
+  if id < 0 then err(msg) else ok(Proc{id, pid: msg.to_int.or(0)})
+
+fn __proc_line(p: Proc, timeout_ms: Int) -> Opt[Str] ! proc
+= do
+  (k, line) = __proc_op(1, p.id, timeout_ms.str)
+  if k == 0 then some(line) else none
+
+fn __proc_stop(p: Proc) -> Int ! proc
+= __proc_op(2, p.id, "10000").0
+
+fn __proc_wait(p: Proc) -> Int ! proc
+= __proc_op(3, p.id, "").0

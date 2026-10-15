@@ -1715,7 +1715,7 @@ impl Checker {
             }
         match found {
             Some(s) => {
-                if con == "#Request" || con == "#Response" {
+                if con == "#Request" || con == "#Response" || con == "#Proc" {
                     self.record_method_site(&con, name, span);
                 }
                 self.call_scheme(&s, name, Some((rt, recv.span)), args, span)
@@ -2693,7 +2693,7 @@ impl Checker {
                     let map: HashMap<String, Type> = params.iter().map(|p| (p.clone(), self.fresh())).collect();
                     let ty = Type::Con(c.to_string(), params.iter().map(|p| map[p].clone()).collect());
                     (ty, fs.iter().map(|(n, t)| (n.clone(), subst_params(t, &map))).collect(), c.to_string())
-                } else if let Some((_, internal, _)) = builtins::std_types().find(|(n, i, _)| n == &c && (builtins::OPEN_STD_RECORDS.contains(i) || (cfg!(not(target_family = "wasm")) && *i == "#Db" && self.cur_def.as_deref().is_some_and(|d| d.starts_with("__db_")))))
+                } else if let Some((_, internal, _)) = builtins::std_types().find(|(n, i, _)| n == &c && (builtins::OPEN_STD_RECORDS.contains(i) || (cfg!(not(target_family = "wasm")) && ((*i == "#Db" && self.cur_def.as_deref().is_some_and(|d| d.starts_with("__db_"))) || (*i == "#Proc" && self.cur_def.as_deref().is_some_and(|d| d.starts_with("__proc_")))))))
                     && let Some(TypeInfo { kind: TypeKind::Record(fs), .. }) = self.types.get(*internal).cloned()
                 {
                     (Type::con(internal), fs, internal.to_string())

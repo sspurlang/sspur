@@ -746,6 +746,7 @@ typedef struct {
     int64_t (*str_class)(int64_t op, const char* p, int64_t len);
     int64_t (*str_spans)(int64_t op, const char* p, int64_t len, int64_t* out, int64_t cap);
     void (*log)(const char* p, int64_t len);
+    int64_t (*proc_op)(int64_t op, int64_t id, const char* p, int64_t len, const char** out, int64_t* out_n);
 } HostApi;
 static HostApi host_;
 void sspur_set_host(const HostApi* h) { host_ = *h; }

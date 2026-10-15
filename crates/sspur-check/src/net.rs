@@ -298,5 +298,9 @@ impl Checker {
         if con == "#Request" && matches!(name, "form" | "cookie") {
             self.net_site(span, NetSite::Method(format!("__http_req_{name}")));
         }
+        #[cfg(not(target_family = "wasm"))]
+        if con == "#Proc" {
+            self.net_site(span, NetSite::Method(format!("__proc_{name}")));
+        }
     }
 }

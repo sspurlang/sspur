@@ -78,7 +78,7 @@ fn param(v: &Value) -> R<sspur_native::rt::SqlVal> {
     })
 }
 
-const PRIMS: &str = "__crypto_hash __crypto_hmac __crypto_random __crypto_same __crypto_aead __crypto_argon2 __crypto_ed_public __crypto_ed_sign __crypto_ed_verify __zip_pack __zip_unpack __zip_file __csv_rows __csv_text __csv_open __csv_next __csv_close __db_connect __db_disconnect __db_exec __db_tx";
+const PRIMS: &str = "__crypto_hash __crypto_hmac __crypto_random __crypto_same __crypto_aead __crypto_argon2 __crypto_ed_public __crypto_ed_sign __crypto_ed_verify __zip_pack __zip_unpack __zip_file __csv_rows __csv_text __csv_open __csv_next __csv_close __db_connect __db_disconnect __db_exec __db_tx __proc_op";
 
 impl Interp {
     pub(crate) fn lib_global(&self, n: &str, a: &[Value]) -> Option<R> {
@@ -132,6 +132,10 @@ fn lib_call(n: &str, a: &[Value]) -> R {
         "__csv_close" => {
             rt(rt::csv_close(int(&a[0])?))?;
             Value::Unit
+        }
+        "__proc_op" => {
+            let (r, out) = sspur_native::proc::op(int(&a[0])?, int(&a[1])?, s(&a[2])?);
+            tuple(vec![Value::Int(r), Value::str(&out)])
         }
         "__db_connect" => match rt(rt::db_open(s(&a[0])?))? {
             Ok(id) => tuple(vec![Value::Int(0), Value::Int(id), Value::str("")]),

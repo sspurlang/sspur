@@ -129,9 +129,9 @@ pub static STD_SUMS: &[(&str, &str)] = &[("#HttpErr", "type HttpErr = Dns{msg: S
 
 /// The database's types (ADR 0037), which the playground leaves out.
 #[cfg(not(target_family = "wasm"))]
-pub static LIB_TYPES: &[(&str, &str, usize)] = &[("Bytes", "#Bytes", 0), ("Db", "#Db", 0), ("DbErr", "#DbErr", 0)];
+pub static LIB_TYPES: &[(&str, &str, usize)] = &[("Bytes", "#Bytes", 0), ("Db", "#Db", 0), ("DbErr", "#DbErr", 0), ("Proc", "#Proc", 0)];
 #[cfg(not(target_family = "wasm"))]
-pub static LIB_RECORDS: &[(&str, &str)] = &[("#Db", "type Db = {id: Int, path: Str}")];
+pub static LIB_RECORDS: &[(&str, &str)] = &[("#Db", "type Db = {id: Int, path: Str}"), ("#Proc", "type Proc = {id: Int, pid: Int}")];
 #[cfg(not(target_family = "wasm"))]
 pub static LIB_SUMS: &[(&str, &str)] = &[("#DbErr", "type DbErr = Sql{msg: Str} | Constraint{msg: Str} | Busy{msg: Str} | NoRow | Mismatch{msg: Str}")];
 
@@ -237,11 +237,11 @@ nan() -> F64";
 
 /// `Bytes` and the primitives of the library prelude (ADR 0037), which the playground leaves out.
 #[cfg(not(target_family = "wasm"))]
-pub static LIB_GLOBALS: &str = "bytes(xs: List[Int]) -> Bytes\nfrom_hex(s: Str) -> Opt[Bytes]\nfrom_base64(s: Str) -> Opt[Bytes]\nfrom_base64url(s: Str) -> Opt[Bytes]\nread_bin(path: Str) -> Res[Bytes, Str] ! fs\nwrite_bin(path: Str, b: Bytes) -> Res[Unit, Str] ! fs\n__crypto_hash(alg: Int, data: Bytes) -> Bytes\n__crypto_hmac(alg: Int, key: Bytes, data: Bytes) -> Bytes\n__crypto_random(n: Int) -> Bytes ! rand\n__crypto_same(a: Bytes, b: Bytes) -> Bool\n__crypto_aead(seal: Bool, key: Bytes, nonce: Bytes, ad: Bytes, data: Bytes) -> Opt[Bytes]\n__crypto_argon2(alg: Int, pw: Bytes, salt: Bytes, key: Bytes, ad: Bytes, m: Int, t: Int, p: Int, n: Int) -> Opt[Bytes]\n__crypto_ed_public(seed: Bytes) -> Bytes\n__crypto_ed_sign(seed: Bytes, data: Bytes) -> Bytes\n__crypto_ed_verify(pk: Bytes, data: Bytes, sig: Bytes) -> Bool\n__zip_pack(fmt: Int, level: Int, data: Bytes) -> Bytes\n__zip_unpack(fmt: Int, data: Bytes) -> (Int, Bytes, Str)\n__zip_file(op: Int, src: Str, dst: Str) -> Str ! fs\n__csv_rows(text: Str) -> (Int, Str, List[List[Str]])\n__csv_text(rows: List[List[Str]]) -> Str\n__csv_open(path: Str) -> (Int, Str) ! fs\n__csv_next(h: Int, n: Int) -> (Int, Str, List[List[Str]]) ! fs\n__csv_close(h: Int) -> Unit ! fs\n__db_connect(path: Str) -> (Int, Int, Str) ! db\n__db_disconnect(id: Int) -> Unit ! db\n__db_exec(id: Int, sql: Str, ps: List[(Int, Int, F64, Str, Bytes)], want: Int) -> (Int, Str, List[Str], List[List[(Int, Int, F64, Str, Bytes)]], Int) ! db\n__db_tx(id: Int, op: Int) -> (Int, Str) ! db";
+pub static LIB_GLOBALS: &str = "bytes(xs: List[Int]) -> Bytes\nfrom_hex(s: Str) -> Opt[Bytes]\nfrom_base64(s: Str) -> Opt[Bytes]\nfrom_base64url(s: Str) -> Opt[Bytes]\nread_bin(path: Str) -> Res[Bytes, Str] ! fs\nwrite_bin(path: Str, b: Bytes) -> Res[Unit, Str] ! fs\n__crypto_hash(alg: Int, data: Bytes) -> Bytes\n__crypto_hmac(alg: Int, key: Bytes, data: Bytes) -> Bytes\n__crypto_random(n: Int) -> Bytes ! rand\n__crypto_same(a: Bytes, b: Bytes) -> Bool\n__crypto_aead(seal: Bool, key: Bytes, nonce: Bytes, ad: Bytes, data: Bytes) -> Opt[Bytes]\n__crypto_argon2(alg: Int, pw: Bytes, salt: Bytes, key: Bytes, ad: Bytes, m: Int, t: Int, p: Int, n: Int) -> Opt[Bytes]\n__crypto_ed_public(seed: Bytes) -> Bytes\n__crypto_ed_sign(seed: Bytes, data: Bytes) -> Bytes\n__crypto_ed_verify(pk: Bytes, data: Bytes, sig: Bytes) -> Bool\n__zip_pack(fmt: Int, level: Int, data: Bytes) -> Bytes\n__zip_unpack(fmt: Int, data: Bytes) -> (Int, Bytes, Str)\n__zip_file(op: Int, src: Str, dst: Str) -> Str ! fs\n__csv_rows(text: Str) -> (Int, Str, List[List[Str]])\n__csv_text(rows: List[List[Str]]) -> Str\n__csv_open(path: Str) -> (Int, Str) ! fs\n__csv_next(h: Int, n: Int) -> (Int, Str, List[List[Str]]) ! fs\n__csv_close(h: Int) -> Unit ! fs\n__db_connect(path: Str) -> (Int, Int, Str) ! db\n__db_disconnect(id: Int) -> Unit ! db\n__db_exec(id: Int, sql: Str, ps: List[(Int, Int, F64, Str, Bytes)], want: Int) -> (Int, Str, List[Str], List[List[(Int, Int, F64, Str, Bytes)]], Int) ! db\n__db_tx(id: Int, op: Int) -> (Int, Str) ! db\n__proc_op(op: Int, id: Int, arg: Str) -> (Int, Str) ! proc";
 
 /// `Bytes` (ADR 0037), which the playground leaves out with the libraries that need it.
 #[cfg(not(target_family = "wasm"))]
-pub static LIB_METHODS: &str = "Str to_bytes(s: Str) -> Bytes\n#Bytes len(b: Bytes) -> Int\n#Bytes is_empty(b: Bytes) -> Bool\n#Bytes get(b: Bytes, i: Int) -> Opt[Int]\n#Bytes slice(b: Bytes, from: Int, to: Int) -> Bytes\n#Bytes concat(b: Bytes, c: Bytes) -> Bytes\n#Bytes to_list(b: Bytes) -> List[Int]\n#Bytes to_str(b: Bytes) -> Opt[Str]\n#Bytes hex(b: Bytes) -> Str\n#Bytes base64(b: Bytes) -> Str\n#Bytes base64url(b: Bytes) -> Str\n#Request form(r: Request, name: Str) -> Opt[Str]\n#Request cookie(r: Request, name: Str) -> Opt[Str]";
+pub static LIB_METHODS: &str = "Str to_bytes(s: Str) -> Bytes\n#Bytes len(b: Bytes) -> Int\n#Bytes is_empty(b: Bytes) -> Bool\n#Bytes get(b: Bytes, i: Int) -> Opt[Int]\n#Bytes slice(b: Bytes, from: Int, to: Int) -> Bytes\n#Bytes concat(b: Bytes, c: Bytes) -> Bytes\n#Bytes to_list(b: Bytes) -> List[Int]\n#Bytes to_str(b: Bytes) -> Opt[Str]\n#Bytes hex(b: Bytes) -> Str\n#Bytes base64(b: Bytes) -> Str\n#Bytes base64url(b: Bytes) -> Str\n#Request form(r: Request, name: Str) -> Opt[Str]\n#Request cookie(r: Request, name: Str) -> Opt[Str]\n#Proc line(p: Proc, timeout_ms: Int) -> Opt[Str] ! proc\n#Proc stop(p: Proc) -> Int ! proc\n#Proc wait(p: Proc) -> Int ! proc";
 
 /// `receiver signature` lines: text rather than a table of pointers, which the dynamic linker
 /// would fix up at every start.
@@ -586,7 +586,7 @@ pub static STD_GLOBAL_NAMES: &[&str] = &[
 
 /// The names of `LIB_GLOBALS`.
 #[cfg(not(target_family = "wasm"))]
-pub static LIB_GLOBAL_NAMES: &str = "bytes from_hex from_base64 from_base64url read_bin write_bin __crypto_hash __crypto_hmac __crypto_random __crypto_same __crypto_aead __crypto_argon2 __crypto_ed_public __crypto_ed_sign __crypto_ed_verify __zip_pack __zip_unpack __zip_file __csv_rows __csv_text __csv_open __csv_next __csv_close __db_connect __db_disconnect __db_exec __db_tx";
+pub static LIB_GLOBAL_NAMES: &str = "bytes from_hex from_base64 from_base64url read_bin write_bin __crypto_hash __crypto_hmac __crypto_random __crypto_same __crypto_aead __crypto_argon2 __crypto_ed_public __crypto_ed_sign __crypto_ed_verify __zip_pack __zip_unpack __zip_file __csv_rows __csv_text __csv_open __csv_next __csv_close __db_connect __db_disconnect __db_exec __db_tx __proc_op";
 
 /// Whether `n` is a std global function's name.
 pub fn is_std_global(n: &str) -> bool {

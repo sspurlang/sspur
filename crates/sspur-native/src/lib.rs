@@ -19,6 +19,8 @@ pub mod llvm;
 pub mod net;
 #[cfg(feature = "jit")]
 pub mod rt;
+#[cfg(not(target_family = "wasm"))]
+pub mod proc;
 #[cfg(feature = "jit")]
 mod jit;
 #[cfg(feature = "jit")]

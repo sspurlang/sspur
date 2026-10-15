@@ -447,7 +447,7 @@ impl Cx<'_> {
         if let Some(x) = self.net_global(n, args, &vals, t)? {
             return Ok(Some(x));
         }
-        if (n.starts_with("__crypto_") || n.starts_with("__zip_") || n.starts_with("__csv_") || n.starts_with("__db_"))
+        if (n.starts_with("__crypto_") || n.starts_with("__zip_") || n.starts_with("__csv_") || n.starts_with("__db_") || n == "__proc_op")
             && let Some(x) = self.data_global(n, &vals, t)?
         {
             return Ok(Some(x));

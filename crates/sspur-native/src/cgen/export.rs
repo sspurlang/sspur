@@ -91,9 +91,10 @@ static int64_t xh_str_spans(int64_t op, const char* p, int64_t len, int64_t* out
     return n;
 }
 static void xh_log(const char* p, int64_t len) { fwrite(p, 1, (size_t)len, stdout); fputc('\n', stdout); }
+static int64_t xh_proc_op(int64_t op, int64_t id, const char* p, int64_t len, const char** out, int64_t* out_n) { (void)op; (void)id; (void)p; (void)len; *out = "proc.spawn is not available in a C library"; *out_n = (int64_t)strlen(*out); return -1; }
 static void x_init(void) {
     if (host_.log) return;
-    HostApi h = {xh_fmt_f64, xh_fmt_f64_display, xh_str_op, xh_str_class, xh_str_spans, xh_log};
+    HostApi h = {xh_fmt_f64, xh_fmt_f64_display, xh_str_op, xh_str_class, xh_str_spans, xh_log, xh_proc_op};
     host_ = h;
 }
 static _Thread_local char* x_err;

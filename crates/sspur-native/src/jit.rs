@@ -62,6 +62,7 @@ pub(crate) struct HostApi {
     str_class: extern "C" fn(i64, *const u8, i64) -> i64,
     str_spans: extern "C" fn(i64, *const u8, i64, *mut i64, i64) -> i64,
     log: extern "C" fn(*const u8, i64),
+    proc_op: extern "C" fn(i64, i64, *const u8, i64, *mut *const u8, *mut i64) -> i64,
 }
 
 unsafe fn host_str<'a>(p: *const u8, len: i64) -> &'a str {
@@ -120,6 +121,23 @@ extern "C" fn host_str_spans(op: i64, p: *const u8, len: i64, out: *mut i64, cap
     n as i64
 }
 
+/// `proc.spawn` and the `Proc` methods; the text result stays valid until the thread's next call.
+extern "C" fn host_proc_op(op: i64, id: i64, p: *const u8, len: i64, out: *mut *const u8, out_n: *mut i64) -> i64 {
+    thread_local! {
+        static OUT: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+    }
+    let (r, s) = crate::proc::op(op, id, unsafe { host_str(p, len) });
+    OUT.with(|o| {
+        let mut o = o.borrow_mut();
+        *o = s;
+        unsafe {
+            *out = o.as_ptr();
+            *out_n = o.len() as i64;
+        }
+    });
+    r
+}
+
 extern "C" fn host_log(p: *const u8, len: i64) {
     let s = unsafe { host_str(p, len) };
     match LOG_HOOK.with(|h| h.get()) {
@@ -145,7 +163,7 @@ impl Host {
     }
 }
 
-pub(crate) static HOST: Host = Host(std::cell::UnsafeCell::new(HostApi { fmt_f64: host_fmt_f64, fmt_f64_display: host_fmt_f64_display, str_op: host_str_op, str_class: host_str_class, str_spans: host_str_spans, log: host_log }));
+pub(crate) static HOST: Host = Host(std::cell::UnsafeCell::new(HostApi { fmt_f64: host_fmt_f64, fmt_f64_display: host_fmt_f64_display, str_op: host_str_op, str_class: host_str_class, str_spans: host_str_spans, log: host_log, proc_op: host_proc_op }));
 
 pub enum NativeError {
     Trap(String),

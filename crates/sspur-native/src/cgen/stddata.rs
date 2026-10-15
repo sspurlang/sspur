@@ -184,6 +184,11 @@ if (n_ >= 4 && n_ <= 1024) {{ Str h_ = ss_by_new(n_); if ({f}(al_, pw_.p, pw_.le
                 let f = self.rt_fn(Kind::Zip, "sv_close", "void (*)(void*)")?;
                 format!("({{ int64_t h_ = {}; {f}((void*)(intptr_t)h_); 0LL; }})", v(0))
             }
+            "__proc_op" => {
+                self.std("bytes");
+                let oc = tc(self)?;
+                format!("({{ int64_t op_ = {}; int64_t id_ = {}; Str a_ = {}; const char* p_ = 0; int64_t n_ = 0; int64_t r_ = host_.proc_op(op_, id_, a_.p, a_.len, &p_, &n_); {oc} o_; memset(&o_, 0, sizeof o_); o_.f0 = r_; o_.f1 = n_ ? ss_by_copy((Str){{n_, p_}}) : (Str){{0, \"\"}}; o_; }})", v(0), v(1), v(2))
+            }
             "__db_connect" => {
                 let f = self.rt_fn(Kind::Db, "sd_open", "int64_t (*)(const char*, int64_t, char*, int64_t)")?;
                 let rel = self.rt_fn(Kind::Db, "sd_release_thread", "void (*)(void)")?;
