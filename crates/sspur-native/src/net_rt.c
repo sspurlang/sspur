@@ -17,6 +17,9 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 #include <winhttp.h>
+#ifndef WINHTTP_OPTION_RECEIVE_RESPONSE_TIMEOUT
+#define WINHTTP_OPTION_RECEIVE_RESPONSE_TIMEOUT 7
+#endif
 #include <wincrypt.h>
 #include <sys/stat.h>
 #ifndef S_IFMT
@@ -1710,6 +1713,13 @@ static void fetch_once(const SnReq* rq, SnResp* out, SnSink* k) {
     if (!con) { resp_err(out, SN_CONNECT, "cannot connect"); goto end; }
     req = WinHttpOpenRequest(con, wmethod, path, 0, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, https ? WINHTTP_FLAG_SECURE : 0);
     if (!req) { resp_err(out, SN_IO, "cannot open the request"); goto end; }
+    if (rq->timeout_ms > 0) {
+        // WinHttpSetTimeouts doesn't cover waiting for the response headers, which has its own
+        // option (90 s by default), so a slow server outlived the request's timeout.
+        int t = (int)rq->timeout_ms; DWORD dt = (DWORD)t;
+        WinHttpSetTimeouts(req, t, t < 15000 ? t : 15000, t, t);
+        WinHttpSetOption(req, WINHTTP_OPTION_RECEIVE_RESPONSE_TIMEOUT, &dt, sizeof dt);
+    }
     if (rq->redirects <= 0) { DWORD f = WINHTTP_DISABLE_REDIRECTS; WinHttpSetOption(req, WINHTTP_OPTION_DISABLE_FEATURE, &f, sizeof f); }
     else { DWORD m = (DWORD)rq->redirects; WinHttpSetOption(req, WINHTTP_OPTION_MAX_HTTP_AUTOMATIC_REDIRECTS, &m, sizeof m); }
     const char* ca = getenv("SSL_CERT_FILE");
