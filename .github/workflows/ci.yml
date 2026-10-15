@@ -224,6 +224,9 @@ jobs:
           tools/build_playground.sh --no-editor "$RUNNER_TEMP/play"
           node tools/playground_test.mjs "$RUNNER_TEMP/play"
 
+      - name: Build the registry's browser checker (shipped with releases)
+        run: tools/build_registry_checker.sh "$RUNNER_TEMP/registry-checker"
+
       - name: Build the site
         run: mdbook build docs
 
