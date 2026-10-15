@@ -51,6 +51,7 @@ pub fn encode(l: &Layouts, v: &NVal, t: &Type, out: &mut String) -> Option<()> {
         (NVal::Time(t), _) => quote(&crate::chrono::iso(*t), out),
         (NVal::Big(b), _) => write!(out, "{b}").unwrap(),
         (NVal::Dec(m, s), _) => quote(&crate::bigint::dec_str(m, *s), out),
+        #[cfg(not(target_family = "wasm"))]
         (NVal::Bytes(b), _) => quote(&crate::bytes::base64(b, false), out),
         (NVal::Bits(n, w), _) => {
             out.push('"');
@@ -431,6 +432,7 @@ impl D<'_> {
                     }
                     _ => return Err(self.err(&want, v)),
                 },
+                #[cfg(not(target_family = "wasm"))]
                 "#Bytes" => match v {
                     Some(Jv::Str(s)) => NVal::Bytes(crate::bytes::from_base64(s, false).ok_or_else(|| self.err(&want, v))?),
                     _ => return Err(self.err(&want, v)),

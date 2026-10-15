@@ -117,15 +117,24 @@ pub static METHODS: &[(&str, &str)] = &[
     ("*", "str[A](x: A) -> Str"),
 ];
 
-pub static STD_TYPES: &[(&str, &str, usize)] = &[("Set", "#Set", 1), ("Heap", "#Heap", 1), ("StrBuf", "#StrBuf", 0), ("Time", "#Time", 0), ("Duration", "#Duration", 0), ("Bits", "#Bits", 0), ("Bytes", "#Bytes", 0), ("HashMap", "#HashMap", 2), ("HashSet", "#HashSet", 1), ("BigInt", "#BigInt", 0), ("Dec", "#Dec", 0), ("Regex", "#Regex", 0), ("DevBuf", "#DevBuf", 1), ("Rng", "#Rng", 0), ("Complex", "#Complex", 0), ("FlatMap", "#FlatMap", 2), ("MdSpan", "#MdSpan", 1), ("Zone", "#Zone", 0), ("File", "#File", 0), ("View", "#View", 1), ("Ratio", "#Ratio", 0), ("Locale", "#Locale", 0), ("Request", "#Request", 0), ("Response", "#Response", 0), ("Server", "#Server", 0), ("HttpErr", "#HttpErr", 0), ("Db", "#Db", 0), ("DbErr", "#DbErr", 0)];
+pub static STD_TYPES: &[(&str, &str, usize)] = &[("Set", "#Set", 1), ("Heap", "#Heap", 1), ("StrBuf", "#StrBuf", 0), ("Time", "#Time", 0), ("Duration", "#Duration", 0), ("Bits", "#Bits", 0), ("HashMap", "#HashMap", 2), ("HashSet", "#HashSet", 1), ("BigInt", "#BigInt", 0), ("Dec", "#Dec", 0), ("Regex", "#Regex", 0), ("DevBuf", "#DevBuf", 1), ("Rng", "#Rng", 0), ("Complex", "#Complex", 0), ("FlatMap", "#FlatMap", 2), ("MdSpan", "#MdSpan", 1), ("Zone", "#Zone", 0), ("File", "#File", 0), ("View", "#View", 1), ("Ratio", "#Ratio", 0), ("Locale", "#Locale", 0), ("Request", "#Request", 0), ("Response", "#Response", 0), ("Server", "#Server", 0), ("HttpErr", "#HttpErr", 0)];
 
-pub static STD_RECORDS: &[(&str, &str)] = &[("#Db", "type Db = {id: Int, path: Str}"), ("#Rng", "type Rng = {state: Int, gamma: Int}"), ("#Complex", "type Complex = {re: F64, im: F64}"), ("#FlatMap", "type FlatMap[K, V] = {keys: List[K], values: List[V]}"), ("#MdSpan", "type MdSpan[T] = {data: List[T], offset: Int, shape: List[Int], strides: List[Int]}"), ("#Zone", "type Zone = {name: Str, trans: List[Int], idx: List[Int], offs: List[Int], dst: List[Bool], abbrs: List[Str], tail: List[Int]}"), ("#File", "type File = {fd: Int, path: Str, dev: Int, ino: Int}"), ("#Ratio", "type Ratio = {num: BigInt, den: BigInt}"), ("#Locale", "type Locale = {tag: Str}"), ("#Request", "type Request = {method: Str, url: Str, headers: List[(Str, Str)], body: Str, timeout_ms: Int, retries: Int, redirects: Int}"), ("#Response", "type Response = {status: Int, headers: List[(Str, Str)], body: Str}"), ("#Server", "type Server = {port: Int, host: Str, workers: Int, max_body: Int, timeout_ms: Int, max_requests: Int, cors: List[Str], gzip: Bool, files: List[(Str, Str)], health: Str, cert: Str, key: Str, access_log: Bool}")];
+pub static STD_RECORDS: &[(&str, &str)] = &[("#Rng", "type Rng = {state: Int, gamma: Int}"), ("#Complex", "type Complex = {re: F64, im: F64}"), ("#FlatMap", "type FlatMap[K, V] = {keys: List[K], values: List[V]}"), ("#MdSpan", "type MdSpan[T] = {data: List[T], offset: Int, shape: List[Int], strides: List[Int]}"), ("#Zone", "type Zone = {name: Str, trans: List[Int], idx: List[Int], offs: List[Int], dst: List[Bool], abbrs: List[Str], tail: List[Int]}"), ("#File", "type File = {fd: Int, path: Str, dev: Int, ino: Int}"), ("#Ratio", "type Ratio = {num: BigInt, den: BigInt}"), ("#Locale", "type Locale = {tag: Str}"), ("#Request", "type Request = {method: Str, url: Str, headers: List[(Str, Str)], body: Str, timeout_ms: Int, retries: Int, redirects: Int}"), ("#Response", "type Response = {status: Int, headers: List[(Str, Str)], body: Str}"), ("#Server", "type Server = {port: Int, host: Str, workers: Int, max_body: Int, timeout_ms: Int, max_requests: Int, cors: List[Str], gzip: Bool, files: List[(Str, Str)], health: Str, cert: Str, key: Str, access_log: Bool}")];
 
 /// Std records programs can build with a literal and update with `with`; the others are opaque.
 pub static OPEN_STD_RECORDS: &[&str] = &["#Request", "#Response", "#Server"];
 
 /// Std sum types, by internal name; their constructors are global unless a program defines its own.
-pub static STD_SUMS: &[(&str, &str)] = &[("#HttpErr", "type HttpErr = Dns{msg: Str} | Connect{msg: Str} | Tls{msg: Str} | Timeout{msg: Str} | HttpStatus{code: Int, body: Str} | Io{msg: Str}"), ("#DbErr", "type DbErr = Sql{msg: Str} | Constraint{msg: Str} | Busy{msg: Str} | NoRow | Mismatch{msg: Str}")];
+pub static STD_SUMS: &[(&str, &str)] = &[("#HttpErr", "type HttpErr = Dns{msg: Str} | Connect{msg: Str} | Tls{msg: Str} | Timeout{msg: Str} | HttpStatus{code: Int, body: Str} | Io{msg: Str}")];
+
+/// The database's types (ADR 0037), which the playground leaves out.
+#[cfg(not(target_family = "wasm"))]
+pub static LIB_TYPES: &[(&str, &str, usize)] = &[("Bytes", "#Bytes", 0), ("Db", "#Db", 0), ("DbErr", "#DbErr", 0)];
+#[cfg(not(target_family = "wasm"))]
+pub static LIB_RECORDS: &[(&str, &str)] = &[("#Db", "type Db = {id: Int, path: Str}")];
+#[cfg(not(target_family = "wasm"))]
+pub static LIB_SUMS: &[(&str, &str)] = &[("#DbErr", "type DbErr = Sql{msg: Str} | Constraint{msg: Str} | Busy{msg: Str} | NoRow | Mismatch{msg: Str}")];
+
 
 pub static STD_GLOBALS: &[&str] = &[
     "dev_f32(xs: List[F64]) -> DevBuf[F32] ! dev",
@@ -144,12 +153,6 @@ pub static STD_GLOBALS: &[&str] = &[
     "rand_f64(seed: Int) -> (F64, Int)",
     "from_bytes(bs: List[Int]) -> Opt[Str]",
     "from_codes(cs: List[Int]) -> Opt[Str]",
-    "bytes(xs: List[Int]) -> Bytes",
-    "from_hex(s: Str) -> Opt[Bytes]",
-    "from_base64(s: Str) -> Opt[Bytes]",
-    "from_base64url(s: Str) -> Opt[Bytes]",
-    "read_bin(path: Str) -> Res[Bytes, Str] ! fs",
-    "write_bin(path: Str, b: Bytes) -> Res[Unit, Str] ! fs",
     "read_file(path: Str) -> Res[Str, Str] ! fs",
     "write_file(path: Str, s: Str) -> Res[Unit, Str] ! fs",
     "append_file(path: Str, s: Str) -> Res[Unit, Str] ! fs",
@@ -226,6 +229,21 @@ pub static STD_GLOBALS: &[&str] = &[
     "days(n: Int) -> Duration",
     "__net_fetch(method: Str, url: Str, headers: List[(Str, Str)], body: Str, timeout_ms: Int, retries: Int, redirects: Int, path: Str) -> (Int, Int, List[(Str, Str)], Str) ! net",
     "__net_serve[e](cfg: (Int, Str, Int, Int, Int, Int, List[Str], Bool, List[(Str, Str)], Str, Str, Str, Bool), h: (Str, Str, List[(Str, Str)], Str, Int) -> (Int, List[(Str, Str)], Str) ! e) -> Unit ! net, log, e",
+    "pi() -> F64",
+    "euler() -> F64",
+    "inf() -> F64",
+    "nan() -> F64",
+];
+
+/// `Bytes` and the primitives of the library prelude (ADR 0037), which the playground leaves out.
+#[cfg(not(target_family = "wasm"))]
+pub static LIB_GLOBALS: &[&str] = &[
+    "bytes(xs: List[Int]) -> Bytes",
+    "from_hex(s: Str) -> Opt[Bytes]",
+    "from_base64(s: Str) -> Opt[Bytes]",
+    "from_base64url(s: Str) -> Opt[Bytes]",
+    "read_bin(path: Str) -> Res[Bytes, Str] ! fs",
+    "write_bin(path: Str, b: Bytes) -> Res[Unit, Str] ! fs",
     "__crypto_hash(alg: Int, data: Bytes) -> Bytes",
     "__crypto_hmac(alg: Int, key: Bytes, data: Bytes) -> Bytes",
     "__crypto_random(n: Int) -> Bytes ! rand",
@@ -247,10 +265,22 @@ pub static STD_GLOBALS: &[&str] = &[
     "__db_disconnect(id: Int) -> Unit ! db",
     "__db_exec(id: Int, sql: Str, ps: List[(Int, Int, F64, Str, Bytes)], want: Int) -> (Int, Str, List[Str], List[List[(Int, Int, F64, Str, Bytes)]], Int) ! db",
     "__db_tx(id: Int, op: Int) -> (Int, Str) ! db",
-    "pi() -> F64",
-    "euler() -> F64",
-    "inf() -> F64",
-    "nan() -> F64",
+];
+
+/// `Bytes` (ADR 0037), which the playground leaves out with the libraries that need it.
+#[cfg(not(target_family = "wasm"))]
+pub static LIB_METHODS: &[(&str, &str)] = &[
+    ("Str", "to_bytes(s: Str) -> Bytes"),
+    ("#Bytes", "len(b: Bytes) -> Int"),
+    ("#Bytes", "is_empty(b: Bytes) -> Bool"),
+    ("#Bytes", "get(b: Bytes, i: Int) -> Opt[Int]"),
+    ("#Bytes", "slice(b: Bytes, from: Int, to: Int) -> Bytes"),
+    ("#Bytes", "concat(b: Bytes, c: Bytes) -> Bytes"),
+    ("#Bytes", "to_list(b: Bytes) -> List[Int]"),
+    ("#Bytes", "to_str(b: Bytes) -> Opt[Str]"),
+    ("#Bytes", "hex(b: Bytes) -> Str"),
+    ("#Bytes", "base64(b: Bytes) -> Str"),
+    ("#Bytes", "base64url(b: Bytes) -> Str"),
 ];
 
 pub static STD_METHODS: &[(&str, &str)] = &[
@@ -309,17 +339,6 @@ pub static STD_METHODS: &[(&str, &str)] = &[
     ("Str", "to_f64(s: Str) -> Opt[F64]"),
     ("Str", "bytes(s: Str) -> List[Int]"),
     ("Str", "codes(s: Str) -> List[Int]"),
-    ("Str", "to_bytes(s: Str) -> Bytes"),
-    ("#Bytes", "len(b: Bytes) -> Int"),
-    ("#Bytes", "is_empty(b: Bytes) -> Bool"),
-    ("#Bytes", "get(b: Bytes, i: Int) -> Opt[Int]"),
-    ("#Bytes", "slice(b: Bytes, from: Int, to: Int) -> Bytes"),
-    ("#Bytes", "concat(b: Bytes, c: Bytes) -> Bytes"),
-    ("#Bytes", "to_list(b: Bytes) -> List[Int]"),
-    ("#Bytes", "to_str(b: Bytes) -> Opt[Str]"),
-    ("#Bytes", "hex(b: Bytes) -> Str"),
-    ("#Bytes", "base64(b: Bytes) -> Str"),
-    ("#Bytes", "base64url(b: Bytes) -> Str"),
     ("F64", "fmt(x: F64, digits: Int) -> Str"),
     ("F64", "pow(x: F64, y: F64) -> F64"),
     ("F64", "exp(x: F64) -> F64"),
@@ -601,8 +620,21 @@ pub static STD_METHODS: &[(&str, &str)] = &[
 ];
 
 pub static STD_GLOBAL_NAMES: &[&str] = &[
-    "empty_set", "empty_heap", "str_buf", "range", "clamp", "rand", "rand_int", "rand_f64", "rand_binomial", "rand_poisson", "rand_geometric", "rand_gamma", "rand_beta", "rand_weighted", "rng", "complex", "polar", "ratio", "ratio_big", "parse_ratio", "locale", "empty_flat_map", "mdspan", "time_zone", "local_zone", "fixed_zone", "open_file", "with_file", "iota", "iterate", "from_bytes", "from_codes", "bytes", "from_hex", "from_base64", "from_base64url", "read_bin", "write_bin", "read_file", "write_file", "append_file", "list_dir", "remove_file", "read_line", "read_lines", "now_ms", "mono_ns", "sleep_ms", "env_var", "args", "pi", "euler", "inf", "nan", "rand_normal", "rand_uniform", "rand_exp", "rand_bool", "read_bytes", "write_bytes", "mkdir", "mkdir_all", "remove_dir", "rename", "exists", "is_dir", "file_size", "modified_ms", "copy_file", "symlink", "read_link", "is_symlink", "file_mode", "set_mode", "eprint", "run_cmd", "exit", "regex", "bits", "big", "parse_big", "decimal", "hash_map", "hash_set", "time_ms", "date", "datetime", "parse_time", "now", "millis", "secs", "mins", "hours", "days", "dev_f32", "dev_f64", "dev_i32", "dev_u32", "dev_int", "gpu_sync", "__net_fetch", "__net_serve", "__crypto_hash", "__crypto_hmac", "__crypto_random", "__crypto_same", "__crypto_aead", "__crypto_argon2", "__crypto_ed_public", "__crypto_ed_sign", "__crypto_ed_verify", "__zip_pack", "__zip_unpack", "__zip_file", "__csv_rows", "__csv_text", "__csv_open", "__csv_next", "__csv_close", "__db_connect", "__db_disconnect", "__db_exec", "__db_tx", 
+    "empty_set", "empty_heap", "str_buf", "range", "clamp", "rand", "rand_int", "rand_f64", "rand_binomial", "rand_poisson", "rand_geometric", "rand_gamma", "rand_beta", "rand_weighted", "rng", "complex", "polar", "ratio", "ratio_big", "parse_ratio", "locale", "empty_flat_map", "mdspan", "time_zone", "local_zone", "fixed_zone", "open_file", "with_file", "iota", "iterate", "from_bytes", "from_codes", "read_file", "write_file", "append_file", "list_dir", "remove_file", "read_line", "read_lines", "now_ms", "mono_ns", "sleep_ms", "env_var", "args", "pi", "euler", "inf", "nan", "rand_normal", "rand_uniform", "rand_exp", "rand_bool", "read_bytes", "write_bytes", "mkdir", "mkdir_all", "remove_dir", "rename", "exists", "is_dir", "file_size", "modified_ms", "copy_file", "symlink", "read_link", "is_symlink", "file_mode", "set_mode", "eprint", "run_cmd", "exit", "regex", "bits", "big", "parse_big", "decimal", "hash_map", "hash_set", "time_ms", "date", "datetime", "parse_time", "now", "millis", "secs", "mins", "hours", "days", "dev_f32", "dev_f64", "dev_i32", "dev_u32", "dev_int", "gpu_sync", "__net_fetch", "__net_serve", 
 ];
+
+/// The names of `LIB_GLOBALS`.
+#[cfg(not(target_family = "wasm"))]
+pub static LIB_GLOBAL_NAMES: &[&str] = &["bytes", "from_hex", "from_base64", "from_base64url", "read_bin", "write_bin", "__crypto_hash", "__crypto_hmac", "__crypto_random", "__crypto_same", "__crypto_aead", "__crypto_argon2", "__crypto_ed_public", "__crypto_ed_sign", "__crypto_ed_verify", "__zip_pack", "__zip_unpack", "__zip_file", "__csv_rows", "__csv_text", "__csv_open", "__csv_next", "__csv_close", "__db_connect", "__db_disconnect", "__db_exec", "__db_tx"];
+
+/// Whether `n` is a std global function's name.
+pub fn is_std_global(n: &str) -> bool {
+    #[cfg(not(target_family = "wasm"))]
+    if LIB_GLOBAL_NAMES.contains(&n) {
+        return true;
+    }
+    STD_GLOBAL_NAMES.contains(&n)
+}
 
 pub static SYS_GLOBALS: &[&str] = &[
     "alloc[T](n: Int, init: T) -> Ptr[T] ! unsafe",
@@ -637,3 +669,50 @@ pub static BARE_METHODS: &[(&str, &str)] = &[
 ];
 
 pub static BARE_NAMES: &[&str] = &["halt", "wait_irq", "irq_enable", "timer_start", "ticks", "tick_hz", "arch", "start_core", "core_id"];
+
+type Tys = (&'static str, &'static str, usize);
+type Pair = (&'static str, &'static str);
+
+/// The std types, with the libraries' outside the playground.
+#[cfg(not(target_family = "wasm"))]
+pub fn std_types() -> impl Iterator<Item = &'static Tys> + Clone {
+    STD_TYPES.iter().chain(LIB_TYPES)
+}
+
+#[cfg(target_family = "wasm")]
+pub fn std_types() -> std::slice::Iter<'static, Tys> {
+    STD_TYPES.iter()
+}
+
+/// The std sums, with the libraries' outside the playground.
+#[cfg(not(target_family = "wasm"))]
+pub fn std_sums() -> impl Iterator<Item = &'static Pair> {
+    STD_SUMS.iter().chain(LIB_SUMS)
+}
+
+#[cfg(target_family = "wasm")]
+pub fn std_sums() -> std::slice::Iter<'static, Pair> {
+    STD_SUMS.iter()
+}
+
+/// The std methods, with `Bytes` outside the playground.
+#[cfg(not(target_family = "wasm"))]
+pub fn std_methods() -> impl Iterator<Item = &'static Pair> {
+    STD_METHODS.iter().chain(LIB_METHODS)
+}
+
+#[cfg(target_family = "wasm")]
+pub fn std_methods() -> std::slice::Iter<'static, Pair> {
+    STD_METHODS.iter()
+}
+
+/// The std globals, with `Bytes` and the libraries' primitives outside the playground.
+#[cfg(not(target_family = "wasm"))]
+pub fn std_globals() -> impl Iterator<Item = &'static &'static str> {
+    STD_GLOBALS.iter().chain(LIB_GLOBALS)
+}
+
+#[cfg(target_family = "wasm")]
+pub fn std_globals() -> std::slice::Iter<'static, &'static str> {
+    STD_GLOBALS.iter()
+}

@@ -2,7 +2,6 @@
 //! `__db_*`, over the same C runtimes native code loads, so both tiers hash, compress, parse and
 //! query with one implementation. Everything else in `crypto.*`, `csv.*` and `db.*` is the
 //! library prelude, which both tiers run as SSPUR.
-#![cfg_attr(not(feature = "native"), allow(dead_code, unused_imports))]
 use crate::value::Value;
 use crate::{trap, Interp, R};
 use std::rc::Rc;
@@ -52,7 +51,6 @@ fn rt<T>(r: Result<T, String>) -> R<T> {
     r.or_else(trap)
 }
 
-#[cfg(feature = "native")]
 fn cell(v: &sspur_native::rt::SqlVal) -> Value {
     use sspur_native::rt::SqlVal;
     let (k, i, f, t, x) = match v {
@@ -65,7 +63,6 @@ fn cell(v: &sspur_native::rt::SqlVal) -> Value {
     tuple(vec![Value::Int(k), Value::Int(i), Value::Float(f), Value::str(&t), Value::bytes(x)])
 }
 
-#[cfg(feature = "native")]
 fn param(v: &Value) -> R<sspur_native::rt::SqlVal> {
     use sspur_native::rt::SqlVal;
     let Value::Tuple(t) = v else { return trap(format!("bad SQL parameter {v}")) };
@@ -92,22 +89,6 @@ impl Interp {
     }
 }
 
-#[cfg(not(feature = "native"))]
-fn lib_call(n: &str, _: &[Value]) -> R {
-    let what = if n.starts_with("__crypto_") {
-        "crypto"
-    } else if n.starts_with("__zip_") {
-        "compression"
-    } else if n.starts_with("__csv_") {
-        "CSV"
-    } else {
-        "databases"
-    };
-    let verb = if what == "databases" { "are" } else { "is" };
-    trap(format!("{what} {verb} {}", crate::web::UNAVAILABLE))
-}
-
-#[cfg(feature = "native")]
 fn lib_call(n: &str, a: &[Value]) -> R {
     use sspur_native::rt;
     Ok(match n {

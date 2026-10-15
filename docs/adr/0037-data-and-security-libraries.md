@@ -30,7 +30,7 @@ The constraints were those of ADR 0035: small typed APIs an agent can use in few
 | 16 | The HTTP server's gzip uses miniz at level 1 instead of the hand-written encoder of ADR 0035; the client keeps libcurl's and WinHTTP's decoders | The server's 0.10 tests pass unchanged (they check headers, round trips through the system's `gzip`, and the same bytes in both tiers). Replacing the client's decoder would mean turning off decoding in two system libraries and streaming downloads through our own, for no change in behaviour |
 | 17 | CSV: one RFC 4180 reader in C for both tiers, which accepts LF and CR as well as CRLF, skips empty lines and a byte order mark, and checks UTF-8; a writer that quotes only when needed and writes CRLF. `csv.decode[T]` maps header names to fields; `csv.fold[T]` streams a file in blocks | Identical semantics by construction, and constant memory for large files |
 | 18 | A string escape `\r` | CSV and HTTP texts are written with CRLF |
-| 19 | The playground has none of the runtimes: their primitives trap with "not available in the playground"; `Bytes` works | WebAssembly can't load the C runtimes, and the wasm file stays within its budget |
+| 19 | The playground leaves out the libraries and `Bytes`: their names are unknown there | WebAssembly can't load the C runtimes, and without them `Bytes` has little use in a browser; leaving both out keeps the playground's download at 972 KiB gzipped, where 0.10 left it |
 
 ## Licenses
 

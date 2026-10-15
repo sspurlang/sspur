@@ -16,6 +16,7 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 ### Changed
 - The HTTP server's gzip encoding uses miniz (level 1) instead of a hand-written encoder; responses are as before.
 - `sspur fuzz` skips the functions of the network and library preludes.
+- The playground leaves out `Bytes` and the four libraries, which need the C runtimes, so its WebAssembly file stays at 972 KiB gzipped.
 
 ## [0.10.0] - 2026-10-15
 

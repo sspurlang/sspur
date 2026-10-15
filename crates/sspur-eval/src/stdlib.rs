@@ -386,6 +386,7 @@ impl Interp {
         if let Some(r) = self.net_global(n, &a) {
             return r;
         }
+        #[cfg(feature = "native")]
         if let Some(r) = self.lib_global(n, &a) {
             return r;
         }
@@ -420,6 +421,7 @@ impl Interp {
         if let Some(v) = crate::stdview::global(n, &a)? {
             return Ok(v);
         }
+        #[cfg(not(target_family = "wasm"))]
         if let Some(v) = crate::stdbytes::global(n, &a)? {
             return Ok(v);
         }
@@ -561,10 +563,12 @@ impl Interp {
                 let p = s(&a[0])?;
                 io_res(p, std::fs::read(p).map_err(|e| open_err(p, e)).map(|b| ints(b.into_iter().map(i64::from))))
             }
+            #[cfg(not(target_family = "wasm"))]
             "read_bin" => {
                 let p = s(&a[0])?;
                 io_res(p, std::fs::read(p).map_err(|e| open_err(p, e)).map(Value::bytes))
             }
+            #[cfg(not(target_family = "wasm"))]
             "write_bin" => {
                 let p = s(&a[0])?;
                 let b = crate::stdbytes::of(&a[1])?;
@@ -997,6 +1001,7 @@ pub(crate) fn std_str(name: &str, x: &str, a: Vec<Value>) -> R {
         }
         "format" => Value::str(&crate::stdx::format_str(x, s(&a[0])?)?),
         "bytes" => ints(x.bytes().map(i64::from)),
+        #[cfg(not(target_family = "wasm"))]
         "to_bytes" => Value::bytes(x.as_bytes().to_vec()),
         "codes" => ints(x.chars().map(|c| c as i64)),
         _ => return trap(format!("no method '{name}' on Str")),

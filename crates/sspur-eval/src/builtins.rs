@@ -6,7 +6,7 @@ use std::rc::Rc;
 const GLOBALS: &[&str] = &["log", "some", "ok", "err", "empty_map", "min", "max", "secret", "pii", "untrusted", "guess", "atomic", "chan", "__cmp", "__hash"];
 
 pub fn is_global(n: &str) -> bool {
-    GLOBALS.contains(&n) || sspur_check::STD_GLOBAL_NAMES.contains(&n)
+    GLOBALS.contains(&n) || sspur_check::is_std_global(n)
 }
 
 fn int(v: &Value) -> R<i64> {
@@ -101,6 +101,7 @@ impl Interp {
             },
             Value::Dur(d) => crate::stdtime::dur_method(name, d, &a),
             Value::Bits(n, w) => crate::stdx::bits_method(name, n, &w, &a),
+            #[cfg(not(target_family = "wasm"))]
             Value::Bytes(b) => crate::stdbytes::method(name, &b.0, &a),
             Value::View(n) => self.view_method(name, n, a),
             Value::Record(n, fs) if &*n == "#Rng" => crate::stdrng::method(name, &fs, &a),

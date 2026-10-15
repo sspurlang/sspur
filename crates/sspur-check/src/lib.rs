@@ -10,7 +10,9 @@ mod statics;
 mod traits;
 pub mod elab;
 mod elab_net;
+#[cfg(not(target_family = "wasm"))]
 mod elab_lib;
+#[cfg(not(target_family = "wasm"))]
 pub mod libs;
 pub mod kernel;
 pub mod types;
@@ -23,7 +25,7 @@ pub use deploy::{db_op, HTTP_METHODS};
 pub use types::{Row, Type};
 pub use traits::{ImplOut, TraitOut};
 pub use holes::{HoleCtx, HoleSite, Sig, SigKind};
-pub use builtins::{BARE_NAMES, GLOBALS, METHODS, OPEN_STD_RECORDS, STD_GLOBALS, STD_GLOBAL_NAMES, STD_METHODS, STD_RECORDS, STD_SUMS, STD_TYPES};
+pub use builtins::{is_std_global, std_globals, std_methods, std_sums, std_types, BARE_NAMES, GLOBALS, METHODS, OPEN_STD_RECORDS, STD_GLOBALS, STD_GLOBAL_NAMES, STD_METHODS, STD_RECORDS, STD_SUMS, STD_TYPES};
 pub use net::NetSite;
 
 #[derive(Clone, Debug, Serialize)]
@@ -681,7 +683,11 @@ impl Checker {
     }
 
     fn load_builtins(&mut self) {
-        for (internal, src) in builtins::STD_RECORDS {
+        #[cfg(not(target_family = "wasm"))]
+        let records = builtins::STD_RECORDS.iter().chain(builtins::LIB_RECORDS);
+        #[cfg(target_family = "wasm")]
+        let records = builtins::STD_RECORDS.iter();
+        for (internal, src) in records {
             let m = parse(src).expect("std record must parse");
             let Def::Type(t) = &m.defs[0] else { unreachable!() };
             let TypeBody::Record(fs) = &t.body else { unreachable!() };
@@ -691,7 +697,7 @@ impl Checker {
             self.tparams.clear();
             self.types.insert(internal.to_string(), TypeInfo { params, kind: TypeKind::Record(fields) });
         }
-        for (internal, src) in builtins::STD_SUMS {
+        for (internal, src) in builtins::std_sums() {
             let m = parse(src).expect("std sum must parse");
             let Def::Type(t) = &m.defs[0] else { unreachable!() };
             let TypeBody::Sum(vs) = &t.body else { unreachable!() };
@@ -712,11 +718,11 @@ impl Checker {
             let (name, s) = self.builtin_scheme(src);
             self.methods.insert((recv.to_string(), name), s);
         }
-        for src in builtins::STD_GLOBALS {
+        for src in builtins::std_globals() {
             let (name, s) = self.builtin_scheme(src);
             self.globals.insert(name, s);
         }
-        for (recv, src) in builtins::STD_METHODS {
+        for (recv, src) in builtins::std_methods() {
             let (name, s) = self.builtin_scheme(src);
             self.methods.insert((recv.to_string(), name), s);
         }
@@ -862,7 +868,7 @@ impl Checker {
                     }
                     return Type::Con(name.clone(), conv);
                 }
-                if let Some((_, internal, arity)) = builtins::STD_TYPES.iter().find(|(n, _, _)| n == name).filter(|_| !self.types.contains_key(name)) {
+                if let Some((_, internal, arity)) = builtins::std_types().find(|(n, _, _)| n == name).filter(|_| !self.types.contains_key(name)) {
                     if *arity != conv.len() {
                         self.err("E_TYPE_ARITY", *span, format!("{name} takes {arity} type argument(s), got {}", conv.len()));
                         return self.fresh();
@@ -2066,8 +2072,10 @@ impl Checker {
                 self.method(x, xt, f, &[], e.span)
             }
             ExprKind::Method { recv, name, targs, args } if self.is_json_recv(recv) => self.infer_json(name, targs, args, e.span),
-            ExprKind::Method { recv, name, args, .. } if self.is_db_recv(recv) && db_op(name).is_some() => self.infer_db(name, args, e.span),
-            ExprKind::Method { recv, name, targs, args } if self.is_db_recv(recv) => self.infer_lib("db", name, targs, args, e.span),
+            #[cfg(not(target_family = "wasm"))]
+            ExprKind::Method { recv, name, targs, args } if self.is_db_recv(recv) && db_op(name).is_none() => self.infer_lib("db", name, targs, args, e.span),
+            ExprKind::Method { recv, name, args, .. } if self.is_db_recv(recv) => self.infer_db(name, args, e.span),
+            #[cfg(not(target_family = "wasm"))]
             ExprKind::Method { recv, name, targs, args } if let Some(ns) = self.lib_ns(recv) => self.infer_lib(ns, name, targs, args, e.span),
             ExprKind::Method { recv, name, targs, args } if self.is_ns_recv(recv, "http") => self.infer_http(name, targs, args, e.span),
             ExprKind::Method { recv, name, args, .. } if self.is_ns_recv(recv, "config") => self.infer_config(name, args, e.span),
@@ -2683,7 +2691,7 @@ impl Checker {
                     let map: HashMap<String, Type> = params.iter().map(|p| (p.clone(), self.fresh())).collect();
                     let ty = Type::Con(c.to_string(), params.iter().map(|p| map[p].clone()).collect());
                     (ty, fs.iter().map(|(n, t)| (n.clone(), subst_params(t, &map))).collect(), c.to_string())
-                } else if let Some((_, internal, _)) = builtins::STD_TYPES.iter().find(|(n, i, _)| n == &c && (builtins::OPEN_STD_RECORDS.contains(i) || (*i == "#Db" && self.cur_def.as_deref().is_some_and(|d| d.starts_with("__db_")))))
+                } else if let Some((_, internal, _)) = builtins::std_types().find(|(n, i, _)| n == &c && (builtins::OPEN_STD_RECORDS.contains(i) || (cfg!(not(target_family = "wasm")) && *i == "#Db" && self.cur_def.as_deref().is_some_and(|d| d.starts_with("__db_")))))
                     && let Some(TypeInfo { kind: TypeKind::Record(fs), .. }) = self.types.get(*internal).cloned()
                 {
                     (Type::con(internal), fs, internal.to_string())

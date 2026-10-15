@@ -24,8 +24,10 @@ pub enum NetSite {
     Svc(String),
     /// `crypto.f(args)` and the other simple library calls of ADR 0037: the prelude function,
     /// with each argument's conversion.
+    #[cfg(not(target_family = "wasm"))]
     Lib(String, Vec<crate::libs::Coerce>),
     /// A typed library call that `elab` expands with generated code.
+    #[cfg(not(target_family = "wasm"))]
     Data(crate::libs::LibSite),
 }
 

@@ -248,7 +248,7 @@ impl Checker {
         let mut params = Vec::new();
         for a in args {
             match a {
-                Ty::Named { name: p, args: pa, .. } if pa.is_empty() && (declared.contains(p) || (p.starts_with(|c: char| c.is_ascii_uppercase()) && !self.types.contains_key(p) && !BUILTIN_TYPES.iter().any(|(n, _)| n == p) && !builtins::STD_TYPES.iter().any(|(n, _, _)| n == p))) && !params.contains(p) => params.push(p.clone()),
+                Ty::Named { name: p, args: pa, .. } if pa.is_empty() && (declared.contains(p) || (p.starts_with(|c: char| c.is_ascii_uppercase()) && !self.types.contains_key(p) && !BUILTIN_TYPES.iter().any(|(n, _)| n == p) && !builtins::std_types().any(|(n, _, _)| n == p))) && !params.contains(p) => params.push(p.clone()),
                 _ => {
                     let ps: Vec<String> = (0..args.len()).map(|k| ["T", "U", "V", "W"].get(k).map_or(format!("T{k}"), |s| s.to_string())).collect();
                     self.push_diag("E_IMPL_TARGET", "error", *span, format!("an impl is for a whole type, not for {}", printer::ty(&i.target)), Some(format!("write impl[{}] {} for {name}[{}]", ps.join(", "), i.trait_name, ps.join(", "))), vec![]);

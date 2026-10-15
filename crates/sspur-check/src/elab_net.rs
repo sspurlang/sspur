@@ -11,7 +11,7 @@ use std::fmt::Write as _;
 #[cfg(not(target_family = "wasm"))]
 const PRELUDE: &str = concat!(include_str!("net_prelude.ssp"), "\n", include_str!("net_prelude_serve.ssp"), "\n", include_str!("lib_prelude.ssp"));
 #[cfg(target_family = "wasm")]
-const PRELUDE: &str = concat!(include_str!("net_prelude.ssp"), "\n", include_str!("lib_prelude.ssp"));
+const PRELUDE: &str = include_str!("net_prelude.ssp");
 
 pub(crate) fn name_expr(n: &str) -> Expr {
     Expr::new(ExprKind::Name(n.to_string()), Span::default())
@@ -53,7 +53,7 @@ pub(crate) fn src_ty(t: &Type) -> Result<String, String> {
 
 #[cfg(not(target_family = "wasm"))]
 fn std_name(n: &str) -> String {
-    builtins::STD_TYPES.iter().find(|(s, _, _)| *s == n).map_or_else(|| n.to_string(), |(_, i, _)| i.to_string())
+    builtins::std_types().find(|(s, _, _)| *s == n).map_or_else(|| n.to_string(), |(_, i, _)| i.to_string())
 }
 
 impl Gen<'_> {
@@ -76,6 +76,7 @@ impl Gen<'_> {
             let effs = if eff.is_empty() { String::new() } else { format!(" ! {}", eff.join(", ")) };
             let mut arms = String::new();
             match t {
+                #[cfg(not(target_family = "wasm"))]
                 Type::Con(n, _) if n == "#DbErr" => {
                     // A database error answers without SQL text, except a constraint, which
                     // is the client's to fix.
@@ -472,7 +473,9 @@ pub fn lower(m: &Module, out: &CheckOutput) -> Result<Option<Module>, String> {
                     };
                     call_of("__http_serve", vec![cfg, h])
                 }
+                #[cfg(not(target_family = "wasm"))]
                 (NetSite::Lib(f, cs), ExprKind::Method { args, .. }) => call_of(f, args.into_iter().zip(cs).map(|(a, c)| crate::elab_lib::coerce(a, c)).collect()),
+                #[cfg(not(target_family = "wasm"))]
                 (NetSite::Data(site), ExprKind::Method { args, .. }) => {
                     let r = match site {
                         crate::libs::LibSite::Db(op, t, ps) => g.db_site(op, t, ps, args),

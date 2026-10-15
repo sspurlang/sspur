@@ -1,6 +1,6 @@
 # Databases, crypto, compression and CSV
 
-These libraries run in C runtimes that are compiled into the cache the first time a program uses them, from sources vendored in the repository: SQLite, Monocypher with parts of libsodium, and miniz with zstd. Both tiers load the same runtime, so results are identical. Programs that don't use them build and load nothing. The handbook chapters [Databases](../../handbook/databases.md), [Security and Crypto](../../handbook/security.md) and [Files, Compression and CSV](../../handbook/files-compression-csv.md) show them in use, and [ADR 0037](../../adr/0037-data-and-security-libraries.md) records the design. The playground has none of them: their calls trap with "not available in the playground".
+These libraries run in C runtimes that are compiled into the cache the first time a program uses them, from sources vendored in the repository: SQLite, Monocypher with parts of libsodium, and miniz with zstd. Both tiers load the same runtime, so results are identical. Programs that don't use them build and load nothing. The handbook chapters [Databases](../../handbook/databases.md), [Security and Crypto](../../handbook/security.md) and [Files, Compression and CSV](../../handbook/files-compression-csv.md) show them in use, and [ADR 0037](../../adr/0037-data-and-security-libraries.md) records the design. The playground has none of them, and no `Bytes` either: it leaves them out to stay small, so programs that use them only check and run with `sspur`.
 
 ## Bytes
 

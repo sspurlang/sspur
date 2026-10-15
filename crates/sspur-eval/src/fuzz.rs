@@ -310,11 +310,8 @@ impl Interp {
                     Value::Big(Rc::new(x))
                 }
             }
-            "Bytes" if !self.types.contains_key(name) => {
-                let cap = if rng.chance(20) { 300 } else { 40 };
-                let n = if rng.chance(10) { 0 } else { rng.below(cap) };
-                Value::bytes((0..n).map(|_| if rng.chance(30) { [0u8, 255, 10, 13, 34, 44][rng.below(6) as usize] } else { rng.below(256) as u8 }).collect())
-            }
+            #[cfg(not(target_family = "wasm"))]
+            "Bytes" if !self.types.contains_key(name) => Value::bytes((0..if deep { 0 } else { rng.below(48) }).map(|_| rng.below(256) as u8).collect()),
             "Bits" if !self.types.contains_key(name) => {
                 let n = if rng.chance(10) { 0 } else { rng.below(140) as i64 };
                 let xs: Vec<Value> = (0..n).filter(|_| rng.chance(40)).map(Value::Int).collect();

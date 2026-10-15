@@ -48,8 +48,7 @@ pub(crate) fn method(name: &str, b: &[u8], a: &[Value]) -> R {
         "to_list" => Value::list(b.iter().map(|&x| Value::Int(i64::from(x))).collect()),
         "to_str" => opt(std::str::from_utf8(b).ok().map(Value::str)),
         "hex" => Value::str(&b64::hex(b)),
-        "base64" => Value::str(&b64::base64(b, false)),
-        "base64url" => Value::str(&b64::base64(b, true)),
+        "base64" | "base64url" => Value::str(&b64::base64(b, name == "base64url")),
         _ => return trap(format!("no method '{name}' on Bytes")),
     })
 }
@@ -68,20 +67,12 @@ pub(crate) fn from_list(xs: &[Value]) -> R {
 }
 
 pub(crate) fn global(n: &str, a: &[Value]) -> R<Option<Value>> {
-    let text = |v: &Value| -> R<String> {
-        match v {
-            Value::Str(s) => Ok(s.to_string()),
-            v => trap(format!("expected Str, got {v}")),
-        }
-    };
-    Ok(Some(match n {
-        "bytes" => match &a[0] {
-            Value::List(xs) => from_list(xs)?,
-            v => return trap(format!("expected a list, got {v}")),
-        },
-        "from_hex" => opt(b64::from_hex(&text(&a[0])?).map(Value::bytes)),
-        "from_base64" => opt(b64::from_base64(&text(&a[0])?, false).map(Value::bytes)),
-        "from_base64url" => opt(b64::from_base64(&text(&a[0])?, true).map(Value::bytes)),
-        _ => return Ok(None),
-    }))
+    let url = n == "from_base64url";
+    match (n, &a.first()) {
+        ("bytes", Some(Value::List(xs))) => from_list(xs).map(Some),
+        ("from_hex" | "from_base64" | "from_base64url", Some(Value::Str(t))) => Ok(Some(opt(if n == "from_hex" { b64::from_hex(t) } else { b64::from_base64(t, url) }.map(Value::bytes)))),
+        ("bytes" | "from_hex" | "from_base64" | "from_base64url", _) => trap(format!("bad argument to {n}")),
+        _ => Ok(None),
+    }
 }
+

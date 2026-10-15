@@ -3,6 +3,7 @@ mod builtins;
 #[cfg(feature = "native")]
 mod ffi;
 mod net;
+#[cfg(feature = "native")]
 mod libs;
 pub mod fuzz;
 pub mod progen;
@@ -12,6 +13,7 @@ pub mod kernel;
 mod sched;
 mod stdlib;
 mod stdbig;
+#[cfg(not(target_family = "wasm"))]
 mod stdbytes;
 mod stdcx;
 mod stdratio;
@@ -259,7 +261,7 @@ impl Interp {
             recording: Cell::new(false),
             record: RefCell::new((String::new(), vec![])),
         };
-        for (internal, src) in sspur_check::STD_RECORDS.iter().filter(|(n, _)| sspur_check::OPEN_STD_RECORDS.contains(n)).chain(sspur_check::STD_SUMS) {
+        for (internal, src) in sspur_check::STD_RECORDS.iter().filter(|(n, _)| sspur_check::OPEN_STD_RECORDS.contains(n)).chain(sspur_check::std_sums()) {
             if let Ok(sm) = sspur_syntax::parse(src)
                 && let Some(Def::Type(t)) = sm.defs.first()
             {
@@ -1861,6 +1863,7 @@ pub fn to_nval(v: &Value) -> Option<sspur_native::nval::NVal> {
         Value::Time(t) => NVal::Time(*t),
         Value::Dur(d) => NVal::Dur(*d),
         Value::Bits(n, w) => NVal::Bits(*n, (**w).clone()),
+        #[cfg(not(target_family = "wasm"))]
         Value::Bytes(b) => NVal::Bytes(b.0.clone()),
         Value::Big(b) => NVal::Big((**b).clone()),
         Value::Regex(r) => NVal::Regex(r.src.clone()),
@@ -1900,7 +1903,10 @@ pub fn from_nval(v: sspur_native::nval::NVal) -> Value {
         NVal::Time(t) => Value::Time(t),
         NVal::Dur(d) => Value::Dur(d),
         NVal::Bits(n, w) => Value::Bits(n, Rc::new(w)),
+        #[cfg(not(target_family = "wasm"))]
         NVal::Bytes(b) => Value::bytes(b),
+        #[cfg(target_family = "wasm")]
+        NVal::Bytes(_) => Value::Unit,
         NVal::Big(b) => Value::Big(Rc::new(b)),
         NVal::Regex(s) => match stdre::compile(&s) {
             Ok(r) => Value::Regex(Rc::new(r)),

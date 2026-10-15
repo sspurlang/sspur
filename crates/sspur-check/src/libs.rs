@@ -99,6 +99,9 @@ impl Checker {
         let ExprKind::Name(n) = &recv.kind else { return None };
         NAMESPACES.iter().copied().find(|ns| ns == n).filter(|ns| self.is_ns_recv(recv, ns))
     }
+}
+
+impl Checker {
 
     fn lib_site(&mut self, span: Span, site: NetSite) {
         self.net_sites.insert((span.start, span.end), site);
@@ -196,7 +199,7 @@ impl Checker {
         if self.diags.iter().any(|d| d.code == "E_DB_SHADOW") {
             return;
         }
-        let Some((_, src)) = builtins::STD_SUMS.iter().find(|(n, _)| *n == "#DbErr") else { return };
+        let Some((_, src)) = builtins::LIB_SUMS.iter().find(|(n, _)| *n == "#DbErr") else { return };
         let shadowed: Vec<String> = self.ctors.iter().filter(|(_, c)| !c.ty.starts_with('#')).map(|(n, _)| n.clone()).filter(|n| src.contains(&format!(" {n}{{")) || src.contains(&format!("= {n}{{")) || src.contains(&format!("| {n} ")) || src.ends_with(&format!("| {n}"))).collect();
         if let Some(n) = shadowed.first() {
             self.push_diag("E_DB_SHADOW", "error", span, format!("this program defines a constructor '{n}', and the database's DbErr has one with that name"), Some(format!("rename your '{n}', for example to '{n}Err'")), vec![]);

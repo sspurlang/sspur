@@ -1,6 +1,6 @@
 # Files, Compression and CSV
 
-Text files are `Str` (`read_file`, `write_file`); binary files are `Bytes`, an immutable byte string: `read_bin(path)` and `write_bin(path, b)` read and write one, `s.to_bytes` and `b.to_str` convert from and to UTF-8, and `bytes([1, 2, 3])`, `b.len`, `b.get(i)`, `b.slice(a, b)`, `b.concat(c)` and `b.to_list` work with the contents. `Bytes` encodes as base64 in JSON and shows as hex, `0x0a1b`.
+Text files are `Str` (`read_file`, `write_file`); binary files are `Bytes`, an immutable byte string: `read_bin(path)` and `write_bin(path, b)` read and write one, `s.to_bytes` and `b.to_str` convert from and to UTF-8, and `bytes([1, 2, 3])`, `b.len`, `b.get(i)`, `b.slice(a, b)`, `b.concat(c)` and `b.to_list` work with the contents. `Bytes` encodes as base64 in JSON and shows as hex, `0x0a1b`. The playground has neither `Bytes` nor these libraries.
 
 ## Compression
 

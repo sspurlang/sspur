@@ -502,11 +502,11 @@ fn shown(k: &str) -> &str {
 }
 
 fn methods_of(key: &str) -> impl Iterator<Item = &'static str> + '_ {
-    sspur_check::METHODS.iter().chain(sspur_check::STD_METHODS).filter(move |(r, _)| *r == key).map(|(_, s)| *s)
+    sspur_check::METHODS.iter().chain(sspur_check::std_methods()).filter(move |(r, _)| *r == key).map(|(_, s)| *s)
 }
 
 fn globals() -> impl Iterator<Item = &'static str> {
-    sspur_check::GLOBALS.iter().chain(sspur_check::STD_GLOBALS).copied().filter(|s| !s.starts_with("__"))
+    sspur_check::GLOBALS.iter().chain(sspur_check::std_globals()).copied().filter(|s| !s.starts_with("__"))
 }
 
 const EFFECTS: &[&str] = &["log", "fail", "div", "fs", "io", "proc", "time", "env", "net", "db", "rand", "conc", "yield", "ffi", "dev", "unsafe", "db.read", "db.write"];
@@ -520,7 +520,7 @@ pub fn builtins_json() -> J {
         })
         .collect();
     let mut methods = Vec::new();
-    for (r, s) in sspur_check::METHODS.iter().chain(sspur_check::STD_METHODS) {
+    for (r, s) in sspur_check::METHODS.iter().chain(sspur_check::std_methods()) {
         if let Some((n, _, _)) = split_sig(s) {
             methods.push(json!({ "recv": shown(r), "name": n, "sig": method_sig(s), "doc": d.by_method.get(&(shown(r).to_string(), n.to_string())) }));
         }
@@ -528,7 +528,7 @@ pub fn builtins_json() -> J {
     let effects: Vec<J> = EFFECTS.iter().map(|e| json!({ "name": e, "doc": d.effects.get(*e) })).collect();
     let types: BTreeSet<&str> = ["Int", "F64", "F32", "Bool", "Str", "Unit", "List", "Opt", "Res", "Map", "Atomic", "Chan", "Secret", "Pii", "Untrusted", "Guess", "I8", "I16", "I32", "U8", "U16", "U32", "U64", "Array", "Ptr"]
         .into_iter()
-        .chain(sspur_check::STD_TYPES.iter().map(|t| t.0))
+        .chain(sspur_check::std_types().map(|t| t.0))
         .collect();
     json!({
         "keywords": sspur_syntax::lexer::KEYWORDS,

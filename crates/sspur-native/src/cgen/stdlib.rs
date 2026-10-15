@@ -416,7 +416,7 @@ impl Cx<'_> {
             return Ok(None);
         }
         let mut vals = Vec::new();
-        let known = matches!(n, "ok" | "err") || sspur_check::STD_GLOBAL_NAMES.contains(&n);
+        let known = matches!(n, "ok" | "err") || sspur_check::is_std_global(n);
         if !known {
             return Ok(None);
         }
