@@ -29,6 +29,9 @@ pub enum NetSite {
     /// A typed library call that `elab` expands with generated code.
     #[cfg(not(target_family = "wasm"))]
     Data(crate::libs::LibSite),
+    /// `json.decode[T](s)` for a `T` with `where` refinements, which are checked after decoding.
+    #[cfg(not(target_family = "wasm"))]
+    Decode,
 }
 
 static HTTP_SIGS: &[&str] = &[
@@ -99,7 +102,8 @@ impl Checker {
         let ok = match &rt {
             Type::Con(n, a) if a.is_empty() && !n.starts_with('#') => match self.types.get(n) {
                 Some(TypeInfo { kind: TypeKind::Record(fs), .. }) => {
-                    let bad = fs.iter().find_map(|(f, ft)| self.json_bad(ft, true, &mut vec![]).map(|why| format!("field {f}: {why}")));
+                    let secret = Type::app("Secret", vec![Type::str()]);
+                    let bad = fs.iter().filter(|(_, ft)| *ft != secret).find_map(|(f, ft)| self.json_bad(ft, true, &mut vec![]).map(|why| format!("field {f}: {why}")));
                     match bad {
                         Some(why) => {
                             self.push_diag("E_CONFIG_TYPE", "error", args[0].span, format!("config.load cannot read {rt}: {why}"), None, vec![]);
@@ -276,6 +280,7 @@ impl Checker {
             self.push_diag("E_UNKNOWN_METHOD", "error", span, format!("'.json[T]' decodes the body of a Request or Response, not {r}"), Some("json.decode[T](s) decodes a Str".into()), vec![]);
             return Some(self.fresh());
         }
+        #[cfg(target_family = "wasm")]
         if let Some(a) = self.refined_alias_in(&targs[0]) {
             self.push_diag("E_JSON", "error", span, format!("json.decode cannot check the refinement of {a}"), Some("decode a type without 'where' and validate it".into()), vec![]);
         }

@@ -234,7 +234,7 @@ This page lists every code the compiler can emit, grouped by area. The test suit
 | Code | Meaning | Fix |
 |---|---|---|
 | `E_SERVE_EFFECT` | A handler passed to `http.serve` performs a user-defined effect, or a `db.*` effect, which needs `sspur deploy local` | Handle the effect inside the handler, or run the service with `sspur deploy local` |
-| `E_SERVE_TYPE` | A svc endpoint whose body or result `http.serve` can't decode or encode (refinements, functions), or a handler that raises two non-sum error types | Take an unrefined type and build the refined value in the handler |
+| `E_SERVE_TYPE` | A svc endpoint whose body or result `http.serve` can't decode or encode (functions, secrets), or a handler that raises two non-sum error types | Use a data type |
 | `E_HTTP_SHADOW` | The program defines a constructor with the name of an `HttpErr` variant (`Dns`, `Connect`, `Tls`, `Timeout`, `HttpStatus`, `Io`) and uses the HTTP client | Rename your constructor |
 | `E_CONFIG_TYPE` | `config.load` of something other than a record, or of a record with a field JSON can't decode | `config.load(Config{...}, path, prefix)` with plain data fields |
 

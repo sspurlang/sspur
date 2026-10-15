@@ -13,6 +13,8 @@ mod elab_net;
 #[cfg(not(target_family = "wasm"))]
 mod elab_lib;
 #[cfg(not(target_family = "wasm"))]
+mod elab_refine;
+#[cfg(not(target_family = "wasm"))]
 pub mod libs;
 pub mod kernel;
 pub mod types;

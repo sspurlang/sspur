@@ -15,10 +15,17 @@ impl Checker {
             ("decode", 1, 1) => {
                 let t = self.infer(&args[0], Some(&Type::str()));
                 self.expect(&Type::str(), &t, args[0].span);
-                if let Some(a) = self.refined_alias_in(&targs[0]) {
-                    self.push_diag("E_JSON", "error", span, format!("json.decode cannot check the refinement of {a}"), Some("decode a type without 'where' and validate it".into()), vec![]);
-                }
                 let target = self.conv_ty(&targs[0]);
+                if let Some(a) = self.refined_alias_in(&targs[0]) {
+                    #[cfg(target_family = "wasm")]
+                    self.push_diag("E_JSON", "error", span, format!("json.decode cannot check the refinement of {a}"), Some("decode a type without 'where' and validate it".into()), vec![]);
+                    #[cfg(not(target_family = "wasm"))]
+                    let _ = a;
+                }
+                #[cfg(not(target_family = "wasm"))]
+                if self.refined_alias_in(&targs[0]).is_some() || (self.json_bad(&target, true, &mut vec![]).is_some() && self.json_bad_r(&target, true, true, &mut vec![]).is_none()) {
+                    self.net_sites.insert((span.start, span.end), NetSite::Decode);
+                }
                 self.json_sites.push(((span.start, span.end), target.clone(), span, true));
                 Type::app("Res", vec![target, Type::str()])
             }
@@ -111,7 +118,11 @@ impl Checker {
         let mut out = HashMap::new();
         for (key, t, span, decode) in std::mem::take(&mut self.json_sites) {
             let r = self.resolve(&t);
-            if let Some(why) = self.json_bad(&r, decode, &mut vec![]) {
+            #[cfg(not(target_family = "wasm"))]
+            let refined_ok = matches!(self.net_sites.get(&key), Some(NetSite::Decode | NetSite::Body));
+            #[cfg(target_family = "wasm")]
+            let refined_ok = false;
+            if let Some(why) = self.json_bad_r(&r, decode, refined_ok, &mut vec![]) {
                 self.push_diag("E_JSON", "error", span, format!("{r} cannot be {}: {why}", if decode { "decoded from JSON" } else { "encoded as JSON" }), None, vec![]);
             }
             out.insert(key, r);

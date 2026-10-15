@@ -35,8 +35,7 @@ pub fn status_for(variant: &str) -> u16 {
 }
 
 pub(crate) struct Gen<'a> {
-    #[cfg_attr(target_family = "wasm", allow(dead_code))]
-    m: &'a Module,
+    pub(crate) m: &'a Module,
     pub(crate) out: &'a CheckOutput,
     pub(crate) extra: Vec<String>,
     pub(crate) done: HashSet<String>,
@@ -251,8 +250,8 @@ impl Gen<'_> {
                         }
                     }
                 } else {
-                    let ts = src_ty(t)?;
-                    write!(body, "  {}__dec = json.decode[{ts}](__rq.body)\n  ok({}) = {}__dec else __http_bad_body(__http_err_text({}__dec))\n", p.name, p.name, p.name, p.name).unwrap();
+                    let dec = if self.needs_check(&p.ty) { self.decoder(&p.ty)? } else { format!("json.decode[{}]", src_ty(t)?) };
+                    write!(body, "  {}__dec = {dec}(__rq.body)\n  ok({}) = {}__dec else __http_bad_body(__http_err_text({}__dec))\n", p.name, p.name, p.name, p.name).unwrap();
                 }
                 args.push(p.name.clone());
             }
@@ -314,10 +313,14 @@ impl Gen<'_> {
         for (f, t) in &fields {
             let ts = src_ty(t)?;
             let opt = matches!(t, Type::Con(n, _) if n == "Opt");
-            pfields.push(if opt { format!("{f}: {ts}") } else { format!("{f}: Opt[{ts}]") });
+            let secret = *t == Type::app("Secret", vec![Type::str()]);
+            pfields.push(if opt { format!("{f}: {ts}") } else if secret { format!("{f}: Opt[Str]") } else { format!("{f}: Opt[{ts}]") });
             let env = format!("prefix + {}", json_lit(&f.to_uppercase()));
-            let fallback = if opt { format!("if p.{f}.is_some then p.{f} else d.{f}") } else { format!("p.{f}.or(d.{f})") };
-            let conv = self.config_conv(t, "s", &env, &format!("{fname}_e"))?;
+            if secret && self.done.insert("__config_secret".into()) {
+                self.extra.push("fn __config_secret(o: Opt[Str], d: Secret[Str]) -> Secret[Str]\n= match o\n  | some(s) => secret(s)\n  | none => d".into());
+            }
+            let fallback = if opt { format!("if p.{f}.is_some then p.{f} else d.{f}") } else if secret { format!("__config_secret(p.{f}, d.{f})") } else { format!("p.{f}.or(d.{f})") };
+            let conv = if secret { "secret(s)".to_string() } else { self.config_conv(t, "s", &env, &format!("{fname}_e"))? };
             self.extra.push(format!("fn {fname}_{f}(d: {tn}, p: {part}, prefix: Str) -> {ts} ! env, fail[SspurConfigErr]\n= match env_var({env})\n  | some(s) => {conv}\n  | none => {fallback}"));
             inits.push(format!("{f}: {fname}_{f}(d, p, prefix)"));
         }
@@ -468,8 +471,26 @@ pub fn lower(m: &Module, out: &CheckOutput) -> Result<Option<Module>, String> {
                 }
                 (NetSite::Body, ExprKind::Method { recv, targs, .. }) => {
                     let body = Expr::new(ExprKind::Field(recv, "body".into()), Span::default());
+                    #[cfg(not(target_family = "wasm"))]
+                    if g.needs_check(&targs[0]) {
+                        match g.decoder(&targs[0]) {
+                            Ok(f) => e.kind = call_of(&f, vec![body]),
+                            Err(x) => {
+                                err.get_or_insert(x);
+                            }
+                        }
+                        return;
+                    }
                     ExprKind::Method { recv: Box::new(name_expr("json")), name: "decode".into(), targs, args: vec![body] }
                 }
+                #[cfg(not(target_family = "wasm"))]
+                (NetSite::Decode, ExprKind::Method { targs, args, .. }) if g.needs_check(&targs[0]) => match g.decoder(&targs[0]) {
+                    Ok(f) => call_of(&f, args),
+                    Err(x) => {
+                        err.get_or_insert(x);
+                        ExprKind::Unit
+                    }
+                },
                 (NetSite::Config(t), ExprKind::Method { args, .. }) => match g.config(t) {
                     Ok(f) => call_of(&f, args),
                     Err(x) => {

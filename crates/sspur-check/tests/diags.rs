@@ -428,3 +428,9 @@ fn svc_endpoints_return_any_json_type() {
     assert!(codes(src).is_empty(), "{:?}", diags(src));
     assert_eq!(codes("fn f() -> Secret[Str]\n= secret(\"x\")\nsvc api\n  ep get \"/s\" = f\n"), vec!["E_EP_TYPE"]);
 }
+
+#[test]
+fn refined_types_decode_from_json() {
+    let src = "type Title = Str where _.len > 0\ntype N = {title: Title, n: Int where _ >= 0}\nfn f(s: Str) -> Res[N, Str]\n= json.decode[N](s)\nfn g(s: Str) -> Res[List[Title], Str]\n= json.decode[List[Title]](s)\nfn add(n: N) -> Int\n= n.n\nsvc api\n  ep post \"/n\" = add\n";
+    assert!(codes(src).is_empty(), "{:?}", diags(src));
+}

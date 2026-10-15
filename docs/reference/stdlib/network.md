@@ -57,7 +57,7 @@ Graceful shutdown: on SIGINT or SIGTERM the server stops accepting, answers what
 
 | Call | Result |
 |---|---|
-| `config.load(defaults, path, prefix)` | `Res[T, Str] ! fs, env` for a record type `T`: each field from the environment variable `prefix + NAME`, else the JSON file at `path` (`""` or a missing file is no file), else `defaults`. `Str` fields take the variable as it is, `Int`, `F64` and `Bool` (`true false 1 0`) parse it, other types decode it as JSON. `where` clauses on the fields are checked when the record is built |
+| `config.load(defaults, path, prefix)` | `Res[T, Str] ! fs, env` for a record type `T`: each field from the environment variable `prefix + NAME`, else the JSON file at `path` (`""` or a missing file is no file), else `defaults`. `Str` fields take the variable as it is, and so do `Secret[Str]` fields, as a secret that can't be logged; `Int`, `F64` and `Bool` (`true false 1 0`) parse it, other types decode it as JSON. `where` clauses on the fields are checked when the record is built |
 | `log.debug(m)`, `log.info(m)`, `log.warn(m)`, `log.error(m)` | `Unit ! log`: `log("warn: " + m)` and so on |
 
 `SSPUR_LOG_LEVEL=debug|info|warn|error` drops lines below that level (a line without a level prefix is info), and `SSPUR_LOG=json` prints each line as `{"ts":"2026-10-15T09:30:00.123Z","level":"warn","msg":"..."}`. The server's access log and its listening line go through the same filter.
