@@ -102,6 +102,8 @@ pub struct Interp {
     fns: HashMap<String, Rc<FnDef>>,
     tests: Vec<TestDef>,
     variant_fields: HashMap<String, Option<Vec<String>>>,
+    /// The sum type of each variant, so a `catch` handles only the error type it names.
+    variant_type: HashMap<String, String>,
     record_fields: HashMap<String, Vec<String>>,
     newtypes: HashSet<String>,
     alias_refines: HashMap<String, Expr>,
@@ -221,6 +223,7 @@ impl Interp {
             fns: HashMap::new(),
             tests: vec![],
             variant_fields: HashMap::new(),
+            variant_type: HashMap::new(),
             record_fields: HashMap::new(),
             newtypes: HashSet::new(),
             alias_refines: HashMap::new(),
@@ -311,6 +314,7 @@ impl Interp {
             }
             TypeBody::Sum(vs) => {
                 for v in vs {
+                    self.variant_type.insert(v.name.clone(), t.name.clone());
                     self.variant_fields.insert(v.name.clone(), v.fields.as_ref().map(|fs| fs.iter().map(|f| f.name.clone()).collect()));
                     if let Some(fs) = &v.fields {
                         add_fields(&v.name, fs, &mut self.type_refines, &mut self.field_types);
@@ -1430,8 +1434,23 @@ impl Interp {
     }
 
     #[inline(never)]
+    /// Whether a `catch` with these arms handles `v`: one whose arms name constructors handles
+    /// only that sum type, as in native code, so a `_` arm there doesn't catch other errors.
+    fn catches(&self, arms: &[Arm], v: &Value) -> bool {
+        fn ctor(p: &Pat) -> Option<&str> {
+            match p {
+                Pat::Ctor { name, .. } => Some(name),
+                Pat::Or(ps) => ps.iter().find_map(ctor),
+                _ => None,
+            }
+        }
+        let Some(want) = arms.iter().find_map(|a| ctor(&a.pat)).and_then(|c| self.variant_type.get(c)) else { return true };
+        matches!(v, Value::Variant(n, _) if self.variant_type.get(&**n) == Some(want))
+    }
+
     fn eval_catch(&self, body: &Expr, arms: &[Arm], env: &Rc<Env>) -> R {
         match self.eval(body, env) {
+            Err(Ctrl::Raise(v)) if !self.catches(arms, &v) => Err(Ctrl::Raise(v)),
             Err(Ctrl::Raise(v)) => match self.match_arms(&v, arms, env)? {
                 Some(r) => Ok(r),
                 None => Err(Ctrl::Raise(v)),
