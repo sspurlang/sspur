@@ -12,6 +12,11 @@ None of these are needed for normal use. They exist for CI, for pinning toolchai
 | `SSPUR_LOG_LEVEL` | `debug`, `info`, `warn` or `error`: drop log lines below that level (a line without a level prefix is `info`) |
 | `SSL_CERT_FILE` | A PEM file of certificates the HTTP client trusts instead of the system's roots |
 | `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`, `NO_PROXY` | Proxies for the HTTP client (lowercase forms too) |
+| `SSPUR_INDEX` | The package index to read instead of sspur-packages on raw.githubusercontent.com: an HTTPS base URL, a git URL, or a directory with `packages/` |
+| `SSPUR_OFFLINE=1` | Never download: use the cached index and packages only |
+| `SSPUR_REGISTRY_REPO` | The GitHub repository `sspur publish` and `sspur yank` open requests in (default `utkarshavardhana/sspur-packages`) |
+| `SSPUR_GH`, `SSPUR_NO_GH=1` | The GitHub CLI `sspur publish` uses, or don't use it and print the request link |
+| `SSPUR_REGISTRY_CHECKS` | A `registry.ssp` to run instead of the copy built into `sspur publish` |
 | `SSPUR_LIBCURL` | Path of libcurl, if the HTTP client doesn't find it (macOS and Linux) |
 | `SSPUR_OPENSSL` | Directory of OpenSSL 3's libraries, if `http.serve` with TLS doesn't find them |
 | `SSPUR_NO_CHECK_CACHE` | Set to any value to skip the shared check cache, like `check --no-cache` |

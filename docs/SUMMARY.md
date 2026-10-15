@@ -30,6 +30,7 @@
   - [Security and Crypto](handbook/security.md)
   - [Files, Compression and CSV](handbook/files-compression-csv.md)
   - [Packages](handbook/packages.md)
+  - [Publishing a package](handbook/publishing.md)
 
 # Reference
 

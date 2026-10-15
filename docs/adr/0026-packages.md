@@ -78,7 +78,7 @@ deps = []
 ## Not done
 
 - Two versions of one package in a graph. Renaming by package hash instead of package name would allow it at the cost of longer names.
-- A registry, semver ranges and `deps update` to the newest tag; dependencies name a path, or a git URL with a tag or revision.
+- A registry, semver ranges and `deps update` to the newest tag; dependencies name a path, or a git URL with a tag or revision. Update (0.12): [ADR 0038](0038-package-registry.md) adds the registry, version requirements and `sspur update`.
 - Exports of `store`, `svc` and `static` definitions; `deploy` of a package with dependencies uses its own stores only.
 - Generic calls with explicit type arguments across packages (`lib.f[T](x)` is `E_PKG_TARGS`; annotate the result instead).
 - `profile sys` and `bare` dependencies of a different profile than the dependent (`E_PKG_PROFILE`).

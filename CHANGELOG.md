@@ -4,6 +4,14 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+### Added
+- A public package registry (ADR 0038), [sspur-packages](https://github.com/utkarshavardhana/sspur-packages), that runs entirely on GitHub at no cost: one JSON file per package, each version pinned to its tag, commit, the content hash of its exports and the SHA-256 of a deterministic source snapshot stored as a release asset, so a version survives its author deleting or rewriting the repository and a moved tag changes nothing for users. The template of the index repository, with its workflows, forms, schemas, standards and SSPUR programs, is in `registry/packages-template/`.
+- `sspur add money` and `sspur add money@^1.2` add published packages (`money = { version = "^1.2" }`), with Cargo's requirement syntax and the one-version rule across the graph. `sspur update` moves them to the newest matching versions with the semantic diff. Installs download the snapshot, verify its SHA-256 and the export hash, fall back to the author's repository at the pinned commit only when the snapshot is missing, refuse a tampered snapshot, and never run package code. Builds stay offline and reproducible from `sspur.lock`, which records `git`, `snapshot` and `sha256` for registry packages.
+- `sspur publish` runs the registry's 35 checks on the committed package (parse, typecheck, no warnings, formatting, tests natively and interpreted, version rules with an API diff by signature hashes, an effects audit that needs new capability effects acknowledged with `--ack`, licence, README, docs on every public definition, tests, naming, typosquatting, size, binaries, secrets, hooks, and review standards) and opens the publish request with the GitHub CLI, or prints the prefilled request form. `sspur yank`, `sspur search`, `sspur source` (download and verify without running), `sspur api` (the public API and the facts the checks read) and `sspur archive` (the snapshot of a commit).
+- The registry workflow turns each request into a pull request whose description lists every check with file, line and fix, the effects per function, the API changes and how to submit the next revision, and merges it when every blocking check passes; package code runs only in a read-only job.
+- The package site on sspur-packages' GitHub Pages, built by SSPUR programs: search, a page per package with its README, API docs, versions, effects, dependencies, dependents and licence, and a Publish page that lists your repositories and tags with GitHub's API, runs the checks in the browser with a separate WebAssembly build of the checker, and opens the request on github.com.
+- The handbook chapter Publishing a package, CLI reference for the new commands, and ADR 0038.
+
 ## [0.11.0] - 2026-10-15
 
 ### Added

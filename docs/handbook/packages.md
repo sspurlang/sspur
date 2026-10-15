@@ -42,4 +42,4 @@ A package is a directory with an `sspur.toml`. This page builds two: a library, 
 
 `sspur add` writes the dependency to `sspur.toml` and pins it in `sspur.lock` by the hash of its exports, so your build doesn't change until you run `sspur deps update`. That command prints a semantic diff of each changed export (`~ money.fmt  effects: + log`, `~ money.cents  contracts: + pre n > 0`) and refuses the upgrade if your code no longer checks. A dependency can also be a git URL with a tag: `sspur add https://example.com/money.git@v0.1.0`.
 
-The manifest and lock formats are on the [sspur.toml](../config/sspur-toml.md) and [sspur.lock](../config/sspur-lock.md) pages. That is the end of the handbook. The [tutorials](../tutorials/index.md) build real programs with what it covered, and the [cheat sheet](../cheat-sheet.md) fits the syntax on one page.
+A dependency can also be a published package from the registry, `sspur add money@^1.2`, which the next chapter, [Publishing a package](publishing.md), covers. The manifest and lock formats are on the [sspur.toml](../config/sspur-toml.md) and [sspur.lock](../config/sspur-lock.md) pages.

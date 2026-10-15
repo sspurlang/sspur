@@ -9,9 +9,11 @@
 | Field | Meaning |
 |---|---|
 | `name`, `version` | The package's manifest name and version |
-| `source` | Where it was resolved from: `path+DIR` or `git+URL` |
-| `rev` | For git sources, the rev the manifest asked for |
+| `source` | Where it was resolved from: `path+DIR`, `git+URL` or `registry` |
+| `ref` | The rev the manifest asked for, or for a registry package its version requirement |
+| `rev` | For git and registry sources, the commit |
 | `hash` | The hash of the package's exports |
+| `git`, `snapshot`, `sha256` | Registry packages: the repository, the snapshot URL and the snapshot's SHA-256, so a locked version can be downloaded again without the index. The snapshot is used first; the repository at `rev` only when the snapshot is missing, and it must give the same bytes |
 | `deps` | The names of its own dependencies, which have their own `[[dep]]` entries |
 
 ## Pinned by what it exports
@@ -22,7 +24,7 @@ A build reads only the lock and the package cache, `~/.cache/sspur/pkgs/<hash>` 
 
 | Code | When | Fix |
 |---|---|---|
-| `E_DEP_HASH` | A cached package doesn't hash to what the lock says | Delete that cache entry and run `sspur deps fetch` |
+| `E_DEP_HASH` | A cached package doesn't hash to what the lock says, or a registry snapshot doesn't have its SHA-256 | Delete that cache entry and run `sspur deps fetch`; for a snapshot, report it to the registry |
 | `E_DEP_STALE` | `sspur.toml` asks for a different source or rev than the lock pins | `sspur deps update NAME`, which shows the diff first |
 | `E_DEP_CONFLICT` | Two versions of one package in the graph | `sspur deps update NAME` where the older one is pinned |
 

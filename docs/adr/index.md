@@ -41,3 +41,4 @@ Every change that shapes the language, the compiler or the tools has an architec
 | [0035](0035-networking.md) | HTTP client and server, with TLS, configuration and structured logs | Library |
 | [0036](0036-source-level-debugging.md) | Source-level debugging with lldb and gdb | Tooling |
 | [0037](0037-data-and-security-libraries.md) | Databases, crypto, compression and CSV | Library |
+| [0038](0038-package-registry.md) | The package registry: index, snapshots, checks and the publish loop | Packages |

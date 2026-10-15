@@ -52,7 +52,7 @@ Most languages are designed around a human at a keyboard. SSPUR starts from a di
 - Records, sum types, generics, pattern matching (or-patterns, list patterns, `e is p` tests, `while e is p` loops, `p = e else d` guards) checked for exhaustiveness, decision tables, and refinement types
 - Traits with default methods, bounds such as `[T: Ord + Show]`, operators as traits (`impl Add for Money`), and `derive Eq, Ord, Show, Hash, Json`, all resolved statically
 - Lambdas, `_` placeholders, and block lambdas (`xs.map(x => do` and an indented block)
-- Packages: `sspur.toml`, `pub` exports, `use lib.{f, T}`, and a lock that pins each dependency by the hash of its exports
+- Packages: `sspur.toml`, `pub` exports, `use lib.{f, T}`, a lock that pins each dependency by the hash of its exports, and a public registry with `sspur add NAME`, `sspur publish` and automated checks
 - Algebraic effects with handlers and one-shot `resume`, generators with `yield`
 - Errors as typed effects (`raise`, `catch`), with exhaustiveness checking
 - Structured concurrency with `par`, `Atomic[Int]`, and channels, with data races rejected by the type checker
@@ -219,7 +219,15 @@ sspur deps update                           # semantic diff; refused if it break
 sspur q sig textutils.clip                  # a dependency's signature, without its body
 ```
 
-See the [Packages](https://utkarshavardhana.github.io/sspur/handbook/packages.html) chapter of the handbook, [`examples/packages/`](examples/packages) and [ADR 0026](docs/adr/0026-packages.md).
+Published packages come from the registry, [sspur-packages](https://utkarshavardhana.github.io/sspur-packages/): a GitHub repository with one file per package, free to run and checked on every publish (types, tests in both tiers, effects, docs, the API diff against the last version, licence, secrets). Each version is pinned by its commit, a source snapshot's SHA-256 and its export hash, and installing one never runs its code.
+
+```
+sspur search money
+sspur add money@^1.2                        # sspur update moves to the newest matching version
+sspur publish                               # the registry's checks, then the request on GitHub
+```
+
+See the [Packages](https://utkarshavardhana.github.io/sspur/handbook/packages.html) and [Publishing a package](https://utkarshavardhana.github.io/sspur/handbook/publishing.html) chapters of the handbook, [`examples/packages/`](examples/packages), [ADR 0026](docs/adr/0026-packages.md) and [ADR 0038](docs/adr/0038-package-registry.md).
 
 More examples:
 

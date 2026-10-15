@@ -1,8 +1,12 @@
 $ sspur --help
 usage:
   sspur init [file.ssp] [--pkg NAME]    create a codebase in .sspur/ (optionally import a file; --pkg also writes sspur.toml)
-  sspur add <path|git-url>[@rev]        add a dependency to sspur.toml and pin it in sspur.lock by the hash of its exports
+  sspur add <name[@^1.2]|path|git-url[@rev]>  add a dependency (a published package, a path or a git URL) to sspur.toml and pin it in sspur.lock
   sspur deps fetch | update [NAME...] [--force] | tree   verify and fetch locked deps; upgrade with a semantic diff (refused if it breaks the build); show the graph
+  sspur update [NAME...] [--force]      the same as deps update: newest matching versions, with the semantic diff
+  sspur search [QUERY] [--json]         published packages; sspur source NAME[@VERSION] [DIR] downloads one, verified, without running it
+  sspur publish [--dry-run] [--ack net,fs] [--ref TAG] [--no-tests]   run the registry checks here, then open the publish request
+  sspur yank NAME@VERSION [--undo] [--deprecate MSG]   request a yank (or deprecation); sspur api [--json] shows the public API and the facts the checks use
   sspur edit [file|-] [-e SRC] [--test] replace or add definitions by name (also 'rename A B', 'remove A' lines)
   sspur apply [tx.json|-] [-e JSON] [--test] apply a transaction of ops
   sspur q <query> [target] [--budget N] query the codebase (list [types|fns|tests] sig body callers callees effects find grep pack why impact holes diag log; body and pack take A,B,C)
