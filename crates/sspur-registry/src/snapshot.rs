@@ -86,7 +86,7 @@ fn field_num(b: &[u8]) -> Result<u64, String> {
 /// back and rebuilt gives the same bytes.
 pub fn read(data: &[u8]) -> Result<Vec<File>, String> {
     let bad = |m: &str| Err(format!("not a valid snapshot: {m}"));
-    if data.len() % 512 != 0 || data.len() < 1024 {
+    if !data.len().is_multiple_of(512) || data.len() < 1024 {
         return bad("its length is not a whole number of tar blocks");
     }
     let mut files: Vec<File> = Vec::new();

@@ -38,18 +38,17 @@ fn block(h: &mut [u32; 8], b: &[u8]) {
 
 pub fn digest(data: &[u8]) -> [u8; 32] {
     let mut h: [u32; 8] = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
-    let mut chunks = data.chunks_exact(64);
-    for c in &mut chunks {
+    let (chunks, rest) = data.as_chunks::<64>();
+    for c in chunks {
         block(&mut h, c);
     }
-    let rest = chunks.remainder();
     let mut tail = rest.to_vec();
     tail.push(0x80);
     while tail.len() % 64 != 56 {
         tail.push(0);
     }
     tail.extend_from_slice(&((data.len() as u64).wrapping_mul(8)).to_be_bytes());
-    for c in tail.chunks_exact(64) {
+    for c in tail.as_chunks::<64>().0 {
         block(&mut h, c);
     }
     let mut out = [0u8; 32];
