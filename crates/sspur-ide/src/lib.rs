@@ -370,6 +370,7 @@ struct Docs {
     effects: BTreeMap<String, String>,
 }
 
+#[cfg(target_family = "wasm")]
 const DOC_SOURCES: &[&str] = &[
     include_str!("../../../docs/reference/stdlib/collections.md"),
     include_str!("../../../docs/reference/stdlib/text.md"),
@@ -377,6 +378,17 @@ const DOC_SOURCES: &[&str] = &[
     include_str!("../../../docs/reference/stdlib/time.md"),
     include_str!("../../../docs/reference/stdlib/data.md"),
     include_str!("../../../docs/reference/stdlib/system.md"),
+];
+/// The native build also documents `Bytes` and the data libraries (ADR 0037).
+#[cfg(not(target_family = "wasm"))]
+const DOC_SOURCES: &[&str] = &[
+    include_str!("../../../docs/reference/stdlib/collections.md"),
+    include_str!("../../../docs/reference/stdlib/text.md"),
+    include_str!("../../../docs/reference/stdlib/numbers.md"),
+    include_str!("../../../docs/reference/stdlib/time.md"),
+    include_str!("../../../docs/reference/stdlib/data.md"),
+    include_str!("../../../docs/reference/stdlib/system.md"),
+    include_str!("../../../docs/reference/stdlib/data-libs.md"),
 ];
 const EFFECT_DOCS: &str = include_str!("../../../docs/reference/effects.md");
 
