@@ -658,6 +658,7 @@ src = "main.ssp"
 [deps]
 textutils = { path = "../textutils" }
 greet = { git = "file:///srv/greet.git", rev = "v0.1.0" }   # a tag, branch or commit
+money = { version = "^1.2" }   # a published package (sspur add money)
 ```
 
 - `pub fn`, `pub type`, `pub effect`, `pub trait` and `pub impl` export a definition. A pub sum type exports its variants, a pub effect its operations and a pub trait its methods. Other definitions are private to the package; a private impl is used only by its own package's code (`E_TRAIT_MISSING ... needs 'pub impl'` in a dependent).
@@ -671,7 +672,7 @@ greet = { git = "file:///srv/greet.git", rev = "v0.1.0" }   # a tag, branch or c
 | Command | Effect |
 |---|---|
 | `sspur init --pkg NAME` | Write a `sspur.toml` (with `init`'s other arguments as before) |
-| `sspur add ../lib`, `sspur add file:///srv/lib.git@v1` | Add the package under its own name to `[deps]` and lock it |
+| `sspur add ../lib`, `sspur add file:///srv/lib.git@v1`, `sspur add money@^1.2` | Add the package under its own name to `[deps]` and lock it; a bare name is a published package from the registry (`sspur search`, `sspur publish`, ADR 0038) |
 | `sspur deps fetch` | Fetch what the lock lists and is not cached, then rebuild every cached package from its source and check its hash |
 | `sspur deps update [NAME...] [--force]` | Re-resolve (all or the named packages), print the export diff (`~ lib.f  effects: + log`, `~ lib.g  contracts: + pre n > 0`, `~ lib.h  signature: A => B`, `~ lib.k  body`, `+ lib.new`, `- lib.old`), typecheck the dependent, and write the lock only if it still checks (or with `--force`) |
 | `sspur deps tree` | The dependency graph with versions, hashes and sources |
