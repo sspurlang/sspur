@@ -399,7 +399,8 @@ fn program_cmd(cmd: &str, args: &Args) -> ExitCode {
     let manifest_src = if args.pos.get(1).is_none() && cwd_store().is_none() {
         std::env::current_dir().ok().and_then(|d| sspur_store::pkg::find_root(&d)).and_then(|r| {
             let m = sspur_store::pkg::Manifest::read(&r).ok()??;
-            Some(r.join(m.src.unwrap_or_else(|| "main.ssp".into())).to_string_lossy().into_owned())
+            let src = m.src.unwrap_or_else(|| if r.join("lib.ssp").is_file() { "lib.ssp" } else { "main.ssp" }.into());
+            Some(r.join(src).to_string_lossy().into_owned())
         })
     } else {
         None

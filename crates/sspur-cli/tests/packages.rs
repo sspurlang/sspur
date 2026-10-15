@@ -317,6 +317,9 @@ fn commands_default_to_the_manifest_source() {
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_sspur")).arg("test").arg("--interp").current_dir(&app).output().unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success() && stdout.contains("passed, 0 failed"), "{stdout}{}", String::from_utf8_lossy(&out.stderr));
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_sspur")).arg("test").arg("--interp").current_dir(app.join("../textutils")).output().unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success() && stdout.contains("passed, 0 failed"), "a library's lib.ssp, as dependents read it: {stdout}{}", String::from_utf8_lossy(&out.stderr));
 }
 
 const GEO: &str = "pub trait Area\n  fn area(s: Self) -> Int\n  fn label(s: Self) -> Str = \"area {s.area}\"\n\npub type Square = {side: Int} derive Eq, Ord\n\npub impl Area for Square\n  fn area(s: Square) -> Int = s.side * s.side\n\npub impl Show for Square\n  fn show(s: Square) -> Str = \"Square({s.side})\"\n\npub type Circle = {r: Int}\n\nimpl Show for Circle\n  fn show(c: Circle) -> Str = \"circle\"\n\npub fn total[T: Area](xs: List[T]) -> Int = xs.map(_.area).sum\n\npub fn inside() -> Str = Circle{r: 1}.show\n";
