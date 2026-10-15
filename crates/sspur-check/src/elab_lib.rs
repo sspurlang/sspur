@@ -206,12 +206,9 @@ impl Gen<'_> {
         let effs = row.join(", ");
         let ft = format!("() -> {rt} ! {effs}");
         let mut cur = "f()".to_string();
-        let mut level = 0;
-        for t in fails {
+        for (level, t) in fails.iter().enumerate() {
             let name = format!("{base}_c{level}");
-            level += 1;
             let mut arms = String::new();
-            let ts = src_ty(t)?;
             match t {
                 Type::Con(n, _) if self.out.sums.contains_key(n) => {
                     for (v, fs) in &self.out.sums[n].1 {
@@ -224,7 +221,6 @@ impl Gen<'_> {
                 }
                 _ => arms.push_str("  | e => do\n      __db_txn(c, 2)\n      raise e\n"),
             }
-            let _ = ts;
             self.extra.push(format!("fn {name}(c: Db, f: {ft}) -> {rt} ! {effs}\n= catch {cur}\n{arms}"));
             cur = format!("{name}(c, f)");
         }

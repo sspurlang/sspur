@@ -7,7 +7,9 @@ use std::path::Path;
 
 /// Each part: its name, its files in order, and the quoted includes to drop because an earlier
 /// file of the part already supplies them (`None` drops every quoted include).
-const PARTS: &[(&str, &[&str], Option<&[&str]>)] = &[
+type Part = (&'static str, &'static [&'static str], Option<&'static [&'static str]>);
+
+const PARTS: &[Part] = &[
     ("sqlite", &["sqlite/sqlite3.c"], Some(&[])),
     ("monocypher", &["monocypher/monocypher.h", "monocypher/monocypher.c"], Some(&["monocypher.h"])),
     ("ed25519", &["monocypher/monocypher-ed25519.h", "monocypher/monocypher-ed25519.c"], Some(&["monocypher.h", "monocypher-ed25519.h"])),

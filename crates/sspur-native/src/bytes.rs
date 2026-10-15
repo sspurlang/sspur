@@ -32,7 +32,7 @@ fn nibble(c: u8) -> Option<u8> {
 /// Upper or lower case hex digits, an even number of them.
 pub fn from_hex(s: &str) -> Option<Vec<u8>> {
     let s = s.as_bytes();
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return None;
     }
     s.chunks(2).map(|p| Some(nibble(p[0])? << 4 | nibble(p[1])?)).collect()
@@ -62,7 +62,7 @@ pub fn from_base64(s: &str, url: bool) -> Option<Vec<u8>> {
     let a = if url { URL } else { STD };
     let mut t = s.as_bytes();
     if t.ends_with(b"=") {
-        if t.len() % 4 != 0 {
+        if !t.len().is_multiple_of(4) {
             return None;
         }
         t = t.strip_suffix(b"==").or_else(|| t.strip_suffix(b"=")).unwrap_or(t);

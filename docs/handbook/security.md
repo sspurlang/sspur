@@ -12,7 +12,7 @@ Store a password hash, never the password or a fast hash of it. `crypto.hash_pas
 {{#include ../snippets/handbook/data/security.ssp:passwords}}
 ```
 
-A password parameter is a `Secret[Str]`; a plain `Str` is accepted too and wrapped. Hashing takes about 30 to 60 milliseconds by design, which is what makes guessing slow. In a server, the handler threads run hashes in parallel.
+A password parameter is a `Secret[Str]`; a plain `Str` is accepted too and wrapped. Hashing takes about 30 milliseconds on a fast laptop, and more on small machines, by design: that is what makes guessing slow. In a server, the handler threads run hashes in parallel.
 
 ## Tokens, MACs and comparisons
 
