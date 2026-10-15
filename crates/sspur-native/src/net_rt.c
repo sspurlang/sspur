@@ -1677,6 +1677,18 @@ static wchar_t* env_w(const char* a, const char* b) {
     return w;
 }
 
+// WinHTTP's timeouts don't reliably bound a slow response, so a timer closes the request handle
+// at the deadline; the pending call then fails and is reported as a timeout.
+typedef struct { CRITICAL_SECTION mu; HINTERNET* req; volatile LONG fired; } SnDeadline;
+static VOID CALLBACK wh_deadline(PVOID ctx, BOOLEAN fired) {
+    (void)fired;
+    SnDeadline* d = (SnDeadline*)ctx;
+    EnterCriticalSection(&d->mu);
+    InterlockedExchange(&d->fired, 1);
+    if (*d->req) { WinHttpCloseHandle(*d->req); *d->req = 0; }
+    LeaveCriticalSection(&d->mu);
+}
+
 static void fetch_once(const SnReq* rq, SnResp* out, SnSink* k) {
     wchar_t *wurl, *wmethod;
     wfrom(rq->url.p, rq->url.n, &wurl);
@@ -1686,6 +1698,8 @@ static void fetch_once(const SnReq* rq, SnResp* out, SnSink* k) {
     HINTERNET ses = 0, con = 0, req = 0;
     wchar_t *host = 0, *path = 0, *proxy = 0, *bypass = 0, *hdrs = 0;
     SnVerify ver; memset(&ver, 0, sizeof ver);
+    SnDeadline dl; memset(&dl, 0, sizeof dl); InitializeCriticalSection(&dl.mu); dl.req = &req;
+    HANDLE timer = 0;
     if (!WinHttpCrackUrl(wurl, 0, 0, &uc) || !uc.dwHostNameLength) { resp_err(out, SN_IO, "invalid URL"); goto end; }
     int https = uc.nScheme == INTERNET_SCHEME_HTTPS;
     host = (wchar_t*)calloc(uc.dwHostNameLength + 1, sizeof(wchar_t)); memcpy(host, uc.lpszHostName, uc.dwHostNameLength * sizeof(wchar_t));
@@ -1720,6 +1734,7 @@ static void fetch_once(const SnReq* rq, SnResp* out, SnSink* k) {
         WinHttpSetTimeouts(req, t, t < 15000 ? t : 15000, t, t);
         WinHttpSetOption(req, WINHTTP_OPTION_RECEIVE_RESPONSE_TIMEOUT, &dt, sizeof dt);
     }
+    if (rq->timeout_ms > 0 && !CreateTimerQueueTimer(&timer, 0, wh_deadline, &dl, (DWORD)rq->timeout_ms, 0, WT_EXECUTEONLYONCE)) timer = 0;
     if (rq->redirects <= 0) { DWORD f = WINHTTP_DISABLE_REDIRECTS; WinHttpSetOption(req, WINHTTP_OPTION_DISABLE_FEATURE, &f, sizeof f); }
     else { DWORD m = (DWORD)rq->redirects; WinHttpSetOption(req, WINHTTP_OPTION_MAX_HTTP_AUTOMATIC_REDIRECTS, &m, sizeof m); }
     const char* ca = getenv("SSL_CERT_FILE");
@@ -1740,7 +1755,7 @@ static void fetch_once(const SnReq* rq, SnResp* out, SnSink* k) {
     if (!sent) {
         DWORD e = GetLastError();
         if (ver.bad) { req = 0; resp_err(out, SN_TLS, ver.why); goto end; }
-        int64_t kind = e == ERROR_WINHTTP_NAME_NOT_RESOLVED ? SN_DNS : (e == ERROR_WINHTTP_CANNOT_CONNECT || e == ERROR_WINHTTP_CONNECTION_ERROR) ? SN_CONNECT : e == ERROR_WINHTTP_TIMEOUT ? SN_TIMEOUT
+        int64_t kind = dl.fired ? SN_TIMEOUT : e == ERROR_WINHTTP_NAME_NOT_RESOLVED ? SN_DNS : (e == ERROR_WINHTTP_CANNOT_CONNECT || e == ERROR_WINHTTP_CONNECTION_ERROR) ? SN_CONNECT : e == ERROR_WINHTTP_TIMEOUT ? SN_TIMEOUT
             : (e == ERROR_WINHTTP_SECURE_FAILURE || e == ERROR_WINHTTP_SECURE_INVALID_CA || e == ERROR_WINHTTP_SECURE_CERT_CN_INVALID || e == ERROR_WINHTTP_SECURE_CERT_DATE_INVALID || e == ERROR_WINHTTP_SECURE_INVALID_CERT || e == ERROR_WINHTTP_SECURE_CERT_REVOKED || e == ERROR_WINHTTP_SECURE_CHANNEL_ERROR) ? SN_TLS : SN_IO;
         char m[128];
         snprintf(m, sizeof m, kind == SN_DNS ? "cannot resolve host" : kind == SN_CONNECT ? "cannot connect (WinHTTP error %lu)" : kind == SN_TIMEOUT ? "timed out" : kind == SN_TLS ? "TLS failure (WinHTTP error %lu)" : "WinHTTP error %lu", (unsigned long)e);
@@ -1765,18 +1780,23 @@ static void fetch_once(const SnReq* rq, SnResp* out, SnSink* k) {
     }
     for (;;) {
         DWORD avail = 0;
-        if (!WinHttpQueryDataAvailable(req, &avail)) { resp_err(out, GetLastError() == ERROR_WINHTTP_TIMEOUT ? SN_TIMEOUT : SN_CONNECT, "the connection broke while reading the body"); goto end; }
+        if (!req || !WinHttpQueryDataAvailable(req, &avail)) { if (dl.fired || GetLastError() == ERROR_WINHTTP_TIMEOUT) resp_err(out, SN_TIMEOUT, "timed out"); else resp_err(out, SN_CONNECT, "the connection broke while reading the body"); goto end; }
         if (!avail) break;
         char* buf = (char*)malloc(avail);
         DWORD got = 0;
-        if (!WinHttpReadData(req, buf, avail, &got)) { free(buf); resp_err(out, SN_CONNECT, "the connection broke while reading the body"); goto end; }
+        if (!req || !WinHttpReadData(req, buf, avail, &got)) { free(buf); if (dl.fired) resp_err(out, SN_TIMEOUT, "timed out"); else resp_err(out, SN_CONNECT, "the connection broke while reading the body"); goto end; }
         sink_write(k, buf, got);
         free(buf);
         if (k->fail_write) { resp_err(out, SN_IO, "cannot write the download file"); goto end; }
         if (!got) break;
     }
 end:
+    if (timer) DeleteTimerQueueTimer(0, timer, INVALID_HANDLE_VALUE);
+    EnterCriticalSection(&dl.mu);
     if (req) WinHttpCloseHandle(req);
+    req = 0;
+    LeaveCriticalSection(&dl.mu);
+    DeleteCriticalSection(&dl.mu);
     if (con) WinHttpCloseHandle(con);
     if (ses) WinHttpCloseHandle(ses);
     free(wurl); free(wmethod); free(host); free(path); free(proxy); free(bypass); free(hdrs);
