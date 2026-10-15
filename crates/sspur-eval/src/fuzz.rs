@@ -66,7 +66,7 @@ impl Interp {
         for n in names {
             let f = self.fns[&n].clone();
             let mut rep = DiffReport { name: n.clone(), cases: 0, native_cases: 0, mismatch: None };
-            if f.params.iter().any(|p| has_fn_type(&p.ty)) || f.effects.iter().any(|e| matches!(e.name.as_str(), "conc" | "fs" | "io" | "time" | "proc" | "net")) {
+            if f.params.iter().any(|p| has_fn_type(&p.ty)) || f.effects.iter().any(|e| matches!(e.name.as_str(), "conc" | "fs" | "io" | "time" | "proc" | "net" | "db" | "rand")) {
                 out.push(rep);
                 continue;
             }

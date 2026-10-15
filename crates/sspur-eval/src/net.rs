@@ -120,6 +120,7 @@ impl Interp {
                         Value::Tuple(t) if t.len() == 3 => Ok((int(&t[0])?, pairs(&t[1])?, s(&t[2])?.to_string())),
                         v => trap(format!("bad handler result {v}")),
                     });
+                    sspur_native::rt::db_release_thread();
                     match out {
                         Ok((status, headers, body)) => call.reply(status, &headers, &body),
                         Err(e) => {

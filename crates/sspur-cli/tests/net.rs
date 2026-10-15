@@ -502,7 +502,8 @@ fn request_parser_survives_the_fuzzer() {
     let cc = sspur_native::cgen::flags::cc();
     let d = tmp("fuzz");
     let exe = d.join(format!("fuzz{}", std::env::consts::EXE_SUFFIX));
-    let rt = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../sspur-native/src/net_rt.c");
+    let rt = d.join("net_rt.c");
+    std::fs::write(&rt, sspur_native::rt::source(sspur_native::rt::Kind::Net).unwrap()).unwrap();
     let def = format!("-DNET_RT=\"{}\"", rt.display().to_string().replace('\\', "/"));
     let build = |san: &[&str]| {
         let mut cmd = Command::new(&cc);

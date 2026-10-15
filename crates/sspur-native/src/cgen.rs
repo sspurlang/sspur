@@ -28,6 +28,7 @@ mod stdlocale;
 mod stdfile;
 mod stdflat;
 mod stdnet;
+mod stddata;
 mod stdrng;
 mod stdtz;
 pub mod win;
@@ -1412,7 +1413,7 @@ fn iv_safe(op: BinOp, ra: Iv, rb: Iv) -> bool {
 }
 
 fn precheck(f: &FnDef, bare: bool) -> G<()> {
-    if let Some(e) = f.effects.iter().find(|e| !matches!(e.name.as_str(), "div" | "log" | "fail" | "ffi" | "conc" | "db.read" | "db.write" | "unsafe" | "fs" | "io" | "time" | "env" | "proc" | "dev" | "net") && !(bare && (e.name == "mmio" || e.name == "static")) && !f.tparams.iter().any(|p| p.name == e.name)) {
+    if let Some(e) = f.effects.iter().find(|e| !matches!(e.name.as_str(), "div" | "log" | "fail" | "ffi" | "conc" | "db.read" | "db.write" | "unsafe" | "fs" | "io" | "time" | "env" | "proc" | "dev" | "net" | "db" | "rand") && !(bare && (e.name == "mmio" || e.name == "static")) && !f.tparams.iter().any(|p| p.name == e.name)) {
         return Err(format!("performs '{}'", printer::effect(e)));
     }
     Ok(())

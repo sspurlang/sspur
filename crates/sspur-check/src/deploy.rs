@@ -122,7 +122,7 @@ impl Checker {
 
     pub(crate) fn check_db_sig(&mut self, f: &FnDef) {
         for e in &f.effects {
-            if e.name != "db" && !e.name.starts_with("db.") {
+            if (e.name != "db" || e.args.is_empty()) && !e.name.starts_with("db.") {
                 continue;
             }
             let ok = matches!(e.name.as_str(), "db.read" | "db.write") && matches!(e.args.as_slice(), [Ty::Named { name, args, .. }] if args.is_empty() && self.stores.contains_key(name));

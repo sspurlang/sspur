@@ -1,0 +1,350 @@
+// The library prelude: what crypto.*, uuid.*, gzip.*, deflate.*, zstd.*, csv.* and db.*
+// elaborate into (ADR 0037). Each tier provides only the __crypto_, __zip_, __csv_ and __db_
+// primitives, over the C runtimes; generated row decoders and transaction wrappers call the
+// helpers here.
+
+fn __crypto_sha256(data: Bytes) -> Bytes
+= __crypto_hash(1, data)
+
+fn __crypto_sha512(data: Bytes) -> Bytes
+= __crypto_hash(2, data)
+
+fn __crypto_blake2b(data: Bytes) -> Bytes
+= __crypto_hash(3, data)
+
+fn __crypto_hmac256(key: Secret[Bytes], data: Bytes) -> Bytes
+= __crypto_hmac(1, key.expose("computing a MAC"), data)
+
+fn __crypto_hmac512(key: Secret[Bytes], data: Bytes) -> Bytes
+= __crypto_hmac(2, key.expose("computing a MAC"), data)
+
+fn __crypto_equal(a: Bytes, b: Bytes) -> Bool
+= __crypto_same(a, b)
+
+fn __crypto_token(n: Int) -> Str ! rand
+= __crypto_random(n).base64url
+
+fn __crypto_key() -> Secret[Bytes] ! rand
+= secret(__crypto_random(32))
+
+fn __crypto_seal(key: Secret[Bytes], data: Bytes) -> Bytes ! rand
+= do
+  nonce = __crypto_random(24)
+  nonce.concat(__crypto_aead(true, key.expose("encrypting"), nonce, bytes([]), data).get)
+
+fn __crypto_open(key: Secret[Bytes], sealed: Bytes) -> Opt[Bytes]
+= if sealed.len < 40 then none else __crypto_aead(false, key.expose("decrypting"), sealed.slice(0, 24), bytes([]), sealed.slice(24, sealed.len))
+
+fn __crypto_b64(b: Bytes) -> Str
+= b.base64.replace("=", "")
+
+fn __crypto_hash_password(pw: Secret[Str]) -> Str ! rand
+= do
+  salt = __crypto_random(16)
+  h = __crypto_argon2(2, pw.expose("hashing a password").to_bytes, salt, bytes([]), bytes([]), 19456, 2, 1, 32).get
+  "$argon2id$v=19$m=19456,t=2,p=1$" + __crypto_b64(salt) + "$" + __crypto_b64(h)
+
+fn __crypto_alg(name: Str) -> Int
+= if name == "argon2id" then 2 else if name == "argon2i" then 1 else if name == "argon2d" then 0 else -1
+
+fn __crypto_param(ps: List[Str], key: Str) -> Int
+= ps.find(_.starts_with(key + "=")).map(p => p.drop(key.len + 1).to_int.or(-1)).or(-1)
+
+fn __crypto_check(pw: Bytes, alg: Int, ps: List[Str], salt: Opt[Bytes], h: Opt[Bytes]) -> Bool
+= do
+  m = __crypto_param(ps, "m")
+  t = __crypto_param(ps, "t")
+  p = __crypto_param(ps, "p")
+  ok = alg >= 0 and m > 0 and m <= 1048576 and t > 0 and t <= 100 and p > 0 and p <= 64 and salt.is_some and h.is_some and h.map(_.len >= 16).or(false)
+  if not ok then false else __crypto_check_hash(pw, alg, m, t, p, salt.get, h.get)
+
+fn __crypto_check_hash(pw: Bytes, alg: Int, m: Int, t: Int, p: Int, salt: Bytes, h: Bytes) -> Bool
+= match __crypto_argon2(alg, pw, salt, bytes([]), bytes([]), m, t, p, h.len)
+  | some(x) => __crypto_same(x, h)
+  | none => false
+
+fn __crypto_verify_password(pw: Secret[Str], hash: Str) -> Bool
+= do
+  parts = hash.split("$")
+  if parts.len != 6 or parts.get(0) != some("") or parts.get(2) != some("v=19") then false else __crypto_check(pw.expose("checking a password").to_bytes, __crypto_alg(parts.get(1).or("")), parts.get(3).or("").split(","), from_base64(parts.get(4).or("")), from_base64(parts.get(5).or("")))
+
+fn __crypto_keypair() -> (Secret[Bytes], Bytes) ! rand
+= do
+  seed = __crypto_random(32)
+  (secret(seed), __crypto_ed_public(seed))
+
+fn __crypto_public_key(sk: Secret[Bytes]) -> Bytes
+= __crypto_ed_public(sk.expose("deriving a public key"))
+
+fn __crypto_sign(sk: Secret[Bytes], data: Bytes) -> Bytes
+= __crypto_ed_sign(sk.expose("signing"), data)
+
+fn __crypto_verify(pk: Bytes, data: Bytes, sig: Bytes) -> Bool
+= __crypto_ed_verify(pk, data, sig)
+
+fn __uuid_text(b: Bytes) -> Str
+= do
+  h = b.hex
+  h.take(8) + "-" + h.drop(8).take(4) + "-" + h.drop(12).take(4) + "-" + h.drop(16).take(4) + "-" + h.drop(20)
+
+fn __uuid_set(xs: List[Int], version: Int) -> Bytes
+= bytes(xs.enumerate.map(p => if p.0 == 6 then p.1.band(15).bor(version * 16) else if p.0 == 8 then p.1.band(63).bor(128) else p.1))
+
+fn __uuid_v4() -> Str ! rand
+= __uuid_text(__uuid_set(__crypto_random(16).to_list, 4))
+
+fn __uuid_v7() -> Str ! rand, time
+= do
+  ms = now_ms()
+  head = [40, 32, 24, 16, 8, 0].map(s => ms.shr(s).band(255))
+  __uuid_text(__uuid_set(head + __crypto_random(10).to_list, 7))
+
+fn __zip_or(r: (Int, Bytes, Str)) -> Res[Bytes, Str]
+= if r.0 == 0 then ok(r.1) else err(r.2)
+
+fn __zip_done(e: Str) -> Res[Unit, Str]
+= if e == "" then ok(()) else err(e)
+
+fn __gzip_compress(data: Bytes) -> Bytes
+= __zip_pack(1, 6, data)
+
+fn __gzip_compress_level(data: Bytes, level: Int) -> Bytes
+= __zip_pack(1, level, data)
+
+fn __gzip_decompress(data: Bytes) -> Res[Bytes, Str]
+= __zip_or(__zip_unpack(1, data))
+
+fn __gzip_compress_file(src: Str, dst: Str) -> Res[Unit, Str] ! fs
+= __zip_done(__zip_file(1, src, dst))
+
+fn __gzip_decompress_file(src: Str, dst: Str) -> Res[Unit, Str] ! fs
+= __zip_done(__zip_file(2, src, dst))
+
+fn __deflate_compress(data: Bytes) -> Bytes
+= __zip_pack(2, 6, data)
+
+fn __deflate_compress_level(data: Bytes, level: Int) -> Bytes
+= __zip_pack(2, level, data)
+
+fn __deflate_decompress(data: Bytes) -> Res[Bytes, Str]
+= __zip_or(__zip_unpack(2, data))
+
+fn __zstd_compress(data: Bytes) -> Bytes
+= __zip_pack(3, 3, data)
+
+fn __zstd_compress_level(data: Bytes, level: Int) -> Bytes
+= __zip_pack(3, level, data)
+
+fn __zstd_decompress(data: Bytes) -> Res[Bytes, Str]
+= __zip_or(__zip_unpack(3, data))
+
+fn __zstd_compress_file(src: Str, dst: Str) -> Res[Unit, Str] ! fs
+= __zip_done(__zip_file(3, src, dst))
+
+fn __zstd_decompress_file(src: Str, dst: Str) -> Res[Unit, Str] ! fs
+= __zip_done(__zip_file(4, src, dst))
+
+fn __lib_bytes(s: Str) -> Bytes
+= s.to_bytes
+
+fn __lib_secret_bytes(s: Str) -> Secret[Bytes]
+= secret(s.to_bytes)
+
+fn __lib_secret_map(s: Secret[Str]) -> Secret[Bytes]
+= s.map(x => x.to_bytes)
+
+fn __csv_parse(text: Str) -> Res[List[List[Str]], Str]
+= do
+  (k, msg, rows) = __csv_rows(text)
+  if k == 0 then ok(rows) else err(msg)
+
+fn __csv_write(rows: List[List[Str]]) -> Str
+= __csv_text(rows)
+
+type SspurCsvErr = SspurCsvBad{msg: Str}
+
+fn __csv_col(header: List[Str], name: Str) -> Int ! fail[SspurCsvErr]
+= header.index_of(name).ok_or(SspurCsvBad{msg: "no column '" + name + "' in the header"})
+
+fn __csv_cell(r: List[Str], i: Int, row: Int) -> Str ! fail[SspurCsvErr]
+= r.get(i).ok_or(SspurCsvBad{msg: "row " + row.str + " has " + r.len.str + " fields, fewer than the header"})
+
+fn __csv_bad(row: Int, col: Str, want: Str, s: Str) -> SspurCsvErr
+= SspurCsvBad{msg: "row " + row.str + ", column " + col + ": expected " + want + ", found \"" + s + "\""}
+
+fn __csv_int(s: Str, row: Int, col: Str) -> Int ! fail[SspurCsvErr]
+= s.trim.to_int.ok_or(__csv_bad(row, col, "Int", s))
+
+fn __csv_f64(s: Str, row: Int, col: Str) -> F64 ! fail[SspurCsvErr]
+= s.trim.to_f64.ok_or(__csv_bad(row, col, "F64", s))
+
+fn __csv_bool(s: Str, row: Int, col: Str) -> Bool ! fail[SspurCsvErr]
+= do
+  t = s.trim.lower
+  if t == "true" or t == "1" then true else if t == "false" or t == "0" then false else raise __csv_bad(row, col, "Bool", s)
+
+fn __csv_time(s: Str, row: Int, col: Str) -> Time ! fail[SspurCsvErr]
+= parse_time(s.trim).ok_or(__csv_bad(row, col, "Time", s))
+
+fn __csv_dec(s: Str, row: Int, col: Str) -> Dec ! fail[SspurCsvErr]
+= decimal(s.trim).ok_or(__csv_bad(row, col, "Dec", s))
+
+fn __csv_none(s: Str) -> Bool
+= s.trim == ""
+
+fn __csv_lines[T](rows: List[List[Str]], f: (List[Str], List[Str], Int) -> T ! fail[SspurCsvErr]) -> Res[List[T], Str]
+= catch ok(__csv_map(rows, f))
+  | SspurCsvBad{msg} => err(msg)
+
+fn __csv_map[T](rows: List[List[Str]], f: (List[Str], List[Str], Int) -> T ! fail[SspurCsvErr]) -> List[T] ! fail[SspurCsvErr]
+= match rows.first
+  | none => []
+  | some(h) => rows.drop(1).enumerate.map(p => f(h, p.1, p.0 + 2))
+
+fn __csv_chunk(h: Int, n: Int) -> List[List[Str]] ! fs, fail[SspurCsvErr]
+= do
+  (k, msg, rows) = __csv_next(h, n)
+  if k != 0 then raise SspurCsvBad{msg} else rows
+
+fn __csv_more(n: Int) -> Int
+= if n >= 65536 then n else n * 2
+
+fn __db_err(k: Int, msg: Str) -> DbErr
+= if k == 2 then Constraint{msg} else if k == 3 then Busy{msg} else if k == 4 then Mismatch{msg} else Sql{msg}
+
+fn __db_open(path: Str) -> Db ! db, fail[DbErr]
+= do
+  (k, id, msg) = __db_connect(path)
+  if k != 0 then raise __db_err(k, msg) else Db{id, path}
+
+fn __db_close(c: Db) -> Unit ! db
+= __db_disconnect(c.id)
+
+fn __db_run(c: Db, sql: Str, ps: List[(Int, Int, F64, Str, Bytes)], want: Int) -> (List[Str], List[List[(Int, Int, F64, Str, Bytes)]], Int) ! db, fail[DbErr]
+= do
+  (k, msg, cols, rows, n) = __db_exec(c.id, sql, ps, want)
+  if k != 0 then raise __db_err(k, msg) else (cols, rows, n)
+
+fn __db_exec_n(c: Db, sql: Str, ps: List[(Int, Int, F64, Str, Bytes)]) -> Int ! db, fail[DbErr]
+= __db_run(c, sql, ps, 0).2
+
+fn __db_rows(c: Db, sql: Str, ps: List[(Int, Int, F64, Str, Bytes)], want: Int) -> (List[Str], List[List[(Int, Int, F64, Str, Bytes)]]) ! db, fail[DbErr]
+= do
+  (cols, rows, _) = __db_run(c, sql, ps, want)
+  (cols, rows)
+
+fn __db_one_of[T](rows: List[T]) -> T ! fail[DbErr]
+= match rows
+  | [x] => x
+  | [] => raise NoRow
+  | _ => raise Mismatch{msg: "db.one: the query returned more than one row"}
+
+fn __db_opt_of[T](rows: List[T]) -> Opt[T] ! fail[DbErr]
+= match rows
+  | [x] => some(x)
+  | [] => none
+  | _ => raise Mismatch{msg: "db.opt: the query returned more than one row"}
+
+fn __db_pnull() -> (Int, Int, F64, Str, Bytes)
+= (0, 0, 0.0, "", bytes([]))
+
+fn __db_pi(x: Int) -> (Int, Int, F64, Str, Bytes)
+= (1, x, 0.0, "", bytes([]))
+
+fn __db_pf(x: F64) -> (Int, Int, F64, Str, Bytes)
+= (2, 0, x, "", bytes([]))
+
+fn __db_ps(x: Str) -> (Int, Int, F64, Str, Bytes)
+= (3, 0, 0.0, x, bytes([]))
+
+fn __db_px(x: Bytes) -> (Int, Int, F64, Str, Bytes)
+= (4, 0, 0.0, "", x)
+
+fn __db_pb(x: Bool) -> (Int, Int, F64, Str, Bytes)
+= __db_pi(if x then 1 else 0)
+
+fn __db_pt(x: Time) -> (Int, Int, F64, Str, Bytes)
+= __db_ps(x.iso)
+
+fn __db_pd(x: Dec) -> (Int, Int, F64, Str, Bytes)
+= __db_ps(x.str)
+
+fn __db_po(x: Opt[(Int, Int, F64, Str, Bytes)]) -> (Int, Int, F64, Str, Bytes)
+= x.or(__db_pnull())
+
+fn __db_idx(cols: List[Str], name: Str, what: Str) -> Int ! fail[DbErr]
+= cols.index_of(name).ok_or(Mismatch{msg: "the query has no column '" + name + "' for " + what})
+
+fn __db_cell(r: List[(Int, Int, F64, Str, Bytes)], i: Int) -> (Int, Int, F64, Str, Bytes)
+= r.get(i).or(__db_pnull())
+
+fn __db_kind(k: Int) -> Str
+= if k == 0 then "NULL" else if k == 1 then "INTEGER" else if k == 2 then "REAL" else if k == 3 then "TEXT" else "BLOB"
+
+fn __db_bad(c: (Int, Int, F64, Str, Bytes), what: Str, want: Str) -> DbErr
+= if c.0 == 0 then Mismatch{msg: what + " is NULL; make it Opt[" + want + "] to allow NULL"} else Mismatch{msg: what + ": expected " + want + ", found " + __db_kind(c.0)}
+
+fn __db_null(c: (Int, Int, F64, Str, Bytes)) -> Bool
+= c.0 == 0
+
+fn __db_int(c: (Int, Int, F64, Str, Bytes), what: Str) -> Int ! fail[DbErr]
+= if c.0 == 1 then c.1 else raise __db_bad(c, what, "Int")
+
+fn __db_f64(c: (Int, Int, F64, Str, Bytes), what: Str) -> F64 ! fail[DbErr]
+= if c.0 == 2 then c.2 else if c.0 == 1 then c.1.to_f64 else raise __db_bad(c, what, "F64")
+
+fn __db_str(c: (Int, Int, F64, Str, Bytes), what: Str) -> Str ! fail[DbErr]
+= if c.0 == 3 then c.3 else raise __db_bad(c, what, "Str")
+
+fn __db_bytes(c: (Int, Int, F64, Str, Bytes), what: Str) -> Bytes ! fail[DbErr]
+= if c.0 == 4 then c.4 else if c.0 == 3 then c.3.to_bytes else raise __db_bad(c, what, "Bytes")
+
+fn __db_bool(c: (Int, Int, F64, Str, Bytes), what: Str) -> Bool ! fail[DbErr]
+= if c.0 == 1 and (c.1 == 0 or c.1 == 1) then c.1 == 1 else raise __db_bad(c, what, "Bool")
+
+fn __db_time(c: (Int, Int, F64, Str, Bytes), what: Str) -> Time ! fail[DbErr]
+= if c.0 == 1 then time_ms(c.1) else if c.0 == 3 then parse_time(c.3).ok_or(Mismatch{msg: what + ": expected Time, found TEXT \"" + c.3 + "\""}) else raise __db_bad(c, what, "Time")
+
+fn __db_dec(c: (Int, Int, F64, Str, Bytes), what: Str) -> Dec ! fail[DbErr]
+= if c.0 == 3 then decimal(c.3).ok_or(Mismatch{msg: what + ": expected Dec, found TEXT \"" + c.3 + "\""}) else if c.0 == 1 then decimal(c.1.str).get else raise __db_bad(c, what, "Dec")
+
+fn __db_txn(c: Db, op: Int) -> Unit ! db, fail[DbErr]
+= do
+  (k, msg) = __db_tx(c.id, op)
+  if k != 0 then raise __db_err(k, msg)
+
+fn __db_migrate(c: Db, steps: List[Str]) -> Int ! db, fail[DbErr]
+= do
+  __db_exec_n(c, "create table if not exists sspur_migrations (version integer primary key, sql text not null)", [])
+  (_, rows) = __db_rows(c, "select version, sql from sspur_migrations order by version", [], -1)
+  done = rows.map(r => (__db_int(__db_cell(r, 0), "version"), __db_str(__db_cell(r, 1), "sql")))
+  for d in done
+    if d.0 > steps.len then raise Mismatch{msg: "the database has migration " + d.0.str + " but the program knows only " + steps.len.str}
+    if steps.get(d.0 - 1) != some(d.1) then raise Mismatch{msg: "migration " + d.0.str + " changed after it was applied; add a new step instead"}
+  steps.enumerate.drop(done.len).fold(0, (n, p) => n + __db_step(c, p.0 + 1, p.1))
+
+fn __db_step(c: Db, version: Int, sql: Str) -> Int ! db, fail[DbErr]
+= do
+  __db_txn(c, 0)
+  r = catch ok(__db_apply(c, version, sql))
+    | Sql{msg} => err(Sql{msg: "migration " + version.str + ": " + msg})
+    | Constraint{msg} => err(Constraint{msg: "migration " + version.str + ": " + msg})
+    | Busy{msg} => err(Busy{msg})
+    | NoRow => err(NoRow)
+    | Mismatch{msg} => err(Mismatch{msg})
+  __db_step_end(c, r)
+
+fn __db_step_end(c: Db, r: Res[Int, DbErr]) -> Int ! db, fail[DbErr]
+= match r
+  | ok(n) => do
+      __db_txn(c, 1)
+      n
+  | err(e) => do
+      __db_txn(c, 2)
+      raise e
+
+fn __db_apply(c: Db, version: Int, sql: Str) -> Int ! db, fail[DbErr]
+= do
+  __db_exec_n(c, sql, [])
+  __db_exec_n(c, "insert into sspur_migrations (version, sql) values (?, ?)", [__db_pi(version), __db_ps(sql)])
+  1

@@ -9,15 +9,15 @@ use super::*;
 use std::fmt::Write as _;
 
 #[cfg(not(target_family = "wasm"))]
-const PRELUDE: &str = concat!(include_str!("net_prelude.ssp"), "\n", include_str!("net_prelude_serve.ssp"));
+const PRELUDE: &str = concat!(include_str!("net_prelude.ssp"), "\n", include_str!("net_prelude_serve.ssp"), "\n", include_str!("lib_prelude.ssp"));
 #[cfg(target_family = "wasm")]
-const PRELUDE: &str = include_str!("net_prelude.ssp");
+const PRELUDE: &str = concat!(include_str!("net_prelude.ssp"), "\n", include_str!("lib_prelude.ssp"));
 
-fn name_expr(n: &str) -> Expr {
+pub(crate) fn name_expr(n: &str) -> Expr {
     Expr::new(ExprKind::Name(n.to_string()), Span::default())
 }
 
-fn call_of(n: &str, args: Vec<Expr>) -> ExprKind {
+pub(crate) fn call_of(n: &str, args: Vec<Expr>) -> ExprKind {
     ExprKind::Call(Box::new(name_expr(n)), args)
 }
 
@@ -34,16 +34,16 @@ pub fn status_for(variant: &str) -> u16 {
     }
 }
 
-struct Gen<'a> {
+pub(crate) struct Gen<'a> {
     #[cfg_attr(target_family = "wasm", allow(dead_code))]
     m: &'a Module,
-    out: &'a CheckOutput,
-    extra: Vec<String>,
-    done: HashSet<String>,
-    wraps: usize,
+    pub(crate) out: &'a CheckOutput,
+    pub(crate) extra: Vec<String>,
+    pub(crate) done: HashSet<String>,
+    pub(crate) wraps: usize,
 }
 
-fn src_ty(t: &Type) -> Result<String, String> {
+pub(crate) fn src_ty(t: &Type) -> Result<String, String> {
     let s = t.to_string();
     if s.contains('?') {
         return Err(format!("internal: a networking site has an unresolved type {s}"));
@@ -463,6 +463,21 @@ pub fn lower(m: &Module, out: &CheckOutput) -> Result<Option<Module>, String> {
                         }
                     };
                     call_of("__http_serve", vec![cfg, h])
+                }
+                (NetSite::Lib(f, cs), ExprKind::Method { args, .. }) => call_of(f, args.into_iter().zip(cs).map(|(a, c)| crate::elab_lib::coerce(a, c)).collect()),
+                (NetSite::Data(site), ExprKind::Method { args, .. }) => {
+                    let r = match site {
+                        crate::libs::LibSite::Db(op, t, ps) => g.db_site(op, t, ps, args),
+                        crate::libs::LibSite::Tx(t, fails, atoms) => g.tx_site(t, fails, atoms, args),
+                        crate::libs::LibSite::Csv(op, t) => g.csv_site(op, t, args),
+                    };
+                    match r {
+                        Ok(k) => k,
+                        Err(x) => {
+                            err.get_or_insert(x);
+                            ExprKind::Unit
+                        }
+                    }
                 }
                 (NetSite::Svc(n), ExprKind::Name(_)) => match g.svc(n) {
                     Ok(f) => ExprKind::Name(f),

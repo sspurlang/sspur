@@ -18,6 +18,8 @@ pub mod llvm;
 #[cfg(feature = "jit")]
 pub mod net;
 #[cfg(feature = "jit")]
+pub mod rt;
+#[cfg(feature = "jit")]
 mod jit;
 #[cfg(feature = "jit")]
 pub use jit::*;

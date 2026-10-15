@@ -22,6 +22,11 @@ pub enum NetSite {
     Serve(bool, Vec<Type>, Vec<String>),
     /// A `svc` name used as a handler.
     Svc(String),
+    /// `crypto.f(args)` and the other simple library calls of ADR 0037: the prelude function,
+    /// with each argument's conversion.
+    Lib(String, Vec<crate::libs::Coerce>),
+    /// A typed library call that `elab` expands with generated code.
+    Data(crate::libs::LibSite),
 }
 
 static HTTP_SIGS: &[&str] = &[
@@ -145,7 +150,7 @@ impl Checker {
         };
         let (_, s) = self.builtin_scheme(src);
         if matches!(name, "get" | "post" | "send" | "download" | "fetch") {
-            let shadowed: Vec<&String> = self.ctors.iter().filter(|(_, c)| !c.ty.starts_with('#')).map(|(n, _)| n).filter(|n| builtins::STD_SUMS.iter().any(|(_, src)| src.contains(&format!(" {n}{{")) || src.contains(&format!("= {n}{{")))).collect();
+            let shadowed: Vec<&String> = self.ctors.iter().filter(|(_, c)| !c.ty.starts_with('#')).map(|(n, _)| n).filter(|n| builtins::STD_SUMS.iter().any(|(t, src)| *t == "#HttpErr" && (src.contains(&format!(" {n}{{")) || src.contains(&format!("= {n}{{"))))).collect();
             if let Some(n) = shadowed.first() {
                 let n = (*n).clone();
                 self.push_diag("E_HTTP_SHADOW", "error", span, format!("this program defines a constructor '{n}', and the HTTP client's HttpErr has one with that name"), Some(format!("rename your '{n}', for example to '{n}Err'")), vec![]);

@@ -3,55 +3,13 @@
 //! the bindings here). Programs that don't use networking never build or load it.
 use std::ffi::c_void;
 use std::path::PathBuf;
-use std::process::Command;
 use std::sync::OnceLock;
 
 pub const SRC: &str = include_str!("net_rt.c");
 
-fn lib_name(key: &str) -> String {
-    let ext = std::env::consts::DLL_EXTENSION;
-    if cfg!(windows) { format!("sspur_net_{key}.{ext}") } else { format!("libsspur_net_{key}.{ext}") }
-}
-
-/// The shared library, building it on first use.
+/// The shared library, building it on first use (with miniz, for the server's gzip).
 pub fn library() -> Result<PathBuf, String> {
-    static LIB: OnceLock<Result<PathBuf, String>> = OnceLock::new();
-    LIB.get_or_init(build).clone()
-}
-
-fn build() -> Result<PathBuf, String> {
-    let cc = crate::cgen::flags::cc();
-    let key = blake3::hash(format!("{cc}\n{}\n{SRC}", std::env::consts::ARCH).as_bytes()).to_hex()[..16].to_string();
-    let base = sspur_syntax::cache_root().unwrap_or_else(std::env::temp_dir).join("native");
-    std::fs::create_dir_all(&base).map_err(|e| e.to_string())?;
-    let lib = base.join(lib_name(&key));
-    if lib.exists() {
-        return Ok(lib);
-    }
-    let uniq = format!("{}-{}", std::process::id(), key);
-    let src = base.join(format!("sspur_net_{uniq}.c"));
-    std::fs::write(&src, SRC).map_err(|e| e.to_string())?;
-    let tmp = base.join(format!("sspur_net_{uniq}.tmp.{}", std::env::consts::DLL_EXTENSION));
-    let mut cmd = Command::new(&cc);
-    cmd.args(["-O2", "-shared", "-w"]).args(crate::cgen::flags::pic());
-    if cfg!(target_os = "macos") {
-        cmd.arg(format!("-Wl,-install_name,{}", lib.display()));
-    }
-    cmd.arg("-o").arg(&tmp).arg(&src);
-    if cfg!(windows) {
-        cmd.args(["-lws2_32", "-lwinhttp", "-lcrypt32"]).args(crate::cgen::flags::sys_libs());
-    } else if !cfg!(target_os = "macos") {
-        cmd.args(["-lpthread", "-ldl"]);
-    }
-    let out = cmd.output().map_err(|e| format!("cannot run {cc}: {e}"))?;
-    let _ = std::fs::remove_file(&src);
-    if !out.status.success() {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(format!("{cc} failed to build the network runtime: {}", String::from_utf8_lossy(&out.stderr).lines().take(6).collect::<Vec<_>>().join(" | ")));
-    }
-    crate::cgen::flags::drop_link_leftovers(&tmp);
-    crate::cgen::flags::publish(&tmp, &lib)?;
-    Ok(lib)
+    crate::rt::library(crate::rt::Kind::Net)
 }
 
 #[repr(C)]

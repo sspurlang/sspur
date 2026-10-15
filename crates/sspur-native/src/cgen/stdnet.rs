@@ -154,6 +154,7 @@ static void ss_srv_failed(SnCall* c, Status* st, const char* what) {
     snprintf(line, sizeof line, "error: %.*s %.*s failed: %.*s", (int)c->method.n, c->method.p, (int)(c->url.n > 200 ? 200 : c->url.n), c->url.p, wn, why);
     ss_net_say(line);
     if (st->rbuf) { free(st->rbuf); st->rbuf = 0; }
+    if (ss_req_end) ss_req_end();
     static const char body[] = "{\"error\":\"internal error\"}";
     SnHdr h = {{"content-type", 12}, {"application/json", 16}};
     ss_net_api.reply(c, 500, &h, 1, body, (int64_t)sizeof body - 1);
@@ -167,6 +168,9 @@ impl Cx<'_> {
         }
         let path = crate::net::library()?;
         writeln!(self.protos, "static const char ss_net_path[] = {};", c_lit(&path.display().to_string())).unwrap();
+        if self.helpers_done.insert("std:reqhook".into()) {
+            self.protos.push_str(super::stddata::REQ_HOOK);
+        }
         self.protos.push_str(GLUE);
         Ok(())
     }
@@ -230,7 +234,7 @@ jmp_buf jb; jmp_buf* saved = sspur_jb; sspur_jb = &jb; if (setjmp(jb)) {{ sspur_
 Str m_ = ss_net_str(c->method.p, c->method.n); Str u_ = ss_net_str(c->url.p, c->url.n); Str b_ = ss_net_str(c->body.p, c->body.n); __auto_type h_ = {hs}; \
 {rr} r_ = k->fn(k->env, m_, u_, h_, b_, c->timeout_ms, st, depth); sspur_jb = saved; if (r_.code) {{ ss_srv_failed(c, st, \"raised an error\"); return; }} \
 SnHdr* oh_ = (SnHdr*)malloc(sizeof(SnHdr) * (size_t)(r_.v.f1.len + 1)); for (int64_t i_ = 0; i_ < r_.v.f1.len; i_++) {{ oh_[i_].name = (SnStr){{r_.v.f1.data[i_].f0.p, r_.v.f1.data[i_].f0.len}}; oh_[i_].value = (SnStr){{r_.v.f1.data[i_].f1.p, r_.v.f1.data[i_].f1.len}}; }} \
-ss_net_api.reply(c, r_.v.f0, oh_, r_.v.f1.len, r_.v.f2.p, r_.v.f2.len); free(oh_); }}"
+ss_net_api.reply(c, r_.v.f0, oh_, r_.v.f1.len, r_.v.f2.p, r_.v.f2.len); free(oh_); if (ss_req_end) ss_req_end(); }}"
         )
         .unwrap();
         Ok(name)
@@ -253,7 +257,7 @@ mod tests {
 
     #[test]
     fn network_glue_compiles_here_and_for_windows() {
-        let body = format!("static const char ss_net_path[] = \"libsspur_net.so\";\n{GLUE}");
+        let body = format!("static const char ss_net_path[] = \"libsspur_net.so\";\n{}{GLUE}", super::stddata::REQ_HOOK);
         let cc = flags::cc();
         if Command::new(&cc).arg("--version").output().is_ok() && !cfg!(windows) {
             compiles(&[&cc], &format!("{PRELUDE}{body}"), "host");
@@ -262,10 +266,11 @@ mod tests {
             return;
         }
         let src = win::adapt(&format!("{PRELUDE}{body}"));
+        let rt = crate::rt::source(crate::rt::Kind::Net).unwrap();
         for target in ["x86_64-windows-gnu", "aarch64-windows-gnu"] {
             compiles(&["zig", "cc", "-target", target], &src, target);
-            compiles(&["zig", "cc", "-target", target], crate::net::SRC, &format!("rt_{target}"));
+            compiles(&["zig", "cc", "-target", target], &rt, &format!("rt_{target}"));
         }
-        compiles(&["zig", "cc", "-target", "x86_64-linux-gnu"], crate::net::SRC, "rt_linux");
+        compiles(&["zig", "cc", "-target", "x86_64-linux-gnu"], &rt, "rt_linux");
     }
 }

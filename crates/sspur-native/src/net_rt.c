@@ -1,4 +1,4 @@
-// The SSPUR network runtime: an HTTP/1.1 server with keep-alive, limits, CORS, gzip, static
+// The SSPUR network runtime: an HTTP/1.1 server with keep-alive, limits, CORS, gzip (miniz), static
 // files, health checks, request ids, graceful shutdown and optional TLS (OpenSSL, loaded when
 // a certificate is configured), and an HTTP client (libcurl on macOS and Linux, WinHTTP on
 // Windows). It is built once into a shared library in the cache and loaded by native programs
@@ -10,6 +10,12 @@
 #include <time.h>
 #include <errno.h>
 #include <ctype.h>
+#define MINIZ_NO_ARCHIVE_APIS
+#define MINIZ_NO_ARCHIVE_WRITING_APIS
+#define MINIZ_NO_STDIO
+#define MINIZ_NO_TIME
+#define MINIZ_NO_ZLIB_COMPATIBLE_NAMES
+//@part miniz
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -166,96 +172,28 @@ static int sn_icontains(const char* a, int64_t an, const char* b) {
     return 0;
 }
 
-// ---- gzip: LZ77 over a 32 KB window with hash chains, fixed Huffman codes ------------------
+// ---- gzip: miniz's DEFLATE at level 1, the fastest, in a gzip member ------------------------
 
-static uint32_t sn_crc_tab[256];
-static void sn_crc_init(void) {
-    for (uint32_t i = 0; i < 256; i++) { uint32_t c = i; for (int k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320u ^ (c >> 1) : c >> 1; sn_crc_tab[i] = c; }
-}
-static uint32_t sn_crc32(const unsigned char* p, int64_t n) {
-    if (!sn_crc_tab[1]) sn_crc_init();
-    uint32_t c = 0xFFFFFFFFu;
-    for (int64_t i = 0; i < n; i++) c = sn_crc_tab[(c ^ p[i]) & 0xFF] ^ (c >> 8);
-    return c ^ 0xFFFFFFFFu;
-}
-typedef struct { SnBuf* out; uint32_t acc; int bits; } SnBits;
-static void bits_put(SnBits* w, uint32_t v, int n) {
-    w->acc |= v << w->bits; w->bits += n;
-    while (w->bits >= 8) { sb_c(w->out, (char)(w->acc & 0xFF)); w->acc >>= 8; w->bits -= 8; }
-}
-static void bits_huff(SnBits* w, uint32_t code, int n) {
-    uint32_t r = 0;
-    for (int i = 0; i < n; i++) r |= ((code >> i) & 1u) << (n - 1 - i);
-    bits_put(w, r, n);
-}
-static void fixed_lit(SnBits* w, int sym) {
-    if (sym < 144) bits_huff(w, 0x30 + (uint32_t)sym, 8);
-    else if (sym < 256) bits_huff(w, 0x190 + (uint32_t)(sym - 144), 9);
-    else if (sym < 280) bits_huff(w, (uint32_t)(sym - 256), 7);
-    else bits_huff(w, 0xC0 + (uint32_t)(sym - 280), 8);
-}
-static const uint16_t len_base[29] = {3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258};
-static const uint8_t len_extra[29] = {0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0};
-static const uint16_t dist_base[30] = {1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577};
-static const uint8_t dist_extra[30] = {0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13};
-static void put_match(SnBits* w, int len, int dist) {
-    int i = 28;
-    while (len_base[i] > len) i--;
-    fixed_lit(w, 257 + i);
-    if (len_extra[i]) bits_put(w, (uint32_t)(len - len_base[i]), len_extra[i]);
-    int d = 29;
-    while (dist_base[d] > dist) d--;
-    bits_huff(w, (uint32_t)d, 5);
-    if (dist_extra[d]) bits_put(w, (uint32_t)(dist - dist_base[d]), dist_extra[d]);
-}
-#define GZ_HBITS 15
-#define GZ_WIN 32768
 SN_EXPORT void sn_gzip(const char* src, int64_t n, SnBuf* out) {
     static const unsigned char head[10] = {0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 0xff};
     sb_add(out, head, 10);
-    const unsigned char* p = (const unsigned char*)src;
-    int32_t* hh = (int32_t*)malloc(sizeof(int32_t) << GZ_HBITS);
-    int32_t* prev = (int32_t*)malloc(sizeof(int32_t) * GZ_WIN);
-    for (int i = 0; i < (1 << GZ_HBITS); i++) hh[i] = -1;
-    SnBits w = {out, 0, 0};
-    bits_put(&w, 1, 1);
-    bits_put(&w, 1, 2);
-    int64_t i = 0;
-    while (i < n) {
-        int best = 0, bdist = 0;
-        if (i + 3 <= n) {
-            uint32_t h = ((uint32_t)p[i] << 16 | (uint32_t)p[i + 1] << 8 | p[i + 2]) * 2654435761u >> (32 - GZ_HBITS);
-            int32_t cand = hh[h];
-            int chain = 32;
-            int64_t maxlen = n - i < 258 ? n - i : 258;
-            while (cand >= 0 && i - cand <= GZ_WIN && chain-- > 0) {
-                if (p[cand + best] == p[i + best]) {
-                    int l = 0;
-                    while (l < maxlen && p[cand + l] == p[i + l]) l++;
-                    if (l > best) { best = l; bdist = (int)(i - cand); if (l == maxlen) break; }
-                }
-                int32_t nx = prev[cand & (GZ_WIN - 1)];
-                if (nx >= cand) break;
-                cand = nx;
-            }
-            prev[i & (GZ_WIN - 1)] = hh[h]; hh[h] = (int32_t)i;
-        }
-        if (best >= 3) {
-            put_match(&w, best, bdist);
-            for (int64_t k = i + 1; k < i + best && k + 3 <= n; k++) {
-                uint32_t h = ((uint32_t)p[k] << 16 | (uint32_t)p[k + 1] << 8 | p[k + 2]) * 2654435761u >> (32 - GZ_HBITS);
-                prev[k & (GZ_WIN - 1)] = hh[h]; hh[h] = (int32_t)k;
-            }
-            i += best;
-        } else {
-            fixed_lit(&w, p[i]);
-            i++;
-        }
+    mz_stream s;
+    memset(&s, 0, sizeof s);
+    if (mz_deflateInit2(&s, 1, MZ_DEFLATED, -MZ_DEFAULT_WINDOW_BITS, 9, MZ_DEFAULT_STRATEGY) != MZ_OK) abort();
+    sb_reserve(out, (int64_t)mz_deflateBound(&s, (mz_ulong)n) + 16);
+    s.next_in = (const unsigned char*)src;
+    s.avail_in = (unsigned int)n;
+    for (;;) {
+        sb_reserve(out, 65536);
+        s.next_out = (unsigned char*)out->p + out->n;
+        s.avail_out = (unsigned int)(out->cap - out->n);
+        int rc = mz_deflate(&s, MZ_FINISH);
+        out->n = out->cap - s.avail_out;
+        if (rc == MZ_STREAM_END) break;
+        if (rc != MZ_OK && rc != MZ_BUF_ERROR) abort();
     }
-    fixed_lit(&w, 256);
-    if (w.bits) bits_put(&w, 0, 8 - w.bits);
-    free(hh); free(prev);
-    uint32_t crc = sn_crc32(p, n), sz = (uint32_t)n;
+    mz_deflateEnd(&s);
+    uint32_t crc = (uint32_t)mz_crc32(MZ_CRC32_INIT, (const unsigned char*)src, (size_t)n), sz = (uint32_t)n;
     unsigned char tail[8] = {(unsigned char)crc, (unsigned char)(crc >> 8), (unsigned char)(crc >> 16), (unsigned char)(crc >> 24), (unsigned char)sz, (unsigned char)(sz >> 8), (unsigned char)(sz >> 16), (unsigned char)(sz >> 24)};
     sb_add(out, tail, 8);
 }

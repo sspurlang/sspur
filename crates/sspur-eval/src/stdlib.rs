@@ -386,6 +386,9 @@ impl Interp {
         if let Some(r) = self.net_global(n, &a) {
             return r;
         }
+        if let Some(r) = self.lib_global(n, &a) {
+            return r;
+        }
         #[cfg(target_family = "wasm")]
         {
             if n == "eprint" {

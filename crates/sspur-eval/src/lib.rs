@@ -3,6 +3,7 @@ mod builtins;
 #[cfg(feature = "native")]
 mod ffi;
 mod net;
+mod libs;
 pub mod fuzz;
 pub mod progen;
 pub mod suggest;

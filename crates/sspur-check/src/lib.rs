@@ -10,6 +10,8 @@ mod statics;
 mod traits;
 pub mod elab;
 mod elab_net;
+mod elab_lib;
+pub mod libs;
 pub mod kernel;
 pub mod types;
 
@@ -2064,7 +2066,9 @@ impl Checker {
                 self.method(x, xt, f, &[], e.span)
             }
             ExprKind::Method { recv, name, targs, args } if self.is_json_recv(recv) => self.infer_json(name, targs, args, e.span),
-            ExprKind::Method { recv, name, args, .. } if self.is_db_recv(recv) => self.infer_db(name, args, e.span),
+            ExprKind::Method { recv, name, args, .. } if self.is_db_recv(recv) && db_op(name).is_some() => self.infer_db(name, args, e.span),
+            ExprKind::Method { recv, name, targs, args } if self.is_db_recv(recv) => self.infer_lib("db", name, targs, args, e.span),
+            ExprKind::Method { recv, name, targs, args } if let Some(ns) = self.lib_ns(recv) => self.infer_lib(ns, name, targs, args, e.span),
             ExprKind::Method { recv, name, targs, args } if self.is_ns_recv(recv, "http") => self.infer_http(name, targs, args, e.span),
             ExprKind::Method { recv, name, args, .. } if self.is_ns_recv(recv, "config") => self.infer_config(name, args, e.span),
             ExprKind::Method { recv, name, targs, args } if targs.is_empty() && self.is_ns_recv(recv, "log") => self.infer_log_level(name, args, e.span),
@@ -2679,7 +2683,7 @@ impl Checker {
                     let map: HashMap<String, Type> = params.iter().map(|p| (p.clone(), self.fresh())).collect();
                     let ty = Type::Con(c.to_string(), params.iter().map(|p| map[p].clone()).collect());
                     (ty, fs.iter().map(|(n, t)| (n.clone(), subst_params(t, &map))).collect(), c.to_string())
-                } else if let Some((_, internal, _)) = builtins::STD_TYPES.iter().find(|(n, i, _)| n == &c && builtins::OPEN_STD_RECORDS.contains(i))
+                } else if let Some((_, internal, _)) = builtins::STD_TYPES.iter().find(|(n, i, _)| n == &c && (builtins::OPEN_STD_RECORDS.contains(i) || (*i == "#Db" && self.cur_def.as_deref().is_some_and(|d| d.starts_with("__db_")))))
                     && let Some(TypeInfo { kind: TypeKind::Record(fs), .. }) = self.types.get(*internal).cloned()
                 {
                     (Type::con(internal), fs, internal.to_string())
