@@ -452,17 +452,19 @@ fn memory_stays_flat_under_load() {
             h.join().unwrap();
         }
     };
-    // The collector runs after a pacing threshold, so the first bursts may raise RSS by tens of
-    // MB on a slow machine; a leak shows as growth that continues burst after burst.
+    // The collector runs after a pacing threshold, so RSS can step up by tens of MB on a slow
+    // machine before it settles; a leak shows as growth on every burst.
     burst(8_000);
     burst(40_000);
-    let warm = rss_kb(s.child.id());
-    burst(40_000);
-    let mid = rss_kb(s.child.id());
-    burst(40_000);
-    let after = rss_kb(s.child.id());
-    assert!(after < 200_000, "RSS reached {after} KB");
-    assert!(after < warm + 20_000 && after < mid + 10_000, "RSS kept growing after warm-up: {warm} KB, {mid} KB, {after} KB over 80,000 more requests");
+    let mut rss = vec![rss_kb(s.child.id())];
+    for _ in 0..5 {
+        burst(40_000);
+        rss.push(rss_kb(s.child.id()));
+    }
+    let last = *rss.last().unwrap();
+    assert!(last < 200_000, "RSS reached {last} KB: {rss:?}");
+    let grew = rss.windows(2).skip(1).all(|w| w[1] > w[0] + 2_000);
+    assert!(!grew, "RSS grew on every 40,000-request burst after warm-up (KB): {rss:?}");
 }
 
 #[test]

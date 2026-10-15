@@ -22,7 +22,7 @@ fn fetched(url: Str) -> Str ! net
   | HttpStatus{code, body} => "raised {code} {body}"
   | e => "raised {e}"
 
-fn main() -> Unit ! net, log, env, fs
+fn main() -> Unit ! net, log, env, fs, time
 = do
   b = env_var("BASE").or("http://127.0.0.1:8080")
   log(show(http.get(b + "/items/3")))
@@ -48,6 +48,7 @@ fn main() -> Unit ! net, log, env, fs
   log(show(http.send(http.req("GET", b + "/flaky") with retries := 3)))
   log(kind(http.send(http.req("GET", b + "/slow") with timeout_ms := 300)))
   log(show(http.get(b + "/slow")))
+  sleep_ms(2000)
   log(show(http.get(b + "/trap")))
   log(show(http.get(b + "/html")))
   log(show(http.get(b + "/healthz")))
