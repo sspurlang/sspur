@@ -124,6 +124,7 @@
   - [ADR 0035: HTTP client and server](adr/0035-networking.md)
   - [ADR 0036: Source-level debugging with lldb and gdb](adr/0036-source-level-debugging.md)
   - [ADR 0037: Databases, crypto, compression and CSV](adr/0037-data-and-security-libraries.md)
+  - [ADR 0038: The package registry](adr/0038-package-registry.md)
 - [Native performance versus C++](design/native-benchmarks.md)
 - [Agent benchmarks](design/agent-benchmarks.md)
 
