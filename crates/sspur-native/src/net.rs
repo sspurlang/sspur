@@ -121,7 +121,7 @@ fn api() -> Result<&'static Api, String> {
     static API: OnceLock<Result<Api, String>> = OnceLock::new();
     API.get_or_init(|| {
         let path = library()?;
-        let lib = unsafe { libloading::Library::new(&path) }.map_err(|e| format!("cannot load {}: {e}", path.display()))?;
+        let lib = crate::load_library(&path)?;
         macro_rules! sym {
             ($n:literal) => {
                 *unsafe { lib.get($n) }.map_err(|e| e.to_string())?

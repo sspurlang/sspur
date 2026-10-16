@@ -972,7 +972,7 @@ pub fn compile_release(m: &Module, check: &CheckOutput, opt: &str) -> Result<Com
     } else {
         build(&src, opt, &plan.links, bo.lto, &names)?
     };
-    let library = unsafe { libloading::Library::new(&lib) }.map_err(|e| format!("cannot load {}: {e}", lib.display()))?;
+    let library = crate::load_library(&lib)?;
     let mut scalar = HashMap::new();
     let mut rich = HashMap::new();
     for (name, (params, ret, is_scalar)) in &plan.fns {

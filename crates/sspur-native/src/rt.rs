@@ -199,7 +199,7 @@ pub fn load(kind: Kind) -> Result<&'static libloading::Library, String> {
     LOADED[kind as usize]
         .get_or_init(|| {
             let path = library(kind)?;
-            let lib = unsafe { libloading::Library::new(&path) }.map_err(|e| format!("cannot load {}: {e}", path.display()))?;
+            let lib = crate::load_library(&path)?;
             Ok(&*Box::leak(Box::new(lib)))
         })
         .clone()

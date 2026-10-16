@@ -26,6 +26,30 @@ mod jit;
 #[cfg(feature = "jit")]
 pub use jit::*;
 
+/// Loads a native library built into the cache. On Windows a freshly written DLL can be held
+/// briefly (by an antivirus scan, or a concurrent build's hard link), so a failed load is retried
+/// a few times; the error keeps the system's reason.
+#[cfg(feature = "jit")]
+pub(crate) fn load_library(path: &std::path::Path) -> Result<libloading::Library, String> {
+    let tries = if cfg!(windows) { 6 } else { 1 };
+    let mut last = String::new();
+    for i in 0..tries {
+        match unsafe { libloading::Library::new(path) } {
+            Ok(l) => return Ok(l),
+            Err(e) => {
+                last = match std::error::Error::source(&e) {
+                    Some(s) => format!("{e}: {s}"),
+                    None => e.to_string(),
+                };
+                if i + 1 < tries {
+                    std::thread::sleep(std::time::Duration::from_millis(50 << i));
+                }
+            }
+        }
+    }
+    Err(format!("cannot load {}: {last}", path.display()))
+}
+
 pub type LogHook = (fn(*const (), &str), *const ());
 
 thread_local! {
