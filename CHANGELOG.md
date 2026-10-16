@@ -4,6 +4,8 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-10-16
+
 ### Changed
 - The first version of a new package name waits for a maintainer of sspur-packages to comment `/approve` on its request, after every check has passed. The approval holds only for the commit the pull request showed. Later versions still merge on their checks alone.
 
@@ -390,7 +392,8 @@ This release covers Phases 3 to 7 of the roadmap and ADRs 0003 to 0024. SSPUR no
 - Language design spec, JSON schemas and the token benchmark.
 - Compiler core: parser, checker, content hashing, interpreter and the `sspur` CLI, with an 11-program suite.
 
-[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/utkarshavardhana/sspur/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/utkarshavardhana/sspur/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/utkarshavardhana/sspur/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/utkarshavardhana/sspur/compare/v0.9.0...v0.10.0

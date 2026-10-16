@@ -1,6 +1,6 @@
 id = "sspur"
 name = "SSPUR"
-version = "0.12.0"
+version = "0.12.1"
 schema_version = 1
 authors = ["Utkarsha Vardhana"]
 description = "SSPUR: Tree-sitter highlighting and outline, and the sspur lsp language server."
