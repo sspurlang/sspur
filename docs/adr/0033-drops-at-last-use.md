@@ -143,8 +143,10 @@ Three changes, none of which changes a result:
 | `gpu` | C++ | before | after |
 |---|---|---|---|
 | time | 0.82s | 0.31s | 0.29s |
-| peak memory | 54 MB | 178 MB | 97 MB |
+| peak memory | 54 MB | 178 MB | 97 MB (92 MB with the cached run of ADR 0034) |
 | setup (building the inputs) | | 71 ms | 59 ms |
 | collector heap high water | | 64 MB | 4 MB |
+
+These are peaks of `sspur run`, which then built the program on every run. Since ADR 0034 a plain `sspur run` reuses the built program, and `gpu` peaks at 92 MB, the figure `bench/native/README.md` gives; `sspur run --no-cache` still peaks at 97 MB (both measured again on 2026-10-16, three runs each).
 
 What remains is what a GPU program keeps: 52 MB of device buffers (the C++ version keeps the same data in about 50 MB of vectors), 18 MB of host copies of the buffers that kernels write, which let the queue rerun a launch exactly on the CPU when a thread flags a trap or a subnormal (ADR 0020), and about 14 MB for Metal itself. Dropping the copies would need the kernels to prove they can't flag, which they can't for `F32` arithmetic in general.
