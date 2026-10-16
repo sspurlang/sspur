@@ -87,7 +87,7 @@ impl State {
 
 /// The public definitions of the direct dependencies, as `pkg::load` lists them.
 fn exports(env: &pkg::Env) -> BTreeSet<String> {
-    env.direct.iter().filter_map(|d| env.all.get(d)).flat_map(|p| p.items.values().filter(|it| it.public && it.owner.is_none()).map(|it| it.mangled.clone())).collect()
+    env.direct.iter().filter_map(|d| env.direct_pkg(d)).flat_map(|p| p.items.values().filter(|it| it.public && it.owner.is_none()).map(|it| it.mangled.clone())).collect()
 }
 
 fn load_with(env: &pkg::Env, src: &str) -> Result<(Module, CheckOutput), Vec<Diag>> {
