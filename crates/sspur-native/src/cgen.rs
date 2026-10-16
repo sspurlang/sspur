@@ -1507,8 +1507,10 @@ fn build_split(src: &str, opt: &str, plan: &Plan, lto: flags::Lto, names: &HashM
     let extra = flags::extra();
     let memo = dir.join(format!("{}.split", &blake3::hash(format!("{cc} {opt} {}{}{}{}\n{src}", lto_tag, links.iter().map(|l| format!(" {l}")).collect::<String>(), extra.join(" "), flags::strip().join(" ")).as_bytes()).to_hex()[..32]));
     if let Ok(name) = std::fs::read_to_string(&memo) {
+        // A memo another build is still writing can be empty or cut short, so only a name that
+        // is a file counts (an empty one would name the directory).
         let lib = dir.join(name.trim());
-        if lib.exists() {
+        if lib.is_file() {
             return Ok(lib);
         }
     }
