@@ -1595,24 +1595,31 @@ fn build_split(src: &str, opt: &str, plan: &Plan, lto: flags::Lto, names: &HashM
     let build = tmp_suffix();
     let next = std::sync::atomic::AtomicUsize::new(0);
     let failed: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
-    let jobs = flags::jobs(todo.iter().map(|&i| tus[i].text.len()).max().unwrap_or(0)).min(todo.len().max(1));
-    // Biggest units first, so no long compile is left for the end, in batches (one clang process
-    // each, which saves its startup) of about an equal share of the C: several per job, at most
-    // 16 units, and not so small that a little program starts a process for each unit.
-    todo.sort_by_key(|&i| std::cmp::Reverse(tus[i].text.len()));
-    let share = todo.iter().map(|&i| tus[i].text.len()).sum::<usize>().div_ceil(jobs * 4).max(64 << 10);
-    let mut batches: Vec<Vec<usize>> = Vec::new();
-    let mut size = 0;
-    for &i in &todo {
-        match batches.last_mut() {
-            Some(b) if b.len() < 16 && size < share => b.push(i),
-            _ => {
-                batches.push(vec![i]);
-                size = 0;
+    let total: usize = todo.iter().map(|&i| tus[i].text.len()).sum();
+    let jobs = flags::jobs(todo.iter().map(|&i| tus[i].text.len()).max().unwrap_or(0), total).min(todo.len().max(1));
+    let batches: Vec<Vec<usize>> = if jobs <= 4 {
+        // A small build: as many units per clang process (which saves its startup) as in 0.13.
+        let per = todo.len().div_ceil(jobs * 2).clamp(1, 16);
+        todo.chunks(per).map(<[usize]>::to_vec).collect()
+    } else {
+        // Biggest units first, so no long compile is left for the end, in batches of about an
+        // equal share of the C, several per job and at most 16 units.
+        todo.sort_by_key(|&i| std::cmp::Reverse(tus[i].text.len()));
+        let share = total.div_ceil(jobs * 4).max(1);
+        let mut batches: Vec<Vec<usize>> = Vec::new();
+        let mut size = 0;
+        for &i in &todo {
+            match batches.last_mut() {
+                Some(b) if b.len() < 16 && size < share => b.push(i),
+                _ => {
+                    batches.push(vec![i]);
+                    size = 0;
+                }
             }
+            size += tus[i].text.len();
         }
-        size += tus[i].text.len();
-    }
+        batches
+    };
     std::thread::scope(|s| {
         for _ in 0..jobs {
             s.spawn(|| loop {

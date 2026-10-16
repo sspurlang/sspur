@@ -13,22 +13,21 @@ steps=${STEPS:-"check test interp publish app edit small hello"}
 repo=$(cd "$here/../.." && pwd)
 mkdir -p "$work"
 work=$(cd "$work" && pwd)
-now() { perl -MTime::HiRes=time -e 'printf "%.3f", time'; }
-# Runs a command, and prints its wall time and the largest summed RSS of its process tree (MB).
+export WALL="$work/wall"
+# Runs a command, and prints its wall time and the largest summed RSS of its process tree (MB),
+# sampled every 0.1 s, so a command shorter than that shows none.
 timed() {
-  "$@" > "$work/out.log" 2>&1 &
+  perl -MTime::HiRes=time -e '$s = time; $r = system @ARGV; open(my $f, ">", $ENV{WALL}); printf $f "%.3f", time - $s; exit($r >> 8)' "$@" > "$work/out.log" 2>&1 &
   pid=$!
   peak=0
-  s=$(now)
   while kill -0 $pid 2> /dev/null; do
     t=$(ps -Ao pid=,ppid=,rss= | awk -v root=$pid '{p[$1] = $2; r[$1] = $3} END {for (k in p) {x = k; while (x != "" && x > 1) {if (x == root) {s += r[k]; break} x = p[x]}} print s + 0}')
     [ "$t" -gt "$peak" ] && peak=$t
-    sleep 0.2
+    sleep 0.1
   done
   wait $pid
   st=$?
-  e=$(now)
-  printf "%7.1fs %6dMB%s" "$(echo "$e - $s" | bc)" $((peak / 1024)) "$([ $st = 0 ] || echo " (exit $st: $(tail -1 "$work/out.log"))")"
+  printf "%7.2fs %6dMB%s" "$(cat "$WALL")" $((peak / 1024)) "$([ $st = 0 ] || echo " (exit $st: $(tail -1 "$work/out.log"))")"
 }
 fresh() {
   rm -rf "$work/src"

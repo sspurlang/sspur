@@ -264,10 +264,11 @@ pub fn publish(tmp: &Path, dst: &Path) -> Result<(), String> {
     }
 }
 
-/// How many clang processes a split build runs at once: one per core, fewer when the machine's
-/// memory couldn't hold that many compiles of units of up to `unit_bytes` bytes of C.
+/// How many clang processes a split build runs at once to compile `total_bytes` of C in units of
+/// up to `unit_bytes`: one per core, but no more than 4 unless each gets 256 KB of C (about a
+/// second of work), and fewer when the machine's memory couldn't hold that many compiles.
 /// `SSPUR_JOBS` sets the number.
-pub fn jobs(unit_bytes: usize) -> usize {
+pub fn jobs(unit_bytes: usize, total_bytes: usize) -> usize {
     if let Some(j) = std::env::var("SSPUR_JOBS").ok().and_then(|j| j.trim().parse::<usize>().ok()) {
         return j.clamp(1, 256);
     }
@@ -275,7 +276,7 @@ pub fn jobs(unit_bytes: usize) -> usize {
     // clang's peak at -O2: about 60 MB to start, and some 300 bytes per byte of C in a unit.
     let per = (64 << 20) + 320 * unit_bytes as u64;
     let by_mem = memory().map_or(cores as u64, |m| (m / 2 / per).max(1));
-    cores.min(by_mem as usize).max(1)
+    cores.min(by_mem as usize).min((total_bytes >> 18).max(4)).max(1)
 }
 
 /// Physical memory free for new processes, in bytes, if the system says.
