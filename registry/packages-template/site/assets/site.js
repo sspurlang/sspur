@@ -26,14 +26,21 @@
   if (q && list) {
     const items = [...list.children];
     const none = document.getElementById("none");
+    const more = document.getElementById("more");
+    // Without a search the list shows only the top packages; a search looks through all of them.
+    const top = more ? Number(more.dataset.top) || items.length : items.length;
     const apply = () => {
       const words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
       let shown = 0;
-      for (const li of items) {
+      items.forEach((li, i) => {
         const text = li.dataset.text || "";
-        const ok = words.every((w) => text.includes(w));
+        const ok = words.length ? words.every((w) => text.includes(w)) : i < top;
         li.hidden = !ok;
         if (ok) shown++;
+      });
+      if (more) {
+        document.getElementById("list-title").textContent = words.length ? "Results" : more.dataset.title;
+        document.getElementById("list-count").textContent = words.length ? (shown === 1 ? "1 package" : shown + " packages") : more.dataset.count;
       }
       if (none) none.hidden = shown > 0;
       const url = new URL(location.href);
@@ -43,7 +50,7 @@
     };
     q.value = new URLSearchParams(location.search).get("q") || "";
     q.addEventListener("input", apply);
-    if (q.value) apply();
+    apply();
     addEventListener("keydown", (e) => {
       if (e.key === "/" && document.activeElement !== q && !/input|textarea|select/i.test(document.activeElement.tagName)) {
         e.preventDefault();
