@@ -248,7 +248,7 @@ fn fill_synthesizes_classic_holes() {
     assert!(ok, "{out}");
     assert_eq!(
         out,
-        "?total: items.map(_.qty * _.price).sum (passes 2 tests, 3 others also fit)\n?count: xs.len (passes 1 test, 3 others also fit)\n?first: xs.first.or(d) (passes 2 tests, 5 others also fit)\n?shape: Circle{r: r} (passes 1 test, 2 others also fit)"
+        "?total: items.map(_.qty * _.price).sum (passes 2 tests, 3 others also fit)\n?count: xs.len (passes 1 test, 3 others also fit)\n?first: xs.first.or(d) (passes 2 tests, 5 others also fit)\n?shape: Circle{r} (passes 1 test, 2 others also fit)"
     );
     let (out, ok) = sspur(&d, &["check", "h.ssp", "--fill-ms", "5000"], "");
     assert!(ok, "{out}");

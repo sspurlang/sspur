@@ -164,7 +164,7 @@ fn display(nick: Opt[Str], name: Str) -> Str
 test t = display(none, "Ann") == "Ann"
 
 ## record_constructor *
-want: Point{x: x, y: y}
+want: Point{x, y}
 fn point(x: Int, y: Int) -> Point
 = ?
 test t = point(1, 2) == Point{x: 1, y: 2}
