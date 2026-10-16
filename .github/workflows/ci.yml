@@ -1,7 +1,10 @@
 name: CI
 
+# Branch pushes and pull requests. A release tag points at a commit this workflow already
+# passed on main; the release workflow checks that instead of running it again.
 on:
   push:
+    branches: ["**"]
   pull_request:
 
 permissions:

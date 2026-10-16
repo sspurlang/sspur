@@ -11,8 +11,26 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  ci-passed:
+    name: CI passed on this commit
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+    steps:
+      - name: Require a successful CI run for the tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          n="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&status=success&per_page=1" --jq .total_count)"
+          if [ "${n:-0}" -lt 1 ]; then
+            echo "::error::CI has not passed on ${GITHUB_SHA}. Push the commit to main, wait for CI, then tag it."
+            exit 1
+          fi
+          echo "CI passed on ${GITHUB_SHA}"
+
   build:
     name: ${{ matrix.target }}
+    needs: ci-passed
     strategy:
       fail-fast: false
       matrix:
