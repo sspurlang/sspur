@@ -20,7 +20,7 @@ None of these are needed for normal use. They exist for CI, for pinning toolchai
 | `SSPUR_LIBCURL` | Path of libcurl, if the HTTP client doesn't find it (macOS and Linux) |
 | `SSPUR_OPENSSL` | Directory of OpenSSL 3's libraries, if `http.serve` with TLS doesn't find them |
 | `SSPUR_NO_CHECK_CACHE` | Set to any value to skip the shared check cache, like `check --no-cache` |
-| `SSPUR_JOBS` | Parallel C compiler jobs for per-definition objects, 1 to 4 (default 4) |
+| `SSPUR_JOBS` | Parallel C compiler jobs for native objects (default one per core, fewer when memory is short) |
 | `SSPUR_OPT=0` | Turn off the proven-rewrite optimizer |
 | `SSPUR_SMT=off` | Don't use Z3 to remove runtime checks during native builds |
 | `SSPUR_SMT_TIMEOUT` | Z3 time limit per query in milliseconds (default 500) |

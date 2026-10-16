@@ -128,6 +128,7 @@
   - [ADR 0038: The package registry](adr/0038-package-registry.md)
   - [ADR 0039: Scoped package names](adr/0039-scoped-package-names.md)
   - [ADR 0040: sspur fmt breaks long lines](adr/0040-fmt-breaks-long-lines.md)
+  - [ADR 0041: Cold native builds of big packages](adr/0041-cold-native-builds.md)
 - [Native performance versus C++](design/native-benchmarks.md)
 - [Agent benchmarks](design/agent-benchmarks.md)
 

@@ -25,7 +25,7 @@ Status: accepted, 2026-10-04
 | 6 | Fresh names carry a `$` marker and each unit renumbers them by first use | The global counter otherwise renamed every later function's locals after one edit |
 | 7 | Function ids in `st->func`, refinement ids and error-type ids are 30-bit content hashes with probing, mapped back by `Compiled` | Positional ids shifted when a definition or contract was added above |
 | 8 | Default `-O2` builds are per-object; `--O3` keeps the whole-program build; `SSPUR_SPLIT=0|1` overrides, `SSPUR_LTO=1` adds ThinLTO with the linker's LTO cache | Measured below: per-object with copied small callees is within noise of whole-program on every benchmark, and ThinLTO is no faster |
-| 9 | Units compile in batches of up to 16 per clang process, at most 4 processes | clang startup (about 50 ms here) dominated cold builds |
+| 9 | Units compile in batches of up to 16 per clang process, at most 4 processes | clang startup (about 50 ms here) dominated cold builds. Update: one process per core within memory, and the functions of a package with 16 or more share units ([ADR 0041](0041-cold-native-builds.md)) |
 | 10 | A memo file maps the whole-program C hash to the linked library | Warm runs skip splitting |
 | 11 | If the per-object build fails, the whole-program build runs | The fallback is the old path |
 
