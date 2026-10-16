@@ -69,6 +69,60 @@ fn remember(dir: &std::path::Path, key: &str, t: &'static str) {
     }
 }
 
+/// Queries put off by `collecting`: how many more to answer at once, and the rest.
+struct Collect {
+    inline: usize,
+    queries: Vec<(String, Vec<String>)>,
+}
+
+thread_local! {
+    static COLLECT: std::cell::RefCell<Option<Collect>> = const { std::cell::RefCell::new(None) };
+}
+
+fn defer(script: &str, vars: &[String]) -> bool {
+    COLLECT.with(|c| match c.borrow_mut().as_mut() {
+        Some(c) if c.inline == 0 => {
+            c.queries.push((script.to_string(), vars.to_vec()));
+            true
+        }
+        Some(c) => {
+            c.inline -= 1;
+            false
+        }
+        None => false,
+    })
+}
+
+/// Runs `f`, in which cached solvers on this thread answer the first `inline` queries that miss
+/// the cache as usual, and every later one with `Unknown`, returning the queries put off. With
+/// none, `f` saw only real answers; else `solve_all` answers them into the cache and `f` can
+/// run again with them.
+pub fn collecting<R>(inline: usize, f: impl FnOnce() -> R) -> (R, Vec<(String, Vec<String>)>) {
+    let outer = COLLECT.with(|c| c.borrow_mut().replace(Collect { inline, queries: Vec::new() }));
+    let r = f();
+    let mine = COLLECT.with(|c| std::mem::replace(&mut *c.borrow_mut(), outer));
+    (r, mine.map(|c| c.queries).unwrap_or_default())
+}
+
+/// Answers `queries` into the cache with up to `jobs` solvers at once.
+pub fn solve_all(queries: &[(String, Vec<String>)], jobs: usize) {
+    let mut queries: Vec<&(String, Vec<String>)> = queries.iter().collect();
+    queries.sort();
+    queries.dedup();
+    let jobs = jobs.clamp(1, queries.len().div_ceil(16).max(1));
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    std::thread::scope(|s| {
+        for _ in 0..jobs {
+            s.spawn(|| {
+                let mut solver = Solver::new();
+                while let Some((script, vars)) = queries.get(next.fetch_add(1, std::sync::atomic::Ordering::Relaxed)).copied() {
+                    solver.check(script, vars);
+                }
+            });
+        }
+    });
+}
+
 pub struct Solver {
     proc: Option<Proc>,
     spawns: u32,
@@ -159,6 +213,9 @@ impl Solver {
             }
         }
         if !self.ensure() {
+            return Answer::Unknown;
+        }
+        if key.is_some() && defer(script, vars) {
             return Answer::Unknown;
         }
         let a = match self.run(script, vars) {

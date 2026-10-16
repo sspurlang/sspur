@@ -1,6 +1,6 @@
 mod z3;
 
-pub use z3::{parse_model, Answer, Solver};
+pub use z3::{collecting, parse_model, solve_all, Answer, Solver};
 
 use sspur_check::{expr_key, CheckOutput, Type};
 use sspur_syntax::*;

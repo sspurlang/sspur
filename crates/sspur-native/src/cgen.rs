@@ -950,9 +950,19 @@ pub fn compile_release(m: &Module, check: &CheckOutput, opt: &str) -> Result<Com
         None => (m, check),
     };
     let t_lower = t0.elapsed();
-    let (src, mut plan) = generate(m, check, None, None, true, true)?;
+    // A cold build asks Z3 thousands of questions, one at a time. After the first few that
+    // aren't cached, generation goes on with the rest unanswered, they are answered on every
+    // core, and it runs again with all the answers, so the C is what one pass would give.
+    let (first, put_off) = sspur_smt::collecting(64, || generate(m, check, None, None, true, true));
+    let n_put_off = put_off.len();
+    let (src, mut plan) = if put_off.is_empty() {
+        first?
+    } else {
+        sspur_smt::solve_all(&put_off, std::thread::available_parallelism().map_or(4, |n| n.get()));
+        generate(m, check, None, None, true, true)?
+    };
     if std::env::var_os("SSPUR_SPLIT_DEBUG").is_some() {
-        eprintln!("native: optimized in {t_opt:?}, lowered {:?}, generated {:?}", t_lower - t_opt, t0.elapsed() - t_lower);
+        eprintln!("native: optimized in {t_opt:?}, lowered {:?}, generated {:?} ({n_put_off} solver questions answered in parallel)", t_lower - t_opt, t0.elapsed() - t_lower);
     }
     plan.skipped.retain(|n, _| lower::original_name(n) == n);
     if let Some((_, _, why)) = &lowered {
