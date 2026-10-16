@@ -69,18 +69,19 @@ fn remember(dir: &std::path::Path, key: &str, t: &'static str) {
     }
 }
 
-/// Queries put off by `collecting`: how many more to answer at once, and the rest.
+/// Queries put off by `collecting` on one thread: how many more to answer at once, and the rest.
 struct Collect {
+    thread: std::thread::ThreadId,
     inline: usize,
     queries: Vec<(String, Vec<String>)>,
 }
 
-thread_local! {
-    static COLLECT: std::cell::RefCell<Option<Collect>> = const { std::cell::RefCell::new(None) };
-}
+static COLLECT: std::sync::Mutex<Vec<Collect>> = std::sync::Mutex::new(Vec::new());
 
 fn defer(script: &str, vars: &[String]) -> bool {
-    COLLECT.with(|c| match c.borrow_mut().as_mut() {
+    let me = std::thread::current().id();
+    let mut all = COLLECT.lock().unwrap_or_else(|e| e.into_inner());
+    match all.iter_mut().rev().find(|c| c.thread == me) {
         Some(c) if c.inline == 0 => {
             c.queries.push((script.to_string(), vars.to_vec()));
             true
@@ -90,7 +91,7 @@ fn defer(script: &str, vars: &[String]) -> bool {
             false
         }
         None => false,
-    })
+    }
 }
 
 /// Runs `f`, in which cached solvers on this thread answer the first `inline` queries that miss
@@ -98,10 +99,12 @@ fn defer(script: &str, vars: &[String]) -> bool {
 /// none, `f` saw only real answers; else `solve_all` answers them into the cache and `f` can
 /// run again with them.
 pub fn collecting<R>(inline: usize, f: impl FnOnce() -> R) -> (R, Vec<(String, Vec<String>)>) {
-    let outer = COLLECT.with(|c| c.borrow_mut().replace(Collect { inline, queries: Vec::new() }));
+    let me = std::thread::current().id();
+    COLLECT.lock().unwrap_or_else(|e| e.into_inner()).push(Collect { thread: me, inline, queries: Vec::new() });
     let r = f();
-    let mine = COLLECT.with(|c| std::mem::replace(&mut *c.borrow_mut(), outer));
-    (r, mine.map(|c| c.queries).unwrap_or_default())
+    let mut all = COLLECT.lock().unwrap_or_else(|e| e.into_inner());
+    let at = all.iter().rposition(|c| c.thread == me).expect("collecting entry");
+    (r, all.remove(at).queries)
 }
 
 /// Answers `queries` into the cache with up to `jobs` solvers at once.
@@ -352,4 +355,28 @@ pub fn parse_model(text: &str) -> Vec<(String, String)> {
             _ => None,
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn put_off_questions_are_answered_into_the_cache() {
+        let dir = std::env::temp_dir().join(format!("sspur-smt-collect-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let cached = || Solver { cache: Some(dir.clone()), ..Solver::new() };
+        if !cached().available() {
+            return;
+        }
+        let qs = ["(declare-const x Int)\n(assert (> x 3))\n(assert (< x 2))\n", "(declare-const y Int)\n(assert (> y 3))\n"];
+        let (first, put_off) = collecting(1, || qs.map(|q| cached().check(q, &[])));
+        assert_eq!(first, [Answer::Unsat, Answer::Unknown], "the first miss is answered, the next is put off");
+        assert_eq!(put_off.len(), 1);
+        solve_all(&put_off, 4);
+        assert_eq!(qs.map(|q| cached().check(q, &[])), [Answer::Unsat, Answer::Sat(vec![])]);
+        let names: Vec<String> = std::fs::read_dir(&dir).unwrap().flatten().flat_map(|d| std::fs::read_dir(d.path()).unwrap().flatten()).map(|f| f.file_name().to_string_lossy().split_once('.').unwrap().1.to_string()).collect();
+        assert_eq!(names.len(), 2, "one empty file per answer: {names:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
