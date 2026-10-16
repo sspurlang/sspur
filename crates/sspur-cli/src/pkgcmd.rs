@@ -271,7 +271,19 @@ fn update(root: &Path, m: &Manifest, names: &[String], force: bool) -> ExitCode 
     let all: BTreeSet<&String> = old.all.keys().chain(env.all.keys()).collect();
     let mut lines = Vec::new();
     for n in all {
-        lines.extend(diff(n, old.all.get(n).map(|p| &**p), env.all.get(n).map(|p| &**p)));
+        let d = diff(n, old.all.get(n).map(|p| &**p), env.all.get(n).map(|p| &**p));
+        if d.is_empty()
+            && let (Some(a), Some(b)) = (lock.entries.get(n), lock2.entries.get(n))
+        {
+            // Same exports, but another version or commit: still an update.
+            let short_rev = |e: &pkg::LockEntry| e.rev.as_deref().map_or(String::new(), |r| format!(" @{}", r.get(..12).unwrap_or(r)));
+            if a.version != b.version {
+                lines.push(format!("~ {n} {} -> {} (no API change)", a.version, b.version));
+            } else if a.rev != b.rev {
+                lines.push(format!("~ {n} {}{} -> {} (no API change)", a.version, short_rev(a), short_rev(b).trim_start()));
+            }
+        }
+        lines.extend(d);
     }
     if lines.is_empty() {
         if lock2 != lock

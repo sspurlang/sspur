@@ -615,3 +615,49 @@ fn workflows_parse_and_reference_existing_steps() {
         }
     }
 }
+
+#[test]
+fn update_moves_to_newer_matching_versions() {
+    let r = Reg::new("update");
+    let idx = r.t.join("dir-index");
+    std::fs::create_dir_all(idx.join("packages/te")).unwrap();
+    let w = r.package("alice", "text", "1.0.0", "");
+    let one = "// Loud.\npub fn loud(s: Str) -> Str\n= s.upper\n\ntest t = loud(\"a\") == \"A\"\n";
+    let two = "// Loud.\npub fn loud(s: Str) -> Str\n= s.upper\n\n// Twice.\npub fn twice(s: Str) -> Str\n= s + s\n\ntest t = loud(\"a\") == \"A\"\n";
+    let mut versions = Vec::new();
+    let mut publish = |ver: &str, src: &str, readme: &str| {
+        r.write_pkg(&w, "text", ver, src, "");
+        std::fs::write(w.join("README.md"), format!("# text\n\nLoud text for the registry tests. Add it with `sspur add text`. {readme}\n")).unwrap();
+        r.release(&w, &format!("v{ver}"));
+        let facts: J = serde_json::from_str(&r.ok(&w, &["api", "--json"])).unwrap();
+        versions.push(serde_json::json!({"version": ver, "git": format!("file://{}/repos/alice/text.git", r.t.display()), "tag": format!("v{ver}"), "commit": git(&w, &["rev-parse", "HEAD"]), "hash": facts["hash"]}));
+        std::fs::write(idx.join("packages/te/text.json"), serde_json::json!({"schema": 1, "name": "text", "owners": ["alice"], "versions": versions}).to_string()).unwrap();
+        facts["hash"].as_str().unwrap().to_string()
+    };
+    let h0 = publish("1.0.0", one, "");
+    let dir_index = idx.display().to_string();
+    let env = [("SSPUR_INDEX", dir_index.as_str())];
+    let app = r.app("app", "fn main() -> Unit ! log\n= log(text.loud(\"ab\"))\n");
+    let (out, ok) = r.sspur(&app, &["add", "text@^1.0.0"], &env);
+    assert!(ok, "{out}");
+    let locked = |v: &str| std::fs::read_to_string(app.join("sspur.lock")).unwrap().contains(&format!("name = \"text\"\nversion = \"{v}\""));
+    assert!(locked("1.0.0"));
+
+    // A new patch with the same exports (only the README changed) is still an update.
+    assert_eq!(publish("1.0.1", one, "Now with a longer README."), h0);
+    let (out, ok) = r.sspur(&app, &["update"], &env);
+    assert!(ok && out.contains("text 1.0.0 -> 1.0.1 (no API change)") && out.contains("updated sspur.lock"), "{out}");
+    assert!(locked("1.0.1"));
+    let tree = r.sspur(&app, &["deps", "tree"], &env).0;
+    assert!(tree.contains("text 1.0.1 #"), "{tree}");
+    let (out, ok) = r.sspur(&app, &["update"], &env);
+    assert!(ok && out.contains("up to date: 1 dependencies"), "{out}");
+
+    // A new minor version, by name and through `deps update`, with the semantic diff.
+    publish("1.1.0", two, "");
+    let (out, ok) = r.sspur(&app, &["deps", "update", "text"], &env);
+    assert!(ok && out.contains("text 1.0.1 #") && out.contains("-> 1.1.0 #") && out.contains("+ text.twice") && out.contains("updated sspur.lock"), "{out}");
+    assert!(locked("1.1.0"));
+    let (out, ok) = r.sspur(&app, &["run", "main.ssp"], &env);
+    assert!(ok && out.trim() == "AB", "{out}");
+}
