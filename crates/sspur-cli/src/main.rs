@@ -222,7 +222,10 @@ fn real_main() -> ExitCode {
                 }
             }
         }
-        "debug" => debugger::run(args.pos.get(1), args.pos.get(2..).unwrap_or(&[]), args.val("--debugger").map(String::as_str)),
+        "debug" => {
+            export_self();
+            debugger::run(args.pos.get(1), args.pos.get(2..).unwrap_or(&[]), args.val("--debugger").map(String::as_str))
+        }
         "debug-init" => debugger::init(args.has("--install")),
         "fill" => fill::fill_cmd(&args),
         "suggest" => fill::suggest_cmd(&args),
@@ -389,7 +392,21 @@ fn edit(args: &Args) -> ExitCode {
     finish(args, &store, ops, "edit")
 }
 
+/// Sets `SSPUR` to this executable for the programs it runs, so one that runs `sspur` gets the same
+/// compiler rather than whichever is on `PATH`. An `SSPUR` that is already set wins.
+fn export_self() {
+    if std::env::var_os("SSPUR").is_none()
+        && let Some(exe) = runcache::exe()
+    {
+        // SAFETY: called before the program starts, while no other thread reads the environment.
+        unsafe { std::env::set_var("SSPUR", exe) };
+    }
+}
+
 fn program_cmd(cmd: &str, args: &Args) -> ExitCode {
+    if matches!(cmd, "run" | "test") {
+        export_self();
+    }
     if cmd == "run" {
         sspur_native::set_program_args(args.pos.iter().skip(2).cloned().collect());
         if runcache::applies(cmd, &args.flags, args.pos.get(1))

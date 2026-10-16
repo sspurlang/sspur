@@ -28,9 +28,16 @@ pub fn take_failure() -> Option<sspur_native::MainFailure> {
     FAILED.with(|f| f.borrow_mut().take())
 }
 
+static EXE: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+
+/// This executable's path, looked up once.
+pub fn exe() -> Option<&'static Path> {
+    EXE.get_or_init(|| std::env::current_exe().ok()).as_deref()
+}
+
 fn exe_id() -> Option<String> {
-    let exe = std::env::current_exe().ok()?;
-    let m = std::fs::metadata(&exe).ok()?;
+    let exe = exe()?;
+    let m = std::fs::metadata(exe).ok()?;
     let t = m.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?;
     Some(format!("{}\0{}\0{}\0{}", env!("CARGO_PKG_VERSION"), exe.display(), m.len(), t.as_nanos()))
 }

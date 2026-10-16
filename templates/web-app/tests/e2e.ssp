@@ -3,7 +3,7 @@
 //   sspur run tests/e2e.ssp           the server and this client natively
 //   sspur run --interp tests/e2e.ssp interp   both interpreted
 // The first word after the file is the server's tier (native or interp). Run from the app's
-// directory; SSPUR names the sspur binary if it isn't on PATH.
+// directory; `sspur run` sets SSPUR to its own binary for the servers it starts.
 use models.{Note, User}
 use pagination.{Page}
 

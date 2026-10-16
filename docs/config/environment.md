@@ -36,6 +36,7 @@ None of these are needed for normal use. They exist for CI, for pinning toolchai
 
 | Variable | Effect |
 |---|---|
+| `SSPUR` | Set by `sspur run`, `sspur test` and `sspur debug` to the path of the running `sspur` for the program and the processes it starts, unless it is already set, so a program can run the same compiler with `env_var("SSPUR").or("sspur")` instead of whichever is first on `PATH`. Set it yourself to choose another one |
 | `SSPUR_THREADS` | Threads for automatic data parallelism in pure pipelines (default: the number of cores). `1` makes them sequential |
 | `SSPUR_GPU=0` | Run GPU kernels on the CPU even when Metal is available |
 | `SSPUR_GPU_TRACE=1` | Print a line per GPU kernel launch |

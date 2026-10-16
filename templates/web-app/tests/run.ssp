@@ -2,7 +2,7 @@
 // module and handler tests, and the end-to-end tests.
 //   sspur run tests/run.ssp           both tiers
 //   sspur run tests/run.ssp native    one tier (native or interp)
-// Run from the app's directory; SSPUR names the sspur binary if it isn't on PATH.
+// Run from the app's directory; `sspur run` sets SSPUR to its own binary for the tools it runs.
 
 fn last_line(s: Str) -> Str
 = s.trim.split("\n").last.or("").trim

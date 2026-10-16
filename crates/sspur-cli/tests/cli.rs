@@ -453,3 +453,29 @@ fn native_json_decode_of_a_large_array_stays_linear() {
     assert!(t0.elapsed().as_secs() < 60);
     let _ = std::fs::remove_dir_all(&d);
 }
+
+#[test]
+fn programs_see_sspur_as_this_executable() {
+    let d = std::env::temp_dir().join(format!("sspur-cli-selfpath-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).unwrap();
+    std::fs::write(d.join("p.ssp"), "fn main() -> Unit ! env, log\n= log(env_var(\"SSPUR\").or(\"unset\"))\n").unwrap();
+    let exe = std::fs::canonicalize(env!("CARGO_BIN_EXE_sspur")).unwrap();
+    let run = |extra: &[&str], preset: Option<&str>| {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_sspur"));
+        c.arg("run").args(extra).arg("p.ssp").current_dir(&d).env("SSPUR_CACHE", d.join("cache")).env_remove("SSPUR_STRICT_NATIVE");
+        match preset {
+            Some(v) => c.env("SSPUR", v),
+            None => c.env_remove("SSPUR"),
+        };
+        let o = c.output().unwrap();
+        assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+        String::from_utf8_lossy(&o.stdout).trim_end().to_string()
+    };
+    for extra in [&["--interp"][..], &["--strict-native"], &[], &[]] {
+        let got = std::fs::canonicalize(run(extra, None)).unwrap();
+        assert_eq!(got, exe, "{extra:?}");
+        assert_eq!(run(extra, Some("/opt/other/sspur")), "/opt/other/sspur", "{extra:?}");
+    }
+    let _ = std::fs::remove_dir_all(&d);
+}
