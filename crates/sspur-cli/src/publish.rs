@@ -194,9 +194,17 @@ pub fn api(json_out: bool, rev: Option<&str>) -> ExitCode {
 
 /// The result of `sspur test` (native or interpreted) in `root`, as the checks read it.
 pub fn run_tests(root: &Path, src: &str, interp: bool) -> J {
+    run_tests_with(root, src, interp, None)
+}
+
+/// `run_tests`, with at most `jobs` C compiles at once unless `SSPUR_JOBS` says otherwise.
+fn run_tests_with(root: &Path, src: &str, interp: bool, jobs: Option<usize>) -> J {
     let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("sspur"));
     let mut c = Command::new(exe);
     c.arg("test").arg(src).current_dir(root).stdin(Stdio::null());
+    if let Some(j) = jobs.filter(|_| std::env::var_os("SSPUR_JOBS").is_none()) {
+        c.env("SSPUR_JOBS", j.to_string());
+    }
     if interp {
         c.arg("--interp");
     } else {
@@ -287,13 +295,16 @@ pub fn all_tests(root: &Path, m: &Manifest, at_head: bool) -> J {
     let jobs: Vec<(usize, bool)> = (0..units.len()).flat_map(|i| [(i, false), (i, true)]).collect();
     let next = std::sync::atomic::AtomicUsize::new(0);
     let results = std::sync::Mutex::new(vec![J::Null; jobs.len()]);
-    let workers = std::thread::available_parallelism().map_or(2, |n| n.get()).clamp(1, 8);
+    let cores = std::thread::available_parallelism().map_or(2, |n| n.get());
+    let workers = cores.clamp(1, 8);
+    // Each native run compiles with one clang per core; side by side they share the cores.
+    let clang_jobs = (cores / workers).max(1);
     std::thread::scope(|sc| {
         for _ in 0..workers {
             sc.spawn(|| loop {
                 let k = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 let Some(&(i, interp)) = jobs.get(k) else { break };
-                let r = run_tests(&units[i].1, &units[i].2, interp);
+                let r = run_tests_with(&units[i].1, &units[i].2, interp, Some(clang_jobs));
                 results.lock().unwrap()[k] = r;
             });
         }
