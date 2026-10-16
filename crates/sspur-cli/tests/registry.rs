@@ -824,7 +824,7 @@ fn the_merge_credits_the_author_even_without_author_email() {
         assert!(ok, "{out}");
         log.push_str(&out);
     }
-    assert!(log.contains("merged without --author-email") && log.contains("merged #"), "{log}");
+    assert!(log.contains("without --author-email; the Co-authored-by trailer credits alice") && log.contains("merged #"), "{log}");
     let (author, _, msg) = head_commit(&r);
     assert!(author.starts_with("github-actions[bot]"), "{author}");
     assert!(msg.contains(&format!("Co-authored-by: alice <{}>", noreply("alice"))), "{msg}");
