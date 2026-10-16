@@ -23,8 +23,9 @@ type Site = {line: Int, def: Str}
 type Hole = {name: Str, line: Int, def: Str}
 
 // A dependency of a manifest: `name` is its key, `package` the published package it names
-// (another name for `pkg = { package = "acme/pkg", version = "^1" }`).
-type Dep = {name: Str, kind: Str, req: Str, package: Opt[Str]}
+// (another name for `pkg = { package = "acme/pkg", version = "^1" }`), `public` whether it is a
+// module that dependents may use (`models = { path = "models", public = true }`).
+type Dep = {name: Str, kind: Str, req: Str, package: Opt[Str], public: Opt[Bool]}
 
 type Manifest = {name: Str, version: Str, src: Str, description: Str, license: Str, repository: Str, keywords: List[Str], keys: List[Str], deps: List[Dep], error: Opt[Str]}
 
@@ -276,8 +277,18 @@ fn api_kinds() -> List[Str]
 fn public_defs(f: Facts) -> List[FactDef]
 = f.defs.filter(d => d.public and api_kinds().contains(d.kind))
 
+fn api_item(prefix: Str, d: FactDef) -> ApiItem
+= ApiItem{name: prefix + d.name, kind: d.kind, sig: d.sig.or(d.name), sig_hash: d.sig_hash.or(""), hash: d.hash, effects: d.effects.or([]), doc: d.doc}
+
+// The modules dependents may use, by key.
+fn public_modules(f: Facts) -> List[Str]
+= f.manifest.map(m => m.deps.filter(d => d.kind == "path" and d.public.or(false)).map(_.name)).or([])
+
+// The API: the root's public definitions, and those of each public module as `module.name`.
 fn api_of(f: Facts) -> List[ApiItem]
-= public_defs(f).map(d => ApiItem{name: d.name, kind: d.kind, sig: d.sig.or(d.name), sig_hash: d.sig_hash.or(""), hash: d.hash, effects: d.effects.or([]), doc: d.doc})
+= do
+  mods = f.modules.or([]).filter(u => public_modules(f).contains(u.key))
+  public_defs(f).map(d => api_item("", d)) + mods.flat_map(u => u.defs.filter(d => d.public and api_kinds().contains(d.kind)).map(d => api_item(u.key + ".", d)))
 
 // ---------- checks ----------
 
@@ -1108,14 +1119,16 @@ fn pub_fn(name: Str, line: Int, doc: Str) -> FactDef
 = FactDef{kind: "fn", name, public: true, line, doc, hash: "h", sig: some("fn {name}() -> Int"), sig_hash: some("s"), effects: some([]), pres: none, posts: none, examples: none, params: none, type_kind: none, derives: none, has_fn_fields: none, generic: none}
 
 test modules_are_checked_too = do
-  root_m = Manifest{name: "big", version: "1.0.0", src: "lib.ssp", description: "d", license: "MIT", repository: "", keywords: [], keys: ["package.name"], deps: [Dep{name: "models", kind: "path", req: "models", package: some("models")}, Dep{name: "far", kind: "path", req: "../far", package: some("far")}], error: none}
+  root_m = Manifest{name: "big", version: "1.0.0", src: "lib.ssp", description: "d", license: "MIT", repository: "", keywords: [], keys: ["package.name"], deps: [Dep{name: "models", kind: "path", req: "models", package: some("models"), public: none}, Dep{name: "far", kind: "path", req: "../far", package: some("far"), public: none}], error: none}
   f = no_facts() with manifest := some(root_m), defs := [pub_fn("top", 3, "Top.")], modules := some([modfacts("models", "models/lib.ssp", [pub_fn("inner", 7, "")], [])]), module_errors := some([Diag{code: "E_MODULE", severity: "error", file: "sspur.toml", line: 0, col: 0, msg: "dependency far = \{ path = \"../far\" } is outside the package's directory", hint: none}])
   q = empty_request() with name := "big", version := "1.0.0"
   i = check_input(CheckRaw{facts: f, files: some([]), request: some(q), parsed: none, previous: none, names: none, summary: none, tests: none, env: "cli", owner: none, repo: none})
   docs = check_docs(i)[0]
   deps = check_manifest(i)[2]
   api = api_of(f).map(_.name)
-  docs.details.map(d => "{d.file}:{d.line}") == ["models/lib.ssp:7"] and deps.details.len == 2 and deps.details.any(d => d.msg.contains("outside")) and api == ["top"]
+  open_m = root_m with deps := [Dep{name: "models", kind: "path", req: "models", package: some("models"), public: some(true)}]
+  open_api = api_of(f with manifest := some(open_m)).map(_.name)
+  docs.details.map(d => "{d.file}:{d.line}") == ["models/lib.ssp:7"] and deps.details.len == 2 and deps.details.any(d => d.msg.contains("outside")) and api == ["top"] and open_api == ["top", "models.inner"]
 
 test vars_carry_the_author = do
   q = empty_request() with name := "acme/money", version := "1.0.0", kind := "publish", repository := "https://github.com/acme/money", ref := "v1.0.0", author := "bob", author_id := some(42)

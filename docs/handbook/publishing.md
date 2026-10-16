@@ -99,7 +99,9 @@ The package's API is what the root module exports. A module's `pub` definitions 
 {{#include ../snippets/handbook/publish/text/lib.ssp}}
 ```
 
-So the semver check compares the root's exports, and the site's API docs list them; each module is tested on its own:
+A module can also be part of the API itself: mark it `public = true` in the root's `sspur.toml`, `models = { path = "models", public = true }`, and dependents import its `pub` definitions with `use pkg.models.{Doc, parse}`. The names are imported, not qualified: `pkg.models.Doc` in an expression is not supported yet, so write the `use`. A module that isn't public stays private to the package (`E_PKG_UNKNOWN` says how to make it public), and older clients, which don't read `public`, build the package as before but can't import the module.
+
+So the semver check compares the root's exports and those of its public modules, named `models.Doc`, and the site's API docs list them; each module is tested on its own:
 
 ```console
 {{#include ../snippets/handbook/publish/big.out:big}}

@@ -299,7 +299,13 @@ impl Parser {
             && let Some((p, n)) = q.split_once('.') {
                 return Err(SyntaxError::new("E_PARSE_USE", format!("write 'use {p}' or 'use {p}.{{{n}}}'"), self.span()));
             }
-        let pkg = self.expect_ident()?;
+        let mut pkg = self.expect_ident()?;
+        // A public module of a package: `use pkg.models.{Doc}`.
+        while self.is_sym(".") && matches!(self.peek_at(1), Tok::Ident(_)) && matches!(self.peek_at(2), Tok::Sym(".")) {
+            self.bump();
+            pkg.push('.');
+            pkg.push_str(&self.expect_ident()?);
+        }
         let mut names = Vec::new();
         if self.eat_sym(".") {
             if self.eat_sym("{") {

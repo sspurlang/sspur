@@ -45,7 +45,7 @@ Yank or deprecate a version with `sspur yank NAME@VERSION` (`--undo`, `--depreca
 | `version.semver` | blocking | The version number matches the API change since the previous version | Users depend on `^1.2` meaning "compatible with 1.2" | Publish at the version the message names, or keep the old API |
 | `version.tag` | blocking | The ref is a tag | A version is pinned to a tag and its commit | `git tag v1.2.0 && git push origin v1.2.0` |
 
-The API is every `pub` definition. The checks compare each one by the hash of its signature: for a function its parameters, result, effects and `pre` clauses; for a type, effect or trait its whole definition. A removed or changed definition is a breaking change and needs a major version; a new one needs a minor version; a change to bodies only is a patch. In a `0.x` line the second number is the one that breaks (`0.3.0` after `0.2.5`) and the third may add or fix; in `0.0.x` every release breaks.
+The API is every `pub` definition of the root module, and of each public module (`models = { path = "models", public = true }`), named `models.Doc`. The checks compare each one by the hash of its signature: for a function its parameters, result, effects and `pre` clauses; for a type, effect or trait its whole definition. A removed or changed definition is a breaking change and needs a major version; a new one needs a minor version; a change to bodies only is a patch. In a `0.x` line the second number is the one that breaks (`0.3.0` after `0.2.5`) and the third may add or fix; in `0.0.x` every release breaks.
 
 ## Effects
 

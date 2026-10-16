@@ -42,3 +42,7 @@ ADR 0038 gave the registry flat names, first come, first served. Two companies c
 - Scopes that are not GitHub logins (domains, other hosts).
 - Reserving a scope before its first package, or transferring a scope.
 - Verifying private organization members, which would need a token from the organization.
+
+## Update: public modules
+
+A package's API was only its root module's exports, so a module's types reached dependents only through a re-export from the root. A path dependency inside the package can now be marked `public = true` in the root's `sspur.toml`; dependents import its `pub` definitions with `use pkg.models.{Doc}`, and the registry's API listing, its semver check and the site list them as `models.Doc`. Opt-in, so no published package's API or export hash changes: a package without public modules hashes as before, and one with them adds the list to its export hash. Qualified names in expressions (`pkg.models.Doc`) are left for later; the `use` form covers them.

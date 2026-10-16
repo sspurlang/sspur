@@ -92,6 +92,8 @@ pub struct Manifest {
     pub version: String,
     pub src: Option<String>,
     pub deps: BTreeMap<String, Source>,
+    /// The modules dependents may use: path dependencies with `public = true`.
+    pub public: BTreeSet<String>,
     pub text: String,
 }
 
@@ -178,7 +180,16 @@ impl Manifest {
                                     return Err(format!("dependency {k}: package = \"...\" goes with version = \"...\"; it names a published package"));
                                 }
                                 match (t.get("path").and_then(TVal::str), t.get("git").and_then(TVal::str), t.get("version").and_then(TVal::str)) {
-                                    (Some(p), None, None) => Source::Path(p.into()),
+                                    (Some(p), None, None) => {
+                                        match t.get("public").and_then(TVal::str) {
+                                            Some("true") => {
+                                                m.public.insert(k.clone());
+                                            }
+                                            None | Some("false") => {}
+                                            Some(x) => return Err(format!("dependency {k}: public is true or false, not {x}")),
+                                        }
+                                        Source::Path(p.into())
+                                    }
                                     (None, Some(g), None) => Source::Git { url: g.into(), rev: t.get("rev").or_else(|| t.get("tag")).and_then(TVal::str).map(String::from) },
                                     (None, None, Some(v)) => {
                                         sspur_registry::semver::Req::parse(v).map_err(|e| format!("dependency {k}: {e}"))?;
@@ -414,6 +425,9 @@ pub struct Pkg {
     pub piece: String,
     pub items: BTreeMap<String, PItem>,
     pub exports: BTreeMap<String, Export>,
+    /// The public modules: each key that dependents may `use pkg.key.{..}`, and the package it is.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub public: BTreeMap<String, String>,
 }
 
 pub fn pkg_dir(hash: &str) -> PathBuf {
@@ -518,6 +532,14 @@ impl Env {
         self.direct.iter().any(|x| x == d).then(|| self.all.get(self.target(d))).flatten()
     }
 
+    /// The package a `use` names: a direct dependency, or a public module of one (`pkg.models`).
+    pub fn use_pkg(&self, key: &str) -> Option<&Arc<Pkg>> {
+        match key.split_once('.') {
+            None => self.direct_pkg(key),
+            Some((d, m)) => self.direct_pkg(d)?.public.get(m).and_then(|f| self.all.get(f)),
+        }
+    }
+
     /// How each link prefix that is not a plain name is shown: by its key for a direct
     /// dependency, by its full name otherwise.
     pub fn shown(&self) -> BTreeMap<String, String> {
@@ -533,10 +555,15 @@ impl Env {
 
     pub fn scope(&self) -> Scope {
         let mut s = Scope::default();
+        let items = |p: &Pkg| p.items.iter().map(|(n, it)| (n.clone(), Item { kind: kind_of(&it.kind), mangled: it.mangled.clone(), public: it.public, arity: it.arity })).collect();
         for d in &self.direct {
             if let Some(p) = self.all.get(self.target(d)) {
-                let items = p.items.iter().map(|(n, it)| (n.clone(), Item { kind: kind_of(&it.kind), mangled: it.mangled.clone(), public: it.public, arity: it.arity })).collect();
-                s.pkgs.insert(d.clone(), items);
+                s.pkgs.insert(d.clone(), items(p));
+                for (m, full) in &p.public {
+                    if let Some(mp) = self.all.get(full) {
+                        s.pkgs.insert(format!("{d}.{m}"), items(mp));
+                    }
+                }
             }
         }
         let direct: BTreeSet<&str> = self.direct.iter().map(|d| self.target(d)).collect();
@@ -704,8 +731,12 @@ fn link_keeping(src: &str, env: &Env, keep: &HashSet<(u32, u32)>) -> Result<(Lin
     for d in &module.defs[..own] {
         let n = d.name();
         if let Def::Use(u) = d {
-            let Some(p) = env.direct_pkg(&u.pkg) else {
-                errs.push(perr("E_PKG_UNKNOWN", format!("no dependency '{}'; add it with 'sspur add <path|git-url>'", u.pkg), u.span));
+            let Some(p) = env.use_pkg(&u.pkg) else {
+                let msg = match u.pkg.split_once('.') {
+                    Some((dep, m)) if env.direct_pkg(dep).is_some() => format!("{dep} has no public module '{m}': a package makes a module public with {m} = {{ path = \"...\", public = true }} in its sspur.toml"),
+                    _ => format!("no dependency '{}'; add it with 'sspur add <path|git-url>'", u.pkg),
+                };
+                errs.push(perr("E_PKG_UNKNOWN", msg, u.span));
                 continue;
             };
             for x in &u.names {
@@ -927,9 +958,13 @@ fn build_uncached(full: &str, m: &Manifest, src: &str, deps: &BTreeMap<String, A
     }
     let mut entries: Vec<(String, String)> = exports.iter().map(|(n, e)| (n.clone(), e.hash.clone())).collect();
     entries.push(("#package".into(), full.to_string()));
+    // Which modules are public is part of what dependents can name; a package without any
+    // hashes as before.
+    let public: BTreeMap<String, String> = m.public.iter().map(|k| (k.clone(), env.target(k).to_string())).collect();
+    entries.extend(public.iter().map(|(k, f)| (format!("#public {k}"), f.clone())));
     let hash = root_hash(&entries);
     let direct = m.deps.keys().map(|d| env.target(d)).map(|d| (d.to_string(), deps.get(d).map(|p| p.hash.clone()).unwrap_or_default())).collect();
-    Ok(Pkg { name: full.to_string(), version: m.version.clone(), hash, profile: loaded.module.profile.clone(), deps: direct, piece, items, exports })
+    Ok(Pkg { name: full.to_string(), version: m.version.clone(), hash, profile: loaded.module.profile.clone(), deps: direct, piece, items, exports, public })
 }
 
 // ---------- the registry ----------

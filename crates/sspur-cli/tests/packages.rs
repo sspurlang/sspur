@@ -375,3 +375,19 @@ fn a_record_field_wins_over_an_imported_function_of_the_same_name() {
         assert_eq!(w.ok("app", tier), "6 abcabc xx [\"abcabc\"]", "{tier:?}");
     }
 }
+
+#[test]
+fn a_package_can_make_a_module_public() {
+    let w = Ws::new("pubmod");
+    w.write("lib/sspur.toml", "[package]\nname = \"coins\"\nversion = \"0.1.0\"\n\n[deps]\nmodels = { path = \"models\", public = true }\nhidden = { path = \"hidden\" }\n");
+    w.write("lib/lib.ssp", "use models.{Money}\n\npub fn twice(m: Money) -> Money\n= Money{cents: m.cents * 2 + hidden.secret()}\n");
+    w.pkg("lib/models", "models", &[], "pub type Money = {cents: Int}\n\npub fn of(c: Int) -> Money\n= Money{cents: c}\n");
+    w.pkg("lib/hidden", "hidden", &[], "pub fn secret() -> Int\n= 0\n");
+    w.pkg("app", "app", &[("coins", "{ path = \"../lib\" }")], "use coins.models.{Money, of}\n\nfn main() -> Unit ! log\n= log(\"{coins.twice(of(21)).cents} {Money{cents: 1}.cents}\")\n");
+    for tier in [&["run", "--interp", "lib.ssp"][..], &["run", "lib.ssp"]] {
+        assert_eq!(w.ok("app", tier), "42 1", "{tier:?}");
+    }
+    w.write("app/bad.ssp", "use coins.hidden.{secret}\n\nfn main() -> Unit ! log\n= log(\"{secret()}\")\n");
+    let out = w.err("app", &["check", "bad.ssp"]);
+    assert!(out.contains("coins has no public module 'hidden'"), "{out}");
+}

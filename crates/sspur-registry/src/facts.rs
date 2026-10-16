@@ -516,7 +516,8 @@ pub fn manifest(text: &str) -> J {
                         TVal::Table(t) => t.get("package").and_then(TVal::str).unwrap_or(k).to_string(),
                         _ => k.clone(),
                     };
-                    deps.push(json!({"name": k, "kind": kind, "req": req, "package": package}));
+                    let public = matches!(v, TVal::Table(t) if t.get("public").and_then(TVal::str) == Some("true"));
+                    deps.push(json!({"name": k, "kind": kind, "req": req, "package": package, "public": public}));
                 }
                 _ => {}
             }
