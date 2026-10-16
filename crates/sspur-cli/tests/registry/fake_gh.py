@@ -67,7 +67,8 @@ def listed(var, org, user):
 
 
 def git(*a, cwd=None):
-    r = subprocess.run(["git", *a], cwd=cwd, capture_output=True, text=True)
+    # No background gc or maintenance: it could still be writing into a clone being removed.
+    r = subprocess.run(["git", "-c", "gc.auto=0", "-c", "maintenance.auto=false", *a], cwd=cwd, capture_output=True, text=True)
     if r.returncode != 0:
         sys.stderr.write(r.stderr)
         sys.exit(1)
@@ -190,7 +191,8 @@ def main(argv):
             return 1
         subject = opt(argv, "--subject", f"{p['title']} (#{p['number']})")
         body = body_of(argv) if (opt(argv, "--body-file") or opt(argv, "--body")) else ""
-        with tempfile.TemporaryDirectory() as t:
+        t = tempfile.mkdtemp()
+        try:
             git("clone", "-q", bare, t)
             git("checkout", "-q", "main", cwd=t)
             git("merge", "-q", "--squash", f"origin/{p['head']}", cwd=t)
@@ -198,6 +200,8 @@ def main(argv):
             git("-c", "user.name=github-actions[bot]", "-c", "user.email=41898282+github-actions[bot]@users.noreply.github.com", "commit", "-q", *who, "-m", subject + ("\n\n" + body.strip() if body.strip() else ""), cwd=t)
             git("push", "-q", "origin", "main", cwd=t)
             git("push", "-q", "origin", "--delete", p["head"], cwd=t)
+        finally:
+            shutil.rmtree(t, ignore_errors=True)
         p["state"] = "merged"
         p["merge"] = {"author_email": email, "subject": subject, "body": body}
         save(s)
