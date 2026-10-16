@@ -1,8 +1,8 @@
 # ANCHOR: binary
 # a prebuilt tarball from https://github.com/utkarshavardhana/sspur/releases
 shasum -a 256 -c SHA256SUMS --ignore-missing
-tar -xzf sspur-v0.11.0-aarch64-apple-darwin.tar.gz
-sudo install sspur-v0.11.0-aarch64-apple-darwin/sspur /usr/local/bin/
+tar -xzf sspur-v0.12.0-aarch64-apple-darwin.tar.gz
+sudo install sspur-v0.12.0-aarch64-apple-darwin/sspur /usr/local/bin/
 # ANCHOR_END: binary
 # ANCHOR: source
 # from source: Rust 1.88 or newer, and clang

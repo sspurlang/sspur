@@ -4,6 +4,8 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-16
+
 ### Added
 - A public package registry (ADR 0038), [sspur-packages](https://github.com/utkarshavardhana/sspur-packages), that runs entirely on GitHub at no cost: one JSON file per package, each version pinned to its tag, commit, the content hash of its exports and the SHA-256 of a deterministic source snapshot stored as a release asset, so a version survives its author deleting or rewriting the repository and a moved tag changes nothing for users. The template of the index repository, with its workflows, forms, schemas, standards and SSPUR programs, is in `registry/packages-template/`.
 - `sspur add money` and `sspur add money@^1.2` add published packages (`money = { version = "^1.2" }`), with Cargo's requirement syntax and the one-version rule across the graph. `sspur update` moves them to the newest matching versions with the semantic diff. Installs download the snapshot, verify its SHA-256 and the export hash, fall back to the author's repository at the pinned commit only when the snapshot is missing, refuse a tampered snapshot, and never run package code. Builds stay offline and reproducible from `sspur.lock`, which records `git`, `snapshot` and `sha256` for registry packages.
@@ -378,7 +380,8 @@ This release covers Phases 3 to 7 of the roadmap and ADRs 0003 to 0024. SSPUR no
 - Language design spec, JSON schemas and the token benchmark.
 - Compiler core: parser, checker, content hashing, interpreter and the `sspur` CLI, with an 11-program suite.
 
-[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/utkarshavardhana/sspur/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/utkarshavardhana/sspur/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/utkarshavardhana/sspur/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/utkarshavardhana/sspur/compare/v0.8.2...v0.9.0

@@ -9,7 +9,7 @@ Install `sspur` first ([Installation](installation.md)) and check that `sspur --
 The extension in [`packaging/vscode/`](https://github.com/utkarshavardhana/sspur/tree/main/packaging/vscode) adds highlighting, the language server, and the commands *SSPUR: Run File*, *SSPUR: Test File* and *SSPUR: Fill Holes*. Each [release](https://github.com/utkarshavardhana/sspur/releases/latest) has it as `sspur-vX.Y.Z.vsix`, with its checksum in `SHA256SUMS`. Download it and install it, with no account or marketplace:
 
 ```sh
-code --install-extension sspur-v0.11.0.vsix
+code --install-extension sspur-v0.12.0.vsix
 ```
 
 or use *Extensions: Install from VSIX...* in the command palette. To update, install the file from a newer release. It needs `sspur` 0.7 or later.
@@ -18,7 +18,7 @@ or use *Extensions: Install from VSIX...* in the command palette. To update, ins
 
 ## Cursor, Windsurf, VSCodium and other VS Code forks
 
-The same `.vsix` works: run the fork's command line with `--install-extension` (`cursor --install-extension sspur-v0.11.0.vsix`, `codium --install-extension ...`), or use *Extensions: Install from VSIX...* in the command palette.
+The same `.vsix` works: run the fork's command line with `--install-extension` (`cursor --install-extension sspur-v0.12.0.vsix`, `codium --install-extension ...`), or use *Extensions: Install from VSIX...* in the command palette.
 
 ## Neovim
 
