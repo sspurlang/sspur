@@ -14,7 +14,7 @@
         <div class="field"><label for="user">GitHub username</label><input id="user" name="user" autocomplete="username" autocapitalize="none" spellcheck="false" required pattern="[A-Za-z0-9](?:[A-Za-z0-9\-]{0,38})" inputmode="text" enterkeyhint="go"></div>
         <button class="btn primary" type="submit">List repositories</button>
       </form>
-      <p class="note">The package must be a public GitHub repository: the registry, its checks and everyone who installs it read the code from there.</p>
+      <p class="note">The package must be a public GitHub repository: the registry, its checks and everyone who installs it read the code from there. A scoped name (<code>acme/money</code>) belongs to the repository's owner: publish it as that user, or as a public member of that organization.</p>
       <p class="status" id="user-status" role="status" aria-live="polite"></p>
       <details id="manual">
         <summary>Or enter a repository and ref yourself</summary>
@@ -27,6 +27,7 @@
     </li>
     <li class="card step" id="step-repo" hidden>
       <h2><span class="n">2</span> Repository</h2>
+      <p class="orgs" id="orgs"></p>
       <div class="field"><label for="repo-filter">Filter</label><input id="repo-filter" type="search" placeholder="Name" spellcheck="false" autocapitalize="none"></div>
       <ul class="repos" id="repos" aria-label="Your public repositories"></ul>
     </li>

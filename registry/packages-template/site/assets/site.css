@@ -154,3 +154,5 @@ details summary{cursor:pointer;min-height:44px;display:flex;align-items:center;f
 .publish-grid .side{margin-top:16px}
 @media (min-width:960px){.publish-grid .side{margin-top:0}}
 @media (max-width:959px){.hero-split .glance{display:none}}
+.scope{color:var(--ink3);font-weight:inherit}
+.orgs{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 10px}.orgs:empty{display:none}.orgs .chip{font:inherit;font-weight:600;font-size:.9rem;min-height:36px;padding:0 12px;border:1px solid var(--line);background:var(--card);cursor:pointer}.orgs .chip.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}

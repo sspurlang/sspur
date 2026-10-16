@@ -44,6 +44,38 @@ fn version_of(s: Str) -> V
 fn day(iso: Str) -> Str
 = iso.take(10)
 
+// The scope of `acme/money` (ADR 0039), none for a flat name.
+fn scope_of(n: Str) -> Opt[Str]
+= match n.split("/")
+  | [a, _] => some(a)
+  | _ => none
+
+// The name after the scope: the dependency key `sspur add` writes.
+fn short_name(n: Str) -> Str
+= n.split("/").last.or(n)
+
+// Where a package's file lives in the index: packages/mo/money.json, packages/@acme/money.json.
+fn package_path(n: Str) -> Str
+= match n.split("/")
+  | [a, b] => "packages/@{a}/{b}.json"
+  | _ => "packages/{n.take(2)}/{n}.json"
+
+// The release a version's snapshot is attached to: `/` can't be in it, so it becomes `--`.
+fn release_name(n: Str) -> Str
+= n.replace("/", "--")
+
+// How deep a package's page is: packages/money/ or packages/acme/money/.
+fn page_depth(n: Str) -> Int
+= if scope_of(n).is_some() then 3 else 2
+
+// A package's name in HTML, the scope muted.
+fn name_html(n: Str) -> Str
+= match scope_of(n)
+  | some(sc) => "<span class='scope'>{esc(sc)}/</span>{esc(short_name(n))}"
+  | none => esc(n)
+
+test scoped_names = scope_of("acme/money") == some("acme") and scope_of("money").is_none() and short_name("acme/money") == "money" and package_path("acme/money") == "packages/@acme/money.json" and package_path("money") == "packages/mo/money.json" and release_name("acme/money") == "acme--money" and page_depth("acme/money") == 3 and name_html("acme/money") == "<span class='scope'>acme/</span>money"
+
 fn slug(repo: Str) -> Str
 = do
   r = repo.replace("https://github.com/", "").replace("http://github.com/", "")
@@ -210,7 +242,7 @@ fn card_html(c: Card) -> Str
 = do
   note = if c.yanked then " <span class='pill bad'>yanked</span>" else if c.deprecated.is_some() then " <span class='pill warn'>deprecated</span>" else ""
   kw = c.keywords.map(k => esc(k)).join(" ")
-  "<li class='pkg card' data-name='{esc(c.name)}' data-text='{esc(c.name + " " + c.description + " " + kw).lower}'><a class='pkg-link' href='packages/{esc(c.name)}/'><span class='pkg-name'>{esc(c.name)}</span> <span class='pill'>{esc(c.latest)}</span>{note}</a><p class='pkg-desc'>{esc(c.description)}</p><p class='pkg-meta'>{pills(c.effects)} <span class='muted small'>updated {esc(day(c.updated))}</span></p></li>"
+  "<li class='pkg card' data-name='{esc(c.name)}' data-text='{esc(c.name + " " + c.description + " " + kw).lower}'><a class='pkg-link' href='packages/{esc(c.name)}/'><span class='pkg-name'>{name_html(c.name)}</span> <span class='pill'>{esc(c.latest)}</span>{note}</a><p class='pkg-desc'>{esc(c.description)}</p><p class='pkg-meta'>{pills(c.effects)} <span class='muted small'>updated {esc(day(c.updated))}</span></p></li>"
 
 fn index_page(cards: List[Card]) -> Str
 = do
@@ -239,28 +271,39 @@ fn version_row(p: Package, e: Entry) -> Str
     | none => "<span class='muted'>none</span>"
   "<tr><th scope='row'>{esc(e.version)} {flag}</th><td>{esc(day(e.published))}</td><td><a href='{esc(commit_url(p, e))}'><code>{esc(e.commit.take(10))}</code></a></td><td>{snap}</td><td>{pills(e.effects)}</td></tr>"
 
-fn dep_links(m: Map[Str, Str]) -> Str
-= if m.items.is_empty() then "<p class='muted'>None.</p>" else "<ul class='links'>" + m.items.map(kv => "<li><a href='../{esc(kv.0)}/'>{esc(kv.0)}</a> <code>{esc(kv.1)}</code></li>").join("") + "</ul>"
+fn dep_links(m: Map[Str, Str], r: Str) -> Str
+= if m.items.is_empty() then "<p class='muted'>None.</p>" else "<ul class='links'>" + m.items.map(kv => "<li><a href='{r}packages/{esc(kv.0)}/'>{name_html(kv.0)}</a> <code>{esc(kv.1)}</code></li>").join("") + "</ul>"
 
 fn package_page(p: Package, e: Entry, readme: Str, dependents: List[Str]) -> Str
 = do
   s = slug(p.repository)
   base = "https://github.com/{s}/blob/{e.commit}/"
   req = "^{e.version}"
+  depth = page_depth(p.name)
+  r = up(depth)
+  toml_line = match scope_of(p.name)
+    | some(_) => "{esc(short_name(p.name))} = \{ package = \"{esc(p.name)}\", version = \"{esc(req)}\" }"
+    | none => "{esc(p.name)} = \{ version = \"{esc(req)}\" }"
+  key_note = match scope_of(p.name)
+    | some(_) => "<p class='muted small'>Your code calls it <code>{esc(short_name(p.name))}</code>. If that key is taken, pick another: <code>sspur add {esc(p.name)} --as NAME</code>.</p>"
+    | none => ""
   notice = if p.versions.all(_.yanked) then "<p class='notice bad'>Every version of {esc(p.name)} is yanked: no new lock will choose it.</p>" else match e.deprecated
     | some(d) => "<p class='notice warn'>Deprecated: {esc(d)}</p>"
     | none => ""
-  install = "<div class='card install'><h2>Install</h2><div class='copy'><pre><code id='cmd'>sspur add {esc(p.name)}@{esc(req)}</code></pre><button type='button' class='btn copy-btn' data-copy='cmd'>{icon("copy")}<span>Copy</span></button></div><p class='muted small'>or in <code>sspur.toml</code>:</p><div class='copy'><pre><code id='toml'>{esc(p.name)} = \{ version = \"{esc(req)}\" }</code></pre><button type='button' class='btn copy-btn' data-copy='toml'>{icon("copy")}<span>Copy</span></button></div></div>"
+  install = "<div class='card install'><h2>Install</h2><div class='copy'><pre><code id='cmd'>sspur add {esc(p.name)}@{esc(req)}</code></pre><button type='button' class='btn copy-btn' data-copy='cmd'>{icon("copy")}<span>Copy</span></button></div><p class='muted small'>or in <code>sspur.toml</code>:</p><div class='copy'><pre><code id='toml'>{toml_line}</code></pre><button type='button' class='btn copy-btn' data-copy='toml'>{icon("copy")}<span>Copy</span></button></div>{key_note}</div>"
   rd = if readme == "" then "<p class='muted'>No README in this version.</p>" else markdown(readme, base)
   versions = "<table class='versions'><thead><tr><th scope='col'>Version</th><th scope='col'>Published</th><th scope='col'>Commit</th><th scope='col'>Source</th><th scope='col'>Effects</th></tr></thead><tbody>" + p.versions.sort_by(x => version_of(x.version)).reverse.map(x => version_row(p, x)).join("") + "</tbody></table>"
-  deps_html = dep_links(e.deps)
-  rev = if dependents.is_empty() then "<p class='muted'>None yet.</p>" else "<ul class='links'>" + dependents.map(d => "<li><a href='../{esc(d)}/'>{esc(d)}</a></li>").join("") + "</ul>"
+  deps_html = dep_links(e.deps, r)
+  rev = if dependents.is_empty() then "<p class='muted'>None yet.</p>" else "<ul class='links'>" + dependents.map(d => "<li><a href='{r}packages/{esc(d)}/'>{name_html(d)}</a></li>").join("") + "</ul>"
   snap = match e.snapshot
-    | some(x) => "<dt>Snapshot</dt><dd><a href='{esc(x.url)}'>{esc(p.name)}-{esc(e.version)}.tar</a><br><code class='hash'>sha256 {esc(x.sha256)}</code></dd>"
+    | some(x) => "<dt>Snapshot</dt><dd><a href='{esc(x.url)}'>{esc(release_name(p.name))}-{esc(e.version)}.tar</a><br><code class='hash'>sha256 {esc(x.sha256)}</code></dd>"
     | none => ""
-  facts = "<dl class='facts'><dt>Version</dt><dd>{esc(e.version)}</dd><dt>Licence</dt><dd>{esc(e.license)}</dd><dt>Repository</dt><dd><a href='https://github.com/{esc(s)}'>{esc(s)}</a></dd><dt>Commit</dt><dd><a href='{esc(commit_url(p, e))}'><code>{esc(e.commit.take(12))}</code></a> (tag <code>{esc(e.tag)}</code>)</dd>{snap}<dt>Content hash</dt><dd><code class='hash'>#{esc(e.hash.take(20))}</code></dd><dt>Effects</dt><dd>{if e.effects.is_empty() then "none" else pills(e.effects)}</dd><dt>Owners</dt><dd>{p.owners.map(o => "<a href='https://github.com/" + esc(o) + "'>" + esc(o) + "</a>").join(", ")}</dd><dt>Published</dt><dd>{esc(day(e.published))} by {esc(e.publisher)}</dd></dl>"
-  body = "<section class='hero wrap'><p class='kicker'>{logo()} Package</p><h1>{esc(p.name)}</h1><p class='lede'>{esc(p.description)}</p><p class='badges'><span class='pill'>{esc(e.version)}</span> <span class='pill'>{esc(e.license)}</span> {pills(e.effects)}</p>{notice}</section><div class='wrap pkg-grid'><div class='pkg-main'>{install}<section class='card readme' aria-labelledby='readme'><h2 id='readme'>README</h2>{rd}</section><section class='card' aria-labelledby='api'><h2 id='api'>API</h2>{api_html(e, base)}</section><section class='card' aria-labelledby='versions'><h2 id='versions'>Versions</h2><div class='table-scroll'>{versions}</div></section></div><aside class='pkg-side'><section class='card'><h2>About</h2>{facts}</section><section class='card'><h2>Dependencies</h2>{deps_html}</section><section class='card'><h2>Dependents</h2>{rev}</section></aside></div>"
-  shell("{p.name} {e.version}: SSPUR packages", p.description, 2, "", body)
+  scope_row = match scope_of(p.name)
+    | some(sc) => "<dt>Scope</dt><dd><a href='https://github.com/{esc(sc)}'>{esc(sc)}</a>, checked to be the GitHub owner of the repository</dd>"
+    | none => ""
+  facts = "<dl class='facts'>{scope_row}<dt>Version</dt><dd>{esc(e.version)}</dd><dt>Licence</dt><dd>{esc(e.license)}</dd><dt>Repository</dt><dd><a href='https://github.com/{esc(s)}'>{esc(s)}</a></dd><dt>Commit</dt><dd><a href='{esc(commit_url(p, e))}'><code>{esc(e.commit.take(12))}</code></a> (tag <code>{esc(e.tag)}</code>)</dd>{snap}<dt>Content hash</dt><dd><code class='hash'>#{esc(e.hash.take(20))}</code></dd><dt>Effects</dt><dd>{if e.effects.is_empty() then "none" else pills(e.effects)}</dd><dt>Owners</dt><dd>{p.owners.map(o => "<a href='https://github.com/" + esc(o) + "'>" + esc(o) + "</a>").join(", ")}</dd><dt>Published</dt><dd>{esc(day(e.published))} by {esc(e.publisher)}</dd></dl>"
+  body = "<section class='hero wrap'><p class='kicker'>{logo()} Package</p><h1>{name_html(p.name)}</h1><p class='lede'>{esc(p.description)}</p><p class='badges'><span class='pill'>{esc(e.version)}</span> <span class='pill'>{esc(e.license)}</span> {pills(e.effects)}</p>{notice}</section><div class='wrap pkg-grid'><div class='pkg-main'>{install}<section class='card readme' aria-labelledby='readme'><h2 id='readme'>README</h2>{rd}</section><section class='card' aria-labelledby='api'><h2 id='api'>API</h2>{api_html(e, base)}</section><section class='card' aria-labelledby='versions'><h2 id='versions'>Versions</h2><div class='table-scroll'>{versions}</div></section></div><aside class='pkg-side'><section class='card'><h2>About</h2>{facts}</section><section class='card'><h2>Dependencies</h2>{deps_html}</section><section class='card'><h2>Dependents</h2>{rev}</section></aside></div>"
+  shell("{p.name} {e.version}: SSPUR packages", p.description, depth, "", body)
 
 // ---------- files ----------
 
@@ -315,7 +358,7 @@ fn build(cx: Ctx) -> Int ! fs, log
     some(e) = latest(p) else ()
     readme = read_or("{cx.sources}/{p.name}/README.md", "")
     put("{cx.out}/packages/{p.name}/index.html", package_page(p, e, readme, dependents_of(all, p.name)))
-    put("{cx.out}/packages/{p.name.take(2)}/{p.name}.json", read_or("{cx.index}/packages/{p.name.take(2)}/{p.name}.json", ""))
+    put("{cx.out}/{package_path(p.name)}", read_or("{cx.index}/{package_path(p.name)}", ""))
   publish = read_or(cx.web + "/publish.html", "<p>The Publish page is missing.</p>")
   put(cx.out + "/publish/index.html", shell("Publish a package: SSPUR packages", "Check a package in your browser and open its publish request on GitHub.", 1, "publish", publish))
   put(cx.out + "/404.html", shell("Not found: SSPUR packages", "This page does not exist.", 0, "", "<section class='hero wrap'><p class='kicker'>404</p><h1>No such page</h1><p class='lede'>It may be a package that was never published. <a href='/sspur-packages/'>Search the packages</a>.</p></section>"))

@@ -1,16 +1,19 @@
-// The Publish page: lists a user's public repositories and their tags with the GitHub REST
-// API (no token: 60 requests an hour per address), reads the chosen version's files from
+// The Publish page: lists a user's public repositories (and those of their public
+// organizations) and their tags with the GitHub REST API (no token: 60 requests an hour per
+// address), lists the chosen version's files with one git trees request, reads them from
 // raw.githubusercontent.com, runs the registry checks in a worker (the SSPUR checker compiled
 // to WebAssembly, loaded only here), and links to the prefilled request form on github.com.
+// A package may have modules (path dependencies inside the repository); every one is checked.
 
 const API = "https://api.github.com";
 const RAW = "https://raw.githubusercontent.com";
 const host = document.getElementById("publish");
 const INDEX_REPO = host.dataset.indexRepo;
 const MAX_FILE = 1 << 20;
-const MAX_FETCH = 300;
+const MAX_FETCH = 2000;
+const POOL = 12;
 const $ = (id) => document.getElementById(id);
-const state = { user: "", owner: "", repo: "", ref: "", tag: false, sha: "", files: null, partial: false, report: null, acked: new Set(), manifest: "" };
+const state = { user: "", owner: "", ownerType: "", repo: "", ref: "", tag: false, sha: "", files: null, partial: false, report: null, acked: new Set(), manifest: "", ownerInfo: null, ownerKey: "" };
 
 class RateLimited extends Error {
   constructor(reset) {
@@ -76,6 +79,7 @@ $("user-form").addEventListener("submit", async (e) => {
     if (!repos.length) return setStatus(st, `${user} has no public repositories.`, true);
     setStatus(st, `${repos.length} public ${repos.length === 1 ? "repository" : "repositories"}. Pick the package.`);
     renderRepos(repos);
+    renderOrgs(user);
   } catch (err) {
     if (err instanceof RateLimited) {
       setStatus(st, rateText(err), true);
@@ -84,6 +88,48 @@ $("user-form").addEventListener("submit", async (e) => {
     else setStatus(st, "Could not reach GitHub: " + err.message, true);
   }
 });
+
+// The user's public organizations, so a package under an organization's scope can be picked
+// too. One request; nothing is shown if it fails.
+async function renderOrgs(user) {
+  const box = $("orgs");
+  box.textContent = "";
+  let orgs = [];
+  try {
+    orgs = await gh(`/users/${encodeURIComponent(user)}/orgs?per_page=100`);
+  } catch (e) {
+    return;
+  }
+  if (!orgs.length) return;
+  box.append(el("span", "muted small", "Repositories of: "));
+  const mine = el("button", "chip on", user);
+  mine.type = "button";
+  const buttons = [mine];
+  mine.addEventListener("click", () => listOwner(user, false, mine, buttons));
+  box.append(mine);
+  for (const o of orgs) {
+    const b = el("button", "chip", o.login);
+    b.type = "button";
+    b.addEventListener("click", () => listOwner(o.login, true, b, buttons));
+    buttons.push(b);
+    box.append(" ", b);
+  }
+}
+
+async function listOwner(owner, org, button, buttons) {
+  for (const b of buttons) b.classList.toggle("on", b === button);
+  const st = $("user-status");
+  setStatus(st, `Reading the public repositories of ${owner} ...`, false, true);
+  try {
+    const path = org ? `/orgs/${encodeURIComponent(owner)}/repos?type=public&sort=updated` : `/users/${encodeURIComponent(owner)}/repos?sort=updated&type=owner`;
+    const repos = (await pages(path)).filter((r) => !r.private);
+    setStatus(st, repos.length ? `${repos.length} public ${repos.length === 1 ? "repository" : "repositories"} of ${owner}.${org ? ` A package there is published as ${owner.toLowerCase()}/NAME, by a public member of ${owner}.` : ""}` : `${owner} has no public repositories.`, !repos.length);
+    renderRepos(repos);
+  } catch (err) {
+    setStatus(st, err instanceof RateLimited ? rateText(err) : "Could not reach GitHub: " + err.message, true);
+    if (err instanceof RateLimited) $("manual").open = true;
+  }
+}
 
 function renderRepos(repos) {
   const ul = $("repos");
@@ -103,7 +149,7 @@ function renderRepos(repos) {
     b.append(n, d);
     b.addEventListener("click", () => {
       for (const x of ul.querySelectorAll("button")) x.setAttribute("aria-pressed", String(x === b));
-      pickRepo(r.owner.login, r.name);
+      pickRepo(r.owner.login, r.name, r.owner.type || "");
     });
     li.append(b);
     ul.append(li);
@@ -120,8 +166,9 @@ $("repo-filter").addEventListener("input", (e) => {
 
 // ---------- 3: the ref ----------
 
-async function pickRepo(owner, repo) {
+async function pickRepo(owner, repo, ownerType) {
   state.owner = owner;
+  state.ownerType = ownerType;
   state.repo = repo;
   const st = $("ref-status");
   const sel = $("ref");
@@ -166,6 +213,7 @@ $("manual-form").addEventListener("submit", (e) => {
   const m = $("manual-repo").value.trim().match(/^(?:https?:\/\/)?github\.com\/([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?\/?$/);
   if (!m) return setStatus($("user-status"), "Enter the repository as https://github.com/OWNER/REPO.", true);
   state.owner = m[1];
+  state.ownerType = "";
   state.repo = m[2];
   state.ref = $("manual-ref").value.trim();
   state.tag = true;
@@ -215,17 +263,27 @@ async function readFiles(manual) {
       const t = await gh(`/repos/${state.owner}/${state.repo}/git/trees/${c.sha}?recursive=1`);
       const entries = t.tree.filter((x) => x.type === "blob" || x.type === "commit");
       const files = [];
-      let fetched = 0;
+      const todo = [];
+      for (const x of entries) {
+        if (x.type === "commit") files.push({ path: x.path, size: 0, binary: false, head: "", mode: "160000", text: null });
+        else if (x.mode === "120000" || x.size > MAX_FILE || todo.length >= MAX_FETCH) files.push({ path: x.path, size: x.size || 0, binary: false, head: "", mode: x.mode, text: null });
+        else todo.push(x);
+      }
+      // A few downloads at a time: raw.githubusercontent.com has no hourly limit, but a large
+      // package has hundreds of files.
+      let next = 0;
+      const done = () => setStatus($("summary"), `Reading the files of ${state.ref}: ${files.length} of ${entries.length} ...`, false, true);
       await Promise.all(
-        entries.map(async (x) => {
-          if (x.type === "commit") return files.push({ path: x.path, size: 0, binary: false, head: "", mode: "160000", text: null });
-          if (x.mode === "120000" || x.size > MAX_FILE || fetched >= MAX_FETCH) return files.push({ path: x.path, size: x.size || 0, binary: false, head: "", mode: x.mode, text: null });
-          fetched++;
-          const b = await rawFile(x.path);
-          if (b) files.push(info(x.path, b, x.mode));
+        Array.from({ length: Math.min(POOL, todo.length) }, async () => {
+          while (next < todo.length) {
+            const x = todo[next++];
+            const b = await rawFile(x.path);
+            if (b) files.push(info(x.path, b, x.mode));
+            if (entries.length > 50 && files.length % 25 === 0) done();
+          }
         }),
       );
-      state.partial = t.truncated || fetched >= MAX_FETCH;
+      state.partial = t.truncated || entries.length - files.length > 0 && todo.length >= MAX_FETCH;
       return files;
     } catch (err) {
       if (!(err instanceof RateLimited)) throw err;
@@ -240,13 +298,48 @@ async function readFiles(manual) {
     const b = await rawFile(n);
     if (b) files.push(info(n, b, "100644"));
   }
-  const toml = files.find((f) => f.path === "sspur.toml");
-  const src = toml && toml.text && (toml.text.match(/^\s*src\s*=\s*"([^"]+)"/m) || [])[1];
-  if (src && !files.some((f) => f.path === src)) {
-    const b = await rawFile(src);
-    if (b) files.push(info(src, b, "100644"));
+  // The modules: path dependencies of every sspur.toml found, followed until none is new.
+  const seen = new Set([""]);
+  const dirs = [""];
+  for (let i = 0; i < dirs.length && dirs.length < 500; i++) {
+    const dir = dirs[i];
+    const at = (f) => (dir ? `${dir}/${f}` : f);
+    let toml = files.find((f) => f.path === at("sspur.toml"));
+    if (!toml && dir) {
+      const b = await rawFile(at("sspur.toml"));
+      if (!b) continue;
+      toml = info(at("sspur.toml"), b, "100644");
+      files.push(toml);
+    }
+    const text = (toml && toml.text) || "";
+    const src = (text.match(/^\s*src\s*=\s*"([^"]+)"/m) || [])[1];
+    for (const f of src ? [joinPath(dir, src)] : [at("lib.ssp"), at("main.ssp")]) {
+      if (!f || files.some((x) => x.path === f)) continue;
+      const b = await rawFile(f);
+      if (b) files.push(info(f, b, "100644"));
+    }
+    for (const m of text.matchAll(/^\s*[A-Za-z0-9_]+\s*=\s*\{[^}]*\bpath\s*=\s*"([^"]+)"/gm)) {
+      const d = joinPath(dir, m[1]);
+      if (d && !seen.has(d)) {
+        seen.add(d);
+        dirs.push(d);
+      }
+    }
   }
   return files;
+}
+
+// `dir` joined with the relative `p`; null if it leaves the repository.
+function joinPath(dir, p) {
+  const parts = dir ? dir.split("/") : [];
+  for (const x of p.split(/[\\/]/)) {
+    if (x === "" || x === ".") continue;
+    if (x === "..") {
+      if (!parts.length) return null;
+      parts.pop();
+    } else parts.push(x);
+  }
+  return parts.join("/") || null;
 }
 
 let worker = null;
@@ -286,8 +379,34 @@ async function indexData(name) {
       return null;
     }
   };
-  const [summary, previous] = await Promise.all([get("../index.json"), /^[a-z][a-z0-9_]{1,39}$/.test(name) ? get(`../packages/${name.slice(0, 2)}/${name}.json`) : null]);
+  const scoped = name.match(/^([a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?)\/([a-z][a-z0-9_]{1,39})$/);
+  const file = scoped ? `../packages/@${scoped[1]}/${scoped[2]}.json` : /^[a-z][a-z0-9_]{1,39}$/.test(name) ? `../packages/${name.slice(0, 2)}/${name}.json` : null;
+  const [summary, previous] = await Promise.all([get("../index.json"), file ? get(file) : null]);
   return { summary, previous };
+}
+
+// For a scoped name: whether the repository's owner is a user or an organization and, for an
+// organization, whether the requester is a public member. Private memberships need a token,
+// so the page can't see them; the check says so. Asked once per owner and user.
+async function ownerInfo(name) {
+  if (!name.includes("/") || !state.user) return null;
+  const key = `${state.owner}/${state.user}`.toLowerCase();
+  if (state.ownerKey === key) return state.ownerInfo;
+  try {
+    let kind = state.ownerType;
+    if (kind !== "User" && kind !== "Organization") kind = (await gh(`/users/${encodeURIComponent(state.owner)}`)).type || "";
+    let member = null;
+    if (kind === "Organization") {
+      const r = await fetch(`${API}/orgs/${encodeURIComponent(state.owner)}/public_members/${encodeURIComponent(state.user)}`, { headers: { Accept: "application/vnd.github+json" } });
+      if ((r.status === 403 || r.status === 429) && r.headers.get("x-ratelimit-remaining") === "0") throw new RateLimited(0);
+      member = r.status === 204;
+    }
+    state.ownerInfo = { login: state.owner.toLowerCase(), kind, member, private_member: null };
+    state.ownerKey = key;
+  } catch (e) {
+    return null;
+  }
+  return state.ownerInfo;
 }
 
 async function runAll(manual) {
@@ -322,13 +441,13 @@ async function recheck() {
   const name = manifestField("name");
   const version = manifestField("version");
   setStatus($("summary"), "Running the checks ...", false, true);
-  const { summary, previous } = await indexData(name);
+  const [{ summary, previous }, owner] = await Promise.all([indexData(name), ownerInfo(name)]);
   const sources = {};
   for (const f of state.files) if (f.text !== null && /\.(ssp|toml)$/.test(f.path)) sources[f.path] = f.text;
   const request = { kind: "publish", name, repository: `https://github.com/${state.owner}/${state.repo}`, ref: state.ref, version, effects: [...state.acked], author: state.user, issue: 0, commit: state.sha, tag: state.tag, action: "", reason: "" };
   let res;
   try {
-    res = await check({ manifest: state.manifest, sources, input: { files: state.files, request, previous, summary, tests: null, env: "web" } });
+    res = await check({ manifest: state.manifest, sources, input: { files: state.files, request, previous, summary, tests: null, env: "web", owner } });
   } catch (err) {
     setStatus($("summary"), "The checks can't run in this browser (" + err.message + "). You can still submit: the registry workflow runs all of them.", true);
     enableSubmit(name, version, true);
