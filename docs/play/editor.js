@@ -1,9 +1,9 @@
 // The playground editor: CodeMirror 6 with an SSPUR mode. tools/build_playground.sh bundles this
 // file with its imports into editor.bundle.js.
-import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, dropCursor, highlightSpecialChars, hoverTooltip, showTooltip, Decoration, WidgetType } from "@codemirror/view";
-import { EditorState, Compartment, StateField, StateEffect } from "@codemirror/state";
-import { StreamLanguage, syntaxHighlighting, HighlightStyle, bracketMatching, indentService, indentUnit, foldGutter, foldService, foldKeymap } from "@codemirror/language";
-import { defaultKeymap, history, historyKeymap, indentWithTab, toggleComment } from "@codemirror/commands";
+import { EditorView, ViewPlugin, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, dropCursor, highlightSpecialChars, hoverTooltip, showTooltip, Decoration, WidgetType } from "@codemirror/view";
+import { EditorState, Compartment, StateField, StateEffect, Transaction } from "@codemirror/state";
+import { StreamLanguage, syntaxHighlighting, HighlightStyle, bracketMatching, indentService, indentUnit, indentOnInput, foldGutter, foldService, foldKeymap } from "@codemirror/language";
+import { defaultKeymap, history, historyKeymap, indentWithTab, toggleComment, isolateHistory } from "@codemirror/commands";
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap, snippetCompletion, startCompletion } from "@codemirror/autocomplete";
 import { lintGutter, setDiagnostics, lintKeymap } from "@codemirror/lint";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
@@ -54,7 +54,7 @@ const sspur = StreamLanguage.define({
   languageData: {
     commentTokens: { line: "//" },
     closeBrackets: { brackets: ["(", "[", "{", '"'] },
-    indentOnInput: /^\s*[|=.]$/,
+    indentOnInput: /^\s*[|=.)\]}]$/,
   },
   tokenTable: { effect: effectTag, contract: contractTag, hole: holeTag, interp: t.special(t.string), def: t.definition(t.variableName), ctor: t.className, call: t.function(t.variableName), method: t.function(t.propertyName), placeholder: t.special(t.variableName), pipe: t.separator, bang: effectTag },
 });
@@ -159,6 +159,14 @@ const indentOf = (s) => s.length - s.trimStart().length;
 const endsOp = (s) => !/=>$/.test(codeOf(s)) && /(\*\*|==|!=|<=|>=|:=|&&|\|\||->|[-+*/%<>,]|(^|[^\w])(and|or|is|with))$/.test(codeOf(s));
 const startsOp = (s) => /^(\.[A-Za-z_]|(and|or|is)(?!\w)|[-+*/%<>]|==|!=|&&)/.test(codeOf(s).trimStart());
 
+// An element of a list broken one per line: it ends in a comma and opens no bracket.
+function elementLine(s) {
+  const code = codeOf(s).replace(/"(\\.|[^"\\])*"/g, '""');
+  let depth = 0;
+  for (const c of code) depth += "([{".includes(c) ? 1 : ")]}".includes(c) ? -1 : 0;
+  return code.endsWith(",") && depth <= 0;
+}
+
 // The indent of a new line typed after lines[i], skipping blank lines above.
 function enterIndent(lines, i) {
   const nonblank = (j) => { while (j >= 0 && codeOf(lines[j]).trim() === "") j--; return j; };
@@ -166,6 +174,7 @@ function enterIndent(lines, i) {
   if (i < 0) return 0;
   const line = lines[i], base = indentOf(line), prev = nonblank(i - 1);
   if (/[([{]$/.test(codeOf(line))) return base + 2;
+  if (elementLine(line)) return base;
   if (endsOp(line)) return startsOp(line) || (prev >= 0 && endsOp(lines[prev])) ? base : base + 2;
   const o = indentFor(line);
   if (o !== base || startsOp(line)) return o;
@@ -173,6 +182,18 @@ function enterIndent(lines, i) {
   let j = prev;
   for (let k = nonblank(j - 1); k >= 0 && endsOp(lines[k]); k = nonblank(k - 1)) j = k;
   return indentOf(lines[j]);
+}
+// A line that starts with a closing bracket goes back to the indent of the line that opened it.
+function closerIndent(lines) {
+  let depth = 1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const code = codeOf(lines[i]).replace(/"(\\.|[^"\\])*"/g, '""');
+    for (let k = code.length - 1; k >= 0; k--) {
+      if (")]}".includes(code[k])) depth++;
+      else if ("([{".includes(code[k]) && --depth === 0) return indentOf(lines[i]);
+    }
+  }
+  return null;
 }
 // indent rules: end
 
@@ -192,6 +213,10 @@ const sspurIndent = indentService.of((cx, pos) => {
   if (last < 0) return 0;
   if (after.startsWith("=") && /^(pub\s+)?(fn|test)\b/.test(lines[last])) return 0;
   if (/^\.[A-Za-z_]/.test(after)) return indentOf(lines[last]) + (/^\s*\./.test(lines[last]) ? 0 : 2);
+  if (/^[)\]}]/.test(after)) {
+    const c = closerIndent(lines);
+    if (c !== null) return c;
+  }
   return enterIndent(lines, last);
 });
 
@@ -207,6 +232,129 @@ const foldByIndent = foldService.of((state, from, to) => {
     if (next.text.trim() !== "") end = next;
   }
   return end.number > line.number ? { from: line.to, to: end.to } : null;
+});
+
+// format rules: begin (tools/playground_test.mjs runs these)
+// Reformatting keeps the cursor after the same number of code characters: spaces, line breaks
+// and comments don't count, since the formatter moves the first two and drops the third.
+function codeCount(text, end) {
+  let n = 0, str = false;
+  for (let i = 0; i < end && i < text.length; i++) {
+    const c = text[i];
+    if (str) {
+      n++;
+      if (c === "\\") { i++; n++; } else if (c === '"') str = false;
+    } else if (c === "/" && text[i + 1] === "/") {
+      while (i + 1 < end && text[i + 1] !== "\n") i++;
+    } else if (!/\s/.test(c)) {
+      n++;
+      if (c === '"') str = true;
+    }
+  }
+  return n;
+}
+function posOfCount(text, n) {
+  if (n <= 0) return 0;
+  let lo = 0, hi = text.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (codeCount(text, mid) < n) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+// Where `pos` in `before` is in `after`: after the same code, and before the same code when it
+// was right before some.
+function mapPos(before, pos, after) {
+  let p = posOfCount(after, codeCount(before, pos));
+  if (pos < before.length && !/\s/.test(before[pos])) while (p < after.length && /\s/.test(after[p])) p++;
+  return p;
+}
+// The top-level definitions that the range from..to touches, whole: from the line that starts
+// the first to the last line of code of the last.
+const DEF_START = /^(pub\s+)?(fn|type|res\s+type|test|effect|trait|impl|store|svc|static|use|profile|rule|extern|kernel)\b/;
+function defRange(text, from, to) {
+  const starts = [0];
+  for (let i = 0; i < text.length; i++) if (text[i] === "\n") starts.push(i + 1);
+  const lineOf = (pos) => { let lo = 0, hi = starts.length - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (starts[m] <= pos) lo = m; else hi = m - 1; } return lo; };
+  const line = (i) => text.slice(starts[i], i + 1 < starts.length ? starts[i + 1] - 1 : text.length);
+  let a = lineOf(from), b = lineOf(Math.max(from, to - (to > from && text[to - 1] === "\n" ? 1 : 0)));
+  while (a > 0 && !DEF_START.test(line(a))) a--;
+  let e = b + 1;
+  while (e < starts.length && !DEF_START.test(line(e))) e++;
+  e--;
+  while (e > a && line(e).trim() === "") e--;
+  return { from: starts[a], to: e + 1 < starts.length ? starts[e + 1] - 1 : text.length };
+}
+// The smallest edit that turns a into b: what is between their common prefix and suffix.
+function diffRange(a, b) {
+  let p = 0;
+  while (p < a.length && p < b.length && a[p] === b[p]) p++;
+  let q = 0;
+  while (q < a.length - p && q < b.length - p && a[a.length - 1 - q] === b[b.length - 1 - q]) q++;
+  return { from: p, to: a.length - q, insert: b.slice(p, b.length - q) };
+}
+// format rules: end
+
+// A thin line at the formatter's width, unless the editor wraps lines (on a phone), where a
+// column would mean nothing.
+function ruler(col) {
+  return ViewPlugin.fromClass(class {
+    constructor(view) {
+      this.dom = document.createElement("div");
+      this.dom.className = "cm-sspur-ruler";
+      this.dom.setAttribute("aria-hidden", "true");
+      view.scrollDOM.appendChild(this.dom);
+      this.place(view);
+    }
+    update(u) {
+      if (u.geometryChanged || u.heightChanged) this.place(u.view);
+    }
+    place(view) {
+      view.requestMeasure({
+        read: () => {
+          const line = view.contentDOM.querySelector(".cm-line");
+          const pad = line ? parseFloat(getComputedStyle(line).paddingLeft) || 0 : 6;
+          const left = view.contentDOM.offsetLeft + pad + col * view.defaultCharacterWidth;
+          return { left, show: !view.lineWrapping, height: Math.max(view.contentHeight, view.scrollDOM.clientHeight) };
+        },
+        write: (m) => {
+          this.dom.style.left = m.left + "px";
+          this.dom.style.height = m.height + "px";
+          this.dom.hidden = !m.show;
+        },
+      });
+    }
+    destroy() {
+      this.dom.remove();
+    }
+  });
+}
+
+// A message at a position for a moment: why Reformat left the code as it was.
+const setFlash = StateEffect.define();
+const flashField = StateField.define({
+  create: () => null,
+  update(v, tr) {
+    for (const e of tr.effects) if (e.is(setFlash)) return e.value;
+    return v && tr.docChanged ? null : v;
+  },
+  provide: (f) =>
+    showTooltip.from(f, (v) =>
+      v
+        ? {
+            pos: v.pos,
+            above: true,
+            create() {
+              const dom = document.createElement("div");
+              dom.className = "cm-sspur-flash";
+              dom.setAttribute("role", "status");
+              dom.textContent = v.text;
+              return { dom };
+            },
+          }
+        : null,
+    ),
 });
 
 const palette = {
@@ -258,6 +406,8 @@ function theme(dark) {
       ".cm-sspur-sig .doc": { fontFamily: "var(--sans)", marginTop: "3px", opacity: 0.85 },
       ".cm-sspur-hint": { color: "var(--muted)", fontSize: "0.9em", opacity: 0.85 },
       ".cm-diagnostic": { fontFamily: "var(--sans)", fontSize: "13px" },
+      ".cm-sspur-ruler": { position: "absolute", top: 0, width: "1px", background: "var(--ruler)", pointerEvents: "none", zIndex: -1 },
+      ".cm-sspur-flash": { fontFamily: "var(--sans)", fontSize: "13px", padding: "5px 10px", color: "var(--err)", maxWidth: "36em" },
       ".cm-diagnosticAction": { backgroundColor: "var(--accent)", borderRadius: "4px" },
       ".cm-matchingBracket": { backgroundColor: "var(--match)", outline: "none" },
       ".cm-foldGutter .cm-gutterElement": { opacity: 0, transition: "opacity 0.2s" },
@@ -439,7 +589,7 @@ const hintsField = StateField.define({
 
 const SEVERITY = { error: "error", warning: "warning", hole: "info" };
 
-export function createEditor({ parent, doc, dark, api, onChange, commands }) {
+export function createEditor({ parent, doc, dark, api, onChange, commands, width = 100 }) {
   const themeConf = new Compartment();
   const styled = (d) => [theme(d), syntaxHighlighting(highlight(d ? palette.dark : palette.light))];
   const view = new EditorView({
@@ -460,6 +610,7 @@ export function createEditor({ parent, doc, dark, api, onChange, commands }) {
         EditorState.tabSize.of(2),
         sspur,
         sspurIndent,
+        indentOnInput(),
         foldByIndent,
         bracketMatching(),
         closeBrackets(),
@@ -469,12 +620,15 @@ export function createEditor({ parent, doc, dark, api, onChange, commands }) {
         hoverSource(api),
         signatureHelp(api),
         hintsField,
+        flashField,
+        ruler(width),
         lintGutter(),
         themeConf.of(styled(dark)),
         keymap.of([
           { key: "Mod-Enter", run: () => (commands.run(), true), preventDefault: true },
           { key: "Mod-Shift-Enter", run: () => (commands.test(), true), preventDefault: true },
           { key: "Shift-Alt-f", run: () => (commands.format(), true), preventDefault: true },
+          { key: "Mod-Alt-l", run: () => (commands.format(), true), preventDefault: true },
           { key: "Mod-s", run: () => (commands.share(), true), preventDefault: true },
           { key: "Mod-/", run: toggleComment },
           { key: "Ctrl-Space", run: startCompletion },
@@ -490,6 +644,15 @@ export function createEditor({ parent, doc, dark, api, onChange, commands }) {
         EditorView.updateListener.of((u) => {
           if (u.docChanged) onChange(u.state.doc.toString());
         }),
+        // On a Mac, Option + Shift + F types a character, so the keymap never sees it.
+        EditorView.domEventHandlers({
+          keydown(e) {
+            if (!(e.altKey && e.shiftKey && e.code === "KeyF" && !e.ctrlKey && !e.metaKey)) return false;
+            e.preventDefault();
+            commands.format();
+            return true;
+          },
+        }),
       ],
     }),
   });
@@ -502,6 +665,40 @@ export function createEditor({ parent, doc, dark, api, onChange, commands }) {
     },
     setDark(d) {
       view.dispatch({ effects: themeConf.reconfigure(styled(d)) });
+    },
+    // Reformat Code: the whole text, or the top-level definitions the selection touches, through
+    // `fmt` (text -> {ok, text} or {ok: false, diags}). One undo step brings the old text back;
+    // the cursor stays at the same code and on the same line of the screen. Code that doesn't
+    // parse is left alone, with the reason shown where it is.
+    async reformat(fmt) {
+      const st = view.state, text = st.doc.toString(), sel = st.selection.main;
+      const r = sel.empty ? { from: 0, to: text.length } : defRange(text, sel.from, sel.to);
+      const part = text.slice(r.from, r.to);
+      const res = await fmt(part);
+      if (view.state.doc.toString() !== text) return false;
+      if (!res.ok) {
+        const d = (res.diags || [])[0];
+        const pos = Math.min(r.from + (d ? d.from : 0), text.length);
+        view.dispatch({ effects: setFlash.of({ pos, text: "Can't reformat: " + (d ? `${d.line}:${d.col} ${d.message}` : "the code doesn't parse") }) });
+        const shown = view.state.field(flashField);
+        setTimeout(() => { if (view.state.field(flashField) === shown) view.dispatch({ effects: setFlash.of(null) }); }, 2600);
+        return false;
+      }
+      const out = r.to < text.length || !part.endsWith("\n") ? res.text.replace(/\n$/, "") : res.text;
+      if (out === part) return true;
+      const d = diffRange(part, out);
+      const changes = st.changes({ from: r.from + d.from, to: r.from + d.to, insert: d.insert });
+      const map = (pos) => (pos < r.from || pos > r.to ? changes.mapPos(pos) : r.from + mapPos(part, pos - r.from, out));
+      const top = view.coordsAtPos(sel.head);
+      const y = top ? Math.max(0, top.top - view.scrollDOM.getBoundingClientRect().top) : 0;
+      const head = map(sel.head);
+      view.dispatch({
+        changes,
+        selection: { anchor: map(sel.anchor), head },
+        effects: EditorView.scrollIntoView(head, { y: "start", yMargin: y }),
+        annotations: [Transaction.userEvent.of("format"), isolateHistory.of("full")],
+      });
+      return true;
     },
     goto(pos) {
       view.dispatch({ selection: { anchor: pos }, scrollIntoView: true });

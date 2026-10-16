@@ -215,7 +215,7 @@ expect(builtins.globals.length > 50 && builtins.methods.length > 100 && builtins
 const editorSrc = readFileSync(new URL("../docs/play/editor.js", import.meta.url), "utf8");
 const rules = editorSrc.match(/\/\/ indent rules: begin[\s\S]*?\/\/ indent rules: end/);
 expect(rules, "indent: editor.js has the indent rules block");
-const { enterIndent } = new Function(`${rules[0]}\nreturn { enterIndent };`)();
+const { enterIndent, closerIndent } = new Function(`${rules[0]}\nreturn { enterIndent, closerIndent };`)();
 const vsc = JSON.parse(readFileSync(new URL("../packaging/vscode/language-configuration.json", import.meta.url), "utf8"));
 function vscodeIndent(ls) {
   const before = ls.at(-1), prev = ls.length > 1 ? ls.at(-2) : "";
@@ -228,10 +228,39 @@ for (const [src, want] of [
   ["= a > 0 and", 2], ["= a > 0 and\n  b > 0 and", 2], ["= a > 0 and\n  b > 0", 0], ["= a +", 2], ["  total = a +\n    b", 2],
   ["= xs\n  .map(_ * 2)", 2], ["  x = f(1,", 4], ["  x = f(", 4], ["  ys = xs.map(x =>", 4], ["= do", 2], ["  if ok then", 4],
   ["  | some(v) =>", 4], ["= match o", 2], ["  x = 1", 2], ["  ok = r is", 4], ["  | A => 1", 2], ["= xs\n  .filter(x =>", 4],
+  ["  xs = [\n    1,", 4], ['    Order{a: "(", b: [2]},', 4], ["    ],", 4],
 ]) {
   const ls = src.split("\n");
   same(`indent: playground after ${JSON.stringify(src)}`, enterIndent(ls, ls.length - 1), want);
   same(`indent: VS Code after ${JSON.stringify(src)}`, vscodeIndent(ls), want);
+}
+
+// A closing bracket typed at the start of a line goes back to the indent of its opener.
+for (const [src, want] of [["  xs = [\n    1,\n    2,", 2], ["= f(\n  a,\n  g(1, 2),", 0], ["  x = {a: \"(\",", 2], ["  ok", null]]) {
+  same(`indent: a closer after ${JSON.stringify(src)}`, closerIndent(src.split("\n")), want);
+}
+
+// Reformat: the formatter's width, the cursor mapping and the definitions a selection touches.
+same("fmt: the ruler's width is the formatter's", builtins.fmt_width, 100);
+const long = "fn f(xs: List[Int]) -> Int\n= xs.filter(x => x > 1000000).map(x => x * 1000 + 17).filter(x => x % 3 == 0).map(x => x / 7).filter(x => x > 0).sum\n";
+same("fmt: a line over the width breaks", call("fmt", long).text.split("\n").slice(1, 4), ["= xs", "  .filter(x => x > 1000000)", "  .map(x => x * 1000 + 17)"]);
+const fmtRules = editorSrc.match(/\/\/ format rules: begin[\s\S]*?\/\/ format rules: end/);
+expect(fmtRules, "format: editor.js has the format rules block");
+const { codeCount, mapPos, defRange, diffRange } = new Function(`${fmtRules[0]}\nreturn { codeCount, mapPos, defRange, diffRange };`)();
+{
+  const before = "fn f(x: Int) -> Int = x+1 // one\n\ntest t = f(1)==2\n";
+  const after = call("fmt", before).text;
+  const at = before.indexOf("==");
+  same("format: the cursor stays at the same code", after.slice(mapPos(before, at, after), mapPos(before, at, after) + 4), "== 2");
+  same("format: at the end of a line it stays there", after.slice(0, mapPos(before, before.indexOf(" //"), after)), "fn f(x: Int) -> Int\n= x + 1");
+  same("format: code count skips comments and spaces", codeCount("a b // c d\ne", 12), 3);
+  same("format: spaces in strings count", codeCount('x = "a b"', 9), 7);
+  const two = "fn a() -> Int\n= 1\n\nfn b() -> Int\n= match 1\n| 1 => 2\n| _ => 3\n\ntest t = a() == 1\n";
+  const r = defRange(two, two.indexOf("| 1"), two.indexOf("| 1") + 2);
+  same("format: a selection inside a definition takes all of it", two.slice(r.from, r.to), "fn b() -> Int\n= match 1\n| 1 => 2\n| _ => 3");
+  const r2 = defRange(two, 2, two.indexOf("test"));
+  same("format: a selection across definitions takes each whole", two.slice(r2.from, r2.to), two.slice(0, two.indexOf("test")).trimEnd());
+  same("format: the edit is the changed middle", diffRange("abcXYdef", "abcZdef"), { from: 3, to: 5, insert: "Z" });
 }
 
 console.log(`${checks - failures}/${checks} playground checks passed${bin ? " (compared with " + bin + ")" : ""}`);

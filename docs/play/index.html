@@ -57,7 +57,7 @@
         <button id="stop" class="danger" hidden title="Stop the running program"><svg class="i" aria-hidden="true"><use href="#i-stop"/></svg><span>Stop</span></button>
       </div>
       <button id="test" title="Run the tests and examples (Ctrl or Cmd + Shift + Enter)"><svg class="i" aria-hidden="true"><use href="#i-test"/></svg><span>Test</span></button>
-      <button id="format" class="wide-only" title="Format (Shift + Alt + F)"><svg class="i" aria-hidden="true"><use href="#i-format"/></svg><span>Format</span></button>
+      <button id="format" class="wide-only" title="Reformat code (Ctrl + Alt + L, Cmd + Option + L on a Mac, or Shift + Alt + F); with a selection, the definitions it touches" aria-label="Reformat code"><svg class="i" aria-hidden="true"><use href="#i-format"/></svg><span>Format</span></button>
       <button id="share" title="Copy a link to this program (Ctrl or Cmd + S)"><svg class="i" aria-hidden="true"><use href="#i-share"/></svg><span>Share</span></button>
     </div>
     <span class="spacer"></span>
@@ -76,6 +76,7 @@
       <button id="close" class="icon" aria-label="Close menu">&#10005;</button>
     </div>
     <button class="item" data-act="format"><svg class="i" aria-hidden="true"><use href="#i-format"/></svg><span>Format code</span></button>
+    <button class="item" data-act="fmtrun"><svg class="i" aria-hidden="true"><use href="#i-format"/></svg><span id="fmtrun-item">Format on run</span></button>
     <button class="item" data-act="theme"><svg class="i" aria-hidden="true"><use href="#i-moon"/></svg><span id="theme-item">Dark mode</span></button>
     <button class="item" data-act="hints"><svg class="i" aria-hidden="true"><use href="#i-hint"/></svg><span id="hints-item">Show inlay hints</span></button>
     <button class="item" data-act="about"><svg class="i" aria-hidden="true"><use href="#i-info"/></svg><span>About the playground</span></button>
@@ -97,7 +98,7 @@
   <input id="link" class="share-link" readonly hidden aria-label="Share link">
   <div id="toast" class="toast" role="status" aria-live="polite" hidden><svg class="i" aria-hidden="true"><use href="#i-check"/></svg><span>Link copied</span></div>
   <main>
-    <section id="editor" class="pane"></section>
+    <section id="editor" class="pane"><button id="format-fab" class="fab narrow-only" title="Reformat code" aria-label="Reformat code"><svg class="i" aria-hidden="true"><use href="#i-format"/></svg></button></section>
     <div id="split" class="split" role="separator" aria-orientation="vertical" aria-label="Resize panels"></div>
     <section class="pane side">
       <nav class="tabs">
@@ -139,6 +140,7 @@
     <span id="engine">Loading...</span>
     <span id="tokens" title="A rough estimate of about four characters per token, not the tokenizers the token benchmark uses"></span>
     <span id="cursor" class="wide-only"></span>
+    <button id="fmtrun" class="toggle wide-only" aria-pressed="false" title="Reformat the code before each run, test and share">Format on run</button>
     <span class="wide-xl">Your code stays in this tab</span>
     <span class="spacer"></span>
     <span class="credit">Created by <a href="https://utkarshavardhana.github.io/" target="_blank" rel="noopener">Utkarsha Vardhana</a></span>

@@ -70,6 +70,22 @@ fn opener(line: &str) -> usize {
     base
 }
 
+/// An element of a list broken one per line: the line ends in a comma and opens no bracket.
+fn element_line(t: &str) -> bool {
+    let (mut depth, mut in_str, mut esc) = (0i32, false, false);
+    for c in t.chars() {
+        match c {
+            _ if esc => esc = false,
+            '\\' if in_str => esc = true,
+            '"' => in_str = !in_str,
+            '(' | '[' | '{' if !in_str => depth += 1,
+            ')' | ']' | '}' if !in_str => depth -= 1,
+            _ => {}
+        }
+    }
+    t.ends_with(',') && depth <= 0
+}
+
 /// The indent of a new line typed after `lines[i]` (blank lines above are skipped).
 pub fn enter_indent(lines: &[&str], i: usize) -> usize {
     let nonblank = |j: usize| (0..=j).rev().find(|&k| !code(lines[k]).trim().is_empty());
@@ -80,6 +96,9 @@ pub fn enter_indent(lines: &[&str], i: usize) -> usize {
     let t = code(line);
     if t.ends_with(['(', '[', '{']) {
         return base + 2;
+    }
+    if element_line(t) {
+        return base;
     }
     if ends_op(line) {
         return if starts_op(line) || prev.is_some_and(|p| ends_op(lines[p])) { base } else { base + 2 };
@@ -124,5 +143,8 @@ mod tests {
         assert_eq!(after("  ok = r is"), 4);
         assert_eq!(after("  | A => 1"), 2);
         assert_eq!(after("  a\n\n"), 2);
+        assert_eq!(after("  xs = [\n    1,"), 4);
+        assert_eq!(after("    Order{a: \"(\", b: [2]},"), 4);
+        assert_eq!(after("    ],"), 4);
     }
 }

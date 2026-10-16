@@ -7,6 +7,7 @@ const STORE = "sspur-play-source";
 const STDIN = "sspur-play-input";
 const THEME = "sspur-play-theme";
 const HINTS = "sspur-play-hints";
+const FMT_ON_RUN = "sspur-play-format-on-run";
 
 // Storage can be off (private windows, strict settings); the page works without it.
 const store = {
@@ -131,6 +132,7 @@ async function main() {
     dark,
     api,
     commands: { run: () => go("run"), test: () => go("test"), format, share },
+    width: builtins.fmt_width,
     onChange(text) {
       store.set(STORE, text);
       if (location.hash) history.replaceState(null, "", location.pathname);
@@ -139,6 +141,8 @@ async function main() {
       timer = setTimeout(() => check(text), 250);
     },
   });
+  // For tools/playground_ui_test.mjs and the browser console.
+  window.sspurPlay = { editor };
   editor.view.dom.addEventListener("keyup", cursor);
   editor.view.dom.addEventListener("click", cursor);
 
@@ -199,6 +203,7 @@ async function main() {
   }
 
   async function go(op) {
+    if (fmtOnRun) await format();
     const asked = op;
     if (op === "run" && !/^(pub\s+)?fn\s+main\b/m.test(editor.text())) op = "test";
     const box = $("output");
@@ -238,16 +243,26 @@ async function main() {
     }
   }
 
-  async function format() {
-    const r = await ide.call("fmt", { src: editor.text() });
-    if (r.ok) editor.setText(r.text, true);
-    else {
-      problems(r.diags);
-      tab("problems");
-    }
+  function format() {
+    return editor.reformat((src) => ide.call("fmt", { src })).catch(() => false);
   }
 
+  // Format on run (and on Cmd or Ctrl + S), off unless turned on; the page remembers it.
+  let fmtOnRun = store.get(FMT_ON_RUN) === "on";
+  const showFmtOnRun = () => {
+    $("fmtrun").setAttribute("aria-pressed", String(fmtOnRun));
+    $("fmtrun-item").textContent = fmtOnRun ? "Don't format on run" : "Format on run";
+  };
+  const toggleFmtOnRun = () => {
+    fmtOnRun = !fmtOnRun;
+    store.set(FMT_ON_RUN, fmtOnRun ? "on" : "off");
+    showFmtOnRun();
+  };
+  $("fmtrun").onclick = toggleFmtOnRun;
+  showFmtOnRun();
+
   async function share() {
+    if (fmtOnRun) await format();
     const link = Promise.all([encode(editor.text()), stdin.value ? encode(stdin.value) : null]).then(([c, i]) => location.origin + location.pathname + "#code=" + c + (i ? "&in=" + i : ""));
     // Safari only allows a clipboard write started inside the click, so hand it the pending link.
     const copied = typeof ClipboardItem !== "undefined" && navigator.clipboard && navigator.clipboard.write
@@ -294,7 +309,8 @@ async function main() {
   $("run").onclick = () => go("run");
   $("test").onclick = () => go("test");
   $("stop").onclick = () => runner.stop();
-  $("format").onclick = format;
+  $("format").onclick = $("format-fab").onclick = format;
+  $("editor").appendChild($("format-fab"));
   $("share").onclick = share;
   let hot = 0;
   const highlight = (i) => {
@@ -372,7 +388,7 @@ async function main() {
   menu.onclick = () => openMenu(true);
   $("close").onclick = scrim.onclick = () => openMenu(false);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !sheet.hidden) openMenu(false); });
-  const acts = { format, theme: toggleTheme, hints: toggleHints, about: () => tab("about") };
+  const acts = { format, fmtrun: toggleFmtOnRun, theme: toggleTheme, hints: toggleHints, about: () => tab("about") };
   for (const b of sheet.querySelectorAll("[data-act]")) b.onclick = () => { openMenu(false); acts[b.dataset.act](); };
   window.addEventListener("hashchange", async () => {
     const src = await fromHash(location.hash).catch(() => null);
