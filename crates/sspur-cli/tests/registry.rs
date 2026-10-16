@@ -186,6 +186,11 @@ impl Reg {
 
     /// The workflow for request `n`: request, check, tests, write, each step in a fresh job dir.
     fn workflow(&self, n: &str) -> String {
+        self.workflow_env(n, &[])
+    }
+
+    /// The workflow with extra environment for the stand-in for gh.
+    fn workflow_env(&self, n: &str, extra: &[(&str, &str)]) -> String {
         self.runs.set(self.runs.get() + 1);
         let work = self.t.join(format!("job-{}", self.runs.get()));
         let ci = self.t.join("index/tools/ci.sh");
@@ -198,7 +203,9 @@ impl Reg {
         let mut log = String::new();
         let steps: [&[&str]; 4] = [&["request", n], &["check"], &["tests"], &["write"]];
         for step in steps {
-            let (out, ok) = self.run(&self.t, ci.to_str().unwrap(), step, &[("WORK", &w), ("INDEX_DIR", &idx), ("APPROVE_BY", self.approver.get())]);
+            let mut env: Vec<(&str, &str)> = vec![("WORK", &w), ("INDEX_DIR", &idx), ("APPROVE_BY", self.approver.get())];
+            env.extend_from_slice(extra);
+            let (out, ok) = self.run(&self.t, ci.to_str().unwrap(), step, &env);
             assert!(ok, "ci.sh {} failed:\n{out}", step.join(" "));
             log.push_str(&out);
         }
@@ -464,6 +471,43 @@ fn a_new_package_waits_for_a_maintainer() {
     let n = open(&r, "money", "1.1.0", "");
     let log = r.workflow(&n);
     assert!(log.contains("merged #") && log.contains("money 1.1.0"), "{log}");
+}
+
+#[test]
+fn organization_repositories_and_transferred_repositories() {
+    let r = Reg::new("orgs");
+    // A flat name from a repository of the organization acme: bob, a public member, may publish it.
+    let w = r.repo("acme", "coins", "coins", "1.0.0", MONEY_1_0);
+    r.release(&w, "v1.0.0");
+    for who in ["carol", "dave"] {
+        let n = request(&r, "coins", "https://github.com/acme/coins", "1.0.0", who);
+        let log = r.workflow(&n);
+        assert!(log.contains("left #") && log.contains("pkg.owner"), "{who}: {log}");
+    }
+    let n = request(&r, "coins", "https://github.com/acme/coins", "1.0.0", "bob");
+    let log = r.workflow(&n);
+    assert!(log.contains("merged #") && log.contains("coins 1.0.0"), "{log}");
+
+    // alice publishes money from alice/money, then moves the repository to acme on GitHub.
+    let w = r.package("alice", "money", "1.0.0", MONEY_1_0);
+    r.release(&w, "v1.0.0");
+    let n = open(&r, "money", "1.0.0", "");
+    assert!(r.workflow(&n).contains("merged #"));
+    std::fs::create_dir_all(r.t.join("repos/acme")).unwrap();
+    git(&r.t, &["clone", "-q", "--bare", &format!("repos/alice/money.git"), "repos/acme/money.git"]);
+    git(&w, &["remote", "set-url", "origin", &format!("file://{}/repos/acme/money.git", r.t.display())]);
+    r.write_pkg(&w, "money", "1.1.0", &money_1_1(), "");
+    r.release(&w, "v1.1.0");
+    // Without the transfer a different repository is refused.
+    let n = request(&r, "money", "https://github.com/acme/money", "1.1.0", "alice");
+    let log = r.workflow(&n);
+    assert!(log.contains("left #") && log.contains("pkg.owner"), "{log}");
+    // GitHub reports that alice/money is now acme/money: the same repository, so it publishes.
+    let n = request(&r, "money", "https://github.com/acme/money", "1.1.0", "alice");
+    let log = r.workflow_env(&n, &[("FAKE_GH_MOVED", "alice/money=acme/money")]);
+    assert!(log.contains("merged #") && log.contains("money 1.1.0"), "{log}");
+    let entry: J = serde_json::from_str(&r.index_file("packages/mo/money.json").unwrap()).unwrap();
+    assert_eq!(entry["owners"], serde_json::json!(["alice"]));
 }
 
 #[test]

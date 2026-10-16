@@ -389,7 +389,8 @@ async function indexData(name) {
 // organization, whether the requester is a public member. Private memberships need a token,
 // so the page can't see them; the check says so. Asked once per owner and user.
 async function ownerInfo(name) {
-  if (!name.includes("/") || !state.user) return null;
+  // A scoped name, or a repository its requester doesn't own (an organization's, say).
+  if (!state.user || (!name.includes("/") && state.owner.toLowerCase() === state.user.toLowerCase())) return null;
   const key = `${state.owner}/${state.user}`.toLowerCase();
   if (state.ownerKey === key) return state.ownerInfo;
   try {
@@ -421,6 +422,18 @@ async function repoInfo() {
     return null;
   }
   return state.repoInfo;
+}
+
+// Where a package's registered repository is now: GitHub follows transfers and renames, so a
+// package whose repository moved keeps publishing from its new home. One call, only if it differs.
+async function movedTo(registered) {
+  const m = /^https:\/\/github\.com\/([^/]+\/[^/]+?)(?:\.git)?\/?$/i.exec(registered || "");
+  if (!m || m[1].toLowerCase() === `${state.owner}/${state.repo}`.toLowerCase()) return null;
+  try {
+    return ((await gh(`/repos/${m[1]}`)).full_name || "").toLowerCase() || null;
+  } catch (e) {
+    return null;
+  }
 }
 
 async function runAll(manual) {
@@ -455,7 +468,8 @@ async function recheck() {
   const name = manifestField("name");
   const version = manifestField("version");
   setStatus($("summary"), "Running the checks ...", false, true);
-  const [{ summary, previous }, owner, repo] = await Promise.all([indexData(name), ownerInfo(name), repoInfo()]);
+  const [{ summary, previous }, owner, repo0] = await Promise.all([indexData(name), ownerInfo(name), repoInfo()]);
+  const repo = repo0 && previous ? { ...repo0, previous_now: await movedTo(previous.repository) } : repo0;
   const sources = {};
   for (const f of state.files) if (f.text !== null && /\.(ssp|toml)$/.test(f.path)) sources[f.path] = f.text;
   const request = { kind: "publish", name, repository: `https://github.com/${state.owner}/${state.repo}`, ref: state.ref, version, effects: [...state.acked], author: state.user, issue: 0, commit: state.sha, tag: state.tag, action: "", reason: "" };

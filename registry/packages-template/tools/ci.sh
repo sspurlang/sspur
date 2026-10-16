@@ -85,14 +85,21 @@ repo_info() {
   fork="$("$GH" api "repos/$v_slug" --jq .fork 2>/dev/null || true)"
   case "$fork" in true|false) ;; *) return 0 ;; esac
   parent="$("$GH" api "repos/$v_slug" --jq '.parent.full_name // ""' 2>/dev/null || true)"
-  printf '{"fork":%s,"parent":"%s"}' "$fork" "${parent//\"/}" > "$WORK/repo.json"
+  # Where the package's registered repository is now: GitHub follows a transfer or rename, so a
+  # package whose repository moved keeps publishing from its new home.
+  local prev="" now=""
+  if [ -f "$INDEX_DIR/$v_file" ]; then
+    prev="$(sed -n 's#.*"repository": *"https://github.com/\([^"]*\)".*#\1#p' "$INDEX_DIR/$v_file" | head -n1)"
+    prev="${prev%.git}"
+    [ -n "$prev" ] && now="$("$GH" api "repos/$prev" --jq .full_name 2>/dev/null || true)"
+  fi
+  printf '{"fork":%s,"parent":"%s","previous_now":%s}' "$fork" "${parent//\"/}" "$( [ -n "$now" ] && printf '"%s"' "$(printf '%s' "$now" | tr 'A-Z' 'a-z')" || printf null)" > "$WORK/repo.json"
 }
 
 owner_info() {
   load_vars "$WORK/vars.txt"
   rm -f "$WORK/owner.json"
   [ "$v_ok" = true ] && [ "$v_kind" = publish ] && [ -n "$v_owner" ] || return 0
-  case "$v_name" in */*) ;; *) return 0 ;; esac
   local kind member=null login
   login="$v_author"
   kind="$("$GH" api "users/$v_owner" --jq .type 2>/dev/null || true)"

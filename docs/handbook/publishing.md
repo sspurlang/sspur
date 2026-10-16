@@ -128,7 +128,7 @@ The [standards](https://github.com/utkarshavardhana/sspur-packages/blob/main/CON
 - a capability effect the previous version didn't have (`net`, `fs`, `proc`, `env`, `io`, `db`, `ffi`, `unsafe`, `dev`) is acknowledged in the request, with `sspur publish --ack net` or the request's Effects field;
 - the name follows the rules and isn't reserved; one too close to an existing name gets a warning;
 - a scope is the repository's GitHub owner, and the request comes from that user or a public member of that organization;
-- the first version comes from the repository's owner, and later ones from the package's owners; a new flat name isn't claimed from a fork (publish a fork under your own scope);
+- the first version comes from the repository's owner (for an organization's repository, a public member of it), and later ones from the package's owners, from the same repository or the one GitHub says it moved to; a new flat name isn't claimed from a fork (publish a fork under your own scope);
 - an OSI licence, a README, docs and tests; no binaries, no secrets, no build or install hooks, dependencies that are published packages or the package's own modules, within the size limits;
 - no holes left in the code, a reason next to every `run_cmd`, and the naming conventions.
 

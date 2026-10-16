@@ -394,12 +394,14 @@ fn owner_info(g: &str, owner: &str, login: &str) -> J {
     json!({"login": owner, "kind": kind, "member": member, "private_member": private})
 }
 
-/// Whether the repository `slug` (OWNER/REPO) is a fork, and of what, for pkg.fork.
-fn repo_info(g: &str, slug: &str) -> J {
-    let ask = |jq: &str| Command::new(g).args(["api", &format!("repos/{slug}"), "--jq", jq]).stdin(Stdio::null()).output().ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-    match ask(".fork").as_deref() {
-        Some("true") => json!({"fork": true, "parent": ask(".parent.full_name // \"\"").unwrap_or_default()}),
-        Some("false") => json!({"fork": false, "parent": ""}),
+/// Whether the repository `slug` (OWNER/REPO) is a fork, and of what, for pkg.fork; and where
+/// the package's `registered` repository is now, so a transferred repository keeps publishing.
+fn repo_info(g: &str, slug: &str, registered: Option<&str>) -> J {
+    let ask = |repo: &str, jq: &str| Command::new(g).args(["api", &format!("repos/{repo}"), "--jq", jq]).stdin(Stdio::null()).output().ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    let now = registered.and_then(|r| ask(r, ".full_name")).map(|s| json!(s.to_lowercase())).unwrap_or(J::Null);
+    match ask(slug, ".fork").as_deref() {
+        Some("true") => json!({"fork": true, "parent": ask(slug, ".parent.full_name // \"\"").unwrap_or_default(), "previous_now": now}),
+        Some("false") => json!({"fork": false, "parent": "", "previous_now": now}),
         _ => J::Null,
     }
 }
@@ -524,12 +526,13 @@ pub fn publish(o: PublishOpts) -> ExitCode {
     let author = gh_cmd.as_deref().and_then(gh_login).unwrap_or_default();
     let owner = repository.trim_start_matches("https://github.com/").split('/').next().unwrap_or("").to_lowercase();
     let owner_json = match &gh_cmd {
-        Some(g) if m.name.contains('/') && !owner.is_empty() => owner_info(g, &owner, &author),
+        Some(g) if !owner.is_empty() && (m.name.contains('/') || owner != author.to_lowercase()) => owner_info(g, &owner, &author),
         _ => J::Null,
     };
     let slug = repository.trim_start_matches("https://github.com/").trim_end_matches(".git").trim_end_matches('/').to_string();
+    let registered = previous.as_ref().map(|p| p.repository.trim_start_matches("https://github.com/").trim_end_matches(".git").to_string()).filter(|r| r.matches('/').count() == 1);
     let repo_json = match &gh_cmd {
-        Some(g) if slug.matches('/').count() == 1 => repo_info(g, &slug),
+        Some(g) if slug.matches('/').count() == 1 => repo_info(g, &slug, registered.as_deref()),
         _ => J::Null,
     };
     let effects: Vec<String> = o.ack.map(|a| a.split(',').map(|x| x.trim().to_lowercase()).filter(|x| !x.is_empty()).collect()).unwrap_or_default();

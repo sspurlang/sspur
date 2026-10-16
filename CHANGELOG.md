@@ -5,6 +5,7 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 ## [Unreleased]
 
 ### Added
+- Registry: a public member of an organization may publish the first version of a package from the organization's repository, and a package whose repository was transferred or renamed on GitHub keeps publishing from its new home (GitHub resolves the old name). `sspur publish`, the Publish page and the workflow all ask GitHub.
 - The registry check `pkg.fork` (blocking): the first version of a new flat name can't come from a fork, so nobody claims a name with a fork of someone else's repository. A fork can still publish under its owner's scope. `sspur publish`, the Publish page and the workflow all ask GitHub, and the Publish page now runs the index's own checks.
 
 ### Changed

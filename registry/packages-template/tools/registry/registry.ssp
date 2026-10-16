@@ -45,7 +45,7 @@ type Facts = {source: Str, parse: Bool, checked: Bool, diags: List[Diag], fmt: F
 type OwnerInfo = {login: Str, kind: Str, member: Opt[Bool], private_member: Opt[Bool]}
 
 // What GitHub says about the package's repository: whether it is a fork, and of what.
-type RepoInfo = {fork: Bool, parent: Str}
+type RepoInfo = {fork: Bool, parent: Str, previous_now: Opt[Str]}
 
 // `author_id` is the requester's GitHub user id, for the noreply address the index commit is
 // authored with (`<id>+<login>@users.noreply.github.com`).
@@ -429,7 +429,9 @@ fn check_owner(i: CheckIn) -> Check
   title = "The request comes from the package's owner"
   if i.env != "ci" and r.author == "" then skip("pkg.owner", title, "blocking", "checked by the registry workflow against the GitHub account that opens the request") else match i.previous
     | some(p) => do
-      same_repo = github_slug(p.repository) == slug
+      // The registered repository, or the repository it is now after a transfer or rename on GitHub.
+      moved_here = i.repo.map(x => x.previous_now.is_some() and x.previous_now == slug).or(false)
+      same_repo = github_slug(p.repository) == slug or moved_here
       owner = p.owners.map(_.lower).contains(r.author.lower) or (scope_of(p.name).is_some() and org_member(i))
       a = if owner then [] else [detail("", 0, "@{r.author.replace("@", "")} is not an owner of {p.name} (owners: {p.owners.join(", ")})", "Ask an owner to publish, or to add you as an owner with a pull request that edits `owners`.")]
       b = if same_repo then [] else [detail("", 0, "{p.name} is published from {p.repository}, not {r.repository}", "Publish from the registered repository. Moving a package to a new repository needs a maintainer's review: open a pull request that changes `repository`.")]
@@ -437,8 +439,9 @@ fn check_owner(i: CheckIn) -> Check
     | none => do
       owner = slug.map(s => s.split("/").first.or("")).or("")
       // For a scoped name, pkg.scope says who may publish it and why.
-      ok = owner != "" and (owner == r.author.lower or scope_of(r.name).is_some())
-      mk("pkg.owner", title, "blocking", if ok then [] else [detail("", 0, "the first version of a package must be requested by the owner of its repository ({owner}), not @{r.author.replace("@", "")}", "Open the request from the {owner} account. For a repository owned by an organization, publish it under the scope {owner}/ as a public member of {owner}, or ask a registry maintainer.")])
+      // A repository of an organization may be published by a public member of it.
+      ok = owner != "" and (owner == r.author.lower or scope_of(r.name).is_some() or org_member(i))
+      mk("pkg.owner", title, "blocking", if ok then [] else [detail("", 0, "the first version of a package must be requested by the owner of its repository ({owner}), not @{r.author.replace("@", "")}", "Open the request from the {owner} account. For a repository owned by an organization, request it as a public member of {owner} (make your membership public on https://github.com/orgs/{owner}/people), or ask a registry maintainer.")])
 
 // A fork can't claim a new flat name: anyone can fork a repository, so the name would go to
 // whoever forked first. Under a scope a fork claims only its owner's name, so that is allowed.
@@ -1076,8 +1079,8 @@ fn org(member: Bool, private: Opt[Bool]) -> Opt[OwnerInfo]
 = some(OwnerInfo{login: "acme", kind: "Organization", member: some(member), private_member: private})
 
 test forks_cannot_claim_new_flat_names = do
-  fork = some(RepoInfo{fork: true, parent: "alice/money"})
-  own = some(RepoInfo{fork: false, parent: ""})
+  fork = some(RepoInfo{fork: true, parent: "alice/money", previous_now: none})
+  own = some(RepoInfo{fork: false, parent: "", previous_now: none})
   a = check_fork(fork_in("money", none, fork, "ci"))
   a.status == "fail" and a.details.any(d => d.fix.contains("bob/money")) and check_fork(fork_in("money", none, own, "ci")).status == "pass" and check_fork(fork_in("bob/money", none, fork, "ci")).status == "pass" and check_fork(fork_in("money", none, none, "ci")).status == "fail" and check_fork(fork_in("money", none, none, "cli")).status == "skip"
 

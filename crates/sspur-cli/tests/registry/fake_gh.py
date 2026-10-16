@@ -118,6 +118,10 @@ def main(argv):
             forks = dict(x.split("=", 1) for x in os.environ.get("FAKE_GH_FORKS", "").split(",") if "=" in x)
             parent = forks.get(m.group(1), "")
             jq = opt(argv, "--jq", "")
+            moved = dict(x.split("=", 1) for x in os.environ.get("FAKE_GH_MOVED", "").split(",") if "=" in x)
+            if jq == ".full_name":
+                print(moved.get(m.group(1), m.group(1)))
+                return 0
             if jq == ".fork":
                 print("true" if parent else "false")
             elif jq.startswith(".parent.full_name"):
