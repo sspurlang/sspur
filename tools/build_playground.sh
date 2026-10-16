@@ -66,8 +66,11 @@ if command -v wasm-opt >/dev/null; then
   # The asyncify pass lets an interpreter call move the frames under it off the browser's small
   # stack (crates/sspur-eval/src/hop.rs). Only sspur_hop unwinds, and never through an indirect
   # call. It runs before -O3: in the other order, Node 20 (an older V8 than current browsers have)
-  # computes wrong results once it optimizes the interpreter.
-  wasm-opt --asyncify --pass-arg='asyncify-imports@*.__wbg_sspur_hop_*' --pass-arg=asyncify-ignore-indirect -O3 \
+  # computes wrong results once it optimizes the interpreter. --low-memory-unused lets -O3 fold
+  # constant offsets into loads and stores (smaller and no slower): the only accesses it changes
+  # are ones whose address wraps around below 1 KiB, which Rust never makes; the stack comes
+  # first in memory, and its last KiB is reached only as sp plus an offset, which doesn't wrap.
+  wasm-opt --asyncify --pass-arg='asyncify-imports@*.__wbg_sspur_hop_*' --pass-arg=asyncify-ignore-indirect -O3 --low-memory-unused \
     --enable-bulk-memory --enable-sign-ext --enable-mutable-globals --enable-nontrapping-float-to-int \
     --enable-reference-types --enable-multivalue "$wasm" -o "$wasm.opt"
   mv "$wasm.opt" "$wasm"
