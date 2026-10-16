@@ -479,3 +479,18 @@ fn programs_see_sspur_as_this_executable() {
     }
     let _ = std::fs::remove_dir_all(&d);
 }
+
+/// The editor extensions and the Claude Code plugin are released with the CLI, at its version.
+#[test]
+fn packaging_follows_the_release_version() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let v = env!("CARGO_PKG_VERSION");
+    for (file, line) in [
+        ("packaging/vscode/package.json", format!("\"version\": \"{v}\"")),
+        ("packaging/zed/extension.toml", format!("version = \"{v}\"")),
+        ("packaging/claude-code/.claude-plugin/plugin.json", format!("\"version\": \"{v}\"")),
+    ] {
+        let text = std::fs::read_to_string(root.join(file)).unwrap();
+        assert!(text.lines().any(|l| l.trim().trim_end_matches(',') == line), "{file} is not at version {v}");
+    }
+}
