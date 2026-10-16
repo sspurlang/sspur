@@ -121,6 +121,10 @@ if (exported.asyncify_start_unwind) {
   same("recursion: 19,998 calls deep, then a stack overflow", [stdoutOf(ok), deep.message], [["199970001"], "runtime error: stack overflow in sum"]);
 }
 
+// A catch whose arms name one error type lets other error types through, as native code does.
+const twoErrs = 'type AErr = Missing | Bad\n\ntype BErr = Broken{why: Str}\n\nfn inner(n: Int) -> Int ! fail[AErr], fail[BErr]\n= if n == 0 then raise Broken{why: "db"} else if n == 1 then raise Bad else n\n\nfn outer(n: Int) -> Int ! fail[BErr]\n= catch inner(n)\n  | Missing => -1\n  | _ => -2\n\nfn try(n: Int) -> Str\n= catch "{outer(n)}"\n  | Broken{why} => "passed through: {why}"\n\nfn main() -> Unit ! log\n= log("{try(1)} {try(5)} {try(0)}")\n';
+same("catch: other error types pass through", stdoutOf(call("run", twoErrs)), ["-2 5 passed through: db"]);
+
 // Share links survive the round trip.
 for (const s of [...examples.map((e) => e.source), "", "fn main() -> Unit ! log\n= log(\"héllo ✓ {1 + 1}\")\n"]) {
   const code = await encode(s);

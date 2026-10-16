@@ -1435,8 +1435,6 @@ impl Interp {
 
     /// Whether a `catch` with these arms handles `v`: one whose arms name constructors handles
     /// only that sum type, as in native code, so a `_` arm there doesn't catch other errors.
-    /// (The playground keeps the old behavior to stay small.)
-    #[cfg(not(target_family = "wasm"))]
     fn catches(&self, arms: &[Arm], v: &Value) -> bool {
         fn ctor(p: &Pat) -> Option<&str> {
             match p {
@@ -1452,7 +1450,6 @@ impl Interp {
     #[inline(never)]
     fn eval_catch(&self, body: &Expr, arms: &[Arm], env: &Rc<Env>) -> R {
         match self.eval(body, env) {
-            #[cfg(not(target_family = "wasm"))]
             Err(Ctrl::Raise(v)) if !self.catches(arms, &v) => Err(Ctrl::Raise(v)),
             Err(Ctrl::Raise(v)) => match self.match_arms(&v, arms, env)? {
                 Some(r) => Ok(r),
