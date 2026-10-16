@@ -57,8 +57,13 @@ fn code_ends(src: &str) -> Option<(Vec<Option<usize>>, Vec<bool>)> {
 }
 
 /// `a` with the continued line `b` joined on, the way the printer writes the statement on one
-/// line: no space before `.name` or a closing bracket, or after an opening one.
+/// line: no space before `.name` or a closing bracket, or after an opening one, and no trailing
+/// comma before a closing bracket (`sspur fmt` writes one after the last element of a broken
+/// list, call or record).
 fn join_continued(a: &mut String, b: &str) {
+    if b.starts_with([')', ']', '}']) && a.ends_with(',') {
+        a.pop();
+    }
     if !(b.starts_with(['.', ')', ']', '}']) || a.ends_with(['(', '[', '{'])) {
         a.push(' ');
     }
@@ -69,15 +74,30 @@ fn indent(l: &str) -> usize {
     l.len() - l.trim_start().len()
 }
 
-/// Whether the source is what `sspur fmt` prints, ignoring comments, blank lines and two
-/// common layouts the printer doesn't use. The formatter drops comments, so they can't count
-/// against a package. It prints a continued statement on one line (ADR 0032), so a line broken
-/// after an operator or before `.name`, or an `if` chain with each `else` on its own line, reads
-/// as the one line it stands for. And match arms may be indented one level under their `match`
+/// Whether the source is what `sspur fmt` prints, ignoring comments, blank lines and where
+/// statements are broken. The formatter drops comments, so they can't count against a package.
+/// A statement broken across lines (after an operator, before `.name`, inside brackets with or
+/// without a trailing comma, an `if` chain with each `else` on its own line) reads as the one
+/// line of the canonical text, so both what `sspur fmt` writes since ADR 0040 and the one-line
+/// form of 0.13 pass. And match arms may be indented one level under their `match`
 /// (with their bodies), as most SSPUR code is written, where the printer puts them at its column.
 pub fn fmt_check(src: &str, module: &Module) -> J {
-    let want_text = print_module(module);
-    let Some((ends, cont)) = code_ends(src) else { return json!({"clean": false, "line": 1, "have": "", "want": ""}) };
+    let wrapped = format_module(module);
+    let r = fmt_against(src, &wrapped);
+    if r["clean"] == true {
+        return r;
+    }
+    let canon = print_module(module);
+    if canon != wrapped && fmt_against(src, &canon)["clean"] == true {
+        return json!({"clean": true});
+    }
+    r
+}
+
+/// The statements of `src`, each with its first line number: lines the lexer reads as one
+/// statement joined, comments and blank lines dropped.
+fn statements(src: &str) -> Option<Vec<(usize, String)>> {
+    let (ends, cont) = code_ends(src)?;
     let starts: Vec<usize> = std::iter::once(0).chain(src.match_indices('\n').map(|(i, _)| i + 1)).collect();
     let mut have: Vec<(usize, String)> = Vec::new();
     for (i, e) in ends.iter().enumerate() {
@@ -91,7 +111,12 @@ pub fn fmt_check(src: &str, module: &Module) -> J {
             _ => have.push((i + 1, line.to_string())),
         }
     }
-    let want: Vec<&str> = want_text.lines().map(str::trim_end).filter(|l| !l.trim().is_empty()).collect();
+    Some(have)
+}
+
+fn fmt_against(src: &str, want_text: &str) -> J {
+    let Some(have) = statements(src) else { return json!({"clean": false, "line": 1, "have": "", "want": ""}) };
+    let want: Vec<String> = statements(want_text).unwrap_or_default().into_iter().map(|x| x.1).collect();
     // The arms indented past where the printer puts them: each one's indent in the source.
     let mut arms: Vec<usize> = Vec::new();
     let mut j = 0;
@@ -564,6 +589,11 @@ mod tests {
         assert_eq!(fmt_check(&printed, &parse(&printed).unwrap()), json!({"clean": true}));
         let odd = "fn f(x: Int) -> Int\n= match x\n   | 0 => 1\n   | _ => 2\n";
         assert_eq!(fmt_check(odd, &parse(odd).unwrap())["line"], 3);
+        let long = "fn f(xs: List[Int]) -> Int\n= xs.filter(x => x > 1000000).map(x => x * 1000 + 17).filter(x => x % 3 == 0).map(x => x / 7).filter(x => x > 0).sum\n\ntest t = f([10000000, 20000000, 30000000, 40000000, 50000000, 60000000, 70000000, 80000000]) > 0 and f([]) == 0\n";
+        let wrapped = sspur_syntax::format_module(&parse(long).unwrap());
+        assert!(wrapped.lines().count() > 6, "{wrapped}");
+        assert_eq!(fmt_check(&wrapped, &parse(&wrapped).unwrap()), json!({"clean": true}), "{wrapped}");
+        assert_eq!(fmt_check(long, &parse(long).unwrap()), json!({"clean": true}), "the one-line form of 0.13");
         let short = "fn h(a: Int) -> P\n= P{a: a, b: 1}\n";
         assert_eq!(fmt_check(short, &parse(short).unwrap())["want"], "= P{a, b: 1}");
     }
