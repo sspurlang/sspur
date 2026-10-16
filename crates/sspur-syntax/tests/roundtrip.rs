@@ -264,3 +264,13 @@ fn upper_case_field_access_is_a_field() {
     assert!(printed.contains("= g.OBJECT_NAME.trim + \"{g.MEAN_MOTION * 2.0}\"") && printed.contains("lib.f(x) + lib.N") && printed.contains("lib.Box{w: lib.W}"), "{printed}");
     roundtrip(src);
 }
+
+#[test]
+fn record_shorthand_is_kept() {
+    let src = "fn f(items: List[Int], total: Int, r: R) -> Page\n= Page{items, total, limit: r.limit, offset: offset}\n\nfn g(p: P) -> Int\n= match p\n  | P{a, b: c} => a + c\n";
+    let printed = print_module(&parse(src).unwrap());
+    assert!(printed.contains("= Page{items, total, limit: r.limit, offset}\n"), "{printed}");
+    assert!(printed.contains("P{a, b: c} => a + c"), "{printed}");
+    assert!(print_module(&parse("fn h(x: Int) -> R\n= {x, y: x}\n").unwrap()).contains("= {x, y: x}\n"));
+    roundtrip(src);
+}

@@ -438,7 +438,13 @@ pub fn expr(e: &Expr, ind: usize) -> String {
             s
         }
         ExprKind::Record { ctor, fields } => {
-            let items: Vec<String> = fields.iter().map(|(n, v)| format!("{}: {}", n, expr(v, ind))).collect();
+            let items: Vec<String> = fields
+                .iter()
+                .map(|(n, v)| match &v.kind {
+                    ExprKind::Name(x) if x == n => n.clone(),
+                    _ => format!("{}: {}", n, expr(v, ind)),
+                })
+                .collect();
             format!("{}{{{}}}", ctor.as_deref().unwrap_or(""), items.join(", "))
         }
         ExprKind::List(xs) => format!("[{}]", list(xs, ind)),
