@@ -338,6 +338,9 @@ const HIDDEN: &str = "__attribute__((visibility(\"hidden\"))) ";
 
 pub(super) struct Opts<'a> {
     pub(super) owners: &'a [String],
+    /// The units: each lists the owners whose definitions it holds (one each, or a group of a
+    /// big package's functions). Every owner is in exactly one; the runtime unit comes last.
+    pub(super) groups: &'a [Vec<usize>],
     pub(super) shared: &'a [&'a str],
     pub(super) inline_bytes: usize,
     pub(super) inline_max: usize,
@@ -361,7 +364,13 @@ pub(super) fn units(src: &str, o: &Opts) -> Vec<Tu> {
         let f = format!("f_{n}");
         o.cnames.get(&f).cloned().unwrap_or(f)
     };
-    let owner_of: HashMap<String, usize> = o.owners.iter().enumerate().flat_map(|(k, n)| [(c_fn(n), k), (format!("sspur_entry_{n}"), k), (format!("sspur_wentry_{n}"), k)]).collect();
+    let mut unit_of = vec![0; o.owners.len()];
+    for (u, g) in o.groups.iter().enumerate() {
+        for &k in g {
+            unit_of[k] = u;
+        }
+    }
+    let owner_of: HashMap<String, usize> = o.owners.iter().enumerate().flat_map(|(k, n)| [(c_fn(n), unit_of[k]), (format!("sspur_entry_{n}"), unit_of[k]), (format!("sspur_wentry_{n}"), unit_of[k])]).collect();
     let mut shared_fns: HashSet<String> = o.shared.iter().map(|s| s.to_string()).collect();
     for it in its.iter_mut() {
         if it.kind == Kind::Fn {
@@ -418,27 +427,26 @@ pub(super) fn units(src: &str, o: &Opts) -> Vec<Tu> {
     }
     let seeds: Vec<String> = its.iter().enumerate().filter(|(k, _)| global[*k]).flat_map(|(_, it)| it.hdr.iter().chain(&it.rest).cloned()).collect();
     let dollar: HashSet<String> = its.iter().filter(|it| matches!(it.role, Role::SharedFn | Role::SharedVar)).flat_map(|it| it.names.iter().filter(|n| n.contains('$')).cloned()).collect();
-    let n_units = o.owners.len() + 1;
-    let mut out = Vec::with_capacity(n_units);
-    for u in 0..n_units {
-        let rt = u == o.owners.len();
+    let n_units = o.groups.len() + 1;
+    let mut roots: Vec<Vec<usize>> = vec![Vec::new(); n_units];
+    for (k, it) in its.iter().enumerate() {
+        match it.role {
+            Role::Anchored(a) if it.kind == Kind::Fn => roots[a].push(k),
+            Role::SharedFn | Role::SharedVar if it.kind != Kind::Proto => roots[n_units - 1].push(k),
+            _ => {}
+        }
+    }
+    let globals: Vec<usize> = (0..its.len()).filter(|&k| global[k]).collect();
+    let unit = |u: usize| -> Tu {
+        let rt = u == o.groups.len();
         let mut modes: HashMap<usize, Mode> = HashMap::new();
         let mut copies: HashMap<String, bool> = HashMap::new();
         let mut n_copies = 0;
+        let inline_max = o.inline_max * if rt { 1 } else { o.groups[u].len() };
         let mut seen: HashSet<String> = HashSet::new();
         let mut work: Vec<String> = seeds.clone();
         let mut incl_groups: HashSet<usize> = HashSet::new();
-        let mut pending: Vec<usize> = Vec::new();
-        for (k, it) in its.iter().enumerate() {
-            let mine = match it.role {
-                Role::Anchored(a) => a == u && it.kind == Kind::Fn,
-                Role::SharedFn | Role::SharedVar => rt && it.kind != Kind::Proto,
-                Role::Float => false,
-            };
-            if mine {
-                pending.push(k);
-            }
-        }
+        let mut pending: Vec<usize> = roots[u].clone();
         loop {
             while let Some(k) = pending.pop() {
                 let g = group[k];
@@ -454,7 +462,7 @@ pub(super) fn units(src: &str, o: &Opts) -> Vec<Tu> {
                             return *c;
                         }
                         let def = defs.get(name.as_str()).and_then(|v| v.iter().find(|&&j| its[j].kind == Kind::Fn)).map(|&j| &its[j]);
-                        let c = def.is_some_and(|d| !d.stateful && d.e - d.body <= o.inline_bytes) && *n_copies < o.inline_max;
+                        let c = def.is_some_and(|d| !d.stateful && d.e - d.body <= o.inline_bytes) && *n_copies < inline_max;
                         if c {
                             *n_copies += 1;
                         }
@@ -506,15 +514,18 @@ pub(super) fn units(src: &str, o: &Opts) -> Vec<Tu> {
                 pending.extend(v.iter().copied());
             }
         }
+        let mut order: Vec<usize> = modes.keys().copied().filter(|&k| !global[k]).chain(globals.iter().copied()).collect();
+        order.sort_unstable();
         let mut t = String::with_capacity(src.len() / 4);
-        for (k, it) in its.iter().enumerate() {
+        for k in order {
+            let it = &its[k];
             let body = &src[it.s..it.e];
             if global[k] {
                 t.push_str(body);
                 t.push('\n');
                 continue;
             }
-            let Some(mode) = modes.get(&k) else { continue };
+            let mode = &modes[&k];
             match mode {
                 Mode::AsIs => t.push_str(body),
                 Mode::Hidden => {
@@ -541,10 +552,34 @@ pub(super) fn units(src: &str, o: &Opts) -> Vec<Tu> {
             }
             t.push('\n');
         }
-        let name = if rt { "rt".to_string() } else { o.owners[u].clone() };
-        out.push(Tu { name, text: canon(&t, &dollar) });
+        let name = if rt { "rt".to_string() } else { o.owners[o.groups[u][0]].clone() };
+        Tu { name, text: canon(&t, &dollar) }
+    };
+    // Units are independent, and a big program has thousands: build them on every core.
+    let workers = std::thread::available_parallelism().map_or(1, |n| n.get()).min(n_units.div_ceil(64)).max(1);
+    if workers == 1 {
+        return (0..n_units).map(unit).collect();
     }
-    out
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let mut parts: Vec<(usize, Tu)> = std::thread::scope(|s| {
+        let hs: Vec<_> = (0..workers)
+            .map(|_| {
+                s.spawn(|| {
+                    let mut mine = Vec::new();
+                    loop {
+                        let u = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        if u >= n_units {
+                            break mine;
+                        }
+                        mine.push((u, unit(u)));
+                    }
+                })
+            })
+            .collect();
+        hs.into_iter().flat_map(|h| h.join().unwrap()).collect()
+    });
+    parts.sort_unstable_by_key(|p| p.0);
+    parts.into_iter().map(|p| p.1).collect()
 }
 
 fn cut(src: &str, s: usize, e: usize, drop: &[(usize, usize)]) -> String {
@@ -596,7 +631,7 @@ pub(super) fn fn_names(src: &str) -> HashSet<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{generate, lower, split_units};
+    use super::super::{generate, lower, split_units, unit_groups};
 
     fn unit_texts(src: &str) -> Vec<(String, String)> {
         let m = sspur_syntax::parse(src).unwrap();
@@ -621,5 +656,46 @@ mod tests {
         let before = unit_texts(base);
         assert_eq!(changed(&before, &unit_texts(&base.replace("_.x > 1", "_.x > 2"))), vec!["b", "c"]);
         assert_eq!(changed(&before, &unit_texts(&base.replace("= n * n", "= n * n + 1"))), vec!["sq", "a"]);
+    }
+
+    #[test]
+    fn big_packages_are_grouped_by_name() {
+        let names = |n: usize| -> Vec<String> { (0..n).map(|i| format!("lib__f{i}")).chain(["main".into(), "helper".into()]).chain((0..5).map(|i| format!("small__g{i}"))).collect() };
+        let owners = names(40);
+        let groups = unit_groups(&owners);
+        let mut all: Vec<usize> = groups.iter().flatten().copied().collect();
+        all.sort();
+        assert_eq!(all, (0..owners.len()).collect::<Vec<_>>(), "every owner is in one unit");
+        for g in &groups {
+            let lib = g.iter().filter(|&&k| owners[k].starts_with("lib__")).count();
+            assert!(lib == 0 || lib == g.len(), "a unit holds one package: {g:?}");
+            assert!(lib > 0 || g.len() == 1, "the program's own functions and small packages keep a unit each: {g:?}");
+        }
+        assert_eq!(groups.len(), 2 + 2 + 5, "40 functions of lib in two units");
+        assert_eq!(groups, unit_groups(&owners), "the same every time");
+        let members = |owners: &[String]| -> Vec<Vec<String>> {
+            let mut v: Vec<Vec<String>> = unit_groups(owners).into_iter().map(|g| g.into_iter().map(|k| owners[k].clone()).filter(|n| n.starts_with("lib__") && n != "lib__f40").collect()).filter(|g: &Vec<String>| !g.is_empty()).collect();
+            v.sort();
+            v
+        };
+        assert_eq!(members(&owners), members(&names(41)), "a new function joins a unit and moves no other");
+    }
+
+    #[test]
+    fn grouped_units_hold_each_definition_once() {
+        let src = "fn sq(n: Int) -> Int\n= n * n\nfn a(n: Int) -> Int\n= (0..n).map(i => sq(i) + 1).sum\nfn b(n: Int) -> Int\n= a(n) * 2\nfn c(n: Int) -> Int\n= b(n) + sq(n)\n";
+        let m = sspur_syntax::parse(src).unwrap();
+        let check = sspur_check::check(&m);
+        let (c, plan) = generate(&m, &check, None, None, true, true).unwrap();
+        let k = |n: &str| plan.owned.iter().position(|o| o == n).unwrap();
+        let groups = vec![vec![k("sq"), k("a")], vec![k("b"), k("c")]];
+        let runtime = std::collections::HashSet::new();
+        let tus = super::units(&c, &super::Opts { owners: &plan.owned, groups: &groups, shared: &["enc_err"], inline_bytes: 1200, inline_max: 24, runtime: &runtime, share_bytes: 400, cnames: &Default::default() });
+        assert_eq!(tus.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(), ["sq", "b", "rt"]);
+        for (n, unit) in [("sq", 0), ("a", 0), ("b", 1), ("c", 1)] {
+            let entry = format!("sspur_entry_{n}(");
+            let defined: Vec<usize> = tus.iter().enumerate().filter(|(_, t)| t.text.lines().any(|l| l.contains(&entry) && !l.trim_end().ends_with(';'))).map(|(i, _)| i).collect();
+            assert_eq!(defined, [unit], "{n}'s entry is defined in its unit only");
+        }
     }
 }
