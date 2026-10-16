@@ -1002,6 +1002,8 @@ pub struct Resolver<'a> {
     pub fetched: Vec<String>,
     plan: BTreeMap<String, RegVersion>,
     asked: BTreeMap<String, Vec<(String, String)>>,
+    /// Path packages built so far, by directory: a module many others use is built once.
+    dirs: BTreeMap<PathBuf, String>,
 }
 
 impl Resolver<'_> {
@@ -1186,7 +1188,17 @@ impl Resolver<'_> {
                 return Ok(p);
             }
         }
+        if let Source::Path(p) = src
+            && let Ok(dir) = base.join(p).canonicalize()
+            && self.dirs.get(&dir).is_some_and(|n| n == name)
+            && let Some((e, p)) = self.out.get(name).map(|(e, p)| (e.clone(), p.clone()))
+        {
+            return self.record(LockEntry { source: key, reference: None, ..e }, p, direct);
+        }
         let co = checkout(src, base, pinned.as_ref().and_then(|e| e.rev.as_deref()))?;
+        if matches!(src, Source::Path(_)) {
+            self.dirs.insert(co.dir.clone(), name.to_string());
+        }
         let m = Manifest::read(&co.dir)?.ok_or_else(|| format!("{}: no sspur.toml, so it is not a package", co.dir.display()))?;
         if m.name != name {
             return Err(format!("the package at {} is named {}, not {name}; use 'sspur add' to add it under its own name", co.dir.display(), m.name));
@@ -1220,7 +1232,7 @@ pub fn resolve(root: &Path, m: &Manifest, lock: &Lock, update: Option<BTreeSet<S
 }
 
 pub fn resolve_with(root: &Path, m: &Manifest, lock: &Lock, update: Option<BTreeSet<String>>) -> Result<(Lock, Env, Vec<String>), String> {
-    let mut r = Resolver { lock, update, out: BTreeMap::new(), fetched: vec![], plan: BTreeMap::new(), asked: BTreeMap::new() };
+    let mut r = Resolver { lock, update, out: BTreeMap::new(), fetched: vec![], plan: BTreeMap::new(), asked: BTreeMap::new(), dirs: BTreeMap::new() };
     let mut roots = Vec::new();
     let mut keep = BTreeMap::new();
     for (k, s) in &m.deps {
@@ -1253,7 +1265,7 @@ pub fn resolve_with(root: &Path, m: &Manifest, lock: &Lock, update: Option<BTree
 /// linked as `name:module` and its registry dependencies as `lock` pins them (else from the
 /// index). This is the hash `sspur api` reports and every dependent checks.
 pub fn build_published(root: &Path, m: &Manifest, lock: &Lock) -> Result<Pkg, String> {
-    let mut r = Resolver { lock, update: None, out: BTreeMap::new(), fetched: vec![], plan: BTreeMap::new(), asked: BTreeMap::new() };
+    let mut r = Resolver { lock, update: None, out: BTreeMap::new(), fetched: vec![], plan: BTreeMap::new(), asked: BTreeMap::new(), dirs: BTreeMap::new() };
     r.published(&m.name, root, m, &m.name).map(|(p, _)| p)
 }
 
