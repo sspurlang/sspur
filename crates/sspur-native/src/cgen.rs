@@ -1597,9 +1597,10 @@ fn build_split(src: &str, opt: &str, plan: &Plan, lto: flags::Lto, names: &HashM
     let failed: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
     let jobs = flags::jobs(todo.iter().map(|&i| tus[i].text.len()).max().unwrap_or(0)).min(todo.len().max(1));
     // Biggest units first, so no long compile is left for the end, in batches (one clang process
-    // each, which saves its startup) of about an equal share of the C: several per job, at most 16 units.
+    // each, which saves its startup) of about an equal share of the C: several per job, at most
+    // 16 units, and not so small that a little program starts a process for each unit.
     todo.sort_by_key(|&i| std::cmp::Reverse(tus[i].text.len()));
-    let share = todo.iter().map(|&i| tus[i].text.len()).sum::<usize>().div_ceil(jobs * 4).max(1);
+    let share = todo.iter().map(|&i| tus[i].text.len()).sum::<usize>().div_ceil(jobs * 4).max(64 << 10);
     let mut batches: Vec<Vec<usize>> = Vec::new();
     let mut size = 0;
     for &i in &todo {
