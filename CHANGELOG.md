@@ -4,6 +4,8 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-16
+
 ### Added
 - Scoped package names tied to GitHub owners (ADR 0039), so two companies can each have `pkg`: `name = "acme/pkg"` in `sspur.toml`, where `acme` is the GitHub user or organization that owns the repository. The new blocking check `pkg.scope` verifies it: the request must come from that user or, for an organization, from a public member (a private member is told how to make the membership public). Scoped packages live at `packages/@acme/pkg.json` in the index, with releases named `acme--pkg-VERSION`; flat names and existing index files are unchanged, and 0.12.0 clients keep installing flat packages. Every new name, scoped or not, still waits for a maintainer's `/approve`.
 - `sspur add acme/pkg` writes `pkg = { package = "acme/pkg", version = "^1.0.0" }`, using the name after the scope as the dependency key; when the key is taken it says so and `--as NAME` picks another, so two scopes' `pkg` work in one program. Locks record full names, `sspur deps tree` shows the key a package is used under, and `sspur publish`, `yank`, `search`, `source`, the issue forms, the package site (pages at `packages/acme/pkg/`) and the Publish page know scoped names.
@@ -403,7 +405,8 @@ This release covers Phases 3 to 7 of the roadmap and ADRs 0003 to 0024. SSPUR no
 - Language design spec, JSON schemas and the token benchmark.
 - Compiler core: parser, checker, content hashing, interpreter and the `sspur` CLI, with an 11-program suite.
 
-[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.12.1...HEAD
+[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/utkarshavardhana/sspur/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/utkarshavardhana/sspur/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/utkarshavardhana/sspur/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/utkarshavardhana/sspur/compare/v0.10.0...v0.11.0
