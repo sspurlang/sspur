@@ -62,6 +62,8 @@ async function settle(page, test) {
 async function desktop(page, name, mod) {
   // The ruler sits at column 100: where a line of 100 characters ends.
   await ed.set(page, "x".repeat(100) + "\n");
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(100);
   const pos = await page.evaluate(() => {
     const line = document.querySelector(".cm-line");
     const r = document.createRange();

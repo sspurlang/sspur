@@ -308,7 +308,8 @@ function ruler(col) {
       this.place(view);
     }
     update(u) {
-      if (u.geometryChanged || u.heightChanged) this.place(u.view);
+      // Fonts can load after the first measure, changing the character width.
+      if (u.geometryChanged || u.heightChanged || u.docChanged || u.viewportChanged) this.place(u.view);
     }
     place(view) {
       view.requestMeasure({
