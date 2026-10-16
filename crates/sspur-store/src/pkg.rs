@@ -353,6 +353,14 @@ pub fn load_cached(hash: &str) -> Option<Pkg> {
     (p.hash == hash).then_some(p)
 }
 
+/// The cached package of a lock entry. The cache is keyed by the export hash, which versions
+/// with the same exports share, so the version comes from the entry.
+fn load_locked(e: &LockEntry) -> Option<Pkg> {
+    let mut p = load_cached(&e.hash)?;
+    p.version.clone_from(&e.version);
+    Some(p)
+}
+
 fn store_cached(p: &Pkg, src: &str, manifest: &str) -> Result<(), String> {
     let dir = pkg_dir(&p.hash);
     if dir.join("pkg.json").is_file() {
@@ -454,7 +462,7 @@ impl Env {
 
     /// What the lock pins, from the cache, whatever the manifest now says.
     pub fn locked(m: &Manifest, lock: &Lock) -> Env {
-        let all = lock.entries.iter().filter_map(|(n, e)| Some((n.clone(), Arc::new(load_cached(&e.hash)?)))).collect();
+        let all = lock.entries.iter().filter_map(|(n, e)| Some((n.clone(), Arc::new(load_locked(e)?)))).collect();
         Env { name: Some(m.name.clone()), direct: m.deps.keys().cloned().collect(), all }
     }
 
@@ -472,7 +480,7 @@ impl Env {
             if all.contains_key(&n) {
                 continue;
             }
-            let p = load_cached(&lock.entries.get(&n)?.hash)?;
+            let p = load_locked(lock.entries.get(&n)?)?;
             todo.extend(p.deps.keys().cloned());
             all.insert(n, Arc::new(p));
         }
@@ -890,7 +898,7 @@ impl Resolver<'_> {
 
     fn cached_closure(&mut self, name: &str) -> Option<Arc<Pkg>> {
         let e = self.lock.entries.get(name)?;
-        let p = Arc::new(load_cached(&e.hash)?);
+        let p = Arc::new(load_locked(e)?);
         for d in p.deps.keys() {
             if !self.out.contains_key(d) {
                 self.cached_closure(d)?;
