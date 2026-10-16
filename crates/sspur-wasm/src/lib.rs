@@ -114,11 +114,11 @@ pub fn test(src: &str) -> String {
     json!({ "status": if failed == 0 { "ok" } else { "failed" }, "tests": tests, "passed": results.len() - failed, "failed": failed, "text": text.join("\n"), "diags": diags }).to_string()
 }
 
-/// The canonical form, as `sspur fmt` prints it.
+/// The source as `sspur fmt` prints it.
 #[wasm_bindgen]
 pub fn fmt(src: &str) -> String {
     match sspur_syntax::parse(src) {
-        Ok(m) => json!({ "ok": true, "text": sspur_syntax::print_module(&m) }).to_string(),
+        Ok(m) => json!({ "ok": true, "text": sspur_syntax::format_module(&m) }).to_string(),
         Err(e) => json!({ "ok": false, "diags": ide::diags_json(src, &[sspur_check::syntax_diag_in(src, &e)], None) }).to_string(),
     }
 }

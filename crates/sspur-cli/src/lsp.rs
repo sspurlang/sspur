@@ -464,7 +464,7 @@ fn handle(state: &State, out: &crossbeam_channel::Sender<Message>, r: &Request) 
         "textDocument/formatting" => {
             let (text, _, _) = doc()?;
             let Ok(m) = sspur_syntax::parse(&text) else { return Ok(J::Null) };
-            let new = sspur_syntax::print_module(&m);
+            let new = sspur_syntax::format_module(&m);
             if new == text {
                 return Ok(json!([]));
             }

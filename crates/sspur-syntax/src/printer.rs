@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::layout::{self, mark};
 
 pub fn print_module(m: &Module) -> String {
     let mut out = String::new();
@@ -39,7 +40,7 @@ fn print_def_inner(d: &Def) -> String {
         }
         Def::Static(s) => format!("static {}: {} = {}", s.name, ty(&s.ty), expr(&s.init, 0)),
         Def::Use(u) if u.names.is_empty() => format!("use {}", u.pkg),
-        Def::Use(u) => format!("use {}.{{{}}}", u.pkg, u.names.join(", ")),
+        Def::Use(u) => format!("use {}.{{{}}}", u.pkg, layout::group(&u.names)),
         Def::Trait(t) => {
             let mut s = format!("trait {}{}", t.name, tparams(&t.params));
             for m in &t.methods {
@@ -120,7 +121,7 @@ fn fields(fs: &[Field]) -> String {
             None => format!("{}: {}", f.name, ty(&f.ty)),
         })
         .collect();
-    format!("{{{}}}", items.join(", "))
+    format!("{{{}}}", layout::group(&items))
 }
 
 fn print_type_def(t: &TypeDef) -> String {
@@ -165,7 +166,7 @@ pub fn print_sig(f: &FnDef) -> String {
     } else {
         "fn"
     };
-    let mut s = format!("{kw} {}{}({})", f.name, tparams(&f.tparams), params.join(", "));
+    let mut s = format!("{kw} {}{}({})", f.name, tparams(&f.tparams), layout::group(&params));
     if let Some(r) = &f.ret {
         s.push_str(&format!(" -> {}", ty(r)));
     }
@@ -309,7 +310,8 @@ pub fn expr(e: &Expr, ind: usize) -> String {
             if s.contains(['.', 'e']) { s } else { format!("{s}.0") }
         }
         ExprKind::Str(parts) => {
-            let mut s = String::from("\"");
+            let mut s = format!("{}\"", mark(layout::STR_S));
+            let was = layout::marking(false);
             for p in parts {
                 match p {
                     StrPart::Lit(l) => {
@@ -329,6 +331,8 @@ pub fn expr(e: &Expr, ind: usize) -> String {
                 }
             }
             s.push('"');
+            layout::marking(was);
+            s.push_str(mark(layout::STR_E));
             s
         }
         ExprKind::Bool(b) => b.to_string(),
@@ -337,7 +341,8 @@ pub fn expr(e: &Expr, ind: usize) -> String {
         ExprKind::Hole(None) => "?".into(),
         ExprKind::Hole(Some(n)) => format!("?{n}"),
         ExprKind::Placeholder => "_".into(),
-        ExprKind::Field(x, f) => format!("{}.{}", operand(x, 10, ind), f),
+        // A line can't start with `.0`, so a tuple element is never where a chain breaks.
+        ExprKind::Field(x, f) => format!("{}{}.{}", operand(x, 10, ind), if f.starts_with(|c: char| c.is_ascii_digit()) { "" } else { mark(layout::CHAIN_F) }, f),
         ExprKind::Call(f, args) => format!("{}({})", operand(f, 10, ind), list(args, ind)),
         ExprKind::Method { recv, name, targs, args } if name == "mmio" && targs.len() == 1 => {
             let rest: String = args.iter().map(|a| format!(", {}", expr(a, ind))).collect();
@@ -378,7 +383,7 @@ pub fn expr(e: &Expr, ind: usize) -> String {
             s
         }
         ExprKind::Method { recv, name, targs, args } => {
-            let mut s = format!("{}.{}", operand(recv, 10, ind), name);
+            let mut s = format!("{}{}.{}", operand(recv, 10, ind), mark(layout::CHAIN_M), name);
             if !targs.is_empty() {
                 s.push_str(&format!("[{}]", targs.iter().map(ty).collect::<Vec<_>>().join(", ")));
             }
@@ -401,7 +406,7 @@ pub fn expr(e: &Expr, ind: usize) -> String {
             let p = op.prec();
             let (lmin, rmin) = if *op == BinOp::Pow { (p + 1, p) } else { (p, p + 1) };
             let ls = if *op == BinOp::Or && matches!(&l.kind, ExprKind::Match(_, arms, MatchForm::Is) if arms[0].guard.is_none()) { expr(l, ind) } else { operand(l, lmin, ind) };
-            format!("{ls} {} {}", op.symbol(), operand(r, rmin, ind))
+            format!("{ls} {}{} {}", op.symbol(), layout::bin(p), operand(r, rmin, ind))
         }
         ExprKind::Unary(UnOp::Neg, x) => format!("-{}", operand(x, 9, ind)),
         ExprKind::Unary(UnOp::Not, x) => format!("not {}", operand(x, 4, ind)),
@@ -446,7 +451,7 @@ pub fn expr(e: &Expr, ind: usize) -> String {
                     if s == *n { s } else { format!("{n}: {s}") }
                 })
                 .collect();
-            format!("{}{{{}}}", ctor.as_deref().unwrap_or(""), items.join(", "))
+            format!("{}{{{}}}", ctor.as_deref().unwrap_or(""), layout::group(&items))
         }
         ExprKind::List(xs) => format!("[{}]", list(xs, ind)),
         ExprKind::Tuple(xs) => format!("({})", list(xs, ind)),
@@ -456,7 +461,7 @@ pub fn expr(e: &Expr, ind: usize) -> String {
         ExprKind::Table(_) => "<rule table>".into(),
         ExprKind::With(base, ups) => {
             let items: Vec<String> = ups.iter().map(|(p, v)| format!("{} := {}", path(p, ind), expr(v, ind))).collect();
-            format!("{} with {}", operand(base, 1, ind), items.join(", "))
+            format!("{} with {}", operand(base, 1, ind), layout::updates(&items))
         }
     }
 }
@@ -514,16 +519,24 @@ fn guard_lines(e: &Expr, ind: usize) -> Vec<String> {
 }
 
 fn if_form(c: &str, t: &Expr, f: Option<&Expr>, ind: usize) -> String {
+    let c = format!("{c}{}", mark(layout::THEN));
     let nested = matches!(t.kind, ExprKind::If(..) | ExprKind::Match(_, _, MatchForm::IfIs | MatchForm::IfChain) | ExprKind::Lambda { .. });
     match f {
+        // `sspur fmt` lines `else` up with the `if` and indents each block once (ADR 0040).
+        Some(f) if layout::natural() && (matches!(&t.kind, ExprKind::Match(_, _, MatchForm::LetElse)) || matches!(&t.kind, ExprKind::Block(st) if !matches!(st.as_slice(), [Stmt::Assign(..)]))) => {
+            format!("if {c} then {}\n{}else {}", branch(t, ind), pad(ind), branch(f, ind))
+        }
         Some(f) if matches!(&t.kind, ExprKind::Match(_, _, MatchForm::LetElse)) || matches!(&t.kind, ExprKind::Block(st) if !matches!(st.as_slice(), [Stmt::Assign(..)])) => {
             format!("if {c} then {}\n{}else {}", branch(t, ind + 2), pad(ind + 2), branch(f, ind + 2))
         }
-        Some(f) if nested && !expr(t, ind + 4).contains('\n') => format!("if {c} then ({}) else {}", expr(t, ind + 4), branch(f, ind)),
+        Some(f) if nested && !expr(t, ind + 4).contains('\n') => format!("if {c} then ({}){} else {}", expr(t, ind + 4), mark(layout::ELSE), branch(f, ind)),
+        Some(f) if layout::natural() && (nested || matches!(t.kind, ExprKind::Match(..) | ExprKind::Catch(..) | ExprKind::Handle(..))) => {
+            format!("if {c} then do\n{}{}\n{}else {}", pad(ind + 2), expr(t, ind + 2), pad(ind), branch(f, ind))
+        }
         Some(f) if nested || matches!(t.kind, ExprKind::Match(..) | ExprKind::Catch(..) | ExprKind::Handle(..)) => {
             format!("if {c} then do\n{}{}\n{}else {}", pad(ind + 4), expr(t, ind + 4), pad(ind + 2), branch(f, ind + 2))
         }
-        Some(f) => format!("if {c} then {} else {}", branch(t, ind), branch(f, ind)),
+        Some(f) => format!("if {c} then {}{} else {}", branch(t, ind), mark(layout::ELSE), branch(f, ind)),
         None => format!("if {c} then {}", branch(t, ind)),
     }
 }
@@ -562,7 +575,7 @@ fn branch(e: &Expr, ind: usize) -> String {
 }
 
 fn list(xs: &[Expr], ind: usize) -> String {
-    xs.iter().map(|x| expr(x, ind)).collect::<Vec<_>>().join(", ")
+    layout::group(&xs.iter().map(|x| expr(x, ind)).collect::<Vec<_>>())
 }
 
 fn print_arms(arms: &[Arm], ind: usize) -> String {
@@ -570,7 +583,7 @@ fn print_arms(arms: &[Arm], ind: usize) -> String {
     for a in arms {
         s.push_str(&format!("\n{}| {}", pad(ind), pat(&a.pat)));
         if let Some(g) = &a.guard {
-            s.push_str(&format!(" if {}", expr(g, ind)));
+            s.push_str(&format!(" if {}{}", expr(g, ind), mark(layout::THEN)));
         }
         s.push_str(&format!(" => {}", branch(&a.body, ind)));
     }
@@ -640,7 +653,7 @@ pub fn pat(p: &Pat) -> String {
         Pat::Wild => "_".into(),
         Pat::Bind(n) => n.clone(),
         Pat::Int(n) => n.to_string(),
-        Pat::Str(s) => format!("{s:?}"),
+        Pat::Str(s) => format!("{}{s:?}{}", mark(layout::STR_S), mark(layout::STR_E)),
         Pat::Bool(b) => b.to_string(),
         Pat::Tuple(xs) => format!("({})", xs.iter().map(pat).collect::<Vec<_>>().join(", ")),
         Pat::Ctor { name, args: CtorArgs::None } => name.clone(),
