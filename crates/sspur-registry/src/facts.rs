@@ -24,43 +24,105 @@ fn short_hash(s: &str) -> String {
 }
 
 /// For each line, the byte offset where its code ends: everything after it is a comment or
-/// blank. `None` for a line with no code.
-fn code_ends(src: &str) -> Option<Vec<Option<usize>>> {
+/// blank, `None` for a line with no code. And for each line, whether it continues the
+/// statement of the line before it (the lexer read no line break there).
+fn code_ends(src: &str) -> Option<(Vec<Option<usize>>, Vec<bool>)> {
     let toks = lex(src).ok()?;
     let starts: Vec<usize> = std::iter::once(0).chain(src.match_indices('\n').map(|(i, _)| i + 1)).collect();
+    let line_of = |at: usize| starts.partition_point(|&x| x <= at) - 1;
     let mut ends = vec![None; starts.len()];
+    let mut cont = vec![false; starts.len()];
+    let mut prev_line = None;
     for t in toks {
+        if matches!(t.tok, Tok::Newline(_)) {
+            prev_line = None;
+        }
         if matches!(t.tok, Tok::Newline(_) | Tok::Eof) || t.span.end <= t.span.start {
             continue;
         }
         let (s, e) = (t.span.start as usize, t.span.end as usize);
-        let l = starts.partition_point(|&x| x <= s) - 1;
+        let l = line_of(s);
         let le = starts.partition_point(|&x| x < e.max(1)) - 1;
+        if prev_line.is_some_and(|p| l > p) {
+            cont[l] = true;
+        }
+        prev_line = Some(le);
         for (i, slot) in ends.iter_mut().enumerate().take(le + 1).skip(l) {
             let line_end = starts.get(i + 1).map_or(src.len(), |&n| n - 1);
             let v = if i == le { e } else { line_end };
             *slot = Some(slot.map_or(v, |x: usize| x.max(v)));
         }
     }
-    Some(ends)
+    Some((ends, cont))
 }
 
-/// Whether the source is what `sspur fmt` prints, ignoring comments and blank lines. The
-/// formatter drops comments, so they can't count against a package.
+/// `a` with the continued line `b` joined on, the way the printer writes the statement on one
+/// line: no space before `.name` or a closing bracket, or after an opening one.
+fn join_continued(a: &mut String, b: &str) {
+    if !(b.starts_with(['.', ')', ']', '}']) || a.ends_with(['(', '[', '{'])) {
+        a.push(' ');
+    }
+    a.push_str(b);
+}
+
+fn indent(l: &str) -> usize {
+    l.len() - l.trim_start().len()
+}
+
+/// Whether the source is what `sspur fmt` prints, ignoring comments, blank lines and two
+/// common layouts the printer doesn't use. The formatter drops comments, so they can't count
+/// against a package. It prints a continued statement on one line (ADR 0032), so a line broken
+/// after an operator or before `.name`, or an `if` chain with each `else` on its own line, reads
+/// as the one line it stands for. And match arms may be indented one level under their `match`
+/// (with their bodies), as most SSPUR code is written, where the printer puts them at its column.
 pub fn fmt_check(src: &str, module: &Module) -> J {
     let want_text = print_module(module);
-    let Some(ends) = code_ends(src) else { return json!({"clean": false, "line": 1, "have": "", "want": ""}) };
+    let Some((ends, cont)) = code_ends(src) else { return json!({"clean": false, "line": 1, "have": "", "want": ""}) };
     let starts: Vec<usize> = std::iter::once(0).chain(src.match_indices('\n').map(|(i, _)| i + 1)).collect();
-    let have: Vec<(usize, &str)> = ends.iter().enumerate().filter_map(|(i, e)| e.map(|e| (i + 1, src[starts[i]..e].trim_end()))).filter(|(_, l)| !l.trim().is_empty()).collect();
-    let want: Vec<&str> = want_text.lines().map(str::trim_end).filter(|l| !l.trim().is_empty()).collect();
-    for (k, w) in want.iter().enumerate() {
-        match have.get(k) {
-            Some((_, h)) if h == w => {}
-            Some((line, h)) => return json!({"clean": false, "line": line, "have": h, "want": w}),
-            None => return json!({"clean": false, "line": have.last().map_or(1, |x| x.0), "have": "", "want": w}),
+    let mut have: Vec<(usize, String)> = Vec::new();
+    for (i, e) in ends.iter().enumerate() {
+        let Some(e) = *e else { continue };
+        let line = src[starts[i]..e].trim_end();
+        if line.trim().is_empty() {
+            continue;
+        }
+        match have.last_mut() {
+            Some((_, h)) if cont[i] => join_continued(h, line.trim_start()),
+            _ => have.push((i + 1, line.to_string())),
         }
     }
-    if let Some((line, h)) = have.get(want.len()) {
+    let want: Vec<&str> = want_text.lines().map(str::trim_end).filter(|l| !l.trim().is_empty()).collect();
+    // The arms indented past where the printer puts them: each one's indent in the source.
+    let mut arms: Vec<usize> = Vec::new();
+    let mut j = 0;
+    for w in &want {
+        let Some((line, h)) = have.get(j).cloned() else {
+            return json!({"clean": false, "line": have.last().map_or(1, |x| x.0), "have": "", "want": w});
+        };
+        let mut h = h;
+        let mut used = 1;
+        while h.trim_start() != w.trim_start() {
+            match have.get(j + used) {
+                Some((_, n)) if n.trim_start().starts_with("else ") && w.trim_start().starts_with(&format!("{} {}", h.trim_start(), n.trim_start())) => {
+                    h = format!("{h} {}", n.trim_start());
+                    used += 1;
+                }
+                _ => return json!({"clean": false, "line": line, "have": h, "want": w}),
+            }
+        }
+        let (hi, arm) = (indent(&h), h.trim_start().starts_with('|'));
+        while arms.last().is_some_and(|&a| hi < a || (hi == a && !arm)) {
+            arms.pop();
+        }
+        let expect = indent(w) + 2 * arms.len();
+        if hi == expect + 2 && arm && arms.last() != Some(&hi) {
+            arms.push(hi);
+        } else if hi != expect {
+            return json!({"clean": false, "line": line, "have": h, "want": w});
+        }
+        j += used;
+    }
+    if let Some((line, h)) = have.get(j) {
         return json!({"clean": false, "line": line, "have": h, "want": ""});
     }
     json!({"clean": true})
@@ -401,6 +463,23 @@ mod tests {
         assert_eq!(r["want"], "fn f(x: Int) -> Int");
         let url = "fn u() -> Str\n= \"https://example.com/a\"\n";
         assert_eq!(fmt_check(url, &parse(url).unwrap())["clean"], true, "// inside a string is not a comment");
+    }
+
+    #[test]
+    fn fmt_ignores_where_a_statement_is_broken() {
+        let ok = "fn f(xs: List[Int], r: R) -> Bool\n= xs.len > 0 and\n    r.ok  // why\n\nfn g(xs: List[Int]) -> List[Int]\n= xs\n    .map(_ + 1)\n    .filter(_ > 2)\n\nfn h(a: Int, b: Int) -> P\n= P{\n    a,\n    b: f(\n      [a], b)\n  }\n";
+        assert_eq!(fmt_check(ok, &parse(ok).unwrap()), json!({"clean": true}));
+        let bad = "fn f(a: Int, b: Int) -> Int\n= a+\n    b\n";
+        let r = fmt_check(bad, &parse(bad).unwrap());
+        assert_eq!((r["line"].clone(), r["have"].clone(), r["want"].clone()), (json!(2), json!("= a+ b"), json!("= a + b")));
+        let arms = "fn f(x: Opt[Int], y: Int) -> Int\n= match x\n  | some(v) => do\n    w = v + 1\n    match y\n      | 0 => w\n      | _ => if w > 2 then 1\n        else if w > 1 then 2\n        else 3\n  | none => 0\n\nfn g(x: Int) -> Int\n= do\n  r = match x\n    | 0 => 1\n    | _ => 2\n  r + 1\n";
+        assert_eq!(fmt_check(arms, &parse(arms).unwrap()), json!({"clean": true}));
+        let printed = print_module(&parse(arms).unwrap());
+        assert_eq!(fmt_check(&printed, &parse(&printed).unwrap()), json!({"clean": true}));
+        let odd = "fn f(x: Int) -> Int\n= match x\n   | 0 => 1\n   | _ => 2\n";
+        assert_eq!(fmt_check(odd, &parse(odd).unwrap())["line"], 3);
+        let short = "fn h(a: Int) -> P\n= P{a: a, b: 1}\n";
+        assert_eq!(fmt_check(short, &parse(short).unwrap())["want"], "= P{a, b: 1}");
     }
 
     #[test]
