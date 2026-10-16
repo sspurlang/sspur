@@ -9,7 +9,7 @@ use sspur_hash::root_hash;
 use sspur_syntax::link::{self, Item, Kind, Scope};
 use sspur_syntax::rename::rename_defs;
 use sspur_syntax::*;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -657,7 +657,32 @@ pub fn dep_diag(msg: &str) -> Diag {
     Diag { code, severity: "error", def: None, span: [0, 0], msg: rest, hint: None, fix: vec![] }
 }
 
+/// `link`, where `x.f` with an imported function `f` is a field access when `x` is a record with
+/// a field `f`, as with a local function: the field wins over method-call sugar. The linker
+/// can't see types, so when a program has such an ambiguous `x.f`, it is checked once to find
+/// the type of each `x`, then linked again.
 pub fn link(src: &str, env: &Env) -> Result<Linked, Vec<Diag>> {
+    let (l, sugar) = link_keeping(src, env, &HashSet::new())?;
+    if sugar.is_empty() {
+        return Ok(l);
+    }
+    let first = check_full(l.src.clone(), l.module.clone()).check;
+    let has_field = |recv: &Span, f: &str| {
+        first.expr_types.iter().any(|(k, t)| {
+            (k.0, k.1) == (recv.start, recv.end)
+                && matches!(t, sspur_check::Type::Con(n, _) if first.records.get(n).is_some_and(|r| r.1.iter().any(|x| x.0 == f)))
+        })
+    };
+    let keep: HashSet<(u32, u32)> = sugar.iter().filter(|(_, r, f)| has_field(r, f)).map(|(s, _, _)| (s.start, s.end)).collect();
+    if keep.is_empty() {
+        return Ok(l);
+    }
+    link_keeping(src, env, &keep).map(|x| x.0)
+}
+
+type Sugar = Vec<(Span, Span, String)>;
+
+fn link_keeping(src: &str, env: &Env, keep: &HashSet<(u32, u32)>) -> Result<(Linked, Sugar), Vec<Diag>> {
     let full = merged(src, env);
     let mut module = parse(&full).map_err(|e| {
         let mut d = syntax_diag(&e);
@@ -669,6 +694,12 @@ pub fn link(src: &str, env: &Env) -> Result<Linked, Vec<Diag>> {
     let own = module.defs.iter().take_while(|d| (d.span().start as usize) < src.len()).count();
     module.own = Some(own);
     let mut scope = env.scope();
+    scope.keep_fields = keep.clone();
+    for d in &module.defs {
+        if let Def::Type(TypeDef { body: TypeBody::Record(fs), .. }) = d {
+            scope.fields.extend(fs.iter().map(|f| f.name.clone()));
+        }
+    }
     let mut errs = Vec::new();
     for d in &module.defs[..own] {
         let n = d.name();
@@ -707,11 +738,12 @@ pub fn link(src: &str, env: &Env) -> Result<Linked, Vec<Diag>> {
             errs.push(perr("E_PKG_PROFILE", format!("dependency {} is profile {}, this package is profile {}", p.name, p.profile.as_deref().unwrap_or("app"), module.profile.as_deref().unwrap_or("app")), Span::default()));
         }
     }
-    errs.extend(link::resolve(&mut module.defs[..own], &scope).iter().map(syntax_diag));
+    let (e, sugar) = link::resolve_sugar(&mut module.defs[..own], &scope);
+    errs.extend(e.iter().map(syntax_diag));
     if !errs.is_empty() {
         return Err(errs);
     }
-    Ok(Linked { src: full, module, own })
+    Ok((Linked { src: full, module, own }, sugar))
 }
 
 /// Links and checks `src` in `env`. With an empty environment this is `load_src`.

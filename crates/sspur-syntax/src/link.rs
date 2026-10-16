@@ -30,6 +30,12 @@ pub struct Scope {
     pub imported: BTreeMap<String, Item>,
     /// Packages that are only dependencies of dependencies.
     pub indirect: Vec<String>,
+    /// The field names of every record type in the program: `x.f` with an imported `f` is
+    /// ambiguous when `f` is one of them.
+    pub fields: HashSet<String>,
+    /// The ambiguous `x.f` (by span) whose `x` turned out to have the field `f`: they stay field
+    /// accesses, as with a local function of that name.
+    pub keep_fields: HashSet<(u32, u32)>,
 }
 
 pub fn mangle(pkg: &str, name: &str) -> String {
@@ -148,14 +154,21 @@ struct R<'a> {
     s: &'a Scope,
     errs: Vec<SyntaxError>,
     tps: Vec<String>,
+    sugar: Vec<(Span, Span, String)>,
 }
 
 pub fn resolve(defs: &mut [Def], scope: &Scope) -> Vec<SyntaxError> {
-    let mut r = R { s: scope, errs: vec![], tps: vec![] };
+    resolve_sugar(defs, scope).0
+}
+
+/// `resolve`, and each ambiguous `x.f` it made a call of an imported `f`: the span of `x.f`,
+/// of `x`, and `f`.
+pub fn resolve_sugar(defs: &mut [Def], scope: &Scope) -> (Vec<SyntaxError>, Vec<(Span, Span, String)>) {
+    let mut r = R { s: scope, errs: vec![], tps: vec![], sugar: vec![] };
     for d in defs {
         r.def(d);
     }
-    r.errs
+    (r.errs, r.sugar)
 }
 
 fn bound(l: &Locals, n: &str) -> bool {
@@ -407,7 +420,10 @@ impl R<'_> {
                     return;
                 }
                 self.expr(x, l);
-                if let Some(it) = self.imported_fn(f, l).filter(|it| it.arity == 1) {
+                if let Some(it) = self.imported_fn(f, l).filter(|it| it.arity == 1 && !self.s.keep_fields.contains(&(span.start, span.end))) {
+                    if self.s.fields.contains(f.as_str()) {
+                        self.sugar.push((span, x.span, f.clone()));
+                    }
                     let recv = std::mem::replace(&mut **x, Expr::new(ExprKind::Unit, span));
                     e.kind = ExprKind::Call(Box::new(Expr::new(ExprKind::Name(it.mangled), span)), vec![recv]);
                 }

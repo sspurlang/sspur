@@ -365,3 +365,13 @@ fn path_dependencies_inside_the_package_follow_their_source() {
     w.write("lib/lib.ssp", &TEXT.replace("w * w", "w + w"));
     assert_eq!(w.ok("app", &["run", "lib.ssp"]), "hey store 4 hey app 4", "a dependency outside the package stays pinned");
 }
+
+#[test]
+fn a_record_field_wins_over_an_imported_function_of_the_same_name() {
+    let w = Ws::new("fieldwins");
+    w.pkg("lib", "sessions", &[], "pub type Token = {token: Str, digest: Str}\n\npub fn new_token() -> Token\n= Token{token: \"abc\", digest: digest(\"abc\")}\n\npub fn digest(token: Str) -> Str\n= token + token\n\ntest t = new_token().digest == \"abcabc\"\n");
+    w.pkg("app", "app", &[("sessions", "{ path = \"../lib\" }")], "use sessions.{Token, new_token, digest}\n\nfn main() -> Unit ! log\n= do\n  t = new_token()\n  log(\"{t.digest.len} {t.token.digest} {\"x\".digest} {[t].map(x => x.digest)}\")\n");
+    for tier in [&["run", "--interp", "lib.ssp"][..], &["run", "lib.ssp"]] {
+        assert_eq!(w.ok("app", tier), "6 abcabc xx [\"abcabc\"]", "{tier:?}");
+    }
+}
