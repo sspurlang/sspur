@@ -73,7 +73,7 @@ function files(src) {
 
 // acme/coins: a scoped package of the organization acme with two modules, models and
 // src/util (which uses models). `models` is the source of models/lib.ssp.
-const MODELS = "// An amount in a currency.\npub type Money = {units: Int, currency: Str} derive Eq, Show\n\n// An amount of units in a currency.\npub fn of(units: Int, currency: Str) -> Money\n= Money{units: units, currency: currency}\n\ntest t_of = of(1, \"EUR\").units == 1\n";
+const MODELS = "// An amount in a currency.\npub type Money = {units: Int, currency: Str} derive Eq, Show\n\n// An amount of units in a currency.\npub fn of(units: Int, currency: Str) -> Money\n= Money{units, currency}\n\ntest t_of = of(1, \"EUR\").units == 1\n";
 const MODELS_BAD = MODELS.replace("// An amount of units in a currency.\n", "");
 function orgFiles(models) {
   return {
