@@ -1,13 +1,16 @@
 #!/bin/sh
-# usage: run.sh <work-dir> <sspur-bin>... (STEPS="check test interp publish app" by default)
-# Times the synthetic package of gen.py, each step cold (an empty SSPUR_CACHE) and then warm,
+# usage: run.sh <work-dir> <sspur-bin>... (STEPS="check test interp publish app edit small hello" by default)
+# Times the synthetic package of gen.py, each step cold (an empty SSPUR_CACHE) and then warm
+# (the step "edit" is a cold `sspur test`, then one after changing one function of a module),
 # and prints one line per step and binary: wall seconds and the peak memory of the whole process
 # tree. The binaries take turns on each step, so a slow spell of the machine hits them alike.
+# "small" is `sspur test` of examples/packages/app and "hello" is `sspur run` of hello world.
 here=$(cd "$(dirname "$0")" && pwd)
 work=$1
 shift
 bins="$*"
-steps=${STEPS:-"check test interp publish app"}
+steps=${STEPS:-"check test interp publish app edit small hello"}
+repo=$(cd "$here/../.." && pwd)
 mkdir -p "$work"
 work=$(cd "$work" && pwd)
 now() { perl -MTime::HiRes=time -e 'printf "%.3f", time'; }
@@ -30,6 +33,8 @@ timed() {
 fresh() {
   rm -rf "$work/src"
   python3 "$here/gen.py" "$work/src"
+  cp -R "$repo/examples/packages" "$work/src/small"
+  printf 'fn main() -> Unit ! log\n= log("hello")\n' > "$work/src/hello.ssp"
   (cd "$work/src/bigpkg" && git init -q && git add -A && git -c user.name=bench -c user.email=bench@example.com commit -qm bench && git tag v1.0.0)
 }
 n=0
@@ -44,11 +49,19 @@ for bin in $bins; do
     interp) dir=bigpkg; set -- test --interp ;;
     publish) dir=bigpkg; set -- publish --dry-run --no-gh ;;
     app) dir=app; set -- run main.ssp ;;
+    edit) dir=bigpkg; set -- test ;;
+    small) dir=small/app; set -- test ;;
+    hello) dir=.; set -- run hello.ssp ;;
   esac
   cd "$work/src/$dir" || exit 1
   printf "%-8s %-28s cold " "$step" "$(basename "$bin")"
   timed "$bin" "$@"
-  printf "   warm "
+  if [ "$step" = edit ]; then
+    sed -i.bak 's/^= n \* 3 + /= n * 4 + /' "$work/src/bigpkg/mods/m050/lib.ssp"
+    printf "   edit "
+  else
+    printf "   warm "
+  fi
   timed "$bin" "$@"
   echo
   rm -rf "$SSPUR_CACHE"
