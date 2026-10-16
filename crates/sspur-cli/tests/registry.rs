@@ -876,6 +876,14 @@ fn scoped_names_belong_to_github_owners() {
     assert_eq!(r.ok(&app, &["run", "--interp", "main.ssp"]).trim(), want);
     let tree = r.ok(&app, &["deps", "tree"]);
     assert!(tree.contains("alice/money 1.0.0") && tree.contains("acme/money 1.0.0"), "{tree}");
+    // A codebase's queries name a scoped dependency by its key, as code does.
+    r.ok(&app, &["init"]);
+    r.ok(&app, &["edit", "-e", "fn euros(n: Int) -> Int = acme_money.of(n, \"EUR\").units"]);
+    assert_eq!(r.ok(&app, &["q", "sig", "acme_money.of"]).trim(), "fn acme_money.of(units: Int, currency: Str) -> acme_money.Money");
+    let listed = r.ok(&app, &["q", "list", "acme_money"]);
+    assert!(listed.contains("fn acme_money.of(") && !listed.contains("acme_money_.") && !listed.contains("money.add"), "{listed}");
+    let (out, _) = r.sspur(&app, &["q", "list", "nope"], &[]);
+    assert!(out.contains("acme_money") && !out.contains("acme_money_\""), "{out}");
     // A type error names the dependency by its key.
     std::fs::write(app.join("bad.ssp"), "fn main() -> Unit ! log\n= log(acme_money.of(\"x\", \"EUR\").currency)\n").unwrap();
     let (out, ok) = r.sspur(&app, &["check", "bad.ssp"], &[]);

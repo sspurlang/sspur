@@ -72,9 +72,23 @@ impl<'a> Ctx<'a> {
         Ctx { loaded, store, deps }
     }
 
+    /// The link prefix of the dependency a query names by its key: `pkg` is `acme_pkg_` when it
+    /// is `acme/pkg`.
+    fn prefix(&self, key: &str) -> Option<String> {
+        match self.loaded.shown.iter().find(|(_, k)| *k == key) {
+            Some((p, _)) => Some(p.clone()),
+            None => self.loaded.pkgs.iter().find(|q| *q == key && !self.loaded.shown.contains_key(*q)).cloned(),
+        }
+    }
+
+    /// The dependencies by the keys the program uses for them.
+    fn keys(&self) -> Vec<String> {
+        self.loaded.pkgs.iter().map(|p| self.loaded.shown.get(p).cloned().unwrap_or_else(|| p.clone())).collect()
+    }
+
     fn def(&self, name: &str) -> Result<&Def, Json> {
-        if let Some((p, x)) = name.split_once('.').filter(|(p, _)| self.loaded.pkgs.iter().any(|q| q == p)) {
-            let m = link::mangle(p, x);
+        if let Some((p, x, pre)) = name.split_once('.').and_then(|(p, x)| Some((p, x, self.prefix(p)?))) {
+            let m = link::mangle(&pre, x);
             if !self.loaded.exports.contains(&m) {
                 let what = if self.loaded.module.defs[self.loaded.own..].iter().any(|d| d.name() == m) { "is private to" } else { "is not exported by" };
                 return Err(json!({"error": "E_PKG_PRIVATE", "msg": format!("{name} {what} {p}; 'q list {p}' shows its exports")}));
@@ -90,12 +104,12 @@ impl<'a> Ctx<'a> {
     fn listed(&self, target: Option<&str>) -> Result<Vec<&Def>, Json> {
         match target {
             None => Ok(self.loaded.own_defs().iter().collect()),
-            Some(k) if !self.loaded.pkgs.iter().any(|q| q == k) && KINDS.iter().any(|(w, _)| *w == k) => {
+            Some(k) if self.prefix(k).is_none() && KINDS.iter().any(|(w, _)| *w == k) => {
                 let kind = KINDS.iter().find(|(w, _)| *w == k).map(|(_, kd)| *kd).unwrap_or("fn");
                 Ok(self.loaded.own_defs().iter().filter(|d| Self::kind(d) == kind).collect())
             }
-            Some(p) if self.loaded.pkgs.iter().any(|q| q == p) => Ok(self.loaded.module.defs[self.loaded.own..].iter().filter(|d| self.loaded.exports.contains(d.name()) && d.name().to_ascii_lowercase().starts_with(&format!("{p}__"))).collect()),
-            Some(p) => Err(json!({"error": "E_PKG_UNKNOWN", "msg": format!("no dependency or kind '{p}' (kinds: types fns tests); to search names use 'q find {p}'"), "close": self.loaded.pkgs})),
+            Some(p) if let Some(pre) = self.prefix(p) => Ok(self.loaded.module.defs[self.loaded.own..].iter().filter(|d| self.loaded.exports.contains(d.name()) && link::split_mangled(d.name(), &|x| self.loaded.pkgs.iter().any(|q| q == x)).is_some_and(|(x, _)| x == pre)).collect()),
+            Some(p) => Err(json!({"error": "E_PKG_UNKNOWN", "msg": format!("no dependency or kind '{p}' (kinds: types fns tests); to search names use 'q find {p}'"), "close": self.keys()})),
         }
     }
 
