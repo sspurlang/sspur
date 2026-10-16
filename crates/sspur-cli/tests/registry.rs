@@ -676,6 +676,7 @@ fn update_moves_to_newer_matching_versions() {
     assert!(locked("1.1.0"));
     let (out, ok) = r.sspur(&app, &["run", "main.ssp"], &env);
     assert!(ok && out.trim() == "AB", "{out}");
+}
 
 fn request(r: &Reg, name: &str, repo: &str, version: &str, user: &str) -> String {
     let fields = [("Package name", name), ("Repository", repo), ("Ref", &format!("v{version}")), ("Version", version), ("Effects", "")];
@@ -707,7 +708,7 @@ fn crc32(b: &[u8]) -> u32 {
 
 const ALICE_MONEY: &str = "// An amount in cents.\npub type Money = {cents: Int} derive Eq, Show\n\n// The sum of two amounts.\npub fn add(a: Money, b: Money) -> Money\n= Money{cents: a.cents + b.cents}\n\ntest t_add = add(Money{cents: 1}, Money{cents: 2}) == Money{cents: 3}\n";
 
-const ACME_MONEY: &str = "// An amount in another currency, as acme counts it.\npub type Money = {units: Int, currency: Str} derive Eq, Show\n\n// An amount of `units` in `currency`.\npub fn of(units: Int, currency: Str) -> Money\n= Money{units: units, currency: currency}\n\ntest t_of = of(2, \"EUR\").units == 2\n";
+const ACME_MONEY: &str = "// An amount in another currency, as acme counts it.\npub type Money = {units: Int, currency: Str} derive Eq, Show\n\n// An amount of `units` in `currency`.\npub fn of(units: Int, currency: Str) -> Money\n= Money{units, currency}\n\ntest t_of = of(2, \"EUR\").units == 2\n";
 
 #[test]
 fn scoped_names_belong_to_github_owners() {
