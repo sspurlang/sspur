@@ -1438,6 +1438,15 @@ fn finds(s: Str) -> Int
 
 test empty_haystack = scan(2) == [2].to_set and finds("") == -1 and finds("qq") == -1
 
+// case literal_brace_escapes
+// Braces that are not an interpolation are literal text, but the escapes inside them stayed raw in both tiers: "{a \\ b}" kept both backslashes
+// and "{x\ty}" had no tab, unlike "\{a \\ b}" and the language reference.
+
+fn braces(s: Str) -> Str
+= "{s}|{a \\ b}|{x\ty}|{}"
+
+test literal_braces = braces("v") == "v|\{a \\ b}|\{x\ty}|\{}" and "{a \\ b}".len == 7 and braces("").len == 17
+
 // case nested_tuple_index
 // `(p.0).1` printed as `p.0.1`, which lexed as `p` and the float `0.1`: `sspur fmt` broke the program, and so did the elaborator, which prints and
 // re-parses a program with a trait-bounded function. A number after `.` is now always a tuple index.

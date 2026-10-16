@@ -2081,7 +2081,8 @@ impl Parser {
             let inner = &rest[i + 1..i + close];
             let parsed = if inner.trim().is_empty() { None } else { parse_expr(inner).ok() };
             let Some(mut e) = parsed else {
-                lit.push_str(&rest[i..=i + close]);
+                // Literal braces: the lexer kept their text raw, so their escapes apply here.
+                lit.push_str(&unescape(&rest[i..=i + close]));
                 rest = &rest[i + close + 1..];
                 continue;
             };
@@ -2101,6 +2102,29 @@ impl Parser {
         }
         Ok(parts)
     }
+}
+
+fn unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut cs = s.chars();
+    while let Some(c) = cs.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match cs.next() {
+            Some('n') => out.push('\n'),
+            Some('t') => out.push('\t'),
+            Some('r') => out.push('\r'),
+            Some(c @ ('"' | '\\' | '{')) => out.push(c),
+            Some(c) => {
+                out.push('\\');
+                out.push(c);
+            }
+            None => out.push('\\'),
+        }
+    }
+    out
 }
 
 fn pat_binds(p: &Pat, out: &mut Vec<String>) {
