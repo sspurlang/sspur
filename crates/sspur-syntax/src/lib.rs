@@ -47,8 +47,7 @@ pub fn display_name(n: &str) -> &str {
         let p = n.as_bytes();
         let pkg_ok = i > 0 && p[0].is_ascii_alphabetic() && p[1..i].iter().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'_') && p[i - 1] != b'_';
         // A scoped package's prefix ends in `_`: `acme_pkg___f` shows as `f`.
-        let k = i + p[i..].iter().take_while(|&&b| b == b'_').count();
-        let at = if k - i >= 3 { k } else { i + 2 };
+        let at = i + 2 + usize::from(p.get(i + 2) == Some(&b'_'));
         if pkg_ok && p.get(at).is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_') {
             return &n[at..];
         }

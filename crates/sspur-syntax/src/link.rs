@@ -47,26 +47,48 @@ pub fn mangle(pkg: &str, name: &str) -> String {
 /// underscores (`acme_pkg___f`); that reading is tried first.
 pub fn split_mangled<'a>(n: &'a str, known: &impl Fn(&str) -> bool) -> Option<(String, &'a str)> {
     let i = n.find("__")?;
-    let k = i + n[i..].bytes().take_while(|&b| b == b'_').count();
-    if k - i >= 3 && k < n.len() {
-        let p = n[..k - 2].to_ascii_lowercase();
-        if known(&p) {
-            return Some((p, &n[k..]));
-        }
-    }
-    let p = n[..i].to_ascii_lowercase();
-    let rest = &n[i + 2..];
-    (!rest.is_empty() && known(&p)).then_some((p, rest))
+    let scoped = n.len() > i + 3 && n.as_bytes()[i + 2] == b'_';
+    [(i + 1, i + 3), (i, i + 2)].into_iter().skip(usize::from(!scoped)).find_map(|(a, b)| {
+        let p = n[..a].to_ascii_lowercase();
+        (b < n.len() && known(&p)).then(|| (p, &n[b..]))
+    })
 }
 
-/// `pkg.name` for a mangled name of one of `pkgs`, else the name itself.
+/// `pkg.name` for a mangled name of one of `pkgs`, else the name itself. A scoped package's
+/// names (`acme_pkg___f`) need `split_mangled`; this reading is the one the checker's messages use.
 pub fn demangle_name(n: &str, pkgs: &impl Fn(&str) -> bool) -> Option<String> {
-    split_mangled(n, pkgs).map(|(p, rest)| format!("{p}.{rest}"))
+    let i = n.find("__")?;
+    let p = n[..i].to_ascii_lowercase();
+    let rest = &n[i + 2..];
+    (!rest.is_empty() && pkgs(&p)).then(|| format!("{p}.{rest}"))
 }
 
 /// Rewrites every identifier in `text` that is a mangled name of one of `pkgs`.
 pub fn demangle(text: &str, pkgs: &impl Fn(&str) -> bool) -> String {
-    demangle_as(text, &|p| pkgs(p).then(|| p.to_string()))
+    let b = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i].is_ascii_alphabetic() || b[i] == b'_' {
+            let s = i;
+            while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_') {
+                i += 1;
+            }
+            let w = &text[s..i];
+            match demangle_name(w, pkgs) {
+                Some(d) => out.push_str(&d),
+                None => out.push_str(w),
+            }
+        } else {
+            let s = i;
+            i += 1;
+            while i < b.len() && !b[i].is_ascii_alphabetic() && b[i] != b'_' {
+                i += 1;
+            }
+            out.push_str(&text[s..i]);
+        }
+    }
+    out
 }
 
 /// Like `demangle`, with the name each package is shown as: `shown(prefix)` is `None` for a

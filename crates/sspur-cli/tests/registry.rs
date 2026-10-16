@@ -802,7 +802,7 @@ fn scoped_names_belong_to_github_owners() {
     let (log, ok) = r.run(&idx, idx.join("tools/ci.sh").to_str().unwrap(), &["site", site.to_str().unwrap()], &[("WORK", r.t.join("sitework").to_str().unwrap()), ("INDEX_DIR", idx.to_str().unwrap()), ("SSPUR_INDEX", idx.to_str().unwrap())]);
     assert!(ok && log.contains("site: 2 packages"), "{log}");
     let page = std::fs::read_to_string(site.join("packages/acme/money/index.html")).unwrap();
-    assert!(page.contains("sspur add acme/money@^1.0.0") && page.contains("money = { package = &quot;acme/money&quot;, version = &quot;^1.0.0&quot; }"), "{page}");
+    assert!(page.contains("sspur add acme/money@^1.0.0") && page.contains("money = { package = \"acme/money\", version = \"^1.0.0\" }"), "{page}");
     assert!(site.join("packages/@acme/money.json").is_file());
 }
 

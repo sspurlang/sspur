@@ -193,7 +193,7 @@ impl Loaded {
     }
 
     pub fn is_dep(&self, name: &str) -> bool {
-        !self.pkgs.is_empty() && sspur_syntax::link::demangle_name(name, &|p| self.pkgs.iter().any(|x| x == p)).is_some()
+        !self.pkgs.is_empty() && sspur_syntax::link::split_mangled(name, &|p| self.pkgs.iter().any(|x| x == p)).is_some()
     }
 
     pub fn show(&self, text: &str) -> String {
