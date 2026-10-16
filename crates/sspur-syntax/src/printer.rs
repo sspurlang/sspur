@@ -423,7 +423,7 @@ pub fn expr(e: &Expr, ind: usize) -> String {
         ExprKind::Match(inner, arms, MatchForm::IfChain) if arms.len() == 2 && chain_parts(inner, ind).is_some() => {
             let (tests, t) = chain_parts(inner, ind).unwrap();
             let f = (arms[1].body.kind != ExprKind::Unit).then_some(&arms[1].body);
-            if_form(&tests.join(" and "), t, f, ind)
+            if_form(&tests.join(&format!(" and{} ", layout::bin(2))), t, f, ind)
         }
         ExprKind::Match(_, _, MatchForm::LetElse) => {
             let mut s = String::from("do");
@@ -471,7 +471,7 @@ fn is_test(s: &Expr, a: &Arm, ind: usize) -> String {
     let mut c = format!("{} is {}", operand(s, 4, ind), pat(&a.pat));
     if let Some(g) = &a.guard {
         let gs = if matches!(g.kind, ExprKind::Match(_, _, MatchForm::Is)) { expr(g, ind) } else { operand(g, 2, ind) };
-        c.push_str(&format!(" and {gs}"));
+        c.push_str(&format!(" and{} {gs}", layout::bin(2)));
     }
     c
 }
@@ -621,7 +621,7 @@ fn stmt(s: &Stmt, ind: usize) -> String {
 fn while_is<'a>(c: &'a Expr, body: &Expr, ind: usize) -> Option<(String, &'a Expr)> {
     let b = while_is_body(c, body)?;
     let tests = match &c.kind {
-        ExprKind::Match(inner, _, MatchForm::IfChain) => chain_parts(inner, ind)?.0.join(" and "),
+        ExprKind::Match(inner, _, MatchForm::IfChain) => chain_parts(inner, ind)?.0.join(&format!(" and{} ", layout::bin(2))),
         ExprKind::Match(s, arms, _) if arms[1].pat == Pat::Wild && arms[1].guard.is_none() => is_test(s, &arms[0], ind),
         _ => return None,
     };
