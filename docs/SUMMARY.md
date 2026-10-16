@@ -127,6 +127,7 @@
   - [ADR 0037: Databases, crypto, compression and CSV](adr/0037-data-and-security-libraries.md)
   - [ADR 0038: The package registry](adr/0038-package-registry.md)
   - [ADR 0039: Scoped package names](adr/0039-scoped-package-names.md)
+  - [ADR 0040: sspur fmt breaks long lines](adr/0040-fmt-breaks-long-lines.md)
 - [Native performance versus C++](design/native-benchmarks.md)
 - [Agent benchmarks](design/agent-benchmarks.md)
 
