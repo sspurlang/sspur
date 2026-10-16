@@ -25,6 +25,50 @@ impl Drop for Proc {
     }
 }
 
+/// The answers in a cache directory, which has a subdirectory for the first two characters of
+/// each key. An answer is the name of an empty file there, `KEY.unsat`, `KEY.sat` or
+/// `KEY.unknown`, so listing a subdirectory once gives all of its answers without opening a file
+/// per query, and a file is complete as soon as it exists.
+type Answers = std::collections::HashMap<String, &'static str>;
+
+static ANSWERS: std::sync::Mutex<Option<std::collections::HashMap<PathBuf, Answers>>> = std::sync::Mutex::new(None);
+
+fn tag(t: &str) -> Option<&'static str> {
+    ["unsat", "sat", "unknown"].into_iter().find(|x| *x == t)
+}
+
+fn with_answers<R>(shard: &std::path::Path, f: impl FnOnce(&mut Answers) -> R) -> R {
+    let mut g = ANSWERS.lock().unwrap_or_else(|e| e.into_inner());
+    let m = g.get_or_insert_with(Default::default).entry(shard.to_path_buf()).or_insert_with(|| {
+        let mut m = Answers::new();
+        for e in std::fs::read_dir(shard).into_iter().flatten().flatten() {
+            if let Some((k, t)) = e.file_name().to_str().and_then(|n| n.split_once('.'))
+                && let Some(t) = tag(t)
+            {
+                m.insert(k.to_string(), t);
+            }
+        }
+        m
+    });
+    f(m)
+}
+
+fn shard(dir: &std::path::Path, key: &str) -> PathBuf {
+    dir.join(&key[..2])
+}
+
+/// The cached answer for the query `key` in the cache `dir`.
+fn known(dir: &std::path::Path, key: &str) -> Option<&'static str> {
+    with_answers(&shard(dir, key), |m| m.get(key).copied())
+}
+
+fn remember(dir: &std::path::Path, key: &str, t: &'static str) {
+    let d = shard(dir, key);
+    if std::fs::create_dir_all(&d).is_ok() && std::fs::OpenOptions::new().write(true).create(true).truncate(false).open(d.join(format!("{key}.{t}"))).is_ok() {
+        with_answers(&d, |m| m.insert(key.to_string(), t));
+    }
+}
+
 pub struct Solver {
     proc: Option<Proc>,
     spawns: u32,
@@ -50,7 +94,7 @@ fn binary() -> Option<String> {
 impl Solver {
     pub fn new() -> Self {
         let timeout_ms = std::env::var("SSPUR_SMT_TIMEOUT").ok().and_then(|v| v.parse().ok()).unwrap_or(500);
-        let cache = sspur_syntax::cache_root().map(|b| b.join("smt"));
+        let cache = sspur_syntax::cache_root().map(|b| b.join("smt2"));
         Solver { proc: None, spawns: 0, disabled: binary().is_none(), timeout_ms, cache }
     }
 
@@ -98,23 +142,22 @@ impl Solver {
         false
     }
 
-    fn cache_path(&self, script: &str) -> Option<PathBuf> {
+    fn cache_key(&self, script: &str) -> Option<(PathBuf, String)> {
         let dir = self.cache.as_ref()?;
         let key = blake3::hash(format!("{}\n{script}", self.timeout_ms).as_bytes()).to_hex().to_string();
-        Some(dir.join(&key[..32]))
+        Some((dir.clone(), key[..32].to_string()))
     }
 
     pub fn check(&mut self, script: &str, vars: &[String]) -> Answer {
-        let path = self.cache_path(script);
-        if let Some(p) = &path
-            && let Ok(c) = std::fs::read_to_string(p) {
-                match c.trim() {
-                    "unsat" => return Answer::Unsat,
-                    "unknown" => return Answer::Unknown,
-                    "sat" if vars.is_empty() => return Answer::Sat(vec![]),
-                    _ => {}
-                }
+        let key = self.cache_key(script);
+        if let Some((d, k)) = &key {
+            match known(d, k) {
+                Some("unsat") => return Answer::Unsat,
+                Some("unknown") => return Answer::Unknown,
+                Some("sat") if vars.is_empty() => return Answer::Sat(vec![]),
+                _ => {}
             }
+        }
         if !self.ensure() {
             return Answer::Unknown;
         }
@@ -125,19 +168,13 @@ impl Solver {
                 Answer::Unknown
             }
         };
-        if let Some(p) = path {
+        if let Some((d, k)) = key {
             let tag = match &a {
                 Answer::Unsat => "unsat",
                 Answer::Sat(_) => "sat",
                 Answer::Unknown => "unknown",
             };
-            if let Some(d) = p.parent()
-                && std::fs::create_dir_all(d).is_ok() {
-                    let tmp = p.with_extension(format!("tmp{}", std::process::id()));
-                    if std::fs::write(&tmp, tag).is_ok() {
-                        let _ = std::fs::rename(&tmp, &p);
-                    }
-                }
+            remember(&d, &k, tag);
         }
         a
     }
