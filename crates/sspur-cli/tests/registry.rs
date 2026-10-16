@@ -494,7 +494,7 @@ fn organization_repositories_and_transferred_repositories() {
     let n = open(&r, "money", "1.0.0", "");
     assert!(r.workflow(&n).contains("merged #"));
     std::fs::create_dir_all(r.t.join("repos/acme")).unwrap();
-    git(&r.t, &["clone", "-q", "--bare", &format!("repos/alice/money.git"), "repos/acme/money.git"]);
+    git(&r.t, &["clone", "-q", "--bare", "repos/alice/money.git", "repos/acme/money.git"]);
     git(&w, &["remote", "set-url", "origin", &format!("file://{}/repos/acme/money.git", r.t.display())]);
     r.write_pkg(&w, "money", "1.1.0", &money_1_1(), "");
     r.release(&w, "v1.1.0");
