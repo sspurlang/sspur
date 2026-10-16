@@ -1437,3 +1437,15 @@ fn finds(s: Str) -> Int
 = s.replace("q", "").index_of("long needle").or(-1) + (if s.replace("q", "").contains("zzzzzz") then 1 else 0)
 
 test empty_haystack = scan(2) == [2].to_set and finds("") == -1 and finds("qq") == -1
+
+// case nested_tuple_index
+// `(p.0).1` printed as `p.0.1`, which lexed as `p` and the float `0.1`: `sspur fmt` broke the program, and so did the elaborator, which prints and
+// re-parses a program with a trait-bounded function. A number after `.` is now always a tuple index.
+
+fn second(p: ((Int, Int), Int)) -> Int
+= (p.0).1
+
+fn biggest[T: Ord](a: T, b: T) -> T
+= if a > b then a else b
+
+test nested = second(((1, 2), 3)) == 2 and biggest(3, 4) == 4 and ((5, 6), 7).0.1 == 6

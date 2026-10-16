@@ -116,6 +116,15 @@ pub fn lex(src: &str) -> Result<Vec<Token>, SyntaxError> {
                 }
                 out.push(Token { tok: Tok::Hash(src[start + 1..i].to_string()), span: Span::new(start, i) });
             }
+            // After `.` a number is a tuple index: `p.0.1` is `(p.0).1`, not `p` and `0.1`.
+            b'0'..=b'9' if matches!(out.last(), Some(Token { tok: Tok::Sym("."), .. })) => {
+                let start = i;
+                while i < bytes.len() && bytes[i].is_ascii_digit() {
+                    i += 1;
+                }
+                let n = src[start..i].parse().map_err(|_| SyntaxError::new("E_LEX_NUMBER", "integer out of range".into(), Span::new(start, i)))?;
+                out.push(Token { tok: Tok::Int(n), span: Span::new(start, i) });
+            }
             b'0'..=b'9' => {
                 let (tok, end) = lex_number(src, i)?;
                 out.push(Token { tok, span: Span::new(i, end) });
