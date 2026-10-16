@@ -4,6 +4,15 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+### Added
+- `sspur fmt` breaks lines over 100 columns (ADR 0040): lists, tuples, calls, records and parameter lists one element per line with a trailing comma, `with` updates one per line, `if` chains with each `else` on its own line, conditions after `and` and `or`, other operators and method chains where the pieces then fit. `if` blocks are written with `else` under the `if`. The canonical text that definitions are hashed and stored as is unchanged, so no content or export hash moves and every `sspur.lock` and published package still verifies. The language server's formatting and the playground use the same formatter.
+- The playground's Format is Reformat Code: Cmd+Option+L or Ctrl+Alt+L as well as Shift+Alt+F, the definitions a selection touches, the cursor kept after the same code and on the same screen line, one undo to go back, and code that doesn't parse left alone with the error shown in place. A ruler marks column 100 when lines don't wrap, phones get a Format button in the editor's corner, and an optional "Format on run" (remembered, off by default) formats before Run, Test and Share. Enter keeps a list element's indent, and a closing bracket typed at the start of a line goes back to its opener's indent (also in VS Code and the language server).
+
+### Changed
+- The registry check `build.fmt` accepts what `sspur fmt` now writes, as well as the one-line form of 0.13, and a statement broken anywhere the lexer reads as one line.
+- The Claude Code plugin's version is the release version (it was 0.2.1); a test keeps it and the editor extensions there.
+- The playground's WebAssembly is 3 KB smaller gzipped although it now breaks lines: the editor docs keep only the tables hover reads, and wasm-opt folds constant offsets into loads and stores.
+
 ## [0.13.1] - 2026-10-17
 
 ### Added
@@ -17,6 +26,14 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 - SSPUR moved to the GitHub organization [sspurlang](https://github.com/sspurlang): the repository is github.com/sspurlang/sspur, the docs, playground and Pulse are at sspurlang.github.io/sspur, and the registry is sspurlang/sspur-packages at sspurlang.github.io/sspur-packages. Old repository, release and raw URLs redirect, and the old Pages URLs forward to the new ones, so existing installs, lock files and links keep working. `sspur` reads the registry from its new home, and the Homebrew tap stays `utkarshavardhana/sspur`.
 - The registry's home page shows the top 10 packages (most depended on, then most recently updated) under a "Top packages" header with a count; search looks through all of them. The site's header and favicon use the SSPUR logo.
 - CI runs on branch pushes only. A release first checks that CI passed on the tagged commit and stops otherwise, instead of running CI again for the tag.
+
+### Fixed
+- A record field wins over a function imported with `use` of the same name, as it does over a local function: `t.digest` with `use sessions.{Token, digest}` read the field `digest` of `Token` as the call `digest(t)` and failed to typecheck.
+- `(p.0).1`: a number after `.` is always a tuple index, so `p.0.1` no longer lexes as `p` and the float `0.1`. `sspur fmt` printed that text and broke the program, and the elaborator, which prints and re-parses programs with traits, failed with `expected a field or method name, found '0.1'`.
+- Escapes inside braces that are not an interpolation work as anywhere in a string: `"{x\\y}".len` is 5, as `"\{x\\y}".len` is, in both tiers (the backslashes stayed doubled, which corrupted JSON written that way).
+- `sspur q` names a scoped dependency by its key, `pkg.f`, and accepts it in queries; it showed and needed the link prefix (`acme_pkg_.f`).
+- `build.fmt` accepted only part of what `sspur fmt` printed: a `match` or `catch` as a call argument or a parenthesized operand, and `if` blocks in a `for` body.
+- Docs: ADR 0033 gave the `gpu` benchmark's peak as 97 MB and the benchmark table 92 MB; both are right, for `sspur run --no-cache` and for the cached run that is the default since ADR 0034, and the ADR now says so.
 
 ## [0.13.0] - 2026-10-16
 
