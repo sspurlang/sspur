@@ -199,8 +199,9 @@ cmd_write() {
     return 0
   fi
   git push -q -f origin "$branch"
-  local pr
+  local pr prev_body="" prev_body_pr=""
   pr="$(pr_of "$branch")"
+  if [ -n "$pr" ]; then prev_body="$("$GH" pr view "$pr" --repo "$REPO" --json body --jq .body 2>/dev/null || true)"; prev_body_pr="$pr"; fi
   printf '{"cmd":"render","report":%s,"parsed":%s,"repo":"%s","part":"body"}' "$report" "$(cat "$WORK/parsed.json")" "$REPO" | reg > "$WORK/body.md"
   if grep -q '"ok":false' "$WORK/guard.json"; then
     printf '\n### Index guard\n\n%s\n' "$(sed 's/.*"errors":\[\(.*\)\]}/\1/' "$WORK/guard.json")" >> "$WORK/body.md"
@@ -211,11 +212,42 @@ cmd_write() {
   else
     "$GH" pr edit "$pr" --repo "$REPO" --title "$title" --body-file "$WORK/body.md" > /dev/null
   fi
+  # The first version of a new name waits for a maintainer's /approve on the request; later
+  # versions merge on their checks alone. An approval holds only for the commit the pull
+  # request showed when it was given.
+  local approval=none
+  if [ "$mergeable" = true ] && [ "$kind" = publish ] && [ ! -f "$old" ]; then
+    approval=pending
+    if [ -n "${APPROVE_BY:-}" ]; then
+      local perm shown
+      perm="$("$GH" api "repos/$REPO/collaborators/$APPROVE_BY/permission" 2>/dev/null | sed -n 's/.*"permission": *"\([a-z]*\)".*/\1/p' | head -n1)"
+      shown=""
+      if [ -n "$prev_body_pr" ]; then shown="$(printf '%s' "$prev_body" | sed -n 's/.*sspur-registry commit=\([0-9a-f]*\).*/\1/p' | head -n1)"; fi
+      if [ "$perm" != admin ] && [ "$perm" != maintain ]; then
+        approval=refused
+      elif [ -n "$shown" ] && [ "$shown" != "$v_commit" ]; then
+        approval=stale
+      else
+        approval=granted
+      fi
+    fi
+    [ "$approval" = granted ] || mergeable=false
+  fi
+  if [ "$approval" = pending ] || [ "$approval" = refused ] || [ "$approval" = stale ]; then
+    printf '\n### Maintainer approval\n\nEvery check passed. This is the first version of `%s`, so a maintainer approves the name once: a maintainer comments `/approve` on #%s. Later versions merge automatically when their checks pass.\n' "$name" "$issue" >> "$WORK/body.md"
+    "$GH" pr edit "$pr" --repo "$REPO" --title "$title" --body-file "$WORK/body.md" > /dev/null
+  fi
   local head_sha state=failure desc="blocking checks failed"
   head_sha="$(git rev-parse "$branch")"
   if [ "$mergeable" = true ]; then state=success; desc="every blocking check passed"; fi
+  if [ "$approval" != none ] && [ "$approval" != granted ]; then state=pending; desc="waiting for a maintainer to approve the new package"; fi
   "$GH" api -X POST "repos/$REPO/statuses/$head_sha" -f state="$state" -f context=index-guard -f description="$desc" > /dev/null
   printf '{"cmd":"render","report":%s,"parsed":%s,"repo":"%s","pr":%s,"part":"comment"}' "$report" "$(cat "$WORK/parsed.json")" "$REPO" "${pr:-null}" | reg > "$WORK/comment.md"
+  case "$approval" in
+    pending) printf 'Every check passed. `%s` is a new package, so it waits for a maintainer to comment `/approve` here (#%s); then it merges.\n' "$name" "$pr" > "$WORK/comment.md" ;;
+    refused) printf '@%s, only a maintainer of %s can approve a new package. It still waits for `/approve` from one.\n' "$APPROVE_BY" "$REPO" > "$WORK/comment.md" ;;
+    stale) printf 'The ref now points at `%s`, not the commit the pull request showed when `/approve` was given. Check #%s again and comment `/approve` once more.\n' "${v_commit:0:12}" "$pr" > "$WORK/comment.md" ;;
+  esac
   if [ "$mergeable" = true ]; then
     if [ "$kind" = publish ] && [ -s "$WORK/snapshot.tar" ]; then
       local tag="$name-$version" asset="$WORK/$name-$version.tar"
@@ -238,7 +270,7 @@ cmd_write() {
     echo "merged #$pr: $name $version"
   else
     comment "$issue" "$WORK/comment.md"
-    echo "left #$pr open: $name $version (${v_failed:-guard})"
+    echo "left #$pr open: $name $version (${v_failed:-${approval/none/guard}})"
   fi
   git checkout -q --detach origin/main
 }

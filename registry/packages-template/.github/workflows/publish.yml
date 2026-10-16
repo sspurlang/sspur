@@ -3,7 +3,8 @@ name: Publish
 # A publish or yank request is an issue made from the forms in .github/ISSUE_TEMPLATE. This
 # workflow checks it, turns it into a pull request that adds the index entry, and merges that
 # pull request when every blocking check passes. It runs again when the request is edited,
-# when someone comments /recheck, and when the sweep workflow sees that the request's ref moved.
+# when someone comments /recheck, when a maintainer comments /approve on a new package's
+# request, and when the sweep workflow sees that the request's ref moved.
 #
 # Nothing here uses a secret: every job has the built-in GITHUB_TOKEN with only the permissions
 # it lists. Package code runs only in the tests job, which can read and nothing else, and whose
@@ -35,7 +36,7 @@ jobs:
       (github.event_name == 'issues' && (startsWith(github.event.issue.title, 'publish:') || startsWith(github.event.issue.title, 'yank:'))) ||
       (github.event_name == 'issue_comment' && !github.event.issue.pull_request && github.event.issue.state == 'open' &&
        (startsWith(github.event.issue.title, 'publish:') || startsWith(github.event.issue.title, 'yank:')) &&
-       startsWith(github.event.comment.body, '/recheck'))
+       (startsWith(github.event.comment.body, '/recheck') || startsWith(github.event.comment.body, '/approve')))
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -160,4 +161,6 @@ jobs:
       - name: Decide, update the pull request, merge when every blocking check passes
         env:
           GH_TOKEN: ${{ github.token }}
+          # Who commented /approve, if this run is one; ci.sh checks that they maintain the index.
+          APPROVE_BY: ${{ github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/approve') && github.event.comment.user.login || '' }}
         run: tools/ci.sh write

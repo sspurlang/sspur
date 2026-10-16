@@ -50,6 +50,8 @@ Run `sspur publish` in the package. It runs the registry's checks on the committ
 
 The request is an issue in sspur-packages. Its workflow checks the version again, runs the tests, and opens a pull request that adds the version to the index. The description lists every check, the effects of each public function and the API changes since the last version. When every blocking check passes, the workflow stores a snapshot of the source as a release asset and merges the pull request. Within a few minutes `sspur add` sees the new version.
 
+The first version of a new package name also waits for a maintainer of sspur-packages to comment `/approve` on the request, once, after every check has passed. That is a look at the name and what the package is for, against squatting and spam, not a code review. Every later version merges on its checks alone.
+
 When something fails, the pull request stays open with each failure at its file and line and how to fix it, and the request gets a short comment. Fix the package, then move the tag (`git tag -f v1.0.0 && git push -f origin v1.0.0`) and comment `/recheck` on the request, or tag the fix and edit the request's Ref. Until a version is published its tag may move. Afterwards nothing can change it: the index pins the commit and the snapshot.
 
 ## What the checks look for

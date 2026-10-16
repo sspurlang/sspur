@@ -81,6 +81,11 @@ def main(argv):
                 return 1
             print(json.dumps({"number": i["number"], "title": i["title"], "body": i["body"], "user": {"login": i["user"]}, "state": i["state"]}))
             return 0
+        m = re.match(r"repos/[^/]+/[^/]+/collaborators/([^/]+)/permission$", path)
+        if m:
+            maint = os.environ.get("FAKE_GH_MAINTAINERS", "maintainer").split(",")
+            print(json.dumps({"permission": "admin" if m.group(1) in maint else "read"}))
+            return 0
         m = re.match(r"repos/[^/]+/[^/]+/statuses/([0-9a-f]+)$", path)
         if m:
             fields = dict(x.split("=", 1) for x in opts(argv, "-f"))

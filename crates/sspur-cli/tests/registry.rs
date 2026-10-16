@@ -15,6 +15,8 @@ const REPO: &str = "utkarshavardhana/sspur-packages";
 struct Reg {
     t: PathBuf,
     runs: std::cell::Cell<usize>,
+    /// Who comments /approve when a workflow runs ("" for an ordinary run).
+    approver: std::cell::Cell<&'static str>,
 }
 
 fn template() -> PathBuf {
@@ -66,7 +68,7 @@ impl Reg {
         git(&seed, &["commit", "-q", "-m", "seed"]);
         git(&seed, &["push", "-q", t.join("index.git").to_str().unwrap(), "main"]);
         git(&t, &["clone", "-q", "index.git", "index"]);
-        Reg { t, runs: std::cell::Cell::new(0) }
+        Reg { t, runs: std::cell::Cell::new(0), approver: std::cell::Cell::new("maintainer") }
     }
 
     fn envs(&self) -> Vec<(String, String)> {
@@ -178,7 +180,7 @@ impl Reg {
         let mut log = String::new();
         let steps: [&[&str]; 4] = [&["request", n], &["check"], &["tests"], &["write"]];
         for step in steps {
-            let (out, ok) = self.run(&self.t, ci.to_str().unwrap(), step, &[("WORK", &w), ("INDEX_DIR", &idx)]);
+            let (out, ok) = self.run(&self.t, ci.to_str().unwrap(), step, &[("WORK", &w), ("INDEX_DIR", &idx), ("APPROVE_BY", self.approver.get())]);
             assert!(ok, "ci.sh {} failed:\n{out}", step.join(" "));
             log.push_str(&out);
         }
@@ -399,6 +401,51 @@ fn publish_checks_merge_and_install() {
     for f in ["index.html", "publish/index.html", "publish/publish.js", "publish/worker.js", "assets/site.css", "index.json", "packages/mo/money.json", "404.html"] {
         assert!(out.join(f).is_file(), "{f}");
     }
+}
+
+#[test]
+fn a_new_package_waits_for_a_maintainer() {
+    let r = Reg::new("approve");
+    let w = r.package("alice", "money", "1.0.0", MONEY_1_0);
+    r.release(&w, "v1.0.0");
+    let n = open(&r, "money", "1.0.0", "");
+
+    // Every check passes, but the first version of a name waits for a maintainer.
+    r.approver.set("");
+    let log = r.workflow(&n);
+    assert!(log.contains("left #") && log.contains("(pending)"), "{log}");
+    let pr = r.pr_for("publish/money-1.0.0");
+    assert_eq!(pr["state"], "open");
+    assert!(pr["body"].as_str().unwrap().contains("a maintainer comments `/approve` on #"), "{pr}");
+    assert!(r.comments(&n).last().unwrap().contains("waits for a maintainer to comment `/approve`"));
+    assert_eq!(r.state()["statuses"].as_array().unwrap().last().unwrap()["state"], "pending");
+
+    // Someone who doesn't maintain the index can't approve it.
+    r.approver.set("mallory");
+    let log = r.workflow(&n);
+    assert!(log.contains("(refused)"), "{log}");
+    assert!(r.comments(&n).last().unwrap().contains("@mallory, only a maintainer"));
+
+    // An approval holds only for the commit the pull request showed: the author moves the tag.
+    std::fs::write(w.join("NOTES.md"), "moved\n").unwrap();
+    r.release(&w, "v1.0.0");
+    r.approver.set("maintainer");
+    let log = r.workflow(&n);
+    assert!(log.contains("(stale)"), "{log}");
+    assert_eq!(r.pr_for("publish/money-1.0.0")["state"], "open");
+
+    // Approved for the commit now shown: it merges, with its snapshot.
+    let log = r.workflow(&n);
+    assert!(log.contains("merged #") && log.contains("money 1.0.0"), "{log}");
+    assert!(r.t.join("releases/money-1.0.0/money-1.0.0.tar").is_file());
+
+    // Later versions merge on their checks alone.
+    r.approver.set("");
+    r.write_pkg(&w, "money", "1.1.0", &money_1_1(), "");
+    r.release(&w, "v1.1.0");
+    let n = open(&r, "money", "1.1.0", "");
+    let log = r.workflow(&n);
+    assert!(log.contains("merged #") && log.contains("money 1.1.0"), "{log}");
 }
 
 #[test]

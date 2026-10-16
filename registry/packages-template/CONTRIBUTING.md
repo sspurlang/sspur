@@ -15,7 +15,8 @@ $ sspur publish --dry-run
 1. You open a request: `sspur publish` (with the GitHub CLI signed in, or by opening the link it prints), the [Publish page](https://utkarshavardhana.github.io/sspur-packages/publish/), or the [publish form](https://github.com/utkarshavardhana/sspur-packages/issues/new?template=publish.yml).
 2. The workflow resolves the ref to a commit, checks the package at that commit, and runs its tests natively and in the interpreter.
 3. It opens a pull request that adds the version to `packages/<first two letters>/<name>.json` and updates `index.json`. The description lists every check, the effects of each public function, and the API changes since the previous version.
-4. When every blocking check passes, it uploads the source snapshot as a release asset of this repository, merges the pull request, and closes the request. Otherwise the pull request stays open with the failures.
+4. The first version of a new package name waits here until a maintainer comments `/approve` on the request; later versions skip this.
+5. When every blocking check passes (and, for a new name, a maintainer has approved), it uploads the source snapshot as a release asset of this repository, merges the pull request, and closes the request. Otherwise the pull request stays open with the failures.
 
 To submit the next revision, fix the package and then either move the tag and comment `/recheck` on the request, tag the fix and edit the request's Ref field, or (for a branch) push: open requests are rechecked every hour when their ref moves. A version's tag may move until the version is published. After that, the index pins its commit and its snapshot, and nothing can change what users get.
 
