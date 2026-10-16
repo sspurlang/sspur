@@ -92,6 +92,10 @@ impl Reg {
             ("SSPUR_CACHE".into(), format!("{t}/cache")),
             ("GITHUB_OUTPUT".into(), String::new()),
             ("SSPUR_STRICT_NATIVE".into(), "1".into()),
+            // acme is an organization: bob is a public member, dave a private one.
+            ("FAKE_GH_ORGS".into(), "acme".into()),
+            ("FAKE_GH_PUBLIC_MEMBERS".into(), "acme:bob".into()),
+            ("FAKE_GH_MEMBERS".into(), "acme:dave".into()),
         ]
     }
 
@@ -126,6 +130,18 @@ impl Reg {
         std::fs::create_dir_all(&w).unwrap();
         git(&w, &["init", "-q"]);
         git(&w, &["remote", "add", "origin", &format!("file://{}/repos/{owner}/{name}.git", self.t.display())]);
+        self.write_pkg(&w, name, version, src, "");
+        w
+    }
+
+    /// The repository `owner/repo` of the package `name` (a scoped name, say), at `work/owner/repo`.
+    fn repo(&self, owner: &str, repo: &str, name: &str, version: &str, src: &str) -> PathBuf {
+        std::fs::create_dir_all(self.t.join("repos").join(owner)).unwrap();
+        git(&self.t, &["init", "-q", "--bare", &format!("repos/{owner}/{repo}.git")]);
+        let w = self.t.join("work").join(owner).join(repo);
+        std::fs::create_dir_all(&w).unwrap();
+        git(&w, &["init", "-q"]);
+        git(&w, &["remote", "add", "origin", &format!("file://{}/repos/{owner}/{repo}.git", self.t.display())]);
         self.write_pkg(&w, name, version, src, "");
         w
     }
@@ -660,4 +676,216 @@ fn update_moves_to_newer_matching_versions() {
     assert!(locked("1.1.0"));
     let (out, ok) = r.sspur(&app, &["run", "main.ssp"], &env);
     assert!(ok && out.trim() == "AB", "{out}");
+
+fn request(r: &Reg, name: &str, repo: &str, version: &str, user: &str) -> String {
+    let fields = [("Package name", name), ("Repository", repo), ("Ref", &format!("v{version}")), ("Version", version), ("Effects", "")];
+    r.issue(&format!("publish: {name} {version}"), &fields, user)
+}
+
+/// The author, committer and message of the newest commit on the index's main branch.
+fn head_commit(r: &Reg) -> (String, String, String) {
+    let o = git(&r.t.join("index.git"), &["log", "-1", "--format=%an <%ae>%x00%cn <%ce>%x00%B", "main"]);
+    let mut p = o.splitn(3, '\0').map(String::from);
+    (p.next().unwrap(), p.next().unwrap(), p.next().unwrap_or_default())
+}
+
+fn noreply(login: &str) -> String {
+    let id = 1000 + crc32(login.as_bytes()) % 9_000_000;
+    format!("{id}+{login}@users.noreply.github.com")
+}
+
+fn crc32(b: &[u8]) -> u32 {
+    let mut c = 0xffff_ffffu32;
+    for &x in b {
+        c ^= x as u32;
+        for _ in 0..8 {
+            c = if c & 1 == 1 { (c >> 1) ^ 0xedb8_8320 } else { c >> 1 };
+        }
+    }
+    !c
+}
+
+const ALICE_MONEY: &str = "// An amount in cents.\npub type Money = {cents: Int} derive Eq, Show\n\n// The sum of two amounts.\npub fn add(a: Money, b: Money) -> Money\n= Money{cents: a.cents + b.cents}\n\ntest t_add = add(Money{cents: 1}, Money{cents: 2}) == Money{cents: 3}\n";
+
+const ACME_MONEY: &str = "// An amount in another currency, as acme counts it.\npub type Money = {units: Int, currency: Str} derive Eq, Show\n\n// An amount of `units` in `currency`.\npub fn of(units: Int, currency: Str) -> Money\n= Money{units: units, currency: currency}\n\ntest t_of = of(2, \"EUR\").units == 2\n";
+
+#[test]
+fn scoped_names_belong_to_github_owners() {
+    let r = Reg::new("scoped");
+    // A user's scope: alice publishes alice/money from her own repository, with `sspur publish`.
+    let w = r.repo("alice", "money", "alice/money", "1.0.0", ALICE_MONEY);
+    r.release(&w, "v1.0.0");
+    let out = r.ok(&w, &["publish", "--repo", "https://github.com/alice/money"]);
+    assert!(out.contains("ok    pkg.scope") && out.contains("every blocking check passed"), "{out}");
+    let log = r.workflow("1");
+    assert!(log.contains("merged #2: alice/money 1.0.0"), "{log}");
+    let entry: J = serde_json::from_str(&r.index_file("packages/@alice/money.json").unwrap()).unwrap();
+    assert_eq!(entry["name"], "alice/money");
+    assert!(r.t.join("releases/alice--money-1.0.0/alice--money-1.0.0.tar").is_file());
+    assert!(entry["versions"][0]["snapshot"]["url"].as_str().unwrap().ends_with("/alice--money-1.0.0/alice--money-1.0.0.tar"));
+    // The commit on main is authored by alice (her noreply address) and committed by the bot.
+    let (author, committer, msg) = head_commit(&r);
+    assert_eq!(author, format!("alice <{}>", noreply("alice")));
+    assert!(committer.starts_with("github-actions[bot]"), "{committer}");
+    assert!(msg.starts_with("publish: alice/money 1.0.0 (#2)") && msg.contains(&format!("Co-authored-by: alice <{}>", noreply("alice"))), "{msg}");
+    assert_eq!(r.pr_for("publish/alice--money-1.0.0")["merge"]["author_email"], noreply("alice"));
+
+    // An organization's scope: bob, a public member of acme, publishes acme/money.
+    let wa = r.repo("acme", "money", "acme/money", "1.0.0", ACME_MONEY);
+    r.release(&wa, "v1.0.0");
+    let n = request(&r, "acme/money", "https://github.com/acme/money", "1.0.0", "bob");
+    let log = r.workflow(&n);
+    assert!(log.contains("merged #") && log.contains("acme/money 1.0.0"), "{log}");
+    assert_eq!(head_commit(&r).0, format!("bob <{}>", noreply("bob")));
+    let entry: J = serde_json::from_str(&r.index_file("packages/@acme/money.json").unwrap()).unwrap();
+    assert_eq!(entry["owners"], serde_json::json!(["bob"]));
+    assert!(r.index_file("index.json").unwrap().contains("\"name\": \"acme/money\""));
+
+    // carol is not a public member of acme: the scope check fails and the request stays open.
+    let wt = r.repo("acme", "tools", "acme/tools", "1.0.0", &ALICE_MONEY.replace("Money", "Tool").replace("cents", "size"));
+    r.release(&wt, "v1.0.0");
+    let n = request(&r, "acme/tools", "https://github.com/acme/tools", "1.0.0", "carol");
+    let log = r.workflow(&n);
+    assert!(log.contains("left #") && log.contains("pkg.scope"), "{log}");
+    let body = r.pr_for("publish/acme--tools-1.0.0")["body"].as_str().unwrap().to_string();
+    assert!(body.contains("- [ ] `pkg.scope`") && body.contains("is not a public member of the organization acme"), "{body}");
+    // dave is a member, but privately: `sspur publish`, signed in as dave, says so.
+    let (out, ok) = r.sspur(&wt, &["publish", "--dry-run", "--no-tests", "--repo", "https://github.com/acme/tools"], &[("FAKE_GH_USER", "dave")]);
+    assert!(!ok && out.contains("FAIL  pkg.scope") && out.contains("private member of the organization acme") && out.contains("orgs/acme/people"), "{out}");
+    // A later version of acme/money from another public member merges; from carol it doesn't.
+    r.write_pkg(&wa, "acme/money", "1.0.1", ACME_MONEY, "");
+    r.release(&wa, "v1.0.1");
+    let n = request(&r, "acme/money", "https://github.com/acme/money", "1.0.1", "carol");
+    assert!(r.workflow(&n).contains("left #"));
+
+    // The scope must be the repository's owner.
+    let wm = r.repo("alice", "thing", "acme/thing", "1.0.0", ALICE_MONEY);
+    r.release(&wm, "v1.0.0");
+    let (out, ok) = r.sspur(&wm, &["publish", "--dry-run", "--no-tests", "--repo", "https://github.com/alice/thing"], &[]);
+    assert!(!ok && out.contains("FAIL  pkg.scope") && out.contains("is not the owner of https://github.com/alice/thing") && out.contains("name it alice/thing"), "{out}");
+
+    // Two packages named money in one program: the second needs a key of its own.
+    let app = r.app("ledger", "use money.{Money, add}\n\nfn main() -> Unit ! log\n= do\n  m = add(Money{cents: 2}, Money{cents: 40})\n  e = acme_money.of(3, \"EUR\")\n  log(\"{m.cents} {e.units} {e.currency} {m} {e}\")\n");
+    let out = r.ok(&app, &["add", "alice/money"]);
+    assert!(out.contains("added money 1.0.0") && out.contains("registry alice/money ^1.0.0"), "{out}");
+    let (out, ok) = r.sspur(&app, &["add", "acme/money"], &[]);
+    assert!(!ok && out.contains("the key money is taken") && out.contains("--as NAME"), "{out}");
+    let out = r.ok(&app, &["add", "acme/money@=1.0.0", "--as", "acme_money"]);
+    assert!(out.contains("added acme_money 1.0.0"), "{out}");
+    let toml = std::fs::read_to_string(app.join("sspur.toml")).unwrap();
+    assert!(toml.contains("money = { package = \"alice/money\", version = \"^1.0.0\" }") && toml.contains("acme_money = { package = \"acme/money\", version = \"=1.0.0\" }"), "{toml}");
+    let lock = std::fs::read_to_string(app.join("sspur.lock")).unwrap();
+    assert!(lock.contains("name = \"alice/money\"") && lock.contains("name = \"acme/money\""), "{lock}");
+    let want = "42 3 EUR Money{cents: 42} Money{units: 3, currency: \"EUR\"}";
+    assert_eq!(r.ok(&app, &["run", "main.ssp"]).trim(), want);
+    assert_eq!(r.ok(&app, &["run", "--interp", "main.ssp"]).trim(), want);
+    let tree = r.ok(&app, &["deps", "tree"]);
+    assert!(tree.contains("alice/money 1.0.0") && tree.contains("acme/money 1.0.0"), "{tree}");
+    // A type error names the dependency by its key.
+    std::fs::write(app.join("bad.ssp"), "fn main() -> Unit ! log\n= log(acme_money.of(\"x\", \"EUR\").currency)\n").unwrap();
+    let (out, ok) = r.sspur(&app, &["check", "bad.ssp"], &[]);
+    assert!(!ok && !out.contains("___") && !out.contains("acme_money_"), "{out}");
+    // search and source know scoped names.
+    let out = r.ok(&app, &["search", "money"]);
+    assert!(out.contains("alice/money") && out.contains("acme/money"), "{out}");
+    let out = r.ok(&r.t, &["source", "acme/money@=1.0.0", r.t.join("src-acme").to_str().unwrap()]);
+    assert!(out.contains("acme/money 1.0.0") && r.t.join("src-acme/lib.ssp").is_file(), "{out}");
+    // yank works by the scoped name; the yank form names it.
+    let out = r.ok(&wa, &["yank", "acme/money@1.0.0", "--no-gh"]);
+    assert!(out.contains("name=acme%2Fmoney"), "{out}");
+
+    // The site has a page per scoped package.
+    let idx = r.t.join("index");
+    git(&idx, &["fetch", "-q", "origin"]);
+    git(&idx, &["checkout", "-q", "--detach", "origin/main"]);
+    let site = r.t.join("site");
+    let (log, ok) = r.run(&idx, idx.join("tools/ci.sh").to_str().unwrap(), &["site", site.to_str().unwrap()], &[("WORK", r.t.join("sitework").to_str().unwrap()), ("INDEX_DIR", idx.to_str().unwrap()), ("SSPUR_INDEX", idx.to_str().unwrap())]);
+    assert!(ok && log.contains("site: 2 packages"), "{log}");
+    let page = std::fs::read_to_string(site.join("packages/acme/money/index.html")).unwrap();
+    assert!(page.contains("sspur add acme/money@^1.0.0") && page.contains("money = { package = &quot;acme/money&quot;, version = &quot;^1.0.0&quot; }"), "{page}");
+    assert!(site.join("packages/@acme/money.json").is_file());
+}
+
+/// When GitHub refuses the requester's address as the merge author, the merge still goes through
+/// and the trailer credits them.
+#[test]
+fn the_merge_credits_the_author_even_without_author_email() {
+    let r = Reg::new("credit");
+    let w = r.package("alice", "money", "1.0.0", MONEY_1_0);
+    r.release(&w, "v1.0.0");
+    let n = open(&r, "money", "1.0.0", "");
+    r.runs.set(r.runs.get() + 1);
+    let work = r.t.join("job-credit");
+    let ci = r.t.join("index/tools/ci.sh");
+    let idx = r.t.join("index").display().to_string();
+    let mut log = String::new();
+    for step in [&["request", n.as_str()][..], &["check"], &["tests"], &["write"]] {
+        let (out, ok) = r.run(&r.t, ci.to_str().unwrap(), step, &[("WORK", work.to_str().unwrap()), ("INDEX_DIR", &idx), ("APPROVE_BY", "maintainer"), ("FAKE_GH_REFUSE_AUTHOR_EMAIL", "1")]);
+        assert!(ok, "{out}");
+        log.push_str(&out);
+    }
+    assert!(log.contains("merged without --author-email") && log.contains("merged #"), "{log}");
+    let (author, _, msg) = head_commit(&r);
+    assert!(author.starts_with("github-actions[bot]"), "{author}");
+    assert!(msg.contains(&format!("Co-authored-by: alice <{}>", noreply("alice"))), "{msg}");
+}
+
+const MODELS: &str = "// A document.\npub type Doc = {title: Str, words: Int} derive Eq, Show\n\n// A document with a title and no words yet.\npub fn doc(t: Str) -> Doc\n= Doc{title: t, words: 0}\n\ntest t_doc = doc(\"a\").words == 0\n";
+
+const UTIL: &str = "use models.{Doc}\n\n// The document with `n` more words.\npub fn grow(d: Doc, n: Int) -> Doc\n= d with words := d.words + n\n\ntest t_grow = grow(models.doc(\"a\"), 2).words == 2\n";
+
+const BIG: &str = "// A document, as the models module defines it.\npub type Page = models.Doc\n\n// A page with a title and `n` words.\npub fn page(t: Str, n: Int) -> Page\n= util.grow(models.doc(t), n)\n\n// How many words a page has.\npub fn words(p: Page) -> Int\n= p.words\n\ntest t_page = words(page(\"x\", 3)) == 3\n";
+
+#[test]
+fn a_package_with_modules_publishes_and_installs() {
+    let r = Reg::new("modules");
+    let w = r.repo("alice", "big", "alice/big", "1.0.0", BIG);
+    let deps = "models = { path = \"models\" }\nutil = { path = \"src/util\" }\n";
+    r.write_pkg(&w, "alice/big", "1.0.0", BIG, deps);
+    for (dir, name, src, d) in [("models", "models", MODELS.replace("// A document with a title and no words yet.\n", ""), ""), ("src/util", "util", UTIL.to_string(), "models = { path = \"../../models\" }\n")] {
+        std::fs::create_dir_all(w.join(dir)).unwrap();
+        std::fs::write(w.join(dir).join("sspur.toml"), format!("[package]\nname = \"{name}\"\nversion = \"1.0.0\"\n\n[deps]\n{d}")).unwrap();
+        std::fs::write(w.join(dir).join("lib.ssp"), src).unwrap();
+    }
+    r.release(&w, "v1.0.0");
+    // Every module is checked, with its paths from the repository's top.
+    let (out, ok) = r.sspur(&w, &["publish", "--dry-run", "--repo", "https://github.com/alice/big"], &[]);
+    assert!(!ok && out.contains("FAIL  pkg.docs") && out.contains("models/lib.ssp:4: pub fn doc has no doc comment"), "{out}");
+    assert!(out.contains("ok    build.tests-native") && out.contains("ok    pkg.deps"), "{out}");
+    assert!(!w.join("src/util/sspur.lock").exists(), "the tests ran in a copy of the commit");
+    std::fs::write(w.join("models/lib.ssp"), MODELS).unwrap();
+    r.release(&w, "v1.0.0");
+    let out = r.ok(&w, &["publish", "--repo", "https://github.com/alice/big"]);
+    assert!(out.contains("every blocking check passed"), "{out}");
+    let n = r.state()["next"].as_i64().unwrap() - 1;
+    let log = r.workflow(&n.to_string());
+    assert!(log.contains("merged #") && log.contains("alice/big 1.0.0"), "{log}");
+    let entry: J = serde_json::from_str(&r.index_file("packages/@alice/big.json").unwrap()).unwrap();
+    let api: Vec<&str> = entry["versions"][0]["api"].as_array().unwrap().iter().map(|a| a["name"].as_str().unwrap()).collect();
+    assert_eq!(api, vec!["Page", "page", "words"], "the API is the root module's");
+
+    // An app with a module of its own called models uses it: the package's modules are its own.
+    let app = r.app("reader", "use big.{page, words}\n\nfn main() -> Unit ! log\n= log(\"{words(page(\\\"t\\\", 5))} {models.local()}\")\n");
+    std::fs::create_dir_all(app.join("models")).unwrap();
+    std::fs::write(app.join("models/sspur.toml"), "[package]\nname = \"models\"\nversion = \"0.1.0\"\n").unwrap();
+    std::fs::write(app.join("models/lib.ssp"), "// Not the package's models.\npub fn local() -> Str\n= \"mine\"\n").unwrap();
+    std::fs::write(app.join("sspur.toml"), "[package]\nname = \"reader\"\nversion = \"0.1.0\"\nsrc = \"main.ssp\"\n\n[deps]\nmodels = { path = \"models\" }\n").unwrap();
+    let out = r.ok(&app, &["add", "alice/big", "--as", "big"]);
+    assert!(out.contains("added big 1.0.0"), "{out}");
+    assert_eq!(r.ok(&app, &["run", "main.ssp"]).trim(), "5 mine");
+    assert_eq!(r.ok(&app, &["run", "--interp", "main.ssp"]).trim(), "5 mine");
+    let lock = std::fs::read_to_string(app.join("sspur.lock")).unwrap();
+    assert!(lock.contains("name = \"alice/big:models\"") && lock.contains("name = \"alice/big:util\"") && lock.contains("source = \"module\"") && lock.contains("name = \"models\""), "{lock}");
+    // The lock alone rebuilds it in a fresh cache, offline.
+    let (out, ok) = r.sspur(&app, &["deps", "fetch"], &[("SSPUR_CACHE", r.t.join("cache-fresh").to_str().unwrap())]);
+    assert!(ok, "{out}");
+    let (out, ok) = r.sspur(&app, &["run", "main.ssp"], &[("SSPUR_CACHE", r.t.join("cache-fresh").to_str().unwrap()), ("SSPUR_OFFLINE", "1"), ("SSPUR_INDEX", "/nonexistent")]);
+    assert!(ok && out.trim() == "5 mine", "{out}");
+
+    // A path dependency outside the package's directory is not a module.
+    let wo = r.repo("alice", "leaky", "leaky", "1.0.0", BIG);
+    r.write_pkg(&wo, "leaky", "1.0.0", "// One.\npub fn one() -> Int\n= 1\n\ntest t = one() == 1\n", "far = { path = \"../far\" }\n");
+    r.release(&wo, "v1.0.0");
+    let (out, ok) = r.sspur(&wo, &["publish", "--dry-run", "--no-tests", "--repo", "https://github.com/alice/leaky"], &[]);
+    assert!(!ok && out.contains("FAIL  pkg.deps") && out.contains("outside the package's directory"), "{out}");
 }
