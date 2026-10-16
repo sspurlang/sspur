@@ -937,7 +937,9 @@ static OptS_ str_last(Str s) {
 "#;
 
 pub fn compile_release(m: &Module, check: &CheckOutput, opt: &str) -> Result<Compiled, String> {
+    let t0 = std::time::Instant::now();
     let opted = if debug::on() { None } else { self::opt::optimize(m, check) };
+    let t_opt = t0.elapsed();
     let (m, check) = match &opted {
         Some(o) => (&o.module, &o.check),
         None => (m, check),
@@ -947,7 +949,11 @@ pub fn compile_release(m: &Module, check: &CheckOutput, opt: &str) -> Result<Com
         Some((lm, lc, _)) => (lm, lc),
         None => (m, check),
     };
+    let t_lower = t0.elapsed();
     let (src, mut plan) = generate(m, check, None, None, true, true)?;
+    if std::env::var_os("SSPUR_SPLIT_DEBUG").is_some() {
+        eprintln!("native: optimized in {t_opt:?}, lowered {:?}, generated {:?}", t_lower - t_opt, t0.elapsed() - t_lower);
+    }
     plan.skipped.retain(|n, _| lower::original_name(n) == n);
     if let Some((_, _, why)) = &lowered {
         for (n, reason) in plan.skipped.iter_mut() {
@@ -1491,7 +1497,51 @@ fn split_units(src: &str, plan: &Plan) -> Vec<split::Tu> {
     let runtime = RUNTIME.get_or_init(|| split::fn_names(&format!("{PRELUDE}\n{}\n{}\n{}\n{}", ffi::FFI_PRELUDE, stdlib::STD_RT, gpu::HOST_PRELUDE, win::WIN_RT)));
     // A debug build is -O0, where a copied callee is never inlined; one copy keeps one breakpoint location.
     let (inline_bytes, inline_max) = if debug::on() { (0, 0) } else { (1200, 24) };
-    split::units(src, &split::Opts { owners: &plan.owned, shared: &["enc_err"], inline_bytes, inline_max, runtime, share_bytes: 400, cnames: &plan.cnames })
+    let groups = if debug::on() { (0..plan.owned.len()).map(|k| vec![k]).collect() } else { unit_groups(&plan.owned) };
+    split::units(src, &split::Opts { owners: &plan.owned, groups: &groups, shared: &["enc_err"], inline_bytes, inline_max, runtime, share_bytes: 400, cnames: &plan.cnames })
+}
+
+/// About the most definitions in a unit of a package's functions (on average, half of it to all of it).
+const GROUP: usize = 32;
+/// A package with fewer functions than this keeps one unit per definition.
+const GROUP_MIN: usize = 16;
+
+/// The units of a split build. Each function of the program itself has its own unit, so an edit
+/// recompiles only what it changes. A dependency or module with many functions (`lib__f` names)
+/// has its functions grouped by a hash of their names into units of at most about `GROUP`: every unit
+/// repeats the declarations and helpers it uses, which costs far more than the code of one small
+/// function, and a package's code changes much less often than the program's own. A function's
+/// unit depends only on its name and how many functions its package has, so a dependency's units
+/// are the same in every program that uses it, and adding a function to a package moves the others
+/// only when that count crosses a power of two.
+fn unit_groups(owners: &[String]) -> Vec<Vec<usize>> {
+    fn prefix(n: &str) -> Option<&str> {
+        n.split_once("__").map(|(p, _)| p).filter(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'))
+    }
+    let mut count: HashMap<&str, usize> = HashMap::new();
+    for n in owners {
+        if let Some(p) = prefix(n) {
+            *count.entry(p).or_default() += 1;
+        }
+    }
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    let mut slot: HashMap<(&str, usize), usize> = HashMap::new();
+    for (k, n) in owners.iter().enumerate() {
+        match prefix(n).filter(|p| count[p] >= GROUP_MIN) {
+            Some(p) => {
+                let buckets = count[p].div_ceil(GROUP).next_power_of_two();
+                let h = blake3::hash(n.as_bytes());
+                let b = u64::from_le_bytes(h.as_bytes()[..8].try_into().unwrap()) as usize % buckets;
+                let u = *slot.entry((p, b)).or_insert_with(|| {
+                    groups.push(Vec::new());
+                    groups.len() - 1
+                });
+                groups[u].push(k);
+            }
+            None => groups.push(vec![k]),
+        }
+    }
+    groups
 }
 
 fn build_split(src: &str, opt: &str, plan: &Plan, lto: flags::Lto, names: &HashMap<usize, String>) -> Result<PathBuf, String> {
@@ -1531,13 +1581,27 @@ fn build_split(src: &str, opt: &str, plan: &Plan, lto: flags::Lto, names: &HashM
     }
     let objs: Vec<PathBuf> = keys.iter().map(|k| objdir.join(format!("{k}.o"))).collect();
     let debug_on = debug::on();
-    let todo: Vec<usize> = (0..tus.len()).filter(|&i| !objs[i].exists()).collect();
+    let mut todo: Vec<usize> = (0..tus.len()).filter(|&i| !objs[i].exists()).collect();
     let build = tmp_suffix();
     let next = std::sync::atomic::AtomicUsize::new(0);
     let failed: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
-    let jobs = std::env::var("SSPUR_JOBS").ok().and_then(|j| j.parse::<usize>().ok()).unwrap_or(4).clamp(1, 4).min(todo.len().max(1));
-    let per = todo.len().div_ceil(jobs * 2).clamp(1, 16);
-    let batches: Vec<&[usize]> = todo.chunks(per).collect();
+    let jobs = flags::jobs(todo.iter().map(|&i| tus[i].text.len()).max().unwrap_or(0)).min(todo.len().max(1));
+    // Biggest units first, so no long compile is left for the end, in batches (one clang process
+    // each, which saves its startup) of about an equal share of the C: several per job, at most 16 units.
+    todo.sort_by_key(|&i| std::cmp::Reverse(tus[i].text.len()));
+    let share = todo.iter().map(|&i| tus[i].text.len()).sum::<usize>().div_ceil(jobs * 4).max(1);
+    let mut batches: Vec<Vec<usize>> = Vec::new();
+    let mut size = 0;
+    for &i in &todo {
+        match batches.last_mut() {
+            Some(b) if b.len() < 16 && size < share => b.push(i),
+            _ => {
+                batches.push(vec![i]);
+                size = 0;
+            }
+        }
+        size += tus[i].text.len();
+    }
     std::thread::scope(|s| {
         for _ in 0..jobs {
             s.spawn(|| loop {
@@ -1550,7 +1614,7 @@ fn build_split(src: &str, opt: &str, plan: &Plan, lto: flags::Lto, names: &HashM
                     std::fs::create_dir_all(&wd).map_err(|e| e.to_string())?;
                     let mut cmd = Command::new(&cc);
                     cmd.current_dir(&wd).args(&flags);
-                    for &i in batches[b] {
+                    for &i in &batches[b] {
                         let c = format!("{}.c", keys[i]);
                         if debug_on {
                             let kept = objdir.join(&c);
@@ -1571,7 +1635,7 @@ fn build_split(src: &str, opt: &str, plan: &Plan, lto: flags::Lto, names: &HashM
                         let text_of = |f: &str| batches[b].iter().find(|&&i| f.ends_with(&format!("{}.c", keys[i]))).map(|&i| (tus[i].text.clone(), Some(tus[i].name.clone()).filter(|n| n != "rt")));
                         return Err(c_failure(&err, &text_of, names));
                     }
-                    for &i in batches[b] {
+                    for &i in &batches[b] {
                         flags::publish(&wd.join(format!("{}.o", keys[i])), &objs[i])?;
                     }
                     Ok(())

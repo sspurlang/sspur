@@ -263,3 +263,64 @@ pub fn publish(tmp: &Path, dst: &Path) -> Result<(), String> {
         Err(e) => Err(e.to_string()),
     }
 }
+
+/// How many clang processes a split build runs at once: one per core, fewer when the machine's
+/// memory couldn't hold that many compiles of units of up to `unit_bytes` bytes of C.
+/// `SSPUR_JOBS` sets the number.
+pub fn jobs(unit_bytes: usize) -> usize {
+    if let Some(j) = std::env::var("SSPUR_JOBS").ok().and_then(|j| j.trim().parse::<usize>().ok()) {
+        return j.clamp(1, 256);
+    }
+    let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
+    // clang's peak at -O2: about 60 MB to start, and some 300 bytes per byte of C in a unit.
+    let per = (64 << 20) + 320 * unit_bytes as u64;
+    let by_mem = memory().map_or(cores as u64, |m| (m / 2 / per).max(1));
+    cores.min(by_mem as usize).max(1)
+}
+
+/// Physical memory free for new processes, in bytes, if the system says.
+fn memory() -> Option<u64> {
+    #[cfg(target_os = "linux")]
+    {
+        let info = std::fs::read_to_string("/proc/meminfo").ok()?;
+        let line = info.lines().find(|l| l.starts_with("MemAvailable:"))?;
+        line.split_whitespace().nth(1)?.parse::<u64>().ok().map(|kb| kb * 1024)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // The total: macOS keeps most memory as file cache, so what is free says little.
+        unsafe extern "C" {
+            fn sysctlbyname(name: *const std::ffi::c_char, old: *mut std::ffi::c_void, oldlen: *mut usize, new: *mut std::ffi::c_void, newlen: usize) -> i32;
+        }
+        let mut v: u64 = 0;
+        let mut len = std::mem::size_of::<u64>();
+        let ok = unsafe { sysctlbyname(c"hw.memsize".as_ptr(), (&raw mut v).cast(), &mut len, std::ptr::null_mut(), 0) } == 0;
+        (ok && v > 0).then_some(v / 2)
+    }
+    #[cfg(windows)]
+    {
+        #[repr(C)]
+        struct MemoryStatusEx {
+            length: u32,
+            load: u32,
+            total_phys: u64,
+            avail_phys: u64,
+            total_page: u64,
+            avail_page: u64,
+            total_virtual: u64,
+            avail_virtual: u64,
+            avail_ext: u64,
+        }
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn GlobalMemoryStatusEx(buf: *mut MemoryStatusEx) -> i32;
+        }
+        let mut m = MemoryStatusEx { length: std::mem::size_of::<MemoryStatusEx>() as u32, load: 0, total_phys: 0, avail_phys: 0, total_page: 0, avail_page: 0, total_virtual: 0, avail_virtual: 0, avail_ext: 0 };
+        let ok = unsafe { GlobalMemoryStatusEx(&mut m) } != 0;
+        (ok && m.avail_phys > 0).then_some(m.avail_phys)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+    {
+        None
+    }
+}
