@@ -9,6 +9,9 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ### Fixed
 - The registry's workflows verify sspur against the release's `SHA256SUMS`, keep their work files in the runner's temp directory, and the Publish page's username pattern is valid in Chrome and Firefox.
+- `sspur fmt` keeps record shorthand: `Page{items, total, limit: r.limit}` stays as written instead of becoming `Page{items: items, total: total, ...}`, and a field written `x: x` prints as `x`, as record patterns already did. The registry's `build.fmt` check (and so `sspur publish`) no longer fails idiomatic packages, the web-app template's own included: it reads a statement broken across lines after an operator or before `.name`, and an `if` chain with each `else` on its own line, as the one line `sspur fmt` prints, and accepts match arms indented one level under their `match`.
+- `sspur run`, `sspur test` and `sspur debug` set `SSPUR` to their own executable for the program, in both tiers, unless it is already set, so a program that runs `sspur` (such as the web-app template's `tests/run.ssp`) uses the same compiler instead of whichever is first on `PATH`.
+- On Windows, a native build could read another build's half-written library name and try to load the cache directory (`LoadLibraryExW failed`); only a name that points at a file counts now, loads retry briefly, and a failed load keeps the system's reason.
 
 ## [0.12.0] - 2026-10-16
 
