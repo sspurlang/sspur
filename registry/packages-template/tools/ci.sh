@@ -17,7 +17,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 INDEX_DIR="${INDEX_DIR:-$(cd "$here/.." && pwd)}"
 SSPUR="${SSPUR:-sspur}"
 GH="${GH:-gh}"
-REPO="${GITHUB_REPOSITORY:-utkarshavardhana/sspur-packages}"
+REPO="${GITHUB_REPOSITORY:-sspurlang/sspur-packages}"
 WORK="${WORK:-${RUNNER_TEMP:-/tmp}/registry}"
 GIT_BASE="${GIT_BASE:-https://github.com}"
 SNAPSHOT_BASE="${SNAPSHOT_BASE:-https://github.com/$REPO/releases/download}"
@@ -347,6 +347,15 @@ regen_summary() {
   mv index.json.new index.json
 }
 
+# Waits (up to SWEEP_WAIT seconds, default 900) until no publish run is queued or running.
+sweep_wait() {
+  local i
+  for i in $(seq 1 $(( ${SWEEP_WAIT:-900} / 15 ))); do
+    sleep "${SWEEP_POLL:-15}"
+    [ "$("$GH" run list --repo "$REPO" --workflow publish.yml --limit 20 --json status --jq '[.[] | select(.status != "completed")] | length' 2>/dev/null || echo 0)" = 0 ] && return 0
+  done
+}
+
 cmd_sweep() {
   local n
   for n in $("$GH" issue list --repo "$REPO" --state open --limit 200 --json number,title --jq '.[] | select(.title | test("^ *publish[: ]"; "i")) | .number'); do
@@ -360,7 +369,10 @@ cmd_sweep() {
     case "$body" in
       *"commit=$v_commit "*) ;;
       *) echo "#$n: $v_name $v_version is at ${v_commit:0:12}; checking it again"
-         "$GH" workflow run publish.yml --repo "$REPO" -f issue="$n" ;;
+         "$GH" workflow run publish.yml --repo "$REPO" -f issue="$n"
+         # One at a time: the index writer keeps a single queued run, so a burst of runs would
+         # cancel all but one of them.
+         sweep_wait ;;
     esac
   done
 }

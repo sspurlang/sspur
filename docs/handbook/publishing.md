@@ -1,6 +1,6 @@
 # Publishing a package
 
-The SSPUR registry is [sspur-packages](https://github.com/utkarshavardhana/sspur-packages), a public GitHub repository with one file per package. Its [site](https://utkarshavardhana.github.io/sspur-packages/) lists every package. This page covers using published packages, publishing your own, and what happens in between.
+The SSPUR registry is [sspur-packages](https://github.com/sspurlang/sspur-packages), a public GitHub repository with one file per package. Its [site](https://sspurlang.github.io/sspur-packages/) lists every package. This page covers using published packages, publishing your own, and what happens in between.
 
 ## Using a published package
 
@@ -21,7 +21,7 @@ The SSPUR registry is [sspur-packages](https://github.com/utkarshavardhana/sspur
 
 In a 0.x line `^0.3` accepts 0.3.x only, as in Cargo, since 0.3 to 0.4 may break. A requirement in `sspur.toml` reads as Cargo reads it, so a bare `version = "1.2"` there is `^1.2`; only `sspur add` and `sspur source` take a whole version on the command line as that exact version. `sspur deps tree` shows what you use, each package with the version the lock pins, its hash, and what it depends on.
 
-The lock pins the version by its commit, the hash of its exports, and the SHA-256 of its source snapshot. From sspur-packages the snapshot is a release asset, `https://github.com/utkarshavardhana/sspur-packages/releases/download/money-1.0.0/money-1.0.0.tar`; here it is the file next to the index:
+The lock pins the version by its commit, the hash of its exports, and the SHA-256 of its source snapshot. From sspur-packages the snapshot is a release asset, `https://github.com/sspurlang/sspur-packages/releases/download/money-1.0.0/money-1.0.0.tar`; here it is the file next to the index:
 
 ```console
 {{#include ../snippets/handbook/publish/publish.out:lock}}
@@ -107,7 +107,7 @@ A dependent builds the modules as part of the package, under the package's own n
 
 ## Publishing
 
-Run `sspur publish` in the package. It runs the registry's checks on the committed package, the same program the registry runs, including the tests natively and in the interpreter. It prints a line per check (`ok    build.parse  The source parses`, or `FAIL  pkg.docs` with the file, the line and the fix) and ends with `money 1.0.0: every blocking check passed`. With the [GitHub CLI](https://cli.github.com/) installed and signed in, it opens the publish request for you; otherwise it prints a link to the request form, filled in. `sspur publish --dry-run` only checks. The [Publish page](https://utkarshavardhana.github.io/sspur-packages/publish/) does the same in a browser: enter your GitHub username, pick the repository and the tag, and it runs the checks it can run there (all but the tests) before you submit.
+Run `sspur publish` in the package. It runs the registry's checks on the committed package, the same program the registry runs, including the tests natively and in the interpreter. It prints a line per check (`ok    build.parse  The source parses`, or `FAIL  pkg.docs` with the file, the line and the fix) and ends with `money 1.0.0: every blocking check passed`. With the [GitHub CLI](https://cli.github.com/) installed and signed in, it opens the publish request for you; otherwise it prints a link to the request form, filled in. `sspur publish --dry-run` only checks. The [Publish page](https://sspurlang.github.io/sspur-packages/publish/) does the same in a browser: enter your GitHub username, pick the repository and the tag, and it runs the checks it can run there (all but the tests) before you submit.
 
 The request is an issue in sspur-packages. Its workflow checks the version again, runs the tests, and opens a pull request that adds the version to the index. The description lists every check, the effects of each public function and the API changes since the last version. When every blocking check passes, the workflow stores a snapshot of the source as a release asset and merges the pull request. Within a few minutes `sspur add` sees the new version.
 
@@ -121,7 +121,7 @@ When something fails, the pull request stays open with each failure at its file 
 
 ## What the checks look for
 
-The [standards](https://github.com/utkarshavardhana/sspur-packages/blob/main/CONTRIBUTING.md) list all 37 checks with their reasons and fixes. In short:
+The [standards](https://github.com/sspurlang/sspur-packages/blob/main/CONTRIBUTING.md) list all 37 checks with their reasons and fixes. In short:
 
 - the source parses, typechecks with no warnings, is formatted the way `sspur fmt` prints it (comments aside), and its tests pass natively and in the interpreter;
 - the version is new and matches the API change: removing or changing a public signature needs a new major version (a new minor version in 0.x), adding one a new minor version;

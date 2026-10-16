@@ -15,20 +15,20 @@ The install script downloads the release tarball for your platform, checks its S
 In PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/utkarshavardhana/sspur/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/sspurlang/sspur/main/install.ps1 | iex
 ```
 
 The script downloads the release zip for your CPU, checks its SHA-256 checksum against `SHA256SUMS`, puts `sspur.exe` in `%LOCALAPPDATA%\sspur\bin` and adds that folder to your user `PATH`. `SSPUR_VERSION` and `SSPUR_INSTALL_DIR` work as they do for `install.sh`. You can also unpack `sspur-vX.Y.Z-x86_64-pc-windows-msvc.zip` (or `aarch64-pc-windows-msvc`) from a release yourself, or install with Scoop from the manifest attached to each release:
 
 ```powershell
-scoop install https://github.com/utkarshavardhana/sspur/releases/latest/download/sspur.json
+scoop install https://github.com/sspurlang/sspur/releases/latest/download/sspur.json
 ```
 
 Native code on Windows is compiled by LLVM's `clang` into a DLL, so install LLVM (`winget install LLVM.LLVM`, which puts `clang.exe` in `C:\Program Files\LLVM\bin`) and the Visual Studio Build Tools with the C++ workload, which provide the C runtime and linker that `clang` uses. sspur looks for `clang` on `PATH`, then next to `clang-cl`, then in the LLVM install folder; `CC` overrides it. The cache lives in `%LOCALAPPDATA%\sspur` (`SSPUR_CACHE` overrides it). Windows has no system time zone database, so to use zone names such as `Europe/Paris` set `TZDIR` to a `zoneinfo` folder, for example the one in Python's `tzdata` package.
 
 ## Prebuilt binaries
 
-Each [release](https://github.com/utkarshavardhana/sspur/releases) has tarballs for `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`, zips for `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc`, and a `SHA256SUMS` file:
+Each [release](https://github.com/sspurlang/sspur/releases) has tarballs for `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`, zips for `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc`, and a `SHA256SUMS` file:
 
 ```console
 {{#include ../snippets/get-started/install-other.sh:binary}}

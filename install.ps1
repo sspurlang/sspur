@@ -1,11 +1,11 @@
 # Install a prebuilt sspur.exe from GitHub releases.
-#   irm https://raw.githubusercontent.com/utkarshavardhana/sspur/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/sspurlang/sspur/main/install.ps1 | iex
 # Environment: SSPUR_VERSION (default: latest), SSPUR_INSTALL_DIR (default: %LOCALAPPDATA%\sspur\bin),
 #   SSPUR_DOWNLOAD_BASE (a mirror holding the release zips and SHA256SUMS)
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-$repo = 'utkarshavardhana/sspur'
+$repo = 'sspurlang/sspur'
 function Say($m) { Write-Host "sspur-install: $m" }
 function Die($m) { Write-Host "sspur-install: $m" -ForegroundColor Red; throw "sspur-install failed: $m" }
 

@@ -6,10 +6,10 @@ Install `sspur` first ([Installation](installation.md)) and check that `sspur --
 
 ## VS Code
 
-The extension in [`packaging/vscode/`](https://github.com/utkarshavardhana/sspur/tree/main/packaging/vscode) adds highlighting, the language server, and the commands *SSPUR: Run File*, *SSPUR: Test File* and *SSPUR: Fill Holes*. Each [release](https://github.com/utkarshavardhana/sspur/releases/latest) has it as `sspur-vX.Y.Z.vsix`, with its checksum in `SHA256SUMS`. Download it and install it, with no account or marketplace:
+The extension in [`packaging/vscode/`](https://github.com/sspurlang/sspur/tree/main/packaging/vscode) adds highlighting, the language server, and the commands *SSPUR: Run File*, *SSPUR: Test File* and *SSPUR: Fill Holes*. Each [release](https://github.com/sspurlang/sspur/releases/latest) has it as `sspur-vX.Y.Z.vsix`, with its checksum in `SHA256SUMS`. Download it and install it, with no account or marketplace:
 
 ```sh
-code --install-extension sspur-v0.13.0.vsix
+code --install-extension sspur-v0.13.1.vsix
 ```
 
 or use *Extensions: Install from VSIX...* in the command palette. To update, install the file from a newer release. It needs `sspur` 0.7 or later.
@@ -18,7 +18,7 @@ or use *Extensions: Install from VSIX...* in the command palette. To update, ins
 
 ## Cursor, Windsurf, VSCodium and other VS Code forks
 
-The same `.vsix` works: run the fork's command line with `--install-extension` (`cursor --install-extension sspur-v0.13.0.vsix`, `codium --install-extension ...`), or use *Extensions: Install from VSIX...* in the command palette.
+The same `.vsix` works: run the fork's command line with `--install-extension` (`cursor --install-extension sspur-v0.13.1.vsix`, `codium --install-extension ...`), or use *Extensions: Install from VSIX...* in the command palette.
 
 ## Neovim
 
@@ -145,7 +145,7 @@ python3 -c 'import json, plistlib, sys; plistlib.dump(json.load(open(sys.argv[1]
 IntelliJ IDEA, PyCharm, GoLand, RustRover, WebStorm, CLion and the rest, Community editions included, through the free [LSP4IJ](https://plugins.jetbrains.com/plugin/23257-lsp4ij) plugin:
 
 1. Install LSP4IJ from *Settings > Plugins > Marketplace*. It needs no account.
-2. Download `sspur-lsp4ij-vX.Y.Z.zip` from the [latest release](https://github.com/utkarshavardhana/sspur/releases/latest) and unzip it. It holds a folder, `sspur`, with the server definition.
+2. Download `sspur-lsp4ij-vX.Y.Z.zip` from the [latest release](https://github.com/sspurlang/sspur/releases/latest) and unzip it. It holds a folder, `sspur`, with the server definition.
 3. In *Settings > Languages & Frameworks > Language Servers*, click **+**, then **Import template...**, and choose that `sspur` folder.
 4. Click **OK**. Opening a `.ssp` file starts `sspur lsp`: highlighting, errors, completion, hover, quick fixes and hole filling all come from it.
 
@@ -153,7 +153,7 @@ If `sspur` isn't on the `PATH` that the IDE sees, edit the server's *Command* to
 
 ## Zed
 
-The extension in [`packaging/zed/`](https://github.com/utkarshavardhana/sspur/tree/main/packaging/zed) adds a Tree-sitter grammar (highlighting, brackets, indentation, and an outline of the `fn`, `type`, `test`, `trait`, `impl`, `effect`, `rule`, `store` and `svc` definitions) and starts `sspur lsp`. Each [release](https://github.com/utkarshavardhana/sspur/releases/latest) has it as `sspur-zed-vX.Y.Z.zip`, with its checksum in `SHA256SUMS`, and it installs as a dev extension, with no account or registry:
+The extension in [`packaging/zed/`](https://github.com/sspurlang/sspur/tree/main/packaging/zed) adds a Tree-sitter grammar (highlighting, brackets, indentation, and an outline of the `fn`, `type`, `test`, `trait`, `impl`, `effect`, `rule`, `store` and `svc` definitions) and starts `sspur lsp`. Each [release](https://github.com/sspurlang/sspur/releases/latest) has it as `sspur-zed-vX.Y.Z.zip`, with its checksum in `SHA256SUMS`, and it installs as a dev extension, with no account or registry:
 
 1. Unzip `sspur-zed-vX.Y.Z.zip`.
 2. In Zed, run **zed: install dev extension** from the command palette and pick the unzipped `sspur-zed` folder.

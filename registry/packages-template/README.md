@@ -1,10 +1,10 @@
 # sspur-packages
 
-The public package index of [SSPUR](https://github.com/utkarshavardhana/sspur). It costs nothing to run and needs no maintenance: it is a git repository, GitHub Actions workflows written around SSPUR programs, release assets and a GitHub Pages site.
+The public package index of [SSPUR](https://github.com/sspurlang/sspur). It costs nothing to run and needs no maintenance: it is a git repository, GitHub Actions workflows written around SSPUR programs, release assets and a GitHub Pages site.
 
-- Find packages: [utkarshavardhana.github.io/sspur-packages](https://utkarshavardhana.github.io/sspur-packages/), or `sspur search WORD`.
+- Find packages: [sspurlang.github.io/sspur-packages](https://sspurlang.github.io/sspur-packages/), or `sspur search WORD`.
 - Use one: `sspur add money` (or `money@^1.2`, or a scoped `acme/money`). The version is pinned in `sspur.lock` by commit, source snapshot and content hash.
-- Publish yours: `sspur publish` in the package, or the [Publish page](https://utkarshavardhana.github.io/sspur-packages/publish/). The [standards](CONTRIBUTING.md) list every check.
+- Publish yours: `sspur publish` in the package, or the [Publish page](https://sspurlang.github.io/sspur-packages/publish/). The [standards](CONTRIBUTING.md) list every check.
 
 ## What is here
 
@@ -20,6 +20,6 @@ The public package index of [SSPUR](https://github.com/utkarshavardhana/sspur). 
 
 ## Trust
 
-Every job uses only the built-in `GITHUB_TOKEN`, with the permissions it lists. Package code runs only in the test job, which can read and nothing else. The job that writes never runs package code. Pull requests that change anything but one package file and `index.json` need a maintainer (`.github/CODEOWNERS` and branch protection). The design, including what this does and does not defend against, is [ADR 0038](https://github.com/utkarshavardhana/sspur/blob/main/docs/adr/0038-package-registry.md).
+Every job uses only the built-in `GITHUB_TOKEN`, with the permissions it lists. Package code runs only in the test job, which can read and nothing else. The job that writes never runs package code. Pull requests that change anything but one package file and `index.json` need a maintainer (`.github/CODEOWNERS` and branch protection). The design, including what this does and does not defend against, is [ADR 0038](https://github.com/sspurlang/sspur/blob/main/docs/adr/0038-package-registry.md).
 
 The template of this repository lives in the sspur repository under `registry/packages-template/`, versioned with the compiler.

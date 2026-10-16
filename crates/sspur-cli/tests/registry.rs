@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 const BIN: &str = env!("CARGO_BIN_EXE_sspur");
-const REPO: &str = "utkarshavardhana/sspur-packages";
+const REPO: &str = "sspurlang/sspur-packages";
 
 struct Reg {
     t: PathBuf,
@@ -266,7 +266,7 @@ fn publish_checks_merge_and_install() {
     // sspur publish runs the checks locally, then opens the request with gh.
     let out = r.ok(&w, &["publish", "--repo", "https://github.com/alice/money"]);
     assert!(out.contains("every blocking check passed"), "{out}");
-    assert!(out.contains("opened https://github.com/utkarshavardhana/sspur-packages/issues/1"), "{out}");
+    assert!(out.contains("opened https://github.com/sspurlang/sspur-packages/issues/1"), "{out}");
     let log = r.workflow("1");
     assert!(log.contains("merged #2: money 1.0.0"), "{log}");
     let entry: J = serde_json::from_str(&r.index_file("packages/mo/money.json").unwrap()).unwrap();
@@ -511,6 +511,32 @@ fn organization_repositories_and_transferred_repositories() {
 }
 
 #[test]
+fn the_sweep_reruns_requests_that_got_no_answer() {
+    let r = Reg::new("sweep");
+    let w = r.package("alice", "money", "1.0.0", MONEY_1_0);
+    r.release(&w, "v1.0.0");
+    // Two requests whose runs were cancelled before they answered, and one that was answered.
+    let a = open(&r, "money", "1.0.0", "");
+    let w2 = r.package("alice", "coins", "1.0.0", MONEY_1_0);
+    r.release(&w2, "v1.0.0");
+    let b = open(&r, "coins", "1.0.0", "");
+    let ci = r.t.join("index/tools/ci.sh");
+    let work = r.t.join("sweep-job").display().to_string();
+    let idx = r.t.join("index").display().to_string();
+    let (out, ok) = r.run(&r.t, ci.to_str().unwrap(), &["sweep"], &[("WORK", &work), ("INDEX_DIR", &idx), ("SWEEP_POLL", "0")]);
+    assert!(ok, "{out}");
+    let runs: Vec<String> = r.state()["runs"].as_array().unwrap().iter().map(|x| x["fields"].to_string()).collect();
+    assert!(runs.iter().any(|f| f.contains(&format!("issue={a}"))) && runs.iter().any(|f| f.contains(&format!("issue={b}"))), "{runs:?}\n{out}");
+    // After a real run answers money, the next sweep leaves it alone.
+    r.workflow(&a);
+    let before = r.state()["runs"].as_array().unwrap().len();
+    let (out, ok) = r.run(&r.t, ci.to_str().unwrap(), &["sweep"], &[("WORK", &work), ("INDEX_DIR", &idx), ("SWEEP_POLL", "0")]);
+    assert!(ok, "{out}");
+    let after: Vec<String> = r.state()["runs"].as_array().unwrap()[before..].iter().map(|x| x["fields"].to_string()).collect();
+    assert!(!after.iter().any(|f| f.contains(&format!("issue={a}"))), "{after:?}");
+}
+
+#[test]
 fn a_fork_cannot_claim_a_new_flat_name() {
     let r = Reg::new("fork");
     // bob forked alice's money and asks for the flat name first: refused by pkg.fork.
@@ -664,7 +690,7 @@ fn publish_without_gh_prints_a_prefilled_form() {
     let (out, ok) = r.sspur(&w, &["publish", "--no-tests", "--ack", "fs", "--repo", "https://github.com/alice/money"], &[("FAKE_GH_AUTH", "0")]);
     assert!(ok, "{out}");
     let url = out.lines().find(|l| l.starts_with("https://github.com/")).unwrap();
-    assert_eq!(url, "https://github.com/utkarshavardhana/sspur-packages/issues/new?template=publish.yml&title=publish%3A%20money%201.0.0&name=money&repository=https%3A%2F%2Fgithub.com%2Falice%2Fmoney&ref=v1.0.0&version=1.0.0&effects=fs");
+    assert_eq!(url, "https://github.com/sspurlang/sspur-packages/issues/new?template=publish.yml&title=publish%3A%20money%201.0.0&name=money&repository=https%3A%2F%2Fgithub.com%2Falice%2Fmoney&ref=v1.0.0&version=1.0.0&effects=fs");
     assert!(!r.t.join("gh/state.json").exists() || r.state()["issues"].as_object().unwrap().is_empty());
 }
 

@@ -2,16 +2,16 @@
 
 # SSPUR
 
-[![CI](https://github.com/utkarshavardhana/sspur/actions/workflows/ci.yml/badge.svg)](https://github.com/utkarshavardhana/sspur/actions/workflows/ci.yml)
-[![Docs](https://img.shields.io/badge/docs-utkarshavardhana.github.io%2Fsspur-blue)](https://utkarshavardhana.github.io/sspur/)
+[![CI](https://github.com/sspurlang/sspur/actions/workflows/ci.yml/badge.svg)](https://github.com/sspurlang/sspur/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-sspurlang.github.io%2Fsspur-blue)](https://sspurlang.github.io/sspur/)
 
 **A programming language for AI agents to write, read, and maintain.**
 
-Documentation: **[utkarshavardhana.github.io/sspur](https://utkarshavardhana.github.io/sspur/)**, with [Get Started](https://utkarshavardhana.github.io/sspur/get-started/five-minutes.html), the [Handbook](https://utkarshavardhana.github.io/sspur/handbook/index.html), the [Reference](https://utkarshavardhana.github.io/sspur/reference/language.html) and [Tutorials](https://utkarshavardhana.github.io/sspur/tutorials/index.html). To try it without installing anything, open the **[Playground](https://utkarshavardhana.github.io/sspur/play/)**, which runs the checker and the interpreter in your browser.
+Documentation: **[sspurlang.github.io/sspur](https://sspurlang.github.io/sspur/)**, with [Get Started](https://sspurlang.github.io/sspur/get-started/five-minutes.html), the [Handbook](https://sspurlang.github.io/sspur/handbook/index.html), the [Reference](https://sspurlang.github.io/sspur/reference/language.html) and [Tutorials](https://sspurlang.github.io/sspur/tutorials/index.html). To try it without installing anything, open the **[Playground](https://sspurlang.github.io/sspur/play/)**, which runs the checker and the interpreter in your browser.
 
-**[SSPUR Pulse](https://utkarshavardhana.github.io/sspur/pulse/)** is a live dashboard of the world today, recomputed every 6 hours by SSPUR programs ([how it works](https://utkarshavardhana.github.io/sspur/pulse-how-it-works.html)).
+**[SSPUR Pulse](https://sspurlang.github.io/sspur/pulse/)** is a live dashboard of the world today, recomputed every 6 hours by SSPUR programs ([how it works](https://sspurlang.github.io/sspur/pulse-how-it-works.html)).
 
-<p align="center"><a href="https://utkarshavardhana.github.io/sspur/play/"><img src="docs/assets/playground.gif" width="720" alt="Typing a small SSPUR program in the playground, then running its test and main"></a></p>
+<p align="center"><a href="https://sspurlang.github.io/sspur/play/"><img src="docs/assets/playground.gif" width="720" alt="Typing a small SSPUR program in the playground, then running its test and main"></a></p>
 
 SSPUR is a statically typed, effect-tracked language whose primary users are AI coding agents rather than people. Programs are stored as a typed, content-addressed graph of definitions. Agents change code through atomic, typechecked operations instead of text diffs, and the compiler treats contracts, effects, and tests as first-class data. The surface syntax is designed to spend as few tokens as possible while still compiling to native code that outperforms idiomatic C++.
 
@@ -81,7 +81,7 @@ Most languages are designed around a human at a keyboard. SSPUR starts from a di
 - `kernel fn` GPU kernels: Metal with exact `F32` and identical traps, queued launches, shared memory and barriers, deterministic atomics, 2D grids and inlined helper fns, plus OpenCL C, SPIR-V and PTX through `sspur gpu`
 - `sspur deploy` to generate infrastructure and least-privilege IAM policies from a service's effects, run the service locally, migrate data, hot swap versions, and replay recorded traffic
 - Concurrent editing by many agents with typechecked merges, replica sync, and a shared build cache
-- [SSPUR Pulse](https://utkarshavardhana.github.io/sspur/pulse/), a live dashboard of the world today, fetched, checked and rendered by SSPUR programs every 6 hours ([source](pulse/), [how it works](docs/pulse-how-it-works.md))
+- [SSPUR Pulse](https://sspurlang.github.io/sspur/pulse/), a live dashboard of the world today, fetched, checked and rendered by SSPUR programs every 6 hours ([source](pulse/), [how it works](docs/pulse-how-it-works.md))
 
 ## Performance
 
@@ -116,29 +116,29 @@ brew install utkarshavardhana/sspur/sspur
 Downloads the release tarball for your platform, verifies its SHA-256 checksum and installs `sspur` into `~/.local/bin`:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/utkarshavardhana/sspur/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/sspurlang/sspur/main/install.sh | sh
 ```
 
-Set `SSPUR_VERSION=0.13.0` to pin a version, or `SSPUR_INSTALL_DIR` to install somewhere else.
+Set `SSPUR_VERSION=0.13.1` to pin a version, or `SSPUR_INSTALL_DIR` to install somewhere else.
 
 ### Windows
 
 In PowerShell, this downloads the release zip, verifies its checksum, installs `sspur.exe` into `%LOCALAPPDATA%\sspur\bin` and adds it to your user `PATH`:
 
 ```powershell
-irm https://raw.githubusercontent.com/utkarshavardhana/sspur/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/sspurlang/sspur/main/install.ps1 | iex
 ```
 
-Or unpack `sspur-vX.Y.Z-x86_64-pc-windows-msvc.zip` from a release. Native compilation needs LLVM (`winget install LLVM.LLVM`) and the Visual Studio Build Tools; see [installation](https://utkarshavardhana.github.io/sspur/get-started/installation.html#windows).
+Or unpack `sspur-vX.Y.Z-x86_64-pc-windows-msvc.zip` from a release. Native compilation needs LLVM (`winget install LLVM.LLVM`) and the Visual Studio Build Tools; see [installation](https://sspurlang.github.io/sspur/get-started/installation.html#windows).
 
 ### Prebuilt binaries
 
-Each [release](https://github.com/utkarshavardhana/sspur/releases) has tarballs for `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`, zips for `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc`, the editor files below, and a `SHA256SUMS` file:
+Each [release](https://github.com/sspurlang/sspur/releases) has tarballs for `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`, zips for `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc`, the editor files below, and a `SHA256SUMS` file:
 
 ```
 shasum -a 256 -c SHA256SUMS --ignore-missing
-tar -xzf sspur-v0.13.0-aarch64-apple-darwin.tar.gz
-sudo install sspur-v0.13.0-aarch64-apple-darwin/sspur /usr/local/bin/
+tar -xzf sspur-v0.13.1-aarch64-apple-darwin.tar.gz
+sudo install sspur-v0.13.1-aarch64-apple-darwin/sspur /usr/local/bin/
 ```
 
 ### From source
@@ -152,7 +152,7 @@ cargo install --path crates/sspur-cli
 or build in place:
 
 ```
-git clone https://github.com/utkarshavardhana/sspur.git
+git clone https://github.com/sspurlang/sspur.git
 cd sspur
 cargo build --release
 export PATH="$PWD/target/release:$PATH"
@@ -178,7 +178,7 @@ On macOS: `brew install z3 qemu llvm lld`. On Ubuntu: `sudo apt install z3 qemu-
 - **JetBrains IDEs** (IntelliJ IDEA, PyCharm, GoLand, RustRover, WebStorm, CLion): install the free LSP4IJ plugin, download and unzip `sspur-lsp4ij-vX.Y.Z.zip`, then in *Settings > Languages & Frameworks > Language Servers* click **+**, **Import template...** and pick the `sspur` folder.
 - **Zed**: download and unzip `sspur-zed-vX.Y.Z.zip`, then run **zed: install dev extension** and pick the `sspur-zed` folder.
 
-[Editor setup](https://utkarshavardhana.github.io/sspur/get-started/editors.html) has these in detail, plus Neovim, Vim, Helix, Emacs, Sublime Text and Eclipse.
+[Editor setup](https://sspurlang.github.io/sspur/get-started/editors.html) has these in detail, plus Neovim, Vim, Helix, Emacs, Sublime Text and Eclipse.
 
 ## Getting started
 
@@ -191,7 +191,7 @@ sspur check tests/programs/core.ssp      # add --json for machine-readable diagn
 sspur fmt   tests/programs/core.ssp
 ```
 
-Start a web app: the reference application, a notes service with accounts, SQLite, sessions and its own tests ([tutorial](https://utkarshavardhana.github.io/sspur/tutorials/web-app.html)):
+Start a web app: the reference application, a notes service with accounts, SQLite, sessions and its own tests ([tutorial](https://sspurlang.github.io/sspur/tutorials/web-app.html)):
 
 ```
 sspur new web-app notes && cd notes && sspur run
@@ -225,7 +225,7 @@ sspur deps update                           # semantic diff; refused if it break
 sspur q sig textutils.clip                  # a dependency's signature, without its body
 ```
 
-Published packages come from the registry, [sspur-packages](https://utkarshavardhana.github.io/sspur-packages/): a GitHub repository with one file per package, free to run and checked on every publish (types, tests in both tiers, effects, docs, the API diff against the last version, licence, secrets). Each version is pinned by its commit, a source snapshot's SHA-256 and its export hash, and installing one never runs its code.
+Published packages come from the registry, [sspur-packages](https://sspurlang.github.io/sspur-packages/): a GitHub repository with one file per package, free to run and checked on every publish (types, tests in both tiers, effects, docs, the API diff against the last version, licence, secrets). Each version is pinned by its commit, a source snapshot's SHA-256 and its export hash, and installing one never runs its code.
 
 ```
 sspur search money
@@ -234,7 +234,7 @@ sspur add acme/money --as acme_money        # a scoped name: acme is the GitHub 
 sspur publish                               # the registry's checks, then the request on GitHub
 ```
 
-See the [Packages](https://utkarshavardhana.github.io/sspur/handbook/packages.html) and [Publishing a package](https://utkarshavardhana.github.io/sspur/handbook/publishing.html) chapters of the handbook, [`examples/packages/`](examples/packages), [ADR 0026](docs/adr/0026-packages.md) and [ADR 0038](docs/adr/0038-package-registry.md).
+See the [Packages](https://sspurlang.github.io/sspur/handbook/packages.html) and [Publishing a package](https://sspurlang.github.io/sspur/handbook/publishing.html) chapters of the handbook, [`examples/packages/`](examples/packages), [ADR 0026](docs/adr/0026-packages.md) and [ADR 0038](docs/adr/0038-package-registry.md).
 
 More examples:
 
@@ -261,23 +261,23 @@ sspur mcp             # serve the codebase over the Model Context Protocol
 The recommended loop is one call per change: read what you need with `sspur q`, then `sspur edit --test` with all the definitions for the change. The command prints a single line on success, or precise `def:line:col CODE message` diagnostics with fix hints, and leaves the codebase untouched if anything fails. In a large codebase, `sspur q find 'ship|tax_*'` lists matching names with their signatures and `sspur q grep TEXT` the definitions that contain TEXT, so an agent never has to print the whole listing. `sspur q pack A,B,C` returns each of several definitions with the types and signatures it uses, its tests and its callers, so one call can carry everything a change needs.
 
 - **MCP clients** (Claude Code, Claude Desktop, any stdio client): `claude mcp add sspur -- sspur mcp`, or see [docs/agent/mcp.md](docs/agent/mcp.md) for the Desktop config, `--dir`, and the tool list.
-- **Claude Code plugin**: [`packaging/claude-code/`](packaging/claude-code/) bundles the MCP server with a skill that teaches the workflow and loads for `.ssp` files and SSPUR questions. Install it with `claude plugin marketplace add utkarshavardhana/sspur` and `claude plugin install sspur@sspur`.
+- **Claude Code plugin**: [`packaging/claude-code/`](packaging/claude-code/) bundles the MCP server with a skill that teaches the workflow and loads for `.ssp` files and SSPUR questions. Install it with `claude plugin marketplace add sspurlang/sspur` and `claude plugin install sspur@sspur`.
 
 ## Documentation
 
-The documentation is an mdBook in [`docs/`](docs/), published at [utkarshavardhana.github.io/sspur](https://utkarshavardhana.github.io/sspur/). Every code block in the handbook and tutorials is a file in [`docs/snippets/`](docs/snippets/) that CI runs against the current compiler.
+The documentation is an mdBook in [`docs/`](docs/), published at [sspurlang.github.io/sspur](https://sspurlang.github.io/sspur/). Every code block in the handbook and tutorials is a file in [`docs/snippets/`](docs/snippets/) that CI runs against the current compiler.
 
 | Section | Contents |
 |---|---|
-| [Playground](https://utkarshavardhana.github.io/sspur/play/) | Check, run, test and format programs in the browser, with completions, hover types and quick fixes from the compiler. Its source is [`docs/play/`](docs/play/) and [`crates/sspur-wasm`](crates/sspur-wasm/); `tools/build_playground.sh` builds it |
-| [Get Started](https://utkarshavardhana.github.io/sspur/get-started/five-minutes.html) | SSPUR in 5 minutes, pages for [TypeScript](https://utkarshavardhana.github.io/sspur/get-started/from-typescript.html), [Python](https://utkarshavardhana.github.io/sspur/get-started/from-python.html) and [Go and Rust](https://utkarshavardhana.github.io/sspur/get-started/from-go-rust.html) programmers, [SSPUR for AI agents](https://utkarshavardhana.github.io/sspur/get-started/agents.html) and [installation](https://utkarshavardhana.github.io/sspur/get-started/installation.html) |
-| [Editor setup](https://utkarshavardhana.github.io/sspur/get-started/editors.html) | `sspur lsp` in VS Code (the extension in [`packaging/vscode/`](packaging/vscode/)) and its forks, Zed (the extension in [`packaging/zed/`](packaging/zed/)), Neovim, Vim, Helix, Emacs, Sublime Text, JetBrains IDEs, Kate and Eclipse |
-| [Handbook](https://utkarshavardhana.github.io/sspur/handbook/index.html) | The language in fifteen pages, from the basics to traits, concurrency, networking, databases, crypto and packages |
-| [Reference](https://utkarshavardhana.github.io/sspur/reference/language.html) | The [full language reference](docs/reference/language.md) (what `sspur spec --full` prints), the [standard library](https://utkarshavardhana.github.io/sspur/reference/stdlib.html), [effects](https://utkarshavardhana.github.io/sspur/reference/effects.html), [error codes](https://utkarshavardhana.github.io/sspur/reference/errors.html), the [command line](https://utkarshavardhana.github.io/sspur/reference/cli.html), the [agent reference](docs/agent/agent-spec.md) and [JSON schemas](https://utkarshavardhana.github.io/sspur/reference/schema.html) |
-| [Tutorials](https://utkarshavardhana.github.io/sspur/tutorials/index.html) | A web app with accounts (`sspur new web-app`), a CRUD service, migrations and hot swap, calling C, bare metal, GPU kernels, and a multi-agent codebase |
-| [Project Configuration](https://utkarshavardhana.github.io/sspur/config/sspur-toml.html) | `sspur.toml`, `sspur.lock`, build options and environment variables |
-| [Cheat Sheet](https://utkarshavardhana.github.io/sspur/cheat-sheet.html) | The everyday syntax on one page |
-| [Design and Performance](https://utkarshavardhana.github.io/sspur/design/index.html) | The [design documents](docs/design/), the [decision records](docs/adr/), and the native and agent benchmarks |
+| [Playground](https://sspurlang.github.io/sspur/play/) | Check, run, test and format programs in the browser, with completions, hover types and quick fixes from the compiler. Its source is [`docs/play/`](docs/play/) and [`crates/sspur-wasm`](crates/sspur-wasm/); `tools/build_playground.sh` builds it |
+| [Get Started](https://sspurlang.github.io/sspur/get-started/five-minutes.html) | SSPUR in 5 minutes, pages for [TypeScript](https://sspurlang.github.io/sspur/get-started/from-typescript.html), [Python](https://sspurlang.github.io/sspur/get-started/from-python.html) and [Go and Rust](https://sspurlang.github.io/sspur/get-started/from-go-rust.html) programmers, [SSPUR for AI agents](https://sspurlang.github.io/sspur/get-started/agents.html) and [installation](https://sspurlang.github.io/sspur/get-started/installation.html) |
+| [Editor setup](https://sspurlang.github.io/sspur/get-started/editors.html) | `sspur lsp` in VS Code (the extension in [`packaging/vscode/`](packaging/vscode/)) and its forks, Zed (the extension in [`packaging/zed/`](packaging/zed/)), Neovim, Vim, Helix, Emacs, Sublime Text, JetBrains IDEs, Kate and Eclipse |
+| [Handbook](https://sspurlang.github.io/sspur/handbook/index.html) | The language in fifteen pages, from the basics to traits, concurrency, networking, databases, crypto and packages |
+| [Reference](https://sspurlang.github.io/sspur/reference/language.html) | The [full language reference](docs/reference/language.md) (what `sspur spec --full` prints), the [standard library](https://sspurlang.github.io/sspur/reference/stdlib.html), [effects](https://sspurlang.github.io/sspur/reference/effects.html), [error codes](https://sspurlang.github.io/sspur/reference/errors.html), the [command line](https://sspurlang.github.io/sspur/reference/cli.html), the [agent reference](docs/agent/agent-spec.md) and [JSON schemas](https://sspurlang.github.io/sspur/reference/schema.html) |
+| [Tutorials](https://sspurlang.github.io/sspur/tutorials/index.html) | A web app with accounts (`sspur new web-app`), a CRUD service, migrations and hot swap, calling C, bare metal, GPU kernels, and a multi-agent codebase |
+| [Project Configuration](https://sspurlang.github.io/sspur/config/sspur-toml.html) | `sspur.toml`, `sspur.lock`, build options and environment variables |
+| [Cheat Sheet](https://sspurlang.github.io/sspur/cheat-sheet.html) | The everyday syntax on one page |
+| [Design and Performance](https://sspurlang.github.io/sspur/design/index.html) | The [design documents](docs/design/), the [decision records](docs/adr/), and the native and agent benchmarks |
 
 ## Project status
 

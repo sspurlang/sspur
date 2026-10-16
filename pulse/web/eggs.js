@@ -87,7 +87,7 @@
       const tpl = D.getElementById('sspur-src'); if (!tpl) return;
       const box = D.createElement('div'); box.className = 'egg-src'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', 'SSPUR source');
       const path = location.pathname.replace(/\/$/, '').split('/').pop();
-      box.innerHTML = '<div class="egg-bar"><strong>One of the SSPUR functions behind this page</strong><a href="https://github.com/utkarshavardhana/sspur/tree/main/pulse/' + (/^[a-z]+$/.test(path) && path !== 'pulse' ? path : '') + '">All of it</a><button type="button">Close</button></div><pre></pre>';
+      box.innerHTML = '<div class="egg-bar"><strong>One of the SSPUR functions behind this page</strong><a href="https://github.com/sspurlang/sspur/tree/main/pulse/' + (/^[a-z]+$/.test(path) && path !== 'pulse' ? path : '') + '">All of it</a><button type="button">Close</button></div><pre></pre>';
       box.querySelector('pre').textContent = tpl.innerHTML.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
       D.body.appendChild(box);
       const close = () => { box.remove(); modal().close(); D.removeEventListener('keydown', onKey); };

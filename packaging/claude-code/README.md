@@ -11,7 +11,7 @@ The plugin needs `sspur` on your `PATH` (see the main README).
 From GitHub:
 
 ```
-claude plugin marketplace add utkarshavardhana/sspur
+claude plugin marketplace add sspurlang/sspur
 claude plugin install sspur@sspur
 ```
 

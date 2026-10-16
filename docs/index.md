@@ -113,7 +113,7 @@
 <p>What changed in each version.</p>
 <ul>
 <li><a href="release-notes.html">Changelog</a></li>
-<li><a href="https://github.com/utkarshavardhana/sspur">Source on GitHub</a></li>
+<li><a href="https://github.com/sspurlang/sspur">Source on GitHub</a></li>
 </ul>
 </div>
 

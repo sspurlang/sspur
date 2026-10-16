@@ -97,7 +97,7 @@ The backup is a consistent copy made with SQLite's `VACUUM INTO` while the serve
 The app listens on 127.0.0.1:8080 and Caddy in front of it gets the HTTPS certificate. On Debian or Ubuntu, as root:
 
 ```
-apt install clang caddy               # and sspur: see https://utkarshavardhana.github.io/sspur/get-started/installation.html
+apt install clang caddy               # and sspur: see https://sspurlang.github.io/sspur/get-started/installation.html
 useradd --system --no-create-home --shell /usr/sbin/nologin {{name}}
 mkdir -p /opt/{{name}} /etc/{{name}}
 cp -r . /opt/{{name}}                 # with sspur.lock: run the tests once before copying
@@ -124,4 +124,4 @@ systemctl reload caddy
 | `tests/` | Module, end-to-end, concurrency and load tests, and `run.ssp`, which runs them all |
 | `tools/backup.ssp`, `deploy/` | Backups, the systemd unit and the Caddyfile |
 
-The modules are packages inside the app's directory, so an edit to one takes effect at the next `sspur run`. The [Build a web app](https://utkarshavardhana.github.io/sspur/tutorials/web-app.html) tutorial walks through the code.
+The modules are packages inside the app's directory, so an edit to one takes effect at the next `sspur run`. The [Build a web app](https://sspurlang.github.io/sspur/tutorials/web-app.html) tutorial walks through the code.

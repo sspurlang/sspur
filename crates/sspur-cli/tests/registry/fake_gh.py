@@ -235,6 +235,10 @@ def main(argv):
                 break
             shutil.copy(f.split("#")[0], os.path.join(d, os.path.basename(f.split("#")[0])))
         return 0
+    if cmd == ["run", "list"]:
+        # Dispatched runs finish at once here.
+        print("0")
+        return 0
     if cmd == ["workflow", "run"]:
         s["runs"].append({"workflow": argv[2], "fields": opts(argv, "-f")})
         save(s)

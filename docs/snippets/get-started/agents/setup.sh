@@ -4,7 +4,7 @@ claude mcp add sspur -- sspur mcp
 # ANCHOR_END: mcp
 # ANCHOR: plugin
 # the Claude Code plugin: the MCP server plus a skill that teaches the workflow
-claude plugin marketplace add utkarshavardhana/sspur
+claude plugin marketplace add sspurlang/sspur
 claude plugin install sspur@sspur
 
 # or, for one session from a clone, without installing

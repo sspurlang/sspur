@@ -28,7 +28,7 @@ jobs:
         run: |
           v="$(tr -d '[:space:]' < .sspur-version)"
           mkdir -p "$RUNNER_TEMP/checker"
-          if curl -fsSL --retry 3 -o "$RUNNER_TEMP/checker.tar.gz" "https://github.com/utkarshavardhana/sspur/releases/download/v$v/sspur-registry-web-v$v.tar.gz"; then
+          if curl -fsSL --retry 3 -o "$RUNNER_TEMP/checker.tar.gz" "https://github.com/sspurlang/sspur/releases/download/v$v/sspur-registry-web-v$v.tar.gz"; then
             tar -xzf "$RUNNER_TEMP/checker.tar.gz" -C "$RUNNER_TEMP/checker"
           else
             echo "no browser checker in the sspur $v release; the Publish page runs without pre-checks"

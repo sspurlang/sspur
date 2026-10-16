@@ -1,8 +1,8 @@
 # SSPUR Pulse: how it works
 
-[SSPUR Pulse](https://utkarshavardhana.github.io/sspur/pulse/) is a live dashboard of the world today: what people read on Wikipedia, which rockets are about to fly, where the ground shook, which new GitHub projects are rising fastest, what Hacker News was talking about on this date years ago, which AI papers came out, how hot it is in a hundred cities, and who has the day off. Everything behind it is written in SSPUR, and it costs nothing to run: no servers, no API keys, no paid services, and no AI at runtime.
+[SSPUR Pulse](https://sspurlang.github.io/sspur/pulse/) is a live dashboard of the world today: what people read on Wikipedia, which rockets are about to fly, where the ground shook, which new GitHub projects are rising fastest, what Hacker News was talking about on this date years ago, which AI papers came out, how hot it is in a hundred cities, and who has the day off. Everything behind it is written in SSPUR, and it costs nothing to run: no servers, no API keys, no paid services, and no AI at runtime.
 
-The source is in [`pulse/`](https://github.com/utkarshavardhana/sspur/tree/main/pulse).
+The source is in [`pulse/`](https://github.com/sspurlang/sspur/tree/main/pulse).
 
 ## The pieces
 
@@ -30,7 +30,7 @@ If a section program fails outright, `run.sh` runs it again with `PULSE_SKIP=1`,
 
 History is part of each section's state and is capped, typically at 30 days: daily Wikipedia rankings for sparklines and rank changes, star counts per repository for star velocity, daily paper counts by topic, and so on.
 
-Here is part of the quakes board, the function that turns the USGS month feed into the daily counts of the 30 day chart. The [whole program](https://github.com/utkarshavardhana/sspur/blob/main/pulse/quakes/main.ssp) is about 160 lines.
+Here is part of the quakes board, the function that turns the USGS month feed into the daily counts of the 30 day chart. The [whole program](https://github.com/sspurlang/sspur/blob/main/pulse/quakes/main.ssp) is about 160 lines.
 
 ```sspur
 {{#include ../pulse/quakes/main.ssp:days}}

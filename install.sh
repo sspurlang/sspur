@@ -1,11 +1,11 @@
 #!/bin/sh
 # Install a prebuilt sspur binary from GitHub releases.
-#   curl -fsSL https://raw.githubusercontent.com/utkarshavardhana/sspur/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/sspurlang/sspur/main/install.sh | sh
 # Environment: SSPUR_VERSION (default: latest), SSPUR_INSTALL_DIR (default: ~/.local/bin),
 #   SSPUR_DOWNLOAD_BASE (a mirror holding the release tarballs and SHA256SUMS)
 set -eu
 
-repo="utkarshavardhana/sspur"
+repo="sspurlang/sspur"
 dest="${SSPUR_INSTALL_DIR:-$HOME/.local/bin}"
 
 say() { printf 'sspur-install: %s\n' "$*" >&2; }

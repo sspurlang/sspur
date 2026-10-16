@@ -11,7 +11,7 @@ create-missing = false
 
 [output.html]
 site-url = "/sspur/"
-git-repository-url = "https://github.com/utkarshavardhana/sspur"
+git-repository-url = "https://github.com/sspurlang/sspur"
 additional-js = ["assets/sspur-highlight.js", "assets/sspur-play.js"]
 additional-css = ["assets/sspur.css"]
 default-theme = "light"

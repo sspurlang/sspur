@@ -4,12 +4,12 @@ members = ["crates/*"]
 exclude = ["packaging/zed"]
 
 [workspace.package]
-version = "0.13.0"
+version = "0.13.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Utkarsha Vardhana"]
-repository = "https://github.com/utkarshavardhana/sspur"
-homepage = "https://github.com/utkarshavardhana/sspur"
+repository = "https://github.com/sspurlang/sspur"
+homepage = "https://github.com/sspurlang/sspur"
 rust-version = "1.88"
 
 [workspace.dependencies]

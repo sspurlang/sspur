@@ -65,7 +65,7 @@ fn local_path(u: &str) -> Option<PathBuf> {
     (!u.contains("://") && !u.starts_with("git@")).then(|| PathBuf::from(u))
 }
 
-const UA: &str = concat!("sspur/", env!("CARGO_PKG_VERSION"), " (https://github.com/utkarshavardhana/sspur)");
+const UA: &str = concat!("sspur/", env!("CARGO_PKG_VERSION"), " (https://github.com/sspurlang/sspur)");
 
 /// GET `url` as text: `None` for 404. Local paths and `file://` URLs are read from disk.
 pub fn get_text(url: &str) -> Result<Option<String>, String> {

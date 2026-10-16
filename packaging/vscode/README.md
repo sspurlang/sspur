@@ -1,6 +1,6 @@
 # SSPUR for VS Code
 
-Language support for [SSPUR](https://github.com/utkarshavardhana/sspur), the statically typed, effect-tracked language for AI agents. The extension runs `sspur lsp`, so everything comes from the compiler you have installed:
+Language support for [SSPUR](https://github.com/sspurlang/sspur), the statically typed, effect-tracked language for AI agents. The extension runs `sspur lsp`, so everything comes from the compiler you have installed:
 
 - Diagnostics as you type, with the compiler's quick fixes: canonical spellings, missing effects, missing match arms, unreachable arms and did-you-mean names.
 - Typed holes: a `?hole` lists the expressions that fit it and pass your tests and contracts, and the quick fix fills it in. *SSPUR: Fill Holes* fills every hole that has a passing candidate.
@@ -8,16 +8,16 @@ Language support for [SSPUR](https://github.com/utkarshavardhana/sspur), the sta
 - Signature help while you type a call: after `(` or `,` the signature shows with the current argument highlighted and the function's doc, for your functions, effect operations, builtins and methods on a typed receiver.
 - Inlay hints: the inferred type after a binding whose type isn't written (`total = xs.sum` shows `total: Int`, and guard bindings, `for` variables and lambda parameters get one too), and the parameter name before a literal argument (`scale(3, true)` shows `n: 3, strict: true`).
 - Hover types and signatures, go to definition, find references, rename, the outline, and formatting (*Format Document* runs `sspur fmt`).
-- Highlighting from a TextMate grammar, refined by the server's semantic tokens, in the same colors as the [playground](https://utkarshavardhana.github.io/sspur/play/).
+- Highlighting from a TextMate grammar, refined by the server's semantic tokens, in the same colors as the [playground](https://sspurlang.github.io/sspur/play/).
 - *SSPUR: Run File* and *SSPUR: Test File* (also the run button in the editor title) save the file and run `sspur run` or `sspur test` on it.
 
 Files inside a directory with an `sspur.toml` are checked with that package's dependencies.
 
 ## Install
 
-You need `sspur` 0.7 or later, which has `sspur lsp`: `brew install utkarshavardhana/sspur/sspur`, the install script, or a release binary (see [Installation](https://utkarshavardhana.github.io/sspur/get-started/installation.html)). Check that `sspur --version` works.
+You need `sspur` 0.7 or later, which has `sspur lsp`: `brew install utkarshavardhana/sspur/sspur`, the install script, or a release binary (see [Installation](https://sspurlang.github.io/sspur/get-started/installation.html)). Check that `sspur --version` works.
 
-Then download `sspur-vX.Y.Z.vsix` from the [latest release](https://github.com/utkarshavardhana/sspur/releases/latest) and install it with *Extensions: Install from VSIX...* in the command palette, or `code --install-extension sspur-vX.Y.Z.vsix`. Cursor, Windsurf, VSCodium and other VS Code forks take the same file (`cursor --install-extension ...`, `codium --install-extension ...`). No account or marketplace is needed. To update, install the file from a newer release.
+Then download `sspur-vX.Y.Z.vsix` from the [latest release](https://github.com/sspurlang/sspur/releases/latest) and install it with *Extensions: Install from VSIX...* in the command palette, or `code --install-extension sspur-vX.Y.Z.vsix`. Cursor, Windsurf, VSCodium and other VS Code forks take the same file (`cursor --install-extension ...`, `codium --install-extension ...`). No account or marketplace is needed. To update, install the file from a newer release.
 
 ## Settings
 
@@ -54,9 +54,9 @@ The extension lets you set breakpoints in `.ssp` files. To stop on them, debug t
 }
 ```
 
-The variables view shows locals under their SSPUR names, with strings, lists, options and sum values formatted. More in [Debugging](https://utkarshavardhana.github.io/sspur/reference/debugging.html).
+The variables view shows locals under their SSPUR names, with strings, lists, options and sum values formatted. More in [Debugging](https://sspurlang.github.io/sspur/reference/debugging.html).
 
-Other editors are covered in [Editor setup](https://utkarshavardhana.github.io/sspur/get-started/editors.html).
+Other editors are covered in [Editor setup](https://sspurlang.github.io/sspur/get-started/editors.html).
 
 ## Building and publishing
 

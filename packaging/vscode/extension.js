@@ -30,7 +30,7 @@ async function start() {
       "Install SSPUR",
     );
     if (pick === "Open settings") vscode.commands.executeCommand("workbench.action.openSettings", "sspur.path");
-    if (pick === "Install SSPUR") vscode.env.openExternal(vscode.Uri.parse("https://github.com/utkarshavardhana/sspur#install"));
+    if (pick === "Install SSPUR") vscode.env.openExternal(vscode.Uri.parse("https://github.com/sspurlang/sspur#install"));
   }
 }
 

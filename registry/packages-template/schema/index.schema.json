@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://utkarshavardhana.github.io/sspur-packages/schema/index.schema.json",
+  "$id": "https://sspurlang.github.io/sspur-packages/schema/index.schema.json",
   "title": "The index summary (schema 1)",
   "description": "index.json, generated from the package files by the registry program; clients use it for search and the typosquatting check.",
   "type": "object",

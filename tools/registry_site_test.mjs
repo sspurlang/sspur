@@ -26,7 +26,7 @@ if (shots) fs.mkdirSync(shots, { recursive: true });
 {
   const template = path.join(path.dirname(fileURLToPath(import.meta.url)), "../registry/packages-template");
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "regsite-"));
-  const entry = (name, version, deps, api) => ({ version, git: `https://github.com/${name.includes("/") ? name : "alice/" + name}.git`, tag: `v${version}`, commit: "abcdef1234567890abcdef1234567890abcdef12", hash: "h".repeat(52), snapshot: { url: `https://github.com/utkarshavardhana/sspur-packages/releases/download/${name.replace("/", "--")}-${version}/${name.replace("/", "--")}-${version}.tar`, sha256: "0".repeat(64), size: 3072 }, effects: [], deps, license: "MIT", yanked: false, deprecated: null, published: "2026-10-16T00:00:00Z", publisher: "bob", request: 1, api });
+  const entry = (name, version, deps, api) => ({ version, git: `https://github.com/${name.includes("/") ? name : "alice/" + name}.git`, tag: `v${version}`, commit: "abcdef1234567890abcdef1234567890abcdef12", hash: "h".repeat(52), snapshot: { url: `https://github.com/sspurlang/sspur-packages/releases/download/${name.replace("/", "--")}-${version}/${name.replace("/", "--")}-${version}.tar`, sha256: "0".repeat(64), size: 3072 }, effects: [], deps, license: "MIT", yanked: false, deprecated: null, published: "2026-10-16T00:00:00Z", publisher: "bob", request: 1, api });
   const pkg = (name, description, repository, deps, api) => ({ schema: 1, name, description, repository, owners: ["bob"], keywords: [], versions: [entry(name, "1.0.0", deps, api)] });
   const fn = (name, sig, doc) => ({ name, kind: "fn", sig, sig_hash: "s", hash: "h", effects: [], doc });
   const pkgs = {
@@ -219,7 +219,7 @@ for (const [ename, engine] of engines) {
       ok(summary.includes("no blocking failures"), `${tag}: a good package passes (${summary.trim()})`);
       ok((await page.locator(".check.pass", { hasText: "A new name is not claimed from a fork" }).count()) === 1, `${tag}: the fork check runs in the browser and passes`);
       const href = await page.locator("#submit").getAttribute("href");
-      ok(href && href.startsWith("https://github.com/utkarshavardhana/sspur-packages/issues/new?template=publish.yml&title=publish%3A+wallet+1.0.0&name=wallet&repository=https%3A%2F%2Fgithub.com%2Falice%2Fwallet&ref=v1.0.0&version=1.0.0"), `${tag}: the submit link is the prefilled form (${href})`);
+      ok(href && href.startsWith("https://github.com/sspurlang/sspur-packages/issues/new?template=publish.yml&title=publish%3A+wallet+1.0.0&name=wallet&repository=https%3A%2F%2Fgithub.com%2Falice%2Fwallet&ref=v1.0.0&version=1.0.0"), `${tag}: the submit link is the prefilled form (${href})`);
       ok((await page.locator(".check.skip", { hasText: "tests pass in native code" }).count()) === 1, `${tag}: tests are left to the workflow`);
       await noOverflow(page, `${tag} publish`);
       if (shots) await page.screenshot({ path: `${shots}/${tag}-publish-pass.png`, fullPage: true });

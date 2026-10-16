@@ -1,16 +1,16 @@
 class Sspur < Formula
   desc "Programming language for AI agents to write, read and maintain"
-  homepage "https://github.com/utkarshavardhana/sspur"
+  homepage "https://github.com/sspurlang/sspur"
   version "@VERSION@"
   license any_of: ["MIT", "Apache-2.0"]
 
   on_macos do
     on_arm do
-      url "https://github.com/utkarshavardhana/sspur/releases/download/v@VERSION@/sspur-v@VERSION@-aarch64-apple-darwin.tar.gz"
+      url "https://github.com/sspurlang/sspur/releases/download/v@VERSION@/sspur-v@VERSION@-aarch64-apple-darwin.tar.gz"
       sha256 "@SHA_AARCH64_APPLE_DARWIN@"
     end
     on_intel do
-      url "https://github.com/utkarshavardhana/sspur/releases/download/v@VERSION@/sspur-v@VERSION@-x86_64-apple-darwin.tar.gz"
+      url "https://github.com/sspurlang/sspur/releases/download/v@VERSION@/sspur-v@VERSION@-x86_64-apple-darwin.tar.gz"
       sha256 "@SHA_X86_64_APPLE_DARWIN@"
     end
   end
@@ -19,11 +19,11 @@ class Sspur < Formula
     depends_on "llvm"
 
     on_arm do
-      url "https://github.com/utkarshavardhana/sspur/releases/download/v@VERSION@/sspur-v@VERSION@-aarch64-unknown-linux-gnu.tar.gz"
+      url "https://github.com/sspurlang/sspur/releases/download/v@VERSION@/sspur-v@VERSION@-aarch64-unknown-linux-gnu.tar.gz"
       sha256 "@SHA_AARCH64_UNKNOWN_LINUX_GNU@"
     end
     on_intel do
-      url "https://github.com/utkarshavardhana/sspur/releases/download/v@VERSION@/sspur-v@VERSION@-x86_64-unknown-linux-gnu.tar.gz"
+      url "https://github.com/sspurlang/sspur/releases/download/v@VERSION@/sspur-v@VERSION@-x86_64-unknown-linux-gnu.tar.gz"
       sha256 "@SHA_X86_64_UNKNOWN_LINUX_GNU@"
     end
   end

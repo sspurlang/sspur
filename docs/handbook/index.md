@@ -18,6 +18,6 @@ The handbook teaches the language from the start. Read it in order: each page us
 14. [Files, Compression and CSV](files-compression-csv.md): `Bytes`, gzip and zstd, and CSV with typed records.
 15. [Packages](packages.md): `sspur.toml`, `pub`, `use` and the lock file.
 
-Every code block in the handbook is a file in [`docs/snippets/handbook/`](https://github.com/utkarshavardhana/sspur/tree/main/docs/snippets/handbook), and every terminal session is run by the test suite against the current compiler. If a page and the compiler disagree, CI fails.
+Every code block in the handbook is a file in [`docs/snippets/handbook/`](https://github.com/sspurlang/sspur/tree/main/docs/snippets/handbook), and every terminal session is run by the test suite against the current compiler. If a page and the compiler disagree, CI fails.
 
 The handbook leaves out the parts most programs don't need: the `sys` and `bare` profiles, GPU kernels, services and C interop. The [tutorials](../tutorials/index.md) cover those, and the [full language reference](../reference/language.md) has everything on one page.

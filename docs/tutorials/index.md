@@ -12,4 +12,4 @@ Each tutorial builds one real thing from start to finish. They assume you have r
 | [GPU kernels](gpu-kernels.md) | SAXPY and a reduction with shared memory, run on Metal or the CPU | `clang` |
 | [A multi-agent codebase](multi-agent.md) | Two replicas edited by two agents, a conflict and its resolution | nothing extra |
 
-The [`examples/`](https://github.com/utkarshavardhana/sspur/tree/main/examples) directory has larger versions of several of these, and [`tests/`](https://github.com/utkarshavardhana/sspur/tree/main/tests) has programs for every feature.
+The [`examples/`](https://github.com/sspurlang/sspur/tree/main/examples) directory has larger versions of several of these, and [`tests/`](https://github.com/sspurlang/sspur/tree/main/tests) has programs for every feature.

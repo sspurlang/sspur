@@ -43,4 +43,4 @@ The `riscv64-qemu` target works the same way, but needs a clang with the RISC-V 
 | Traps | Define `fn on_trap(code: Int)`; a trap halts with status 64 + code |
 | Inline assembly | `asm "template" in(x: e) out(r: Int) clobber("memory")`, which performs `unsafe` |
 
-The [language reference](../reference/language.md#bare-profile-bare) has the full rules and the memory map of each target, [ADR 0017](../adr/0017-bare-profile.md) the design, and [`tests/bare/`](https://github.com/utkarshavardhana/sspur/tree/main/tests/bare) has a timer, statics, floats and a two-core program.
+The [language reference](../reference/language.md#bare-profile-bare) has the full rules and the memory map of each target, [ADR 0017](../adr/0017-bare-profile.md) the design, and [`tests/bare/`](https://github.com/sspurlang/sspur/tree/main/tests/bare) has a timer, statics, floats and a two-core program.

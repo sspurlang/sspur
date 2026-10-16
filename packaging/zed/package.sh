@@ -16,7 +16,7 @@ set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
 out=$1
-repo=${2:-https://github.com/utkarshavardhana/sspur}
+repo=${2:-https://github.com/sspurlang/sspur}
 rev=${3:-$(git -C "$root" rev-parse HEAD)}
 version=${4:-}
 

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://utkarshavardhana.github.io/sspur-packages/schema/package.schema.json",
+  "$id": "https://sspurlang.github.io/sspur-packages/schema/package.schema.json",
   "title": "An SSPUR package in the index (schema 1)",
   "description": "packages/<first two letters of the name>/<name>.json, or packages/@<scope>/<name>.json for a scoped name. Versions are only appended; after publishing, only yanked and deprecated may change.",
   "type": "object",

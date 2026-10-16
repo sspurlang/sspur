@@ -4,7 +4,7 @@
 
 Please don't open a public issue for security problems. Report them privately through GitHub's security advisories:
 
-1. Go to the [Security tab](https://github.com/utkarshavardhana/sspur/security) of the repository.
+1. Go to the [Security tab](https://github.com/sspurlang/sspur/security) of the repository.
 2. Choose **Report a vulnerability** and describe the issue, the affected version (`sspur --version`), and how to reproduce it.
 
 The report goes only to me, the maintainer. I'll acknowledge it within a week, keep you updated while I work on a fix, and credit you in the advisory unless you'd rather stay anonymous.

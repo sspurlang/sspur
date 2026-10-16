@@ -2,18 +2,18 @@
   "name": "sspur",
   "displayName": "SSPUR",
   "description": "SSPUR language support: diagnostics with quick fixes, typed-hole filling, completion, hover, signature help, inlay hints, formatting, navigation and highlighting, through sspur lsp",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "publisher": "utkarshavardhana",
   "author": "Utkarsha Vardhana",
   "license": "MIT OR Apache-2.0",
-  "homepage": "https://github.com/utkarshavardhana/sspur",
+  "homepage": "https://github.com/sspurlang/sspur",
   "repository": {
     "type": "git",
-    "url": "https://github.com/utkarshavardhana/sspur",
+    "url": "https://github.com/sspurlang/sspur",
     "directory": "packaging/vscode"
   },
   "bugs": {
-    "url": "https://github.com/utkarshavardhana/sspur/issues"
+    "url": "https://github.com/sspurlang/sspur/issues"
   },
   "icon": "images/icon.png",
   "engines": {

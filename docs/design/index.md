@@ -28,4 +28,4 @@ The [ADR index](../adr/index.md) lists all 34 architecture decision records, fro
 | [Native performance](native-benchmarks.md) | Run time and peak memory of native SSPUR against idiomatic C++ with the same safety checks |
 | [Agent benchmarks](agent-benchmarks.md) | Tokens, calls and hidden-test pass rates of Claude agents doing feature work in SSPUR, Python, TypeScript and Go |
 
-The Phase 1 token count, which compares hand-written samples in six languages, is in [`bench/tokens/`](https://github.com/utkarshavardhana/sspur/tree/main/bench/tokens).
+The Phase 1 token count, which compares hand-written samples in six languages, is in [`bench/tokens/`](https://github.com/sspurlang/sspur/tree/main/bench/tokens).

@@ -1,6 +1,6 @@
 # SSPUR in 5 minutes
 
-This page goes from hello world to a function whose contract is fuzzed and proved. It assumes `sspur` is installed ([Installation](installation.md)), or you can [try it in the playground](../play/index.html) first, which runs the programs in your browser. Every file and terminal session here is a real file under [`docs/snippets/get-started/`](https://github.com/utkarshavardhana/sspur/tree/main/docs/snippets/get-started), and CI runs each command against the current compiler.
+This page goes from hello world to a function whose contract is fuzzed and proved. It assumes `sspur` is installed ([Installation](installation.md)), or you can [try it in the playground](../play/index.html) first, which runs the programs in your browser. Every file and terminal session here is a real file under [`docs/snippets/get-started/`](https://github.com/sspurlang/sspur/tree/main/docs/snippets/get-started), and CI runs each command against the current compiler.
 
 ## Hello, world
 

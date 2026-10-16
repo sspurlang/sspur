@@ -13,7 +13,7 @@ impl zed::Extension for Sspur {
         let command = match configured.or_else(|| worktree.which("sspur")) {
             Some(path) => path,
             None => {
-                return Err("sspur was not found on PATH. Install it (https://github.com/utkarshavardhana/sspur#install), \
+                return Err("sspur was not found on PATH. Install it (https://github.com/sspurlang/sspur#install), \
                     or set lsp.sspur.binary.path in Zed's settings, then restart the language server."
                     .into());
             }

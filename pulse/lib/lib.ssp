@@ -7,10 +7,10 @@ pub fn ctx(sec: Str) -> Ctx ! env, time
 = do
   root = env_var("PULSE_ROOT").or("pulse")
   t = parse_time(env_var("PULSE_NOW").or("")).or(now())
-  Ctx{sec, root, data: env_var("PULSE_DATA").or(root + "/data"), out: env_var("PULSE_OUT").or(root + "/out"), web: root + "/web", fixtures: env_var("PULSE_FIXTURES").or(""), record: env_var("PULSE_RECORD").or(""), now: t, base: env_var("PULSE_BASE").or("https://utkarshavardhana.github.io/sspur/pulse/"), backfill: env_var("PULSE_BACKFILL").or("").to_int.or(6), force: env_var("PULSE_FORCE").or("") == "1", skip: env_var("PULSE_SKIP").or("") == "1"}
+  Ctx{sec, root, data: env_var("PULSE_DATA").or(root + "/data"), out: env_var("PULSE_OUT").or(root + "/out"), web: root + "/web", fixtures: env_var("PULSE_FIXTURES").or(""), record: env_var("PULSE_RECORD").or(""), now: t, base: env_var("PULSE_BASE").or("https://sspurlang.github.io/sspur/pulse/"), backfill: env_var("PULSE_BACKFILL").or("").to_int.or(6), force: env_var("PULSE_FORCE").or("") == "1", skip: env_var("PULSE_SKIP").or("") == "1"}
 
 pub fn ua() -> Str
-= "SSPUR-Pulse/1.0 (https://github.com/utkarshavardhana/sspur)"
+= "SSPUR-Pulse/1.0 (https://github.com/sspurlang/sspur)"
 
 // HTTP
 
@@ -248,8 +248,8 @@ pub fn credit_lines(cx: Ctx) -> Str
 
 pub fn footer(cx: Ctx) -> Str
 = do
-  src = if cx.sec == "overview" or cx.sec == "404" then "https://github.com/utkarshavardhana/sspur/tree/main/pulse" else "https://github.com/utkarshavardhana/sspur/tree/main/pulse/{cx.sec}"
-  "<footer class='foot'><div class='wrap'><p class='foot-lead'>Computed every 6 hours by <a href='{src}'>SSPUR programs</a>. No servers, no keys, no trackers.</p><ul class='credits'>{credit_lines(cx)}<li>Display type: Bricolage Grotesque, SIL Open Font License 1.1</li></ul><p class='foot-links'><a href='https://utkarshavardhana.github.io/sspur/'>SSPUR docs</a><a href='https://utkarshavardhana.github.io/sspur/play/'>Playground</a><a href='https://utkarshavardhana.github.io/sspur/pulse-how-it-works.html'>How Pulse works</a><a href='https://github.com/utkarshavardhana/sspur'>Source</a></p><p class='secrets'><button type='button' data-secrets aria-haspopup='dialog'>7 secrets hidden on this site. <span data-found>You've found 0.</span></button></p><p class='made'>Created by <a href='https://utkarshavardhana.github.io/' target='_blank' rel='noopener'>Utkarsha Vardhana</a></p></div></footer>"
+  src = if cx.sec == "overview" or cx.sec == "404" then "https://github.com/sspurlang/sspur/tree/main/pulse" else "https://github.com/sspurlang/sspur/tree/main/pulse/{cx.sec}"
+  "<footer class='foot'><div class='wrap'><p class='foot-lead'>Computed every 6 hours by <a href='{src}'>SSPUR programs</a>. No servers, no keys, no trackers.</p><ul class='credits'>{credit_lines(cx)}<li>Display type: Bricolage Grotesque, SIL Open Font License 1.1</li></ul><p class='foot-links'><a href='https://sspurlang.github.io/sspur/'>SSPUR docs</a><a href='https://sspurlang.github.io/sspur/play/'>Playground</a><a href='https://sspurlang.github.io/sspur/pulse-how-it-works.html'>How Pulse works</a><a href='https://github.com/sspurlang/sspur'>Source</a></p><p class='secrets'><button type='button' data-secrets aria-haspopup='dialog'>7 secrets hidden on this site. <span data-found>You've found 0.</span></button></p><p class='made'>Created by <a href='https://utkarshavardhana.github.io/' target='_blank' rel='noopener'>Utkarsha Vardhana</a></p></div></footer>"
 
 pub fn page(cx: Ctx, p: Page) -> Str ! fs
 = do

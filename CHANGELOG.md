@@ -4,11 +4,17 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-10-17
+
 ### Added
 - Registry: a public member of an organization may publish the first version of a package from the organization's repository, and a package whose repository was transferred or renamed on GitHub keeps publishing from its new home (GitHub resolves the old name). `sspur publish`, the Publish page and the workflow all ask GitHub.
 - The registry check `pkg.fork` (blocking): the first version of a new flat name can't come from a fork, so nobody claims a name with a fork of someone else's repository. A fork can still publish under its owner's scope. `sspur publish`, the Publish page and the workflow all ask GitHub, and the Publish page now runs the index's own checks.
 
+### Fixed
+- The registry's hourly sweep reruns unanswered requests one at a time; during a burst of requests, GitHub kept only one queued run of the index writer and cancelled the rest.
+
 ### Changed
+- SSPUR moved to the GitHub organization [sspurlang](https://github.com/sspurlang): the repository is github.com/sspurlang/sspur, the docs, playground and Pulse are at sspurlang.github.io/sspur, and the registry is sspurlang/sspur-packages at sspurlang.github.io/sspur-packages. Old repository, release and raw URLs redirect, and the old Pages URLs forward to the new ones, so existing installs, lock files and links keep working. `sspur` reads the registry from its new home, and the Homebrew tap stays `utkarshavardhana/sspur`.
 - The registry's home page shows the top 10 packages (most depended on, then most recently updated) under a "Top packages" header with a count; search looks through all of them. The site's header and favicon use the SSPUR logo.
 - CI runs on branch pushes only. A release first checks that CI passed on the tagged commit and stops otherwise, instead of running CI again for the tag.
 
@@ -413,25 +419,26 @@ This release covers Phases 3 to 7 of the roadmap and ADRs 0003 to 0024. SSPUR no
 - Language design spec, JSON schemas and the token benchmark.
 - Compiler core: parser, checker, content hashing, interpreter and the `sspur` CLI, with an 11-program suite.
 
-[Unreleased]: https://github.com/utkarshavardhana/sspur/compare/v0.13.0...HEAD
-[0.13.0]: https://github.com/utkarshavardhana/sspur/compare/v0.12.1...v0.13.0
-[0.12.1]: https://github.com/utkarshavardhana/sspur/compare/v0.12.0...v0.12.1
-[0.12.0]: https://github.com/utkarshavardhana/sspur/compare/v0.11.0...v0.12.0
-[0.11.0]: https://github.com/utkarshavardhana/sspur/compare/v0.10.0...v0.11.0
-[0.10.0]: https://github.com/utkarshavardhana/sspur/compare/v0.9.0...v0.10.0
-[0.9.0]: https://github.com/utkarshavardhana/sspur/compare/v0.8.2...v0.9.0
-[0.8.2]: https://github.com/utkarshavardhana/sspur/compare/v0.8.1...v0.8.2
-[0.8.1]: https://github.com/utkarshavardhana/sspur/compare/v0.8.0...v0.8.1
-[0.8.0]: https://github.com/utkarshavardhana/sspur/compare/v0.7.1...v0.8.0
-[0.7.1]: https://github.com/utkarshavardhana/sspur/compare/v0.7.0...v0.7.1
-[0.7.0]: https://github.com/utkarshavardhana/sspur/compare/v0.6.0...v0.7.0
-[0.6.0]: https://github.com/utkarshavardhana/sspur/compare/v0.5.0...v0.6.0
-[0.5.0]: https://github.com/utkarshavardhana/sspur/compare/v0.4.1...v0.5.0
-[0.4.1]: https://github.com/utkarshavardhana/sspur/compare/v0.4.0...v0.4.1
-[0.4.0]: https://github.com/utkarshavardhana/sspur/compare/v0.3.2...v0.4.0
-[0.3.2]: https://github.com/utkarshavardhana/sspur/compare/v0.3.1...v0.3.2
-[0.3.1]: https://github.com/utkarshavardhana/sspur/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/utkarshavardhana/sspur/compare/v0.2.1...v0.3.0
-[0.2.1]: https://github.com/utkarshavardhana/sspur/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/utkarshavardhana/sspur/releases/tag/v0.2.0
-[0.1.0]: https://github.com/utkarshavardhana/sspur/tree/6c55224
+[Unreleased]: https://github.com/sspurlang/sspur/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/sspurlang/sspur/compare/v0.13.0...v0.13.1
+[0.13.0]: https://github.com/sspurlang/sspur/compare/v0.12.1...v0.13.0
+[0.12.1]: https://github.com/sspurlang/sspur/compare/v0.12.0...v0.12.1
+[0.12.0]: https://github.com/sspurlang/sspur/compare/v0.11.0...v0.12.0
+[0.11.0]: https://github.com/sspurlang/sspur/compare/v0.10.0...v0.11.0
+[0.10.0]: https://github.com/sspurlang/sspur/compare/v0.9.0...v0.10.0
+[0.9.0]: https://github.com/sspurlang/sspur/compare/v0.8.2...v0.9.0
+[0.8.2]: https://github.com/sspurlang/sspur/compare/v0.8.1...v0.8.2
+[0.8.1]: https://github.com/sspurlang/sspur/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/sspurlang/sspur/compare/v0.7.1...v0.8.0
+[0.7.1]: https://github.com/sspurlang/sspur/compare/v0.7.0...v0.7.1
+[0.7.0]: https://github.com/sspurlang/sspur/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/sspurlang/sspur/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/sspurlang/sspur/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/sspurlang/sspur/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/sspurlang/sspur/compare/v0.3.2...v0.4.0
+[0.3.2]: https://github.com/sspurlang/sspur/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/sspurlang/sspur/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/sspurlang/sspur/compare/v0.2.1...v0.3.0
+[0.2.1]: https://github.com/sspurlang/sspur/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/sspurlang/sspur/releases/tag/v0.2.0
+[0.1.0]: https://github.com/sspurlang/sspur/tree/6c55224

@@ -10,10 +10,10 @@ use std::collections::BTreeMap;
 pub const SCHEMA: u32 = 1;
 
 /// The GitHub repository of the public index.
-pub const DEFAULT_REPO: &str = "utkarshavardhana/sspur-packages";
+pub const DEFAULT_REPO: &str = "sspurlang/sspur-packages";
 
 /// Where clients read the index by default.
-pub const DEFAULT_INDEX: &str = "https://raw.githubusercontent.com/utkarshavardhana/sspur-packages/main";
+pub const DEFAULT_INDEX: &str = "https://raw.githubusercontent.com/sspurlang/sspur-packages/main";
 
 fn one() -> u32 {
     SCHEMA

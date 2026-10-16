@@ -1,19 +1,19 @@
 {
     "version": "@VERSION@",
     "description": "Programming language for AI agents to write, read and maintain",
-    "homepage": "https://github.com/utkarshavardhana/sspur",
+    "homepage": "https://github.com/sspurlang/sspur",
     "license": "MIT|Apache-2.0",
     "suggest": {
         "LLVM": "main/llvm"
     },
     "architecture": {
         "64bit": {
-            "url": "https://github.com/utkarshavardhana/sspur/releases/download/v@VERSION@/sspur-v@VERSION@-x86_64-pc-windows-msvc.zip",
+            "url": "https://github.com/sspurlang/sspur/releases/download/v@VERSION@/sspur-v@VERSION@-x86_64-pc-windows-msvc.zip",
             "hash": "@SHA_X86_64_PC_WINDOWS_MSVC@",
             "extract_dir": "sspur-v@VERSION@-x86_64-pc-windows-msvc"
         },
         "arm64": {
-            "url": "https://github.com/utkarshavardhana/sspur/releases/download/v@VERSION@/sspur-v@VERSION@-aarch64-pc-windows-msvc.zip",
+            "url": "https://github.com/sspurlang/sspur/releases/download/v@VERSION@/sspur-v@VERSION@-aarch64-pc-windows-msvc.zip",
             "hash": "@SHA_AARCH64_PC_WINDOWS_MSVC@",
             "extract_dir": "sspur-v@VERSION@-aarch64-pc-windows-msvc"
         }
@@ -23,16 +23,16 @@
     "autoupdate": {
         "architecture": {
             "64bit": {
-                "url": "https://github.com/utkarshavardhana/sspur/releases/download/v$version/sspur-v$version-x86_64-pc-windows-msvc.zip",
+                "url": "https://github.com/sspurlang/sspur/releases/download/v$version/sspur-v$version-x86_64-pc-windows-msvc.zip",
                 "extract_dir": "sspur-v$version-x86_64-pc-windows-msvc"
             },
             "arm64": {
-                "url": "https://github.com/utkarshavardhana/sspur/releases/download/v$version/sspur-v$version-aarch64-pc-windows-msvc.zip",
+                "url": "https://github.com/sspurlang/sspur/releases/download/v$version/sspur-v$version-aarch64-pc-windows-msvc.zip",
                 "extract_dir": "sspur-v$version-aarch64-pc-windows-msvc"
             }
         },
         "hash": {
-            "url": "https://github.com/utkarshavardhana/sspur/releases/download/v$version/SHA256SUMS"
+            "url": "https://github.com/sspurlang/sspur/releases/download/v$version/SHA256SUMS"
         }
     }
 }

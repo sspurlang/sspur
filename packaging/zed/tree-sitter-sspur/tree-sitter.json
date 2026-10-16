@@ -12,11 +12,11 @@
     }
   ],
   "metadata": {
-    "version": "0.13.0",
+    "version": "0.13.1",
     "license": "MIT OR Apache-2.0",
     "description": "SSPUR grammar for tree-sitter",
     "authors": [{ "name": "Utkarsha Vardhana" }],
-    "links": { "repository": "https://github.com/utkarshavardhana/sspur" }
+    "links": { "repository": "https://github.com/sspurlang/sspur" }
   },
   "bindings": { "c": false, "go": false, "node": false, "python": false, "rust": false, "swift": false }
 }

@@ -14,7 +14,7 @@ import os
 import sys
 import urllib.parse
 
-SITE = "https://utkarshavardhana.github.io/sspur/"
+SITE = "https://sspurlang.github.io/sspur/"
 
 
 class Page(html.parser.HTMLParser):

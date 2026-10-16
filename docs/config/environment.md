@@ -14,7 +14,7 @@ None of these are needed for normal use. They exist for CI, for pinning toolchai
 | `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`, `NO_PROXY` | Proxies for the HTTP client (lowercase forms too) |
 | `SSPUR_INDEX` | The package index to read instead of sspur-packages on raw.githubusercontent.com: an HTTPS base URL, a git URL, or a directory with `packages/` |
 | `SSPUR_OFFLINE=1` | Never download: use the cached index and packages only |
-| `SSPUR_REGISTRY_REPO` | The GitHub repository `sspur publish` and `sspur yank` open requests in (default `utkarshavardhana/sspur-packages`) |
+| `SSPUR_REGISTRY_REPO` | The GitHub repository `sspur publish` and `sspur yank` open requests in (default `sspurlang/sspur-packages`) |
 | `SSPUR_GH`, `SSPUR_NO_GH=1` | The GitHub CLI `sspur publish` uses, or don't use it and print the request link |
 | `SSPUR_REGISTRY_CHECKS` | A `registry.ssp` to run instead of the copy built into `sspur publish` |
 | `SSPUR_LIBCURL` | Path of libcurl, if the HTTP client doesn't find it (macOS and Linux) |
@@ -57,5 +57,5 @@ None of these are needed for normal use. They exist for CI, for pinning toolchai
 
 | Variable | Effect |
 |---|---|
-| `SSPUR_VERSION` | The release `install.sh` installs, such as `0.13.0` (default: the latest) |
+| `SSPUR_VERSION` | The release `install.sh` installs, such as `0.13.1` (default: the latest) |
 | `SSPUR_INSTALL_DIR` | Where `install.sh` puts the binary (default `~/.local/bin`) |

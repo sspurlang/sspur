@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Run `sspur publish` in the package first: it runs the same checks and opens this form for you, filled in.
-        The standards are in [CONTRIBUTING.md](https://github.com/utkarshavardhana/sspur-packages/blob/main/CONTRIBUTING.md).
+        The standards are in [CONTRIBUTING.md](https://github.com/sspurlang/sspur-packages/blob/main/CONTRIBUTING.md).
         Keep the title as `publish: NAME VERSION`.
   - type: input
     id: name

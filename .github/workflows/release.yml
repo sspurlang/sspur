@@ -139,7 +139,7 @@ jobs:
           cd ../jetbrains
           zip -qr "../../dist/sspur-lsp4ij-${GITHUB_REF_NAME}.zip" sspur
           cd ../..
-          packaging/zed/package.sh "$RUNNER_TEMP/zed/sspur-zed" https://github.com/utkarshavardhana/sspur "$GITHUB_SHA" "$v"
+          packaging/zed/package.sh "$RUNNER_TEMP/zed/sspur-zed" https://github.com/sspurlang/sspur "$GITHUB_SHA" "$v"
           (cd "$RUNNER_TEMP/zed" && zip -qr "$GITHUB_WORKSPACE/dist/sspur-zed-${GITHUB_REF_NAME}.zip" sspur-zed)
           cd dist
           sha256sum "sspur-${GITHUB_REF_NAME}.vsix" "sspur-lsp4ij-${GITHUB_REF_NAME}.zip" "sspur-zed-${GITHUB_REF_NAME}.zip" >> SHA256SUMS

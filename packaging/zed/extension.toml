@@ -1,16 +1,16 @@
 id = "sspur"
 name = "SSPUR"
-version = "0.13.0"
+version = "0.13.1"
 schema_version = 1
 authors = ["Utkarsha Vardhana"]
 description = "SSPUR: Tree-sitter highlighting and outline, and the sspur lsp language server."
-repository = "https://github.com/utkarshavardhana/sspur"
+repository = "https://github.com/sspurlang/sspur"
 
 # The grammar lives in this repository. `rev` is filled in by package.sh, which
 # the release workflow runs with the tagged commit; for a local install, run
 # package.sh with a file:// URL and a local commit (see README.md).
 [grammars.sspur]
-repository = "https://github.com/utkarshavardhana/sspur"
+repository = "https://github.com/sspurlang/sspur"
 rev = "RELEASE_COMMIT"
 path = "packaging/zed/tree-sitter-sspur"
 
