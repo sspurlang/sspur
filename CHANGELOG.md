@@ -16,7 +16,7 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 - The first version of a new package name waits for a maintainer of sspur-packages to comment `/approve` on its request, after every check has passed. The approval holds only for the commit the pull request showed. Later versions still merge on their checks alone.
 - The registry's size limits are 2000 files, 1 MiB per file, 4 MiB of SSPUR source and 20 MiB per repository (were 500 files, 512 KiB of source and 5 MiB), room for a library the size of Apache Commons Lang.
 - `sspur add money@1.2.3` and `sspur source money@1.2.3` mean exactly that version (`=1.2.3`); requirements such as `^1.2` and `~1.2.0` are unchanged.
-- Builds of path packages are reused: a module that many others depend on is built once per command instead of once per path to it, and a build with the same inputs comes from the cache. On a synthetic package of 2.5 MB in 200 modules, a cold `sspur check` went from 166 s to 13 s.
+- Builds of path packages are reused: a module that many others depend on is built once per command instead of once per path to it, and a build with the same inputs comes from the cache. On a synthetic package of 2.5 MB in 200 modules, a cold `sspur check` went from 166 s to 11 s.
 
 ### Fixed
 - The registry's workflows verify sspur against the release's `SHA256SUMS`, keep their work files in the runner's temp directory, and the Publish page's username pattern is valid in Chrome and Firefox.
