@@ -23,7 +23,9 @@ on:
 permissions: {}
 
 env:
-  WORK: ${{ github.workspace }}/../registry-work
+  # runner.temp on GitHub-hosted Ubuntu; workflow-level env cannot read the runner context,
+  # and upload-artifact refuses paths with "..".
+  WORK: /home/runner/work/_temp/registry-work
 
 jobs:
   request:
