@@ -10,13 +10,15 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 - Published packages can contain module packages: path dependencies inside the package's directory, as the web-app template's `models = { path = "models" }`. Every check covers every module (parse, typecheck, formatting, docs, tests in both tiers, secrets, review rules) with paths from the repository's top; `sspur publish` runs the modules' tests side by side in a copy of the commit. Dependents build the modules under the package's name (`acme/pkg:models`, `source = "module"` in the lock), so they never clash with a dependent's own modules. The package's API is the root module's exports. The Publish page checks multi-module repositories too, listing the tree once with the git trees API.
 - The registry credits authors: the index commit is authored by the requester with their GitHub noreply address and committed by the bot, and the merge uses `gh pr merge --squash --author-email` with a `Co-authored-by` trailer, so the commit on main counts in the author's contributions. The Publish page also lists a user's public organizations and their repositories, and shows the scope check in the browser.
 
+### Changed
+- The registry's size limits are 2000 files, 1 MiB per file, 4 MiB of SSPUR source and 20 MiB per repository (were 500 files, 512 KiB of source and 5 MiB), room for a library the size of Apache Commons Lang.
+- `sspur add money@1.2.3` and `sspur source money@1.2.3` mean exactly that version (`=1.2.3`); requirements such as `^1.2` and `~1.2.0` are unchanged.
+- Builds of path packages are reused: a module that many others depend on is built once per command instead of once per path to it, and a build with the same inputs comes from the cache. On a synthetic package of 2.5 MB in 200 modules, a cold `sspur check` went from 166 s to 11 s.
+
 ## [0.12.1] - 2026-10-16
 
 ### Changed
 - The first version of a new package name waits for a maintainer of sspur-packages to comment `/approve` on its request, after every check has passed. The approval holds only for the commit the pull request showed. Later versions still merge on their checks alone.
-- The registry's size limits are 2000 files, 1 MiB per file, 4 MiB of SSPUR source and 20 MiB per repository (were 500 files, 512 KiB of source and 5 MiB), room for a library the size of Apache Commons Lang.
-- `sspur add money@1.2.3` and `sspur source money@1.2.3` mean exactly that version (`=1.2.3`); requirements such as `^1.2` and `~1.2.0` are unchanged.
-- Builds of path packages are reused: a module that many others depend on is built once per command instead of once per path to it, and a build with the same inputs comes from the cache. On a synthetic package of 2.5 MB in 200 modules, a cold `sspur check` went from 166 s to 11 s.
 
 ### Fixed
 - The registry's workflows verify sspur against the release's `SHA256SUMS`, keep their work files in the runner's temp directory, and the Publish page's username pattern is valid in Chrome and Firefox.
