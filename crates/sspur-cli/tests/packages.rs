@@ -273,6 +273,28 @@ fn dependency_objects_are_reused_from_the_native_cache() {
 }
 
 #[test]
+fn a_big_dependency_compiles_in_grouped_units_that_dependents_share() {
+    let w = Ws::new("bigdep");
+    let lib: String = (0..40).map(|i| format!("pub fn f{i}(n: Int) -> Int = n * {i} + {}\n\n", i % 7)).collect();
+    w.pkg("lib", "big", &[], &lib);
+    let sum = (0..40).map(|i| format!("big.f{i}(n)")).collect::<Vec<_>>().join(" + ");
+    w.pkg("app", "app", &[("big", "{ path = \"../lib\" }")], &format!("fn all(n: Int) -> Int = {sum}\n\ntest t = all(2) == 1675\n"));
+    w.pkg("app2", "app2", &[("big", "{ path = \"../lib\" }")], "fn one(n: Int) -> Int = big.f3(n) * 2\n\ntest t = one(5) == 36\n");
+    let units = |rel: &str| -> (usize, Vec<String>) {
+        let (out, ok) = w.run_env(rel, &["test", "lib.ssp"], &[("SSPUR_SPLIT_DEBUG", "1"), ("SSPUR_STRICT_NATIVE", "1")]);
+        assert!(ok && out.contains("1 passed"), "{out}");
+        let line = out.lines().find(|l| l.contains(" compiled, ")).unwrap_or_else(|| panic!("{out}"));
+        let total = line.split_whitespace().nth(1).unwrap().parse().unwrap();
+        (total, line.rsplit_once(": ").map_or("", |x| x.1).split_whitespace().map(String::from).collect())
+    };
+    let (total, first) = units("app");
+    assert!(total < 10, "40 functions of big in a few units, not one each: {total}");
+    assert!(first.iter().any(|u| u.starts_with("big__")), "{first:?}");
+    let (_, second) = units("app2");
+    assert!(second.iter().all(|u| !u.starts_with("big__")), "the dependency's units are cache hits: {second:?}");
+}
+
+#[test]
 fn codebase_mode_understands_dependencies() {
     let w = Ws::new("codebase");
     w.pkg("lib", "geo", &[], TEXT);
