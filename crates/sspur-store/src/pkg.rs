@@ -765,6 +765,32 @@ pub fn build_pkg(m: &Manifest, src: &str, deps: &BTreeMap<String, Arc<Pkg>>) -> 
 /// `build_pkg` for the package `full` (a module of a published package is `owner:module`),
 /// whose dependency keys name the packages in `alias`.
 pub fn build_as(full: &str, m: &Manifest, src: &str, deps: &BTreeMap<String, Arc<Pkg>>, alias: &BTreeMap<String, String>) -> Result<Pkg, String> {
+    // A build depends only on these inputs, so the same inputs reuse the cached package: a
+    // module that many test runs and checks link is built once per cache.
+    let mut h = blake3::Hasher::new();
+    for part in [b"build1".as_slice(), crate::fingerprint().as_bytes(), full.as_bytes(), m.text.as_bytes(), src.as_bytes()] {
+        h.update(part);
+        h.update(&[0]);
+    }
+    for (k, t) in alias {
+        h.update(format!("alias {k} {t}\0").as_bytes());
+    }
+    for (n, p) in deps {
+        h.update(format!("dep {n} {} {}\0", p.hash, blake3::hash(p.piece.as_bytes()).to_hex()).as_bytes());
+    }
+    let marker = cache_root().join("builds").join(&h.finalize().to_hex()[..40]);
+    if let Some(p) = std::fs::read_to_string(&marker).ok().and_then(|h| load_cached(h.trim())) {
+        return Ok(p);
+    }
+    let p = build_uncached(full, m, src, deps, alias)?;
+    if store_cached(&p, src, &m.text).is_ok() {
+        let _ = std::fs::create_dir_all(marker.parent().unwrap());
+        let _ = write_atomic(&marker, &p.hash);
+    }
+    Ok(p)
+}
+
+fn build_uncached(full: &str, m: &Manifest, src: &str, deps: &BTreeMap<String, Arc<Pkg>>, alias: &BTreeMap<String, String>) -> Result<Pkg, String> {
     let env = Env { name: Some(full.to_string()), direct: m.deps.keys().cloned().collect(), alias: alias.clone(), all: deps.clone() };
     let ln = link_name(full);
     let lines = |src: &str, ds: &[Diag]| -> String {
@@ -1265,8 +1291,15 @@ pub fn resolve_with(root: &Path, m: &Manifest, lock: &Lock, update: Option<BTree
 /// linked as `name:module` and its registry dependencies as `lock` pins them (else from the
 /// index). This is the hash `sspur api` reports and every dependent checks.
 pub fn build_published(root: &Path, m: &Manifest, lock: &Lock) -> Result<Pkg, String> {
+    published_graph(root, m, lock).map(|(p, _)| p)
+}
+
+/// `build_published`, with every package it was built with by full name: its modules
+/// (`name:module`) and its registry dependencies, the environment dependents build it in.
+pub fn published_graph(root: &Path, m: &Manifest, lock: &Lock) -> Result<(Pkg, BTreeMap<String, Arc<Pkg>>), String> {
     let mut r = Resolver { lock, update: None, out: BTreeMap::new(), fetched: vec![], plan: BTreeMap::new(), asked: BTreeMap::new(), dirs: BTreeMap::new() };
-    r.published(&m.name, root, m, &m.name).map(|(p, _)| p)
+    let (p, _) = r.published(&m.name, root, m, &m.name)?;
+    Ok((p, r.out.into_iter().map(|(n, (_, p))| (n, p)).collect()))
 }
 
 /// Rebuilds every locked package from its cached source and checks it against the lock.

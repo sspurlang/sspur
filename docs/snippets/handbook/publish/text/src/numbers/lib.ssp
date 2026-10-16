@@ -1,0 +1,7 @@
+use strings.{sized}
+
+// How many characters `n` has when written out.
+pub fn digits(n: Int) -> Int
+= sized(n.str).len
+
+test t_digits = digits(1234) == 4

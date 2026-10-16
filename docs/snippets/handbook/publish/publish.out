@@ -11,6 +11,7 @@ money 1.0.0 #33pnngsyjpwa
 $ cd ../shop
 $ SSPUR_INDEX=../index sspur search money
 money                    1.0.0      Amounts of money in cents
+acme/money               1.0.0      Amounts in a currency, as acme counts them
 $ SSPUR_INDEX=../index sspur add money
 added money 1.0.0 #33pnngsyjpwa (registry ^1.0.0): Money, add
 $ sspur run main.ssp

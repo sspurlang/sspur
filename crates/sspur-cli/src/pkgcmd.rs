@@ -54,6 +54,8 @@ pub fn add(arg: Option<&String>, key: Option<&String>) -> ExitCode {
         Err(e) => return fail(e),
     };
     let src = if let Some((name, req)) = registry_spec(arg) {
+        // A whole version picks exactly that version; a requirement (^1.2, ~1.2.0, >=1) a range.
+        let req = req.map(|r| if sspur_registry::semver::Version::parse(&r).is_some() { format!("={r}") } else { r });
         let req = match req {
             Some(r) => match sspur_registry::semver::Req::parse(&r) {
                 Ok(_) => r,
@@ -70,7 +72,7 @@ pub fn add(arg: Option<&String>, key: Option<&String>) -> ExitCode {
             return fail(format!("{e}; choose the key with --as NAME"));
         }
         if let Some(s) = m.deps.get(&k).filter(|s| s.target(&k) != name) {
-            return fail(format!("the key {k} is taken: it names {}; add {name} under another key with 'sspur add {arg} --as NAME'", s.target(&k)));
+            return fail(format!("the key {k} is taken (by {}); add {name} under another key with 'sspur add {arg} --as NAME'", s.target(&k)));
         }
         if let Some((other, _)) = m.deps.iter().find(|(o, s)| s.target(o) == name && **o != k) {
             return fail(format!("{name} is already a dependency, as {other}"));
@@ -195,7 +197,9 @@ fn tree(root: &Path, m: &Manifest) -> ExitCode {
             let Some(p) = env.all.get(n) else { continue };
             let src = lock.entries.get(n).map(|e| e.source.clone()).unwrap_or_default();
             let again = !seen.insert(n.clone());
-            println!("{}{n} {} #{} {src}{}", "  ".repeat(depth), p.version, short(&p.hash), if again { " (*)" } else { "" });
+            // A direct dependency under a key of its own shows the key code uses.
+            let key = if depth == 1 { env.alias.iter().find(|(_, t)| t.as_str() == n.as_str()).map(|(k, _)| format!(" (as {k})")).unwrap_or_default() } else { String::new() };
+            println!("{}{n} {} #{} {src}{key}{}", "  ".repeat(depth), p.version, short(&p.hash), if again { " (*)" } else { "" });
             if !again {
                 walk(env, lock, &p.deps.keys().cloned().collect::<Vec<_>>(), depth + 1, seen);
             }

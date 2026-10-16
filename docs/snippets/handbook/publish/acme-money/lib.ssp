@@ -1,0 +1,8 @@
+// An amount of whole units in a currency.
+pub type Money = {units: Int, currency: Str} derive Eq, Show
+
+// An amount of `units` in `currency`.
+pub fn of(units: Int, currency: Str) -> Money
+= Money{units: units, currency: currency}
+
+test t_of = of(2, "EUR").units == 2

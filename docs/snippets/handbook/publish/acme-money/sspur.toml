@@ -1,0 +1,6 @@
+[package]
+name = "acme/money"
+version = "1.0.0"
+description = "Amounts in a currency, as acme counts them"
+license = "MIT"
+src = "lib.ssp"

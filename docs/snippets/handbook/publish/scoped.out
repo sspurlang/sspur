@@ -1,0 +1,45 @@
+// ANCHOR: scoped
+$ cd ledger
+$ SSPUR_INDEX=../index sspur add money
+added money 1.0.0 #33pnngsyjpwa (registry ^1.0.0): Money, add
+$ SSPUR_INDEX=../index sspur add acme/money
+the key money is taken (by money); add acme/money under another key with 'sspur add acme/money --as NAME'
+$ SSPUR_INDEX=../index sspur add acme/money --as acme_money
+added acme_money 1.0.0 #7qieh4mdpcko (registry acme/money ^1.0.0): Money, of
+$ sspur run main.ssp
+42 cents and 3 EUR
+// ANCHOR_END: scoped
+// ANCHOR: toml
+$ cat sspur.toml
+[package]
+name = "ledger"
+version = "0.1.0"
+src = "main.ssp"
+
+[deps]
+money = { version = "^1.0.0" }
+acme_money = { package = "acme/money", version = "^1.0.0" }
+// ANCHOR_END: toml
+// ANCHOR: tree
+$ sspur deps tree
+ledger 0.1.0
+  acme/money 1.0.0 #7qieh4mdpcko registry (as acme_money)
+  money 1.0.0 #33pnngsyjpwa registry
+// ANCHOR_END: tree
+// ANCHOR: lock
+$ cat sspur.lock
+...
+[[dep]]
+name = "acme/money"
+version = "1.0.0"
+source = "registry"
+ref = "^1.0.0"
+...
+snapshot = "../index/acme--money-1.0.0.tar"
+...
+// ANCHOR_END: lock
+$ cat ../index/packages/@acme/money.json
+{
+  "schema": 1,
+  "name": "acme/money",
+...

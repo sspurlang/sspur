@@ -1,0 +1,16 @@
+// ANCHOR: big
+$ cd text
+$ sspur test lib.ssp
+1 passed, 0 failed
+$ sspur api
+acme/text 1.0.0 #cwlfb74s3y7z
+  lib.ssp:2  pub type Sized = strings.Sized
+      A string with its length known, as the strings module defines it.
+  lib.ssp:5  pub fn cut(s: Str, n: Int) -> Str
+      The text cut to `n` characters.
+  lib.ssp:9  pub fn digits(n: Int) -> Int
+      How many characters `n` has when written out.
+$ cd src/numbers
+$ sspur test lib.ssp
+1 passed, 0 failed
+// ANCHOR_END: big

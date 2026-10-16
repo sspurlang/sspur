@@ -1,0 +1,12 @@
+// A string with its length known, as the strings module defines it.
+pub type Sized = strings.Sized
+
+// The text cut to `n` characters.
+pub fn cut(s: Str, n: Int) -> Str
+= strings.cut(s, n)
+
+// How many characters `n` has when written out.
+pub fn digits(n: Int) -> Int
+= numbers.digits(n)
+
+test t_text = cut("hello", 3) == "hel" and digits(42) == 2

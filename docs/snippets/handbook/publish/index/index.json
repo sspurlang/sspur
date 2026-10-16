@@ -2,6 +2,16 @@
   "schema": 1,
   "packages": [
     {
+      "name": "acme/money",
+      "description": "Amounts in a currency, as acme counts them",
+      "latest": "1.0.0",
+      "versions": 1,
+      "keywords": [],
+      "updated": "2026-10-16T00:00:00Z",
+      "yanked": false,
+      "deprecated": null
+    },
+    {
       "name": "money",
       "description": "Amounts of money in cents",
       "latest": "1.0.0",

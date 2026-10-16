@@ -1,0 +1,6 @@
+[package]
+name = "numbers"
+version = "1.0.0"
+
+[deps]
+strings = { path = "../../strings" }

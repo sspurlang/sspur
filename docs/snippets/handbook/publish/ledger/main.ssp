@@ -1,0 +1,7 @@
+use money.{Money, add}
+
+fn main() -> Unit ! log
+= do
+  cents = add(Money{cents: 2}, Money{cents: 40})
+  euros = acme_money.of(3, "EUR")
+  log("{cents.cents} cents and {euros.units} {euros.currency}")

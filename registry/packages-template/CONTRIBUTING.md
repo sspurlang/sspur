@@ -2,7 +2,7 @@
 
 Every publish request is checked by the same SSPUR program, [`tools/registry/registry.ssp`](tools/registry/registry.ssp), wherever it runs: `sspur publish` on your machine, the Publish page in your browser, and the publish workflow of this repository. The checks are deterministic. No AI reviews your code, and no person has to: when every blocking check passes, the workflow merges the entry.
 
-Each check has an id, a severity and a message that names the file and line and says how to fix it. **Blocking** checks must pass for a version to be published. **Advisory** checks are reported on the pull request and in `sspur publish`, and never stop a version.
+Each check has an id, a severity and a message that names the file and line (relative to the top of the repository) and says how to fix it. A package can contain modules, path dependencies inside its own directory with their own `sspur.toml` (`models = { path = "models" }`), and every check covers every module. **Blocking** checks must pass for a version to be published. **Advisory** checks are reported on the pull request and in `sspur publish`, and never stop a version.
 
 Run them yourself before you open a request:
 
@@ -14,9 +14,11 @@ $ sspur publish --dry-run
 
 1. You open a request: `sspur publish` (with the GitHub CLI signed in, or by opening the link it prints), the [Publish page](https://utkarshavardhana.github.io/sspur-packages/publish/), or the [publish form](https://github.com/utkarshavardhana/sspur-packages/issues/new?template=publish.yml).
 2. The workflow resolves the ref to a commit, checks the package at that commit, and runs its tests natively and in the interpreter.
-3. It opens a pull request that adds the version to `packages/<first two letters>/<name>.json` and updates `index.json`. The description lists every check, the effects of each public function, and the API changes since the previous version.
+3. It opens a pull request that adds the version to `packages/<first two letters>/<name>.json` (`packages/@<scope>/<name>.json` for a scoped name) and updates `index.json`. The description lists every check, the effects of each public function, and the API changes since the previous version.
 4. The first version of a new package name waits here until a maintainer comments `/approve` on the request; later versions skip this.
 5. When every blocking check passes (and, for a new name, a maintainer has approved), it uploads the source snapshot as a release asset of this repository, merges the pull request, and closes the request. Otherwise the pull request stays open with the failures.
+
+The pull request is opened by the registry's bot, because the workflow runs with its own token and never with yours. The commit it merges is yours: it is authored with your GitHub noreply address (`<id>+<login>@users.noreply.github.com`) and carries a `Co-authored-by` line for you, so it counts in your contributions and shows your avatar, next to the request issue you opened.
 
 To submit the next revision, fix the package and then either move the tag and comment `/recheck` on the request, tag the fix and edit the request's Ref field, or (for a branch) push: open requests are rechecked every hour when their ref moves. A version's tag may move until the version is published. After that, the index pins its commit and its snapshot, and nothing can change what users get.
 
@@ -56,12 +58,13 @@ The API is every `pub` definition. The checks compare each one by the hash of it
 
 | Id | Severity | Rule | Why | How to fix |
 |---|---|---|---|---|
-| `pkg.name` | blocking | 2 to 40 lowercase letters, digits and single underscores, starting with a letter; not reserved (`std`, `sspur`, `json`, `http`, keywords and other standard names); the same as in `sspur.toml` | Names are read by people and by the compiler | Rename the package |
+| `pkg.name` | blocking | 2 to 40 lowercase letters, digits and single underscores, starting with a letter; not reserved (`std`, `sspur`, `json`, `http`, keywords and other standard names); the same as in `sspur.toml`. A scoped name is `SCOPE/NAME`: the scope is a GitHub login in lowercase (letters, digits and single hyphens, at most 39), and `NAME` follows the same rules but only keywords and `json`, `db`, `std`, `sspur`, `use`, `pub`, `self`, `main` are reserved for it | Names are read by people and by the compiler, and the name after the scope is the dependency key code uses | Rename the package |
 | `pkg.name-similar` | advisory | The name is not one or two edits away from an existing package, or the same after mapping look-alike characters (`0`/`o`, `1`/`l`, `rn`/`m`, `_`) | Typosquatting | Choose a clearly different name, or use the existing package |
-| `pkg.owner` | blocking | The first version is requested by the owner of its GitHub repository; later versions by an owner of the package, from the same repository | Only the people who control the code publish it | Request from the owning account. Owners and repositories change by a reviewed pull request |
+| `pkg.owner` | blocking | The first version is requested by the owner of its GitHub repository; later versions by an owner of the package, from the same repository. For a scoped name `pkg.scope` decides who may request it | Only the people who control the code publish it | Request from the owning account. Owners and repositories change by a reviewed pull request |
+| `pkg.scope` | blocking | A scoped name's scope is the GitHub owner of the repository (case aside), and the request comes from that user, or from a public member of that organization | A scope belongs to the account that owns the code, so two companies can each have `pkg` | Name the package after the repository's owner, and request it from that account or as a public member of the organization. A private member makes the membership public on `https://github.com/orgs/SCOPE/people`: the registry has no token that could see private ones |
 | `pkg.manifest` | blocking | `sspur.toml` has a description of at most 200 characters and parses | The index and the site show it | Add `description = "..."` |
 | `pkg.hooks` | blocking | `sspur.toml` has only the keys sspur reads; nothing that looks like a build or install hook | Installing a package downloads and typechecks its source and runs nothing in it; keep it that way | Remove the key |
-| `pkg.deps` | blocking | Dependencies are published packages (`{ version = "^1.0" }`) | Path and git dependencies would make an install fetch arbitrary code from arbitrary places | Publish the dependency first |
+| `pkg.deps` | blocking | Dependencies are published packages (`{ version = "^1.0" }`, or `{ package = "acme/pkg", version = "^1" }`) and the package's own modules: path dependencies inside its directory, each with a `sspur.toml` that names it as its key | Git dependencies and paths outside the package would make an install fetch arbitrary code from arbitrary places; modules are in the snapshot | Publish the dependency first, or move the module into the package |
 | `pkg.license` | blocking | `license` is an OSI-approved SPDX expression, and a LICENSE (or LICENCE, COPYING) file is at the top | Open source means a licence anyone can rely on | Add both |
 | `pkg.license-text` | advisory | The licence file contains the text of the declared licence | A mismatch is usually a copy and paste mistake | Use the standard text |
 | `pkg.readme` | blocking | A README.md with at least a few sentences | The package page shows it | Describe the package and show an example |
@@ -69,7 +72,7 @@ The API is every `pub` definition. The checks compare each one by the hash of it
 | `pkg.tests` | blocking | At least one `test` | A package without tests can't show it works | Add tests |
 | `pkg.exports` | blocking | At least one `pub` definition | A dependency is used through what it exports | Mark the API `pub` |
 | `pkg.no-services` | blocking | No `store` or `svc` definitions | They belong to the application that deploys them | Keep them in the application |
-| `pkg.size` | blocking | At most 500 files, 5 MiB in all, 1 MiB per file, 512 KiB of source | The index stores a snapshot of every version, forever | Move large files elsewhere |
+| `pkg.size` | blocking | At most 2000 files, 20 MiB in all, 1 MiB per file, 4 MiB of SSPUR source (`.ssp` files, every module together) | The index stores a snapshot of every version, forever, and the checks read every file. The limits are about twice the largest Apache Commons library (Commons Lang: 2.5 MB of source in about 200 files), so a library of that size fits as one package with modules, while a version's snapshot stays a few megabytes | Move large files elsewhere; split a large source file into modules, or a large package into packages |
 | `pkg.binaries` | blocking | No executables, object files, libraries, archives, symbolic links or submodules | Published packages are source that anyone can read | Remove them |
 | `pkg.binary-assets` | advisory | Other binary files are images or fonts for the docs | The same reason, with room for documentation | Remove other binary files |
 | `pkg.secrets` | blocking | No access tokens or private keys (AWS, GitHub, GitLab, Slack, Google, Stripe, OpenAI, Anthropic, npm, PyPI and Discord token shapes, PEM private keys) | A tag is public as soon as it is pushed | Revoke the token, remove it, and rewrite the history so no tag contains it |

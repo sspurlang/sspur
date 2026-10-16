@@ -1,0 +1,14 @@
+// A string with its length.
+pub type Sized = {text: Str, len: Int} derive Eq, Show
+
+// The string with its length.
+pub fn sized(s: Str) -> Sized
+= Sized{text: s, len: s.len}
+
+// The first `n` characters of `s`.
+pub fn cut(s: Str, n: Int) -> Str
+= s.take(n)
+
+test t_cut = cut("hello", 2) == "he"
+
+test t_sized = sized("ab").len == 2

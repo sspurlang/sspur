@@ -262,9 +262,11 @@ This page lists every code the compiler can emit, grouped by area. The test suit
 | `E_DEP` | Fetching or reading a dependency failed | Check the path or URL in `sspur.toml` |
 | `E_DEP_HASH` | A cached package doesn't match the hash in `sspur.lock` | Delete the cache entry and run `sspur deps fetch` |
 | `E_DEP_STALE` | `sspur.toml` asks for another source or rev than the lock pins | `sspur deps update NAME` |
-| `E_DEP_CONFLICT` | Two versions of one package in the graph | `sspur deps update NAME` where the older one is pinned |
+| `E_DEP_CONFLICT` | Two versions of one package in the graph, or two packages that link under the same name (`a-b/c` and `a/b_c`) | `sspur deps update NAME` where the older one is pinned, or drop one of the two |
 | `E_LOWER` | Reported by `sspur api --json` and the registry checks: the program typechecks but its traits can't be elaborated into plain definitions | The message names the definition; `sspur check` and `sspur run` show the same |
-| `E_NO_SOURCE` | The registry's Publish page found no source file in the repository | Set `src` in `sspur.toml`, or add `lib.ssp` |
+| `E_NO_SOURCE` | The registry's Publish page found no source file in the repository, or a module has none | Set `src` in `sspur.toml`, or add `lib.ssp` |
+| `E_PACKAGE` | Reported by the registry checks: a `sspur.toml` (the package's or a module's) that doesn't parse, or no `sspur.toml` at the top of the repository | Fix the file the message names |
+| `E_MODULE` | Reported by the registry checks: a path dependency of a published package that is not one of its modules (outside its directory, without a `sspur.toml`, or named differently from its key) | Move the module into the package's directory with a `sspur.toml` that names it as the key does, or publish it as a package |
 | `E_DEP_READONLY` | An edit of a dependency's definition | Change it in the dependency's own package |
 
 ## Codebase edits, sync and queries

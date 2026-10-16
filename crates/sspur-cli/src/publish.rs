@@ -65,9 +65,10 @@ fn check_in(src: &str, env: &Env) -> (Vec<sspur_check::Diag>, BTreeMap<String, S
 }
 
 /// The environment the module `m` (a path dependency of the package) is checked in: its own
-/// dependency keys over the packages the package's environment already holds.
-fn module_env(m: &Manifest, key: &str, env: &Env) -> Env {
-    let alias = pkg::aliases(m, None);
+/// dependency keys over the packages the package's environment already holds. `owner` is the
+/// package's name when `env` holds the modules as published (`owner:module`).
+fn module_env(m: &Manifest, key: &str, env: &Env, owner: Option<&str>) -> Env {
+    let alias = pkg::aliases(m, owner);
     let mut all = BTreeMap::new();
     let mut todo: Vec<String> = m.deps.keys().map(|d| alias.get(d).cloned().unwrap_or_else(|| d.clone())).collect();
     while let Some(d) = todo.pop() {
@@ -79,7 +80,7 @@ fn module_env(m: &Manifest, key: &str, env: &Env) -> Env {
             all.insert(d, p.clone());
         }
     }
-    Env { name: Some(key.to_string()), direct: m.deps.keys().cloned().collect(), alias, all }
+    Env { name: Some(owner.map_or(key.to_string(), |o| format!("{o}:{key}"))), direct: m.deps.keys().cloned().collect(), alias, all }
 }
 
 /// Everything the checks need to know about the package at `root`: the facts of its source and
@@ -91,9 +92,18 @@ pub fn package_facts(root: &Path, m: &Manifest, rev: Option<&str>) -> Result<J, 
     let (mods, mod_errs) = facts::modules(&m.text, &read);
     let path = mods[0].src_path.clone();
     let src = std::fs::read_to_string(root.join(&path)).map_err(|e| format!("cannot read {path}: {e}"))?;
-    let (env, env_err) = match Env::load(root) {
-        Ok(e) => (e.unwrap_or_default(), None),
-        Err(e) => (Env::default(), Some(e)),
+    // A package with modules is checked as dependents build it: the modules under its name.
+    // That builds each module once; when it can't be built, the modules are checked as they
+    // are developed instead, so every error shows at its line.
+    let lock = pkg::Lock::read(root).unwrap_or_default();
+    let graph = if mods.len() > 1 { pkg::published_graph(root, m, &lock).ok() } else { None };
+    let owner = graph.as_ref().map(|_| m.name.as_str());
+    let (env, env_err) = match &graph {
+        Some((_, all)) => (Env { name: Some(m.name.clone()), direct: m.deps.keys().cloned().collect(), alias: pkg::aliases(m, Some(&m.name)), all: all.clone() }, None),
+        None => match Env::load(root) {
+            Ok(e) => (e.unwrap_or_default(), None),
+            Err(e) => (Env::default(), Some(e)),
+        },
     };
     let (diags, hashes) = match &env_err {
         Some(e) => (vec![pkg::dep_diag(e)], BTreeMap::new()),
@@ -113,7 +123,7 @@ pub fn package_facts(root: &Path, m: &Manifest, rev: Option<&str>) -> Result<J, 
             units.push(json!({"key": md.key, "dir": md.dir, "manifest": facts::manifest(&md.manifest), "source": md.src_path, "parse": false, "checked": false, "diags": [{"code": "E_NO_SOURCE", "severity": "error", "file": md.src_path, "line": 0, "col": 0, "msg": format!("the module {} has no source file {}", md.key, md.src_path), "hint": "Set src in its sspur.toml, or add lib.ssp."}], "fmt": {"clean": true}, "defs": [], "holes": [], "run_cmd": [], "tests": 0, "tested": []}));
             continue;
         };
-        let (d, h) = if env_err.is_some() { (vec![], BTreeMap::new()) } else { check_in(&msrc, &module_env(&mm, &md.key, &env)) };
+        let (d, h) = if env_err.is_some() { (vec![], BTreeMap::new()) } else { check_in(&msrc, &module_env(&mm, &md.key, &env, owner)) };
         let mut u = facts::facts(&md.src_path, &msrc, Check::Given(Checked { diags: &d, hashes: &h }));
         let o = u.as_object_mut().unwrap();
         o.insert("key".into(), json!(md.key));
@@ -125,8 +135,10 @@ pub fn package_facts(root: &Path, m: &Manifest, rev: Option<&str>) -> Result<J, 
     o.insert("manifest".into(), facts::manifest(&m.text));
     o.insert("modules".into(), J::Array(units));
     o.insert("module_errors".into(), J::Array(mod_errs));
-    if env_err.is_none() {
-        match pkg::build_published(root, m, &pkg::Lock::read(root).unwrap_or_default()) {
+    if let Some((p, _)) = &graph {
+        o.insert("hash".into(), json!(p.hash));
+    } else if env_err.is_none() {
+        match pkg::build_published(root, m, &lock) {
             Ok(p) => {
                 o.insert("hash".into(), json!(p.hash));
             }
@@ -243,11 +255,28 @@ pub fn all_tests(root: &Path, m: &Manifest, at_head: bool) -> J {
         let file = md.src_path.strip_prefix(&format!("{}/", md.dir)).filter(|_| !md.dir.is_empty()).unwrap_or(&md.src_path).to_string();
         (md.dir.clone(), base.join(&md.dir), if md.dir.is_empty() { src.clone() } else { file })
     }).collect();
+    // The modules' tests are independent programs: run them side by side.
+    let jobs: Vec<(usize, bool)> = (0..units.len()).flat_map(|i| [(i, false), (i, true)]).collect();
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let results = std::sync::Mutex::new(vec![J::Null; jobs.len()]);
+    let workers = std::thread::available_parallelism().map_or(2, |n| n.get()).clamp(1, 8);
+    std::thread::scope(|sc| {
+        for _ in 0..workers {
+            sc.spawn(|| loop {
+                let k = next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let Some(&(i, interp)) = jobs.get(k) else { break };
+                let r = run_tests(&units[i].1, &units[i].2, interp);
+                results.lock().unwrap()[k] = r;
+            });
+        }
+    });
+    let results = results.into_inner().unwrap();
     let mut out = json!({});
     for (mode, interp) in [("native", false), ("interp", true)] {
         let (mut ran, mut passed, mut failed, mut details) = (true, 0i64, 0i64, Vec::new());
-        for (dir, at, file) in &units {
-            let r = run_tests(at, file, interp);
+        for (k, (i, _)) in jobs.iter().enumerate().filter(|(_, j)| j.1 == interp) {
+            let (dir, _, _) = &units[*i];
+            let r = &results[k];
             ran &= r["ran"] == true;
             passed += r["passed"].as_i64().unwrap_or(0);
             failed += r["failed"].as_i64().unwrap_or(0);
@@ -503,6 +532,12 @@ pub fn publish(o: PublishOpts) -> ExitCode {
     open_request("publish.yml", &format!("publish: {} {}", m.name, m.version), &fields, o.no_gh)
 }
 
+/// `name@req`, `name@1.2.3` (exactly that version) or `name`.
+fn exact_spec(arg: &str) -> (String, Option<String>) {
+    let (n, r) = split_spec(arg);
+    (n, r.map(|r| if Version::parse(&r).is_some() { format!("={r}") } else { r }))
+}
+
 /// `name@req`, `name@=1.2.3` or `name`.
 fn split_spec(arg: &str) -> (String, Option<String>) {
     match arg.split_once('@') {
@@ -543,9 +578,10 @@ pub fn search(query: &[String], json_out: bool) -> ExitCode {
         .iter()
         .filter_map(|p| {
             let n = p.name.to_lowercase();
+            let short = n.rsplit('/').next().unwrap_or(&n);
             let rank = if q.is_empty() || n == q {
                 0
-            } else if n.starts_with(&q) {
+            } else if n.starts_with(&q) || short.starts_with(&q) {
                 1
             } else if n.contains(&q) {
                 2
@@ -587,7 +623,7 @@ pub fn pick(name: &str, req: Option<&str>) -> Result<pkg::RegVersion, String> {
 }
 
 pub fn source(arg: Option<&String>, dir: Option<&String>) -> ExitCode {
-    let Some((name, req)) = arg.map(|a| split_spec(a)) else { return fail("usage: sspur source NAME[@VERSION] [DIR]") };
+    let Some((name, req)) = arg.map(|a| exact_spec(a)) else { return fail("usage: sspur source NAME[@VERSION] [DIR]") };
     let v = match pick(&name, req.as_deref()) {
         Ok(v) => v,
         Err(e) => return fail(e),

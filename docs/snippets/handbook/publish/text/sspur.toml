@@ -1,0 +1,10 @@
+[package]
+name = "acme/text"
+version = "1.0.0"
+description = "Text helpers, in two modules"
+license = "MIT"
+src = "lib.ssp"
+
+[deps]
+strings = { path = "strings" }
+numbers = { path = "src/numbers" }

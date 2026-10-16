@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "name": "acme/money",
+  "description": "Amounts in a currency, as acme counts them",
+  "repository": "https://github.com/acme/money",
+  "owners": [
+    "bob"
+  ],
+  "keywords": [],
+  "versions": [
+    {
+      "version": "1.0.0",
+      "git": "https://github.com/acme/money.git",
+      "tag": "v1.0.0",
+      "commit": "4c6797c533df60112942bb7aab68dac9c0e65b29",
+      "hash": "7qieh4mdpckogavx2cygwcfq666ysw2r7q52ens7g57sntikpvia",
+      "snapshot": {
+        "url": "../index/acme--money-1.0.0.tar",
+        "sha256": "952229bd047afb85caf59349a14bf109ba3da8dfd3bfd51d3eaf86e86609cbd4",
+        "size": 3072
+      },
+      "effects": [],
+      "deps": {},
+      "license": "MIT",
+      "yanked": false,
+      "deprecated": null,
+      "published": "2026-10-16T00:00:00Z",
+      "publisher": "bob",
+      "request": 2,
+      "api": [
+        {
+          "name": "Money",
+          "kind": "type",
+          "sig": "pub type Money = {units: Int, currency: Str} derive Eq, Show",
+          "sig_hash": "3i6akgxakbyv3j7t6q4ri676by",
+          "hash": "zevji4kebiwj77cjyo3ulezc2afgukdsd7x2abmdhy2s5ei3zxpq",
+          "effects": [],
+          "doc": "An amount of whole units in a currency."
+        },
+        {
+          "name": "of",
+          "kind": "fn",
+          "sig": "fn of(units: Int, currency: Str) -> Money",
+          "sig_hash": "uvaj3beip4nz3rk4fdt7ormgie",
+          "hash": "pduivw2obwvfyxgoan33uhrnu6t3p7wgr7yvysurhitueya35iia",
+          "effects": [],
+          "doc": "An amount of `units` in `currency`."
+        }
+      ]
+    }
+  ]
+}

@@ -433,7 +433,8 @@ fn check_owner(i: CheckIn) -> Check
       mk("pkg.owner", title, "blocking", a + b)
     | none => do
       owner = slug.map(s => s.split("/").first.or("")).or("")
-      ok = owner != "" and (owner == r.author.lower or (scope_of(r.name).is_some() and org_member(i)))
+      // For a scoped name, pkg.scope says who may publish it and why.
+      ok = owner != "" and (owner == r.author.lower or scope_of(r.name).is_some())
       mk("pkg.owner", title, "blocking", if ok then [] else [detail("", 0, "the first version of a package must be requested by the owner of its repository ({owner}), not @{r.author.replace("@", "")}", "Open the request from the {owner} account. For a repository owned by an organization, publish it under the scope {owner}/ as a public member of {owner}, or ask a registry maintainer.")])
 
 // Whether the requester is a public member of the organization that owns the repository.
