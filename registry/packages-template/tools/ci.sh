@@ -70,11 +70,24 @@ cmd_request() {
   printf '{"cmd":"parse-request","issue":%s,"commit":"%s","tag":%s}' "$(cat "$WORK/issue.json")" "$commit" "$tag" | reg > "$WORK/parsed.json"
   printf '{"cmd":"vars","parsed":%s}' "$(cat "$WORK/parsed.json")" | reg > "$WORK/vars.txt"
   owner_info
+  repo_info
   output "$WORK/vars.txt"
 }
 
 # For a scoped name (ADR 0039): who owns the repository, and whether the requester is a public
 # member when it is an organization. Public memberships are all a token-less check can see.
+# Whether the package's repository is a fork, for pkg.fork, written to repo.json.
+repo_info() {
+  load_vars "$WORK/vars.txt"
+  rm -f "$WORK/repo.json"
+  [ "$v_ok" = true ] && [ "$v_kind" = publish ] && [ -n "$v_slug" ] || return 0
+  local fork parent
+  fork="$("$GH" api "repos/$v_slug" --jq .fork 2>/dev/null || true)"
+  case "$fork" in true|false) ;; *) return 0 ;; esac
+  parent="$("$GH" api "repos/$v_slug" --jq '.parent.full_name // ""' 2>/dev/null || true)"
+  printf '{"fork":%s,"parent":"%s"}' "$fork" "${parent//\"/}" > "$WORK/repo.json"
+}
+
 owner_info() {
   load_vars "$WORK/vars.txt"
   rm -f "$WORK/owner.json"
@@ -179,8 +192,8 @@ cmd_write() {
     fi
     [ -s "$WORK/facts.json" ] || { echo "no facts from the check job" >&2; return 1; }
     # The index as it is now, not as the check job saw it: another version may have merged since.
-    printf '{"cmd":"check","facts":%s,"parsed":%s,"previous":%s,"summary":%s,"tests":%s,"owner":%s,"env":"ci"}' \
-      "$(cat "$WORK/facts.json")" "$(cat "$WORK/parsed.json")" "$(json_or_null "$old")" "$(json_or_null index.json)" "$(json_or_null "$WORK/tests.json")" "$(json_or_null "$WORK/owner.json")" | reg > "$WORK/report.json"
+    printf '{"cmd":"check","facts":%s,"parsed":%s,"previous":%s,"summary":%s,"tests":%s,"owner":%s,"repo":%s,"env":"ci"}' \
+      "$(cat "$WORK/facts.json")" "$(cat "$WORK/parsed.json")" "$(json_or_null "$old")" "$(json_or_null index.json)" "$(json_or_null "$WORK/tests.json")" "$(json_or_null "$WORK/owner.json")" "$(json_or_null "$WORK/repo.json")" | reg > "$WORK/report.json"
     if grep -q '^{"error"' "$WORK/report.json"; then cat "$WORK/report.json" >&2; return 1; fi
     printf '{"cmd":"vars","report":%s}' "$(cat "$WORK/report.json")" | reg > "$WORK/report-vars.txt"
     load_vars "$WORK/report-vars.txt"

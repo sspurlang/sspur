@@ -13,7 +13,7 @@ const MAX_FILE = 1 << 20;
 const MAX_FETCH = 2000;
 const POOL = 12;
 const $ = (id) => document.getElementById(id);
-const state = { user: "", owner: "", ownerType: "", repo: "", ref: "", tag: false, sha: "", files: null, partial: false, report: null, acked: new Set(), manifest: "", ownerInfo: null, ownerKey: "" };
+const state = { user: "", owner: "", ownerType: "", repo: "", ref: "", tag: false, sha: "", files: null, partial: false, report: null, acked: new Set(), manifest: "", ownerInfo: null, ownerKey: "", repoInfo: null, repoKey: "" };
 
 class RateLimited extends Error {
   constructor(reset) {
@@ -409,6 +409,20 @@ async function ownerInfo(name) {
   return state.ownerInfo;
 }
 
+// Whether the repository is a fork, and of what, for pkg.fork. One call per repository.
+async function repoInfo() {
+  const key = `${state.owner}/${state.repo}`.toLowerCase();
+  if (state.repoKey === key) return state.repoInfo;
+  try {
+    const r = await gh(`/repos/${encodeURIComponent(state.owner)}/${encodeURIComponent(state.repo)}`);
+    state.repoInfo = { fork: !!r.fork, parent: (r.parent && r.parent.full_name) || "" };
+    state.repoKey = key;
+  } catch (e) {
+    return null;
+  }
+  return state.repoInfo;
+}
+
 async function runAll(manual) {
   const st = $("ref-status");
   show("step-results");
@@ -441,13 +455,13 @@ async function recheck() {
   const name = manifestField("name");
   const version = manifestField("version");
   setStatus($("summary"), "Running the checks ...", false, true);
-  const [{ summary, previous }, owner] = await Promise.all([indexData(name), ownerInfo(name)]);
+  const [{ summary, previous }, owner, repo] = await Promise.all([indexData(name), ownerInfo(name), repoInfo()]);
   const sources = {};
   for (const f of state.files) if (f.text !== null && /\.(ssp|toml)$/.test(f.path)) sources[f.path] = f.text;
   const request = { kind: "publish", name, repository: `https://github.com/${state.owner}/${state.repo}`, ref: state.ref, version, effects: [...state.acked], author: state.user, issue: 0, commit: state.sha, tag: state.tag, action: "", reason: "" };
   let res;
   try {
-    res = await check({ manifest: state.manifest, sources, input: { files: state.files, request, previous, summary, tests: null, env: "web", owner } });
+    res = await check({ manifest: state.manifest, sources, input: { files: state.files, request, previous, summary, tests: null, env: "web", owner, repo } });
   } catch (err) {
     setStatus($("summary"), "The checks can't run in this browser (" + err.message + "). You can still submit: the registry workflow runs all of them.", true);
     enableSubmit(name, version, true);

@@ -96,6 +96,8 @@ impl Reg {
             ("FAKE_GH_ORGS".into(), "acme".into()),
             ("FAKE_GH_PUBLIC_MEMBERS".into(), "acme:bob".into()),
             ("FAKE_GH_MEMBERS".into(), "acme:dave".into()),
+            // bob's money repository is a fork of alice's.
+            ("FAKE_GH_FORKS".into(), "bob/money=alice/money".into()),
         ]
     }
 
@@ -462,6 +464,28 @@ fn a_new_package_waits_for_a_maintainer() {
     let n = open(&r, "money", "1.1.0", "");
     let log = r.workflow(&n);
     assert!(log.contains("merged #") && log.contains("money 1.1.0"), "{log}");
+}
+
+#[test]
+fn a_fork_cannot_claim_a_new_flat_name() {
+    let r = Reg::new("fork");
+    // bob forked alice's money and asks for the flat name first: refused by pkg.fork.
+    let w = r.repo("bob", "money", "money", "1.0.0", MONEY_1_0);
+    r.release(&w, "v1.0.0");
+    let n = request(&r, "money", "https://github.com/bob/money", "1.0.0", "bob");
+    let log = r.workflow(&n);
+    assert!(log.contains("left #") && log.contains("pkg.fork"), "{log}");
+    let pr = r.pr_for("publish/money-1.0.0");
+    assert!(pr["body"].as_str().unwrap().contains("is a fork of alice/money"), "{pr}");
+    assert!(pr["body"].as_str().unwrap().contains("bob/money"), "{pr}");
+    assert!(r.index_file("packages/mo/money.json").is_none());
+
+    // Under bob's own scope the fork claims only bob's name, so it publishes.
+    r.write_pkg(&w, "bob/money", "1.0.0", MONEY_1_0, "");
+    r.release(&w, "v1.0.0");
+    let n = request(&r, "bob/money", "https://github.com/bob/money", "1.0.0", "bob");
+    let log = r.workflow(&n);
+    assert!(log.contains("merged #") && log.contains("bob/money 1.0.0"), "{log}");
 }
 
 #[test]

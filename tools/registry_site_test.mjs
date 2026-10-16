@@ -102,6 +102,8 @@ async function mock(page, { src = GOOD, limited = false, models = MODELS } = {})
     if (p === "/repos/alice/wallet/tags") return json(route, u.searchParams.get("page") === "1" ? [{ name: "v1.0.0" }] : []);
     if (p === "/repos/alice/wallet/branches") return json(route, [{ name: "main" }]);
     if (p.startsWith("/repos/alice/wallet/commits/")) return json(route, { sha: SHA });
+    // Neither repository is a fork, so pkg.fork passes in the browser.
+    if (p === "/repos/alice/wallet" || p === "/repos/acme/coins") return json(route, { full_name: p.slice(7), fork: false, parent: null });
     if (p === `/repos/alice/wallet/git/trees/${SHA}`) return json(route, tree(repos["alice/wallet"]));
     // bob and carol: bob is a public member of the organization acme, carol is not.
     if (p === "/users/bob/repos" || p === "/users/carol/repos") return json(route, u.searchParams.get("page") === "1" ? [{ name: "dotfiles", owner: { login: p.split("/")[2], type: "User" }, description: "", fork: false, private: false }] : []);
@@ -215,6 +217,7 @@ for (const [ename, engine] of engines) {
       await page.waitForFunction(() => /no blocking failures|blocking/.test(document.getElementById("summary").textContent) && !document.querySelector("#summary .spinner"), null, { timeout: 120000 });
       const summary = await page.locator("#summary").textContent();
       ok(summary.includes("no blocking failures"), `${tag}: a good package passes (${summary.trim()})`);
+      ok((await page.locator(".check.pass", { hasText: "A new name is not claimed from a fork" }).count()) === 1, `${tag}: the fork check runs in the browser and passes`);
       const href = await page.locator("#submit").getAttribute("href");
       ok(href && href.startsWith("https://github.com/utkarshavardhana/sspur-packages/issues/new?template=publish.yml&title=publish%3A+wallet+1.0.0&name=wallet&repository=https%3A%2F%2Fgithub.com%2Falice%2Fwallet&ref=v1.0.0&version=1.0.0"), `${tag}: the submit link is the prefilled form (${href})`);
       ok((await page.locator(".check.skip", { hasText: "tests pass in native code" }).count()) === 1, `${tag}: tests are left to the workflow`);

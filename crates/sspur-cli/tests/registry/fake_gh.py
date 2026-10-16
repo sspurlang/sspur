@@ -113,6 +113,18 @@ def main(argv):
                 sys.stderr.write("HTTP 404\n")
                 return 1
             return 0
+        m = re.match(r"repos/([^/]+/[^/]+)$", path)
+        if m:
+            forks = dict(x.split("=", 1) for x in os.environ.get("FAKE_GH_FORKS", "").split(",") if "=" in x)
+            parent = forks.get(m.group(1), "")
+            jq = opt(argv, "--jq", "")
+            if jq == ".fork":
+                print("true" if parent else "false")
+            elif jq.startswith(".parent.full_name"):
+                print(parent)
+            else:
+                print(json.dumps({"full_name": m.group(1), "fork": bool(parent), "parent": {"full_name": parent} if parent else None}))
+            return 0
         m = re.match(r"repos/[^/]+/[^/]+/collaborators/([^/]+)/permission$", path)
         if m:
             maint = os.environ.get("FAKE_GH_MAINTAINERS", "maintainer").split(",")

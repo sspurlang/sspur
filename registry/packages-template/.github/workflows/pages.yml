@@ -38,7 +38,11 @@ jobs:
           WORK: ${{ runner.temp }}/site
         run: |
           tools/ci.sh site "$RUNNER_TEMP/out"
-          if [ -d "$RUNNER_TEMP/checker/checker" ]; then cp -R "$RUNNER_TEMP/checker/checker" "$RUNNER_TEMP/out/publish/"; fi
+          if [ -d "$RUNNER_TEMP/checker/checker" ]; then
+            cp -R "$RUNNER_TEMP/checker/checker" "$RUNNER_TEMP/out/publish/"
+            # The page runs this repository's checks, the ones the publish workflow runs.
+            cp tools/registry/registry.ssp "$RUNNER_TEMP/out/publish/checker/registry.ssp"
+          fi
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

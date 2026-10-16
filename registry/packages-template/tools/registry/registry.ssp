@@ -44,6 +44,9 @@ type Facts = {source: Str, parse: Bool, checked: Bool, diags: List[Diag], fmt: F
 // GitHub shows only to members (known only where the requester is signed in, as in `sspur publish`).
 type OwnerInfo = {login: Str, kind: Str, member: Opt[Bool], private_member: Opt[Bool]}
 
+// What GitHub says about the package's repository: whether it is a fork, and of what.
+type RepoInfo = {fork: Bool, parent: Str}
+
 // `author_id` is the requester's GitHub user id, for the noreply address the index commit is
 // authored with (`<id>+<login>@users.noreply.github.com`).
 type Request = {kind: Str, name: Str, repository: Str, ref: Str, version: Str, effects: List[Str], author: Str, author_id: Opt[Int], issue: Int, commit: Str, tag: Bool, action: Str, reason: Str}
@@ -62,9 +65,9 @@ type Package = {schema: Int, name: Str, description: Str, repository: Str, owner
 
 // What `check` reads. `files` defaults to the facts' files, and `names` (every package in the
 // index) can come as the index summary.
-type CheckRaw = {facts: Facts, files: Opt[List[FileInfo]], request: Opt[Request], parsed: Opt[Parsed], previous: Opt[Package], names: Opt[List[Str]], summary: Opt[Summary], tests: Opt[Tests], env: Str, owner: Opt[OwnerInfo]}
+type CheckRaw = {facts: Facts, files: Opt[List[FileInfo]], request: Opt[Request], parsed: Opt[Parsed], previous: Opt[Package], names: Opt[List[Str]], summary: Opt[Summary], tests: Opt[Tests], env: Str, owner: Opt[OwnerInfo], repo: Opt[RepoInfo]}
 
-type CheckIn = {facts: Facts, files: List[FileInfo], request: Request, previous: Opt[Package], names: List[Str], tests: Opt[Tests], env: Str, owner: Opt[OwnerInfo], units: List[ModFacts]}
+type CheckIn = {facts: Facts, files: List[FileInfo], request: Request, previous: Opt[Package], names: List[Str], tests: Opt[Tests], env: Str, owner: Opt[OwnerInfo], repo: Opt[RepoInfo], units: List[ModFacts]}
 
 type Detail = {file: Str, line: Int, msg: Str, fix: Str}
 
@@ -437,6 +440,18 @@ fn check_owner(i: CheckIn) -> Check
       ok = owner != "" and (owner == r.author.lower or scope_of(r.name).is_some())
       mk("pkg.owner", title, "blocking", if ok then [] else [detail("", 0, "the first version of a package must be requested by the owner of its repository ({owner}), not @{r.author.replace("@", "")}", "Open the request from the {owner} account. For a repository owned by an organization, publish it under the scope {owner}/ as a public member of {owner}, or ask a registry maintainer.")])
 
+// A fork can't claim a new flat name: anyone can fork a repository, so the name would go to
+// whoever forked first. Under a scope a fork claims only its owner's name, so that is allowed.
+fn check_fork(i: CheckIn) -> Check
+= do
+  r = i.request
+  title = "A new name is not claimed from a fork"
+  if i.previous.is_some() or scope_of(r.name).is_some() then mk("pkg.fork", title, "blocking", []) else match i.repo
+    | none => if i.env == "ci" then mk("pkg.fork", title, "blocking", [detail("", 0, "GitHub could not tell whether {md_text(r.repository)} is a fork", "Comment `/recheck` on the request to ask again.")]) else skip("pkg.fork", title, "blocking", "the registry workflow asks GitHub whether the repository is a fork")
+    | some(x) => do
+      owner = github_slug(r.repository).map(s => s.split("/").first.or("")).or("")
+      mk("pkg.fork", title, "blocking", if not x.fork then [] else [detail("", 0, "{md_text(r.repository)} is a fork of {x.parent}, and the first version of a name isn't published from a fork", "Publish it under your scope as {owner}/{r.name}, or publish {r.name} from {x.parent} if you maintain it.")])
+
 // Whether the requester is a public member of the organization that owns the repository.
 fn org_member(i: CheckIn) -> Bool
 = i.owner.map(o => o.kind == "Organization" and o.member == some(true)).or(false)
@@ -567,7 +582,7 @@ fn check_review(i: CheckIn) -> List[Check]
   [holes, todo, cmds, contracts, naming, derive, tested_check]
 
 fn check_input(r: CheckRaw) -> CheckIn
-= CheckIn{facts: r.facts, files: r.files.or(r.facts.files.or([])), request: r.request.or(r.parsed.map(_.request).or(empty_request())), previous: r.previous, names: r.names.or([]) + r.summary.map(s => s.packages.map(_.name)).or([]), tests: r.tests, env: r.env, owner: r.owner, units: units_of(r.facts)}
+= CheckIn{facts: r.facts, files: r.files.or(r.facts.files.or([])), request: r.request.or(r.parsed.map(_.request).or(empty_request())), previous: r.previous, names: r.names.or([]) + r.summary.map(s => s.packages.map(_.name)).or([]), tests: r.tests, env: r.env, owner: r.owner, repo: r.repo, units: units_of(r.facts)}
 
 fn empty_request() -> Request
 = Request{kind: "publish", name: "", repository: "", ref: "", version: "", effects: [], author: "", author_id: none, issue: 0, commit: "", tag: false, action: "", reason: ""}
@@ -578,7 +593,7 @@ fn run_checks(raw: CheckRaw) -> Report
   prev = previous_entry(i)
   diff = api_diff(prev.map(_.api).or([]), api_of(i.facts), prev.map(_.version))
   (effect_checks, fresh, missing) = check_effects(i, prev)
-  checks = check_build(i) + check_version(i, diff) + effect_checks + check_name(i) + [check_owner(i), check_scope(i)] + check_manifest(i) + check_files(i) + check_docs(i) + check_contents(i) + check_review(i)
+  checks = check_build(i) + check_version(i, diff) + effect_checks + check_name(i) + [check_owner(i), check_scope(i), check_fork(i)] + check_manifest(i) + check_files(i) + check_docs(i) + check_contents(i) + check_review(i)
   blocking = checks.filter(c => c.severity == "blocking" and c.status == "fail").len
   advisory = checks.filter(c => c.severity == "advisory" and c.status == "fail").len
   skipped = checks.filter(c => c.severity == "blocking" and c.status == "skip").len
@@ -1050,10 +1065,21 @@ fn no_facts() -> Facts
 fn scope_in(name: Str, repo: Str, author: Str, owner: Opt[OwnerInfo], env: Str) -> CheckIn
 = do
   q = empty_request() with name := name, repository := repo, author := author
-  check_input(CheckRaw{facts: no_facts(), files: some([]), request: some(q), parsed: none, previous: none, names: none, summary: none, tests: none, env, owner})
+  check_input(CheckRaw{facts: no_facts(), files: some([]), request: some(q), parsed: none, previous: none, names: none, summary: none, tests: none, env, owner, repo: none})
+
+fn fork_in(name: Str, previous: Opt[Package], repo: Opt[RepoInfo], env: Str) -> CheckIn
+= do
+  q = empty_request() with name := name, repository := "https://github.com/bob/money", author := "bob"
+  check_input(CheckRaw{facts: no_facts(), files: some([]), request: some(q), parsed: none, previous, names: none, summary: none, tests: none, env, owner: none, repo})
 
 fn org(member: Bool, private: Opt[Bool]) -> Opt[OwnerInfo]
 = some(OwnerInfo{login: "acme", kind: "Organization", member: some(member), private_member: private})
+
+test forks_cannot_claim_new_flat_names = do
+  fork = some(RepoInfo{fork: true, parent: "alice/money"})
+  own = some(RepoInfo{fork: false, parent: ""})
+  a = check_fork(fork_in("money", none, fork, "ci"))
+  a.status == "fail" and a.details.any(d => d.fix.contains("bob/money")) and check_fork(fork_in("money", none, own, "ci")).status == "pass" and check_fork(fork_in("bob/money", none, fork, "ci")).status == "pass" and check_fork(fork_in("money", none, none, "ci")).status == "fail" and check_fork(fork_in("money", none, none, "cli")).status == "skip"
 
 test scope_of_a_user = do
   user = some(OwnerInfo{login: "alice", kind: "User", member: none, private_member: none})
@@ -1082,7 +1108,7 @@ test modules_are_checked_too = do
   root_m = Manifest{name: "big", version: "1.0.0", src: "lib.ssp", description: "d", license: "MIT", repository: "", keywords: [], keys: ["package.name"], deps: [Dep{name: "models", kind: "path", req: "models", package: some("models")}, Dep{name: "far", kind: "path", req: "../far", package: some("far")}], error: none}
   f = no_facts() with manifest := some(root_m), defs := [pub_fn("top", 3, "Top.")], modules := some([modfacts("models", "models/lib.ssp", [pub_fn("inner", 7, "")], [])]), module_errors := some([Diag{code: "E_MODULE", severity: "error", file: "sspur.toml", line: 0, col: 0, msg: "dependency far = \{ path = \"../far\" } is outside the package's directory", hint: none}])
   q = empty_request() with name := "big", version := "1.0.0"
-  i = check_input(CheckRaw{facts: f, files: some([]), request: some(q), parsed: none, previous: none, names: none, summary: none, tests: none, env: "cli", owner: none})
+  i = check_input(CheckRaw{facts: f, files: some([]), request: some(q), parsed: none, previous: none, names: none, summary: none, tests: none, env: "cli", owner: none, repo: none})
   docs = check_docs(i)[0]
   deps = check_manifest(i)[2]
   api = api_of(f).map(_.name)

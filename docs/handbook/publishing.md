@@ -121,14 +121,14 @@ When something fails, the pull request stays open with each failure at its file 
 
 ## What the checks look for
 
-The [standards](https://github.com/utkarshavardhana/sspur-packages/blob/main/CONTRIBUTING.md) list all 36 checks with their reasons and fixes. In short:
+The [standards](https://github.com/utkarshavardhana/sspur-packages/blob/main/CONTRIBUTING.md) list all 37 checks with their reasons and fixes. In short:
 
 - the source parses, typechecks with no warnings, is formatted the way `sspur fmt` prints it (comments aside), and its tests pass natively and in the interpreter;
 - the version is new and matches the API change: removing or changing a public signature needs a new major version (a new minor version in 0.x), adding one a new minor version;
 - a capability effect the previous version didn't have (`net`, `fs`, `proc`, `env`, `io`, `db`, `ffi`, `unsafe`, `dev`) is acknowledged in the request, with `sspur publish --ack net` or the request's Effects field;
 - the name follows the rules and isn't reserved; one too close to an existing name gets a warning;
 - a scope is the repository's GitHub owner, and the request comes from that user or a public member of that organization;
-- the first version comes from the repository's owner, and later ones from the package's owners;
+- the first version comes from the repository's owner, and later ones from the package's owners; a new flat name isn't claimed from a fork (publish a fork under your own scope);
 - an OSI licence, a README, docs and tests; no binaries, no secrets, no build or install hooks, dependencies that are published packages or the package's own modules, within the size limits;
 - no holes left in the code, a reason next to every `run_cmd`, and the naming conventions.
 

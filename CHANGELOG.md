@@ -4,6 +4,12 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+### Added
+- The registry check `pkg.fork` (blocking): the first version of a new flat name can't come from a fork, so nobody claims a name with a fork of someone else's repository. A fork can still publish under its owner's scope. `sspur publish`, the Publish page and the workflow all ask GitHub, and the Publish page now runs the index's own checks.
+
+### Changed
+- CI runs on branch pushes only. A release first checks that CI passed on the tagged commit and stops otherwise, instead of running CI again for the tag.
+
 ## [0.13.0] - 2026-10-16
 
 ### Added

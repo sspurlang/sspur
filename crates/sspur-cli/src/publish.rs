@@ -394,6 +394,16 @@ fn owner_info(g: &str, owner: &str, login: &str) -> J {
     json!({"login": owner, "kind": kind, "member": member, "private_member": private})
 }
 
+/// Whether the repository `slug` (OWNER/REPO) is a fork, and of what, for pkg.fork.
+fn repo_info(g: &str, slug: &str) -> J {
+    let ask = |jq: &str| Command::new(g).args(["api", &format!("repos/{slug}"), "--jq", jq]).stdin(Stdio::null()).output().ok().filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    match ask(".fork").as_deref() {
+        Some("true") => json!({"fork": true, "parent": ask(".parent.full_name // \"\"").unwrap_or_default()}),
+        Some("false") => json!({"fork": false, "parent": ""}),
+        _ => J::Null,
+    }
+}
+
 fn urlencode(s: &str) -> String {
     s.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect()
 }
@@ -517,10 +527,15 @@ pub fn publish(o: PublishOpts) -> ExitCode {
         Some(g) if m.name.contains('/') && !owner.is_empty() => owner_info(g, &owner, &author),
         _ => J::Null,
     };
+    let slug = repository.trim_start_matches("https://github.com/").trim_end_matches(".git").trim_end_matches('/').to_string();
+    let repo_json = match &gh_cmd {
+        Some(g) if slug.matches('/').count() == 1 => repo_info(g, &slug),
+        _ => J::Null,
+    };
     let effects: Vec<String> = o.ack.map(|a| a.split(',').map(|x| x.trim().to_lowercase()).filter(|x| !x.is_empty()).collect()).unwrap_or_default();
     let request = json!({"kind": "publish", "name": m.name, "repository": repository, "ref": git_ref, "version": m.version, "effects": effects, "author": author, "issue": 0, "commit": commit, "tag": tagged, "action": "", "reason": ""});
     let files = f.get("files").cloned().unwrap_or(json!([]));
-    let input = json!({"cmd": "check", "facts": f, "files": files, "request": request, "previous": previous, "names": names, "tests": tests, "env": "cli", "owner": owner_json});
+    let input = json!({"cmd": "check", "facts": f, "files": files, "request": request, "previous": previous, "names": names, "tests": tests, "env": "cli", "owner": owner_json, "repo": repo_json});
     let report = match run_checker(&input) {
         Ok(r) => r,
         Err(e) => return fail(e),
