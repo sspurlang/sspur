@@ -438,11 +438,12 @@ pub fn expr(e: &Expr, ind: usize) -> String {
             s
         }
         ExprKind::Record { ctor, fields } => {
+            // A value that prints as the field's name is that variable: write the shorthand.
             let items: Vec<String> = fields
                 .iter()
-                .map(|(n, v)| match &v.kind {
-                    ExprKind::Name(x) if x == n => n.clone(),
-                    _ => format!("{}: {}", n, expr(v, ind)),
+                .map(|(n, v)| {
+                    let s = expr(v, ind);
+                    if s == *n { s } else { format!("{n}: {s}") }
                 })
                 .collect();
             format!("{}{{{}}}", ctor.as_deref().unwrap_or(""), items.join(", "))
