@@ -152,6 +152,8 @@ pub struct Loaded {
     pub own: usize,
     /// Every dependency in the program, for printing names as `pkg.name`.
     pub pkgs: Vec<String>,
+    /// How a package prefix that is not a plain name is shown (see `pkg::Env::shown`).
+    pub shown: BTreeMap<String, String>,
     /// Mangled names of the public definitions of direct dependencies.
     pub exports: BTreeSet<String>,
 }
@@ -170,7 +172,7 @@ impl Loaded {
                 let res = Resolution { user_methods: Some(&check.user_methods), record_types: Some(&check.record_types) };
                 let hashes = hash_module_with(&module, &res).into_iter().collect();
                 let own = module.own.unwrap_or(module.defs.len());
-                Ok(Some(Loaded { src: self.src.clone(), module, check, hashes, partial: false, own, pkgs: self.pkgs.clone(), exports: self.exports.clone() }))
+                Ok(Some(Loaded { src: self.src.clone(), module, check, hashes, partial: false, own, pkgs: self.pkgs.clone(), shown: self.shown.clone(), exports: self.exports.clone() }))
             }
             Err(e) => Err(vec![pkg::dep_diag(&e)]),
         }
@@ -198,7 +200,7 @@ impl Loaded {
         if self.pkgs.is_empty() {
             return text.to_string();
         }
-        sspur_syntax::link::demangle(text, &|p| self.pkgs.iter().any(|x| x == p))
+        sspur_syntax::link::demangle_as(text, &|p| self.shown.get(p).cloned().or_else(|| self.pkgs.iter().any(|x| x == p).then(|| p.to_string())))
     }
 }
 
@@ -291,7 +293,7 @@ pub fn check_full(src: String, module: Module) -> Loaded {
     let res = Resolution { user_methods: Some(&check.user_methods), record_types: Some(&check.record_types) };
     let hashes = hash_module_with(&module, &res).into_iter().collect();
     let own = module.defs.len();
-    Loaded { src, module, check, hashes, partial: false, own, pkgs: vec![], exports: BTreeSet::new() }
+    Loaded { src, module, check, hashes, partial: false, own, pkgs: vec![], shown: BTreeMap::new(), exports: BTreeSet::new() }
 }
 
 fn text_cache() -> &'static Mutex<HashMap<String, String>> {

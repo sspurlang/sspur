@@ -373,6 +373,88 @@ pub fn facts(path: &str, src: &str, mode: Check) -> J {
     })
 }
 
+/// One module of a package: a path dependency inside the package's own directory, with its
+/// own `sspur.toml` (as the web-app template's `models = { path = "models" }`). The package's
+/// root is the module with the key "" and the directory "".
+#[derive(Clone, Debug, PartialEq)]
+pub struct Module {
+    /// The dependency key it is used by (its name in its sspur.toml).
+    pub key: String,
+    /// Its directory relative to the repository root, without a trailing slash.
+    pub dir: String,
+    pub manifest: String,
+    /// Its source file relative to the repository root.
+    pub src_path: String,
+}
+
+/// `a/b` joined with `../c`, lexically; `None` if it leaves the root.
+pub fn join_rel(dir: &str, path: &str) -> Option<String> {
+    let mut parts: Vec<&str> = dir.split('/').filter(|p| !p.is_empty()).collect();
+    for p in path.split(['/', '\\']) {
+        match p {
+            "" | "." => {}
+            ".." => {
+                parts.pop()?;
+            }
+            x => parts.push(x),
+        }
+    }
+    Some(parts.join("/"))
+}
+
+fn in_dir(dir: &str, f: &str) -> String {
+    if dir.is_empty() { f.to_string() } else { format!("{dir}/{f}") }
+}
+
+/// The source file of the module in `dir`: `src` from its manifest, else lib.ssp or main.ssp.
+pub fn module_src(dir: &str, manifest: &J, exists: &dyn Fn(&str) -> bool) -> String {
+    match manifest["src"].as_str().filter(|s| !s.is_empty()) {
+        Some(s) => join_rel(dir, s).unwrap_or_else(|| in_dir(dir, s)),
+        None => ["lib.ssp", "main.ssp"].iter().map(|f| in_dir(dir, f)).find(|p| exists(p)).unwrap_or_else(|| in_dir(dir, "lib.ssp")),
+    }
+}
+
+/// The package's modules, root first and then in the order they are reached, read with
+/// `read(path)` (paths relative to the repository root), and the errors of path dependencies
+/// that are not modules: outside the package's directory, or without a sspur.toml.
+pub fn modules(root_manifest: &str, read: &dyn Fn(&str) -> Option<String>) -> (Vec<Module>, Vec<J>) {
+    let exists = |p: &str| read(p).is_some();
+    let root = Module { key: String::new(), dir: String::new(), manifest: root_manifest.to_string(), src_path: module_src("", &manifest(root_manifest), &exists) };
+    let mut out = vec![root];
+    let mut errors = Vec::new();
+    let mut i = 0;
+    while i < out.len() {
+        let (dir, mt) = (out[i].dir.clone(), manifest(&out[i].manifest));
+        let at = in_dir(&dir, "sspur.toml");
+        for d in mt["deps"].as_array().into_iter().flatten().filter(|d| d["kind"] == "path") {
+            let key = d["name"].as_str().unwrap_or_default();
+            let path = d["req"].as_str().unwrap_or_default();
+            let err = |msg: String| json!({"code": "E_MODULE", "severity": "error", "file": at, "line": 0, "col": 0, "msg": msg, "hint": null});
+            let Some(target) = join_rel(&dir, path).filter(|t| !t.is_empty()) else {
+                errors.push(err(format!("dependency {key} = {{ path = \"{path}\" }} is outside the package's directory")));
+                continue;
+            };
+            if out.iter().any(|m| m.dir == target) {
+                continue;
+            }
+            match read(&in_dir(&target, "sspur.toml")) {
+                Some(text) => {
+                    let mm = manifest(&text);
+                    if mm["name"].as_str() != Some(key) {
+                        errors.push(err(format!("the module at {target} is named {}, not {key}", mm["name"].as_str().unwrap_or("nothing"))));
+                        continue;
+                    }
+                    let src_path = module_src(&target, &mm, &exists);
+                    out.push(Module { key: key.to_string(), dir: target, manifest: text, src_path });
+                }
+                None => errors.push(err(format!("dependency {key} = {{ path = \"{path}\" }}: {target} has no sspur.toml"))),
+            }
+        }
+        i += 1;
+    }
+    (out, errors)
+}
+
 /// The manifest as the checks see it: the known fields, every key as `section.key`, and the
 /// dependencies with their kind (`registry`, `path` or `git`).
 pub fn manifest(text: &str) -> J {
@@ -405,7 +487,11 @@ pub fn manifest(text: &str) -> J {
                         TVal::Table(t) => ("path", t.get("path").and_then(TVal::str).unwrap_or_default().to_string()),
                         TVal::Arr(_) => ("invalid", String::new()),
                     };
-                    deps.push(json!({"name": k, "kind": kind, "req": req}));
+                    let package = match v {
+                        TVal::Table(t) => t.get("package").and_then(TVal::str).unwrap_or(k).to_string(),
+                        _ => k.clone(),
+                    };
+                    deps.push(json!({"name": k, "kind": kind, "req": req, "package": package}));
                 }
                 _ => {}
             }
@@ -488,12 +574,34 @@ mod tests {
         assert_eq!(m["name"], "money");
         assert_eq!(m["keywords"], json!(["cash"]));
         assert!(m["keys"].as_array().unwrap().contains(&json!("package.build")));
-        assert_eq!(m["deps"][1], json!({"name": "text", "kind": "registry", "req": "^0.2"}));
+        assert_eq!(m["deps"][1], json!({"name": "text", "kind": "registry", "req": "^0.2", "package": "text"}));
         assert_eq!(m["deps"][0]["kind"], "path");
         let f = file_info("a.bin", &[0x7f, b'E', b'L', b'F', 0, 1], "100644");
         assert_eq!(f["binary"], true);
         assert_eq!(f["head"], "7f454c460001");
         assert_eq!(file_info("a.txt", b"hi", "100644")["text"], "hi");
+    }
+
+    #[test]
+    fn modules_are_path_dependencies_inside_the_package() {
+        let files: BTreeMap<&str, &str> = [
+            ("sspur.toml", "[package]\nname = \"acme/big\"\nversion = \"1.0.0\"\n\n[deps]\nmodels = { path = \"models\" }\nviews = { path = \"./src/views\" }\nup = { path = \"../up\" }\ntext = { package = \"acme/text\", version = \"^1\" }\n"),
+            ("lib.ssp", ""),
+            ("models/sspur.toml", "[package]\nname = \"models\"\nsrc = \"m.ssp\"\n"),
+            ("models/m.ssp", ""),
+            ("src/views/sspur.toml", "[package]\nname = \"views\"\n\n[deps]\nmodels = { path = \"../../models\" }\n"),
+            ("src/views/main.ssp", ""),
+        ]
+        .into_iter()
+        .collect();
+        let (ms, errs) = modules(files["sspur.toml"], &|p| files.get(p).map(|s| s.to_string()));
+        let got: Vec<(&str, &str, &str)> = ms.iter().map(|m| (m.key.as_str(), m.dir.as_str(), m.src_path.as_str())).collect();
+        assert_eq!(got, vec![("", "", "lib.ssp"), ("models", "models", "models/m.ssp"), ("views", "src/views", "src/views/main.ssp")]);
+        assert_eq!(errs.len(), 1);
+        assert!(errs[0]["msg"].as_str().unwrap().contains("outside the package's directory"));
+        assert_eq!(manifest(files["sspur.toml"])["deps"][1]["package"], "acme/text");
+        assert_eq!(join_rel("a/b", "../c"), Some("a/c".into()));
+        assert_eq!(join_rel("", "../c"), None);
     }
 
     #[test]

@@ -46,47 +46,90 @@ fn source_path(root: &Path, m: &Manifest) -> Result<String, String> {
     Err(format!("{}: a published package keeps its source in a file; set src in sspur.toml or add lib.ssp", root.display()))
 }
 
-/// Everything the checks need to know about the package at `root`: the facts of its source,
-/// checked with its dependencies, its manifest, its export hash, and (in a git repository) the
-/// files of `rev`.
+/// The diagnostics and export hashes of `src` checked in `env`, and its executable form's errors.
+fn check_in(src: &str, env: &Env) -> (Vec<sspur_check::Diag>, BTreeMap<String, String>) {
+    let own = |d: &sspur_check::Diag| (d.span[0] as usize) < src.len() || d.span == [0, 0];
+    match pkg::load(src.to_string(), env, false) {
+        Ok(l) => {
+            let mut diags: Vec<sspur_check::Diag> = l.check.diags.iter().filter(|d| own(d)).cloned().collect();
+            if !l.check.has_errors()
+                && let Err(d) = l.executable()
+            {
+                diags.extend(d);
+            }
+            (diags, l.hashes.clone())
+        }
+        Err(d) => (d, BTreeMap::new()),
+    }
+}
+
+/// The environment the module `m` (a path dependency of the package) is checked in: its own
+/// dependency keys over the packages the package's environment already holds.
+fn module_env(m: &Manifest, key: &str, env: &Env) -> Env {
+    let alias = pkg::aliases(m, None);
+    let mut all = BTreeMap::new();
+    let mut todo: Vec<String> = m.deps.keys().map(|d| alias.get(d).cloned().unwrap_or_else(|| d.clone())).collect();
+    while let Some(d) = todo.pop() {
+        if all.contains_key(&d) {
+            continue;
+        }
+        if let Some(p) = env.all.get(&d) {
+            todo.extend(p.deps.keys().cloned());
+            all.insert(d, p.clone());
+        }
+    }
+    Env { name: Some(key.to_string()), direct: m.deps.keys().cloned().collect(), alias, all }
+}
+
+/// Everything the checks need to know about the package at `root`: the facts of its source and
+/// of each of its modules (path dependencies inside its directory), checked with their
+/// dependencies, its manifest, its export hash as published, and (in a git repository) the
+/// files of `rev`. Paths are relative to `root`.
 pub fn package_facts(root: &Path, m: &Manifest, rev: Option<&str>) -> Result<J, String> {
-    let path = source_path(root, m)?;
+    let read = |p: &str| std::fs::read_to_string(root.join(p)).ok();
+    let (mods, mod_errs) = facts::modules(&m.text, &read);
+    let path = mods[0].src_path.clone();
     let src = std::fs::read_to_string(root.join(&path)).map_err(|e| format!("cannot read {path}: {e}"))?;
     let (env, env_err) = match Env::load(root) {
         Ok(e) => (e.unwrap_or_default(), None),
         Err(e) => (Env::default(), Some(e)),
     };
-    let own = |d: &sspur_check::Diag| (d.span[0] as usize) < src.len() || d.span == [0, 0];
-    let mut diags: Vec<sspur_check::Diag> = Vec::new();
-    let mut hashes = BTreeMap::new();
-    if let Some(e) = &env_err {
-        diags.push(pkg::dep_diag(e));
-    } else {
-        match pkg::load(src.clone(), &env, false) {
-            Ok(l) => {
-                diags = l.check.diags.iter().filter(|d| own(d)).cloned().collect();
-                hashes = l.hashes.clone();
-                if !l.check.has_errors()
-                    && let Err(d) = l.executable()
-                {
-                    diags.extend(d);
-                }
-            }
-            Err(d) => diags = d,
-        }
-    }
+    let (diags, hashes) = match &env_err {
+        Some(e) => (vec![pkg::dep_diag(e)], BTreeMap::new()),
+        None => check_in(&src, &env),
+    };
     let mut f = facts::facts(&path, &src, Check::Given(Checked { diags: &diags, hashes: &hashes }));
+    let mut units = Vec::new();
+    for md in &mods[1..] {
+        let mm = match Manifest::parse(&md.manifest) {
+            Ok(x) => x,
+            Err(e) => {
+                units.push(json!({"key": md.key, "dir": md.dir, "manifest": facts::manifest(&md.manifest), "source": md.src_path, "parse": false, "checked": false, "diags": [{"code": "E_PACKAGE", "severity": "error", "file": format!("{}/sspur.toml", md.dir), "line": 0, "col": 0, "msg": e, "hint": null}], "fmt": {"clean": true}, "defs": [], "holes": [], "run_cmd": [], "tests": 0, "tested": []}));
+                continue;
+            }
+        };
+        let Some(msrc) = read(&md.src_path) else {
+            units.push(json!({"key": md.key, "dir": md.dir, "manifest": facts::manifest(&md.manifest), "source": md.src_path, "parse": false, "checked": false, "diags": [{"code": "E_NO_SOURCE", "severity": "error", "file": md.src_path, "line": 0, "col": 0, "msg": format!("the module {} has no source file {}", md.key, md.src_path), "hint": "Set src in its sspur.toml, or add lib.ssp."}], "fmt": {"clean": true}, "defs": [], "holes": [], "run_cmd": [], "tests": 0, "tested": []}));
+            continue;
+        };
+        let (d, h) = if env_err.is_some() { (vec![], BTreeMap::new()) } else { check_in(&msrc, &module_env(&mm, &md.key, &env)) };
+        let mut u = facts::facts(&md.src_path, &msrc, Check::Given(Checked { diags: &d, hashes: &h }));
+        let o = u.as_object_mut().unwrap();
+        o.insert("key".into(), json!(md.key));
+        o.insert("dir".into(), json!(md.dir));
+        o.insert("manifest".into(), facts::manifest(&md.manifest));
+        units.push(u);
+    }
     let o = f.as_object_mut().unwrap();
     o.insert("manifest".into(), facts::manifest(&m.text));
+    o.insert("modules".into(), J::Array(units));
+    o.insert("module_errors".into(), J::Array(mod_errs));
     if env_err.is_none() {
-        let deps = env.all.clone();
-        match pkg::build_pkg(m, &src, &deps) {
+        match pkg::build_published(root, m, &pkg::Lock::read(root).unwrap_or_default()) {
             Ok(p) => {
                 o.insert("hash".into(), json!(p.hash));
             }
-            Err(e) if diags.iter().any(|d| d.is_error()) => {
-                let _ = e;
-            }
+            Err(_) if diags.iter().any(|d| d.is_error()) => {}
             Err(e) => {
                 o.insert("build_error".into(), json!(e));
             }
@@ -161,6 +204,63 @@ pub fn run_tests(root: &Path, src: &str, interp: bool) -> J {
             }
         }
     }
+}
+
+/// The test runs of every module of the package at `root` added up: `{"native": ..., "interp": ...}`.
+/// With `at_head`, a package with modules is tested in a copy of its committed files, so the runs
+/// see what is published and leave nothing behind in the working tree.
+pub fn all_tests(root: &Path, m: &Manifest, at_head: bool) -> J {
+    let read = |p: &str| std::fs::read_to_string(root.join(p)).ok();
+    let (mods, _) = facts::modules(&m.text, &read);
+    let src = source_path(root, m).unwrap_or_else(|_| mods[0].src_path.clone());
+    if mods.len() == 1 {
+        return json!({"native": run_tests(root, &src, false), "interp": run_tests(root, &src, true)});
+    }
+    let mut tmp = None;
+    let base = if at_head {
+        let t = sspur_store::unique_tmp(&sspur_store::cache::cache_root().join("tmp").join("publish-tests"));
+        let copied = registry::tree_files(root, "HEAD").and_then(|files| {
+            for (mode, p, data) in files.iter().filter(|(mode, _, _)| mode.starts_with("100")) {
+                let _ = mode;
+                let f = t.join(p);
+                std::fs::create_dir_all(f.parent().unwrap()).map_err(|e| e.to_string())?;
+                std::fs::write(&f, data).map_err(|e| e.to_string())?;
+            }
+            Ok(())
+        });
+        match copied {
+            Ok(()) => {
+                tmp = Some(t.clone());
+                t
+            }
+            Err(_) => root.to_path_buf(),
+        }
+    } else {
+        root.to_path_buf()
+    };
+    let units: Vec<(String, PathBuf, String)> = mods.iter().map(|md| {
+        let file = md.src_path.strip_prefix(&format!("{}/", md.dir)).filter(|_| !md.dir.is_empty()).unwrap_or(&md.src_path).to_string();
+        (md.dir.clone(), base.join(&md.dir), if md.dir.is_empty() { src.clone() } else { file })
+    }).collect();
+    let mut out = json!({});
+    for (mode, interp) in [("native", false), ("interp", true)] {
+        let (mut ran, mut passed, mut failed, mut details) = (true, 0i64, 0i64, Vec::new());
+        for (dir, at, file) in &units {
+            let r = run_tests(at, file, interp);
+            ran &= r["ran"] == true;
+            passed += r["passed"].as_i64().unwrap_or(0);
+            failed += r["failed"].as_i64().unwrap_or(0);
+            if r["ran"] != true || r["failed"].as_i64().unwrap_or(0) > 0 {
+                let d = r["detail"].as_str().unwrap_or("");
+                details.push(if dir.is_empty() { d.to_string() } else { format!("{dir}: {d}") });
+            }
+        }
+        out[mode] = json!({"ran": ran, "passed": passed, "failed": failed, "detail": if details.is_empty() { format!("{passed} passed in {} modules", units.len()) } else { details.join("; ") }});
+    }
+    if let Some(t) = tmp {
+        let _ = std::fs::remove_dir_all(t);
+    }
+    out
 }
 
 /// Runs the registry checks program with `input` on stdin and returns its JSON output.
@@ -332,8 +432,7 @@ pub fn publish(o: PublishOpts) -> ExitCode {
         if !o.json {
             eprintln!("running the tests, native and interpreted ...");
         }
-        let src = source_path(&root, &m).unwrap_or_default();
-        json!({"native": run_tests(&root, &src, false), "interp": run_tests(&root, &src, true)})
+        all_tests(&root, &m, true)
     };
     let gh_cmd = if o.no_gh { None } else { gh() };
     let author = gh_cmd.as_deref().and_then(gh_login).unwrap_or_default();
@@ -506,10 +605,9 @@ pub fn tests_json() -> ExitCode {
         Ok(x) => x,
         Err(e) => return fail(e),
     };
-    let src = match source_path(&root, &m) {
-        Ok(s) => s,
-        Err(e) => return fail(e),
-    };
-    println!("{}", json!({"native": run_tests(&root, &src, false), "interp": run_tests(&root, &src, true)}));
+    if let Err(e) = source_path(&root, &m) {
+        return fail(e);
+    }
+    println!("{}", all_tests(&root, &m, false));
     ExitCode::SUCCESS
 }

@@ -36,23 +36,24 @@ fn rel_to(root: &Path, p: &Path) -> String {
     if out.is_empty() { ".".into() } else { out.join("/") }
 }
 
-/// `money`, `money@^1.2`: a published package, when no file or directory has that name.
+/// `money`, `money@^1.2`, `acme/money@=1.0.0`: a published package, when no file or directory
+/// has that name.
 fn registry_spec(arg: &str) -> Option<(String, Option<String>)> {
     let (name, req) = match arg.split_once('@') {
         Some((n, r)) => (n, Some(r.to_string())),
         None => (arg, None),
     };
-    (pkg::valid_name(name).is_ok() && !Path::new(arg).exists() && !Path::new(name).exists()).then(|| (name.to_string(), req))
+    let looks = !arg.contains("://") && !arg.ends_with(".git") && !arg.starts_with('.') && arg.matches('/').count() <= 1;
+    (looks && pkg::valid_package_name(name).is_ok() && !Path::new(arg).exists() && !Path::new(name).exists()).then(|| (name.to_string(), req))
 }
 
-pub fn add(arg: Option<&String>) -> ExitCode {
-    let Some(arg) = arg else { return fail("usage: sspur add <name[@^1.2]|path|git-url[@rev]>") };
+pub fn add(arg: Option<&String>, key: Option<&String>) -> ExitCode {
+    let Some(arg) = arg else { return fail("usage: sspur add <name[@^1.2]|scope/name|path|git-url[@rev]> [--as KEY]") };
     let (root, m) = match root() {
         Ok(x) => x,
         Err(e) => return fail(e),
     };
-    let reg = if arg.contains("://") || arg.contains('/') || arg.ends_with(".git") { None } else { registry_spec(arg) };
-    let src = if let Some((name, req)) = reg {
+    let src = if let Some((name, req)) = registry_spec(arg) {
         let req = match req {
             Some(r) => match sspur_registry::semver::Req::parse(&r) {
                 Ok(_) => r,
@@ -63,7 +64,19 @@ pub fn add(arg: Option<&String>) -> ExitCode {
                 Err(e) => return fail(e),
             },
         };
-        return add_dep(&root, &m, &name, Source::Registry { req });
+        // The dependency key is what the code writes: the name after the scope, or --as.
+        let k = key.cloned().unwrap_or_else(|| pkg::short_name(&name).to_string());
+        if let Err(e) = pkg::valid_name(&k) {
+            return fail(format!("{e}; choose the key with --as NAME"));
+        }
+        if let Some(s) = m.deps.get(&k).filter(|s| s.target(&k) != name) {
+            return fail(format!("the key {k} is taken: it names {}; add {name} under another key with 'sspur add {arg} --as NAME'", s.target(&k)));
+        }
+        if let Some((other, _)) = m.deps.iter().find(|(o, s)| s.target(o) == name && **o != k) {
+            return fail(format!("{name} is already a dependency, as {other}"));
+        }
+        let package = (k != name).then(|| name.clone());
+        return add_dep(&root, &m, &k, Source::Registry { req, package });
     } else {
         Source::parse_arg(arg)
     };
@@ -95,15 +108,16 @@ fn add_dep(root: &Path, m: &Manifest, name: &str, src: Source) -> ExitCode {
         Err(e) => return fail(e),
     };
     let lock = Lock::read(root).unwrap_or_default();
-    match pkg::resolve(root, &m2, &lock, Some(BTreeSet::from([name.clone()]))) {
+    match pkg::resolve(root, &m2, &lock, Some(BTreeSet::from([m2.target(&name).to_string()]))) {
         Ok((lock2, env)) => {
             if let Err(e) = pkg::write_atomic(&root.join(pkg::MANIFEST), &text).and_then(|_| lock2.write(root)) {
                 return fail(e);
             }
-            let p = &env.all[&name];
+            let p = &env.all[env.target(&name)];
             let ex: Vec<&str> = p.exports.keys().map(String::as_str).collect();
             let from = match &src {
-                Source::Registry { req } => format!("registry {req}"),
+                Source::Registry { req, package: Some(full) } => format!("registry {full} {req}"),
+                Source::Registry { req, .. } => format!("registry {req}"),
                 s => s.key(),
             };
             println!("added {name} {} #{} ({from}): {}", p.version, short(&p.hash), if ex.is_empty() { "no exports".into() } else { ex.join(", ") });
@@ -187,7 +201,7 @@ fn tree(root: &Path, m: &Manifest) -> ExitCode {
             }
         }
     }
-    walk(&env, &lock, &m.deps.keys().cloned().collect::<Vec<_>>(), 1, &mut BTreeSet::new());
+    walk(&env, &lock, &m.deps.keys().map(|k| m.target(k).to_string()).collect::<Vec<_>>(), 1, &mut BTreeSet::new());
     ExitCode::SUCCESS
 }
 
@@ -264,7 +278,7 @@ fn update(root: &Path, m: &Manifest, names: &[String], force: bool) -> ExitCode 
             return fail(format!("no dependency '{n}'"));
         }
     }
-    let (lock2, env) = match pkg::resolve(root, m, &lock, Some(names.iter().cloned().collect())) {
+    let (lock2, env) = match pkg::resolve(root, m, &lock, Some(names.iter().map(|n| m.target(n).to_string()).collect())) {
         Ok(x) => x,
         Err(e) => return fail(e),
     };

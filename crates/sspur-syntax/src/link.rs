@@ -42,16 +42,36 @@ pub fn mangle(pkg: &str, name: &str) -> String {
     }
 }
 
-/// `pkg.name` for a mangled name of one of `pkgs`, else the name itself.
-pub fn demangle_name(n: &str, pkgs: &impl Fn(&str) -> bool) -> Option<String> {
+/// The package prefix and the local name of a mangled name, when `known` accepts the prefix. A
+/// scoped package links as a prefix ending in `_` (`acme_pkg_`), so its names have three
+/// underscores (`acme_pkg___f`); that reading is tried first.
+pub fn split_mangled<'a>(n: &'a str, known: &impl Fn(&str) -> bool) -> Option<(String, &'a str)> {
     let i = n.find("__")?;
+    let k = i + n[i..].bytes().take_while(|&b| b == b'_').count();
+    if k - i >= 3 && k < n.len() {
+        let p = n[..k - 2].to_ascii_lowercase();
+        if known(&p) {
+            return Some((p, &n[k..]));
+        }
+    }
     let p = n[..i].to_ascii_lowercase();
     let rest = &n[i + 2..];
-    (!rest.is_empty() && pkgs(&p)).then(|| format!("{p}.{rest}"))
+    (!rest.is_empty() && known(&p)).then_some((p, rest))
+}
+
+/// `pkg.name` for a mangled name of one of `pkgs`, else the name itself.
+pub fn demangle_name(n: &str, pkgs: &impl Fn(&str) -> bool) -> Option<String> {
+    split_mangled(n, pkgs).map(|(p, rest)| format!("{p}.{rest}"))
 }
 
 /// Rewrites every identifier in `text` that is a mangled name of one of `pkgs`.
 pub fn demangle(text: &str, pkgs: &impl Fn(&str) -> bool) -> String {
+    demangle_as(text, &|p| pkgs(p).then(|| p.to_string()))
+}
+
+/// Like `demangle`, with the name each package is shown as: `shown(prefix)` is `None` for a
+/// prefix that is not a package.
+pub fn demangle_as(text: &str, shown: &impl Fn(&str) -> Option<String>) -> String {
     let b = text.as_bytes();
     let mut out = String::with_capacity(text.len());
     let mut i = 0;
@@ -62,8 +82,12 @@ pub fn demangle(text: &str, pkgs: &impl Fn(&str) -> bool) -> String {
                 i += 1;
             }
             let w = &text[s..i];
-            match demangle_name(w, pkgs) {
-                Some(d) => out.push_str(&d),
+            match split_mangled(w, &|p| shown(p).is_some()) {
+                Some((p, rest)) => {
+                    out.push_str(&shown(&p).unwrap_or(p));
+                    out.push('.');
+                    out.push_str(rest);
+                }
                 None => out.push_str(w),
             }
         } else {
@@ -170,7 +194,8 @@ impl R<'_> {
                 self.bounds(&mut i.tparams, span);
                 let before = i.trait_name.clone();
                 self.qual(&mut i.trait_name, span, &[Kind::Trait]);
-                let pkg = (i.trait_name != before).then(|| i.trait_name.split_once("__").map(|(p, _)| p.to_ascii_lowercase())).flatten();
+                let local = before.rsplit('.').next().unwrap_or(&before);
+                let pkg = (i.trait_name != before).then(|| i.trait_name.strip_suffix(local).and_then(|p| p.strip_suffix("__")).map(str::to_ascii_lowercase)).flatten();
                 i.trait_args.iter_mut().for_each(|t| self.ty(t, span));
                 self.ty(&mut i.target, span);
                 for f in &mut i.fns {

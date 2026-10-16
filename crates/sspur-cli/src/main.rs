@@ -32,7 +32,7 @@ pub const AGENT_SPEC_MORE: &str = include_str!("../../../docs/agent/agent-spec-m
 const USAGE: &str = "usage:
   sspur new web-app NAME | --list       create a project from a template: web-app is a notes service with accounts (README.md inside)
   sspur init [file.ssp] [--pkg NAME]    create a codebase in .sspur/ (optionally import a file; --pkg also writes sspur.toml)
-  sspur add <name[@^1.2]|path|git-url[@rev]>  add a dependency (a published package, a path or a git URL) to sspur.toml and pin it in sspur.lock
+  sspur add <name[@^1.2]|scope/name|path|git-url[@rev]> [--as KEY]  add a dependency (a published package, a path or a git URL) to sspur.toml and pin it in sspur.lock
   sspur deps fetch | update [NAME...] [--force] | tree   verify and fetch locked deps; upgrade with a semantic diff (refused if it breaks the build); show the graph
   sspur update [NAME...] [--force]      the same as deps update: newest matching versions, with the semantic diff
   sspur search [QUERY] [--json]         published packages; sspur source NAME[@VERSION] [DIR] downloads one, verified, without running it
@@ -99,7 +99,7 @@ fn parse_args() -> Args {
     let mut it = std::env::args().skip(1).peekable();
     while let Some(a) = it.next() {
         if a.starts_with("--") || a == "-e" || a == "-o" {
-            let takes = matches!(a.as_str(), "--budget" | "--cases" | "--seed" | "-e" | "-o" | "--lib" | "--prefix" | "--out" | "--port" | "--target" | "--record" | "--weight" | "--store" | "--emit" | "--max" | "--agent" | "--backend" | "--lto" | "--gen" | "--group" | "--keep" | "--modes" | "--reduce" | "--want-skip" | "--want-build" | "--want-hang" | "--from" | "--pkg" | "--dir" | "--fill-ms" | "--debugger" | "--ack" | "--ref" | "--repo" | "--rev" | "--reason" | "--deprecate");
+            let takes = matches!(a.as_str(), "--budget" | "--cases" | "--seed" | "-e" | "-o" | "--lib" | "--prefix" | "--out" | "--port" | "--target" | "--record" | "--weight" | "--store" | "--emit" | "--max" | "--agent" | "--backend" | "--lto" | "--gen" | "--group" | "--keep" | "--modes" | "--reduce" | "--want-skip" | "--want-build" | "--want-hang" | "--from" | "--pkg" | "--dir" | "--fill-ms" | "--debugger" | "--ack" | "--ref" | "--repo" | "--rev" | "--reason" | "--deprecate" | "--as");
             flags.push(a);
             if takes
                 && let Some(v) = it.next() {
@@ -150,7 +150,7 @@ fn real_main() -> ExitCode {
         }
         "init" => init(args.pos.get(1), args.val("--pkg"), args.has("--json")),
         "new" => newcmd::run(&args.pos[1..], args.has("--list")),
-        "add" => pkgcmd::add(args.pos.get(1)),
+        "add" => pkgcmd::add(args.pos.get(1), args.val("--as")),
         "deps" => pkgcmd::deps(&args.pos[1..], args.has("--force")),
         "update" => pkgcmd::deps(&[vec!["update".to_string()], args.pos[1..].to_vec()].concat(), args.has("--force")),
         "api" => publish::api(args.has("--json"), args.val("--rev").map(String::as_str)),
@@ -427,7 +427,7 @@ fn program_cmd(cmd: &str, args: &Args) -> ExitCode {
     };
     let (label, text, loaded) = match args.pos.get(1).or(manifest_src.as_ref()) {
         Some(path) => match std::fs::read_to_string(path) {
-            Ok(src) if cmd == "fmt" => (path.clone(), src.clone(), sspur_syntax::parse(&src).map(|module| Loaded { own: module.defs.len(), src, module, check: Default::default(), hashes: Default::default(), partial: true, pkgs: vec![], exports: Default::default() }).map_err(|e| vec![sspur_check::syntax_diag(&e)])),
+            Ok(src) if cmd == "fmt" => (path.clone(), src.clone(), sspur_syntax::parse(&src).map(|module| Loaded { own: module.defs.len(), src, module, check: Default::default(), hashes: Default::default(), partial: true, pkgs: vec![], shown: Default::default(), exports: Default::default() }).map_err(|e| vec![sspur_check::syntax_diag(&e)])),
             Ok(src) => match file_env(path) {
                 Ok(env) => (path.clone(), src.clone(), pkg::load(src, &env, false)),
                 Err(e) => {

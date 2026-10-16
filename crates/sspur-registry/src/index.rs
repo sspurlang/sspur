@@ -1,5 +1,6 @@
 //! The index format (schema 1). The index is a git repository with one JSON file per package,
-//! `packages/<first two letters>/<name>.json`, and `index.json`, a summary for search. A package
+//! `packages/<first two letters>/<name>.json` (`packages/@<scope>/<name>.json` for a scoped
+//! name), and `index.json`, a summary for search. A package
 //! file only grows: a new version appends an entry, and yanking or deprecating sets a flag.
 //! `registry/packages-template/schema/` has the JSON Schema of both files.
 
@@ -117,8 +118,12 @@ pub struct Summary {
     pub packages: Vec<SummaryItem>,
 }
 
-/// `packages/mo/money.json` for `money`.
+/// `packages/mo/money.json` for `money`, and `packages/@acme/pkg.json` for the scoped name
+/// `acme/pkg` (ADR 0039): a scope's directory starts with `@`, which no two-letter shard does.
 pub fn package_path(name: &str) -> String {
+    if let Some((scope, rest)) = name.split_once('/') {
+        return format!("packages/@{scope}/{rest}.json");
+    }
     let shard: String = name.chars().take(2).collect();
     format!("packages/{shard}/{name}.json")
 }
@@ -163,5 +168,6 @@ mod tests {
         assert_eq!(back, p);
         assert!(Package::parse(r#"{"schema": 2, "name": "x"}"#).unwrap_err().contains("newer"));
         assert_eq!(package_path("money"), "packages/mo/money.json");
+        assert_eq!(package_path("acme/money"), "packages/@acme/money.json");
     }
 }

@@ -30,7 +30,9 @@ pub enum Source {
     Path(String),
     Git { url: String, rev: Option<String> },
     /// A published package, `{ version = "^1.2" }`, resolved through the index (ADR 0038).
-    Registry { req: String },
+    /// `package` names it when the dependency key is not its name: a scoped package
+    /// (`pkg = { package = "acme/pkg", version = "^1" }`, ADR 0039) or a renamed one.
+    Registry { req: String, package: Option<String> },
 }
 
 impl Source {
@@ -51,7 +53,8 @@ impl Source {
             Source::Path(p) => format!("{{ path = {} }}", quote(p)),
             Source::Git { url, rev: Some(r) } => format!("{{ git = {}, rev = {} }}", quote(url), quote(r)),
             Source::Git { url, rev: None } => format!("{{ git = {} }}", quote(url)),
-            Source::Registry { req } => format!("{{ version = {} }}", quote(req)),
+            Source::Registry { req, package: Some(p) } => format!("{{ package = {}, version = {} }}", quote(p), quote(req)),
+            Source::Registry { req, package: None } => format!("{{ version = {} }}", quote(req)),
         }
     }
 
@@ -68,8 +71,17 @@ impl Source {
     pub fn rev(&self) -> Option<&str> {
         match self {
             Source::Git { rev, .. } => rev.as_deref(),
-            Source::Registry { req } => Some(req),
+            Source::Registry { req, .. } => Some(req),
             Source::Path(_) => None,
+        }
+    }
+
+    /// The package a dependency under `key` names: `package` for a registry dependency that has
+    /// one, else the key itself.
+    pub fn target<'a>(&'a self, key: &'a str) -> &'a str {
+        match self {
+            Source::Registry { package: Some(p), .. } => p,
+            _ => key,
         }
     }
 }
@@ -81,6 +93,51 @@ pub struct Manifest {
     pub src: Option<String>,
     pub deps: BTreeMap<String, Source>,
     pub text: String,
+}
+
+/// A scope: a GitHub login, lowercase. 1 to 39 letters, digits and single hyphens, with no
+/// hyphen at either end (ADR 0039).
+pub fn valid_scope(s: &str) -> bool {
+    !s.is_empty() && s.len() <= 39 && s.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-') && !s.starts_with('-') && !s.ends_with('-') && !s.contains("--")
+}
+
+/// The name after the scope: `pkg` for `acme/pkg` and for `pkg`.
+pub fn short_name(n: &str) -> &str {
+    n.rsplit_once('/').map_or(n, |(_, s)| s)
+}
+
+/// A package's name: `name`, or `scope/name` where the scope is the GitHub owner of its
+/// repository and `name` is a valid dependency key.
+pub fn valid_package_name(n: &str) -> Result<(), String> {
+    match n.split_once('/') {
+        None => valid_name(n),
+        Some((scope, rest)) => {
+            if !valid_scope(scope) {
+                return Err(format!("package name '{n}': the scope '{scope}' must be a GitHub login in lowercase (letters, digits and single hyphens, at most 39)"));
+            }
+            valid_name(rest).map_err(|e| format!("package name '{n}': {e}"))
+        }
+    }
+}
+
+/// The prefix a package's definitions are linked under (`money__add`). A flat name is its own
+/// prefix. A scoped name ends in `_`, which a flat name never does, so `acme/pkg` (`acme_pkg_`)
+/// can't clash with a flat `acme_pkg`. A module of a published package, `owner:module`, adds
+/// the module's name.
+pub fn link_name(n: &str) -> String {
+    let (owner, module) = match n.split_once(':') {
+        Some((o, m)) => (o, Some(m)),
+        None => (n, None),
+    };
+    let base = match owner.split_once('/') {
+        Some((scope, rest)) => format!("{}_{rest}", scope.replace('-', "_")),
+        None => owner.to_string(),
+    };
+    match module {
+        Some(m) => format!("{base}_{m}_"),
+        None if base == owner => base,
+        None => format!("{base}_"),
+    }
 }
 
 pub fn valid_name(n: &str) -> Result<(), String> {
@@ -115,15 +172,24 @@ impl Manifest {
                         valid_name(k)?;
                         let src = match v {
                             TVal::Str(p) => Source::Path(p.clone()),
-                            TVal::Table(t) => match (t.get("path").and_then(TVal::str), t.get("git").and_then(TVal::str), t.get("version").and_then(TVal::str)) {
-                                (Some(p), None, None) => Source::Path(p.into()),
-                                (None, Some(g), None) => Source::Git { url: g.into(), rev: t.get("rev").or_else(|| t.get("tag")).and_then(TVal::str).map(String::from) },
-                                (None, None, Some(v)) => {
-                                    sspur_registry::semver::Req::parse(v).map_err(|e| format!("dependency {k}: {e}"))?;
-                                    Source::Registry { req: v.into() }
+                            TVal::Table(t) => {
+                                let package = t.get("package").and_then(TVal::str);
+                                if package.is_some() && !t.contains_key("version") {
+                                    return Err(format!("dependency {k}: package = \"...\" goes with version = \"...\"; it names a published package"));
                                 }
-                                _ => return Err(format!("dependency {k} needs exactly one of path, git or version")),
-                            },
+                                match (t.get("path").and_then(TVal::str), t.get("git").and_then(TVal::str), t.get("version").and_then(TVal::str)) {
+                                    (Some(p), None, None) => Source::Path(p.into()),
+                                    (None, Some(g), None) => Source::Git { url: g.into(), rev: t.get("rev").or_else(|| t.get("tag")).and_then(TVal::str).map(String::from) },
+                                    (None, None, Some(v)) => {
+                                        sspur_registry::semver::Req::parse(v).map_err(|e| format!("dependency {k}: {e}"))?;
+                                        if let Some(p) = package {
+                                            valid_package_name(p).map_err(|e| format!("dependency {k}: {e}"))?;
+                                        }
+                                        Source::Registry { req: v.into(), package: package.filter(|p| *p != k).map(String::from) }
+                                    }
+                                    _ => return Err(format!("dependency {k} needs exactly one of path, git or version")),
+                                }
+                            }
                             TVal::Arr(_) => return Err(format!("dependency {k} must be {{ version = \"^1.0\" }}, {{ path = \"..\" }} or {{ git = \"..\", rev = \"..\" }}")),
                         };
                         m.deps.insert(k.clone(), src);
@@ -135,11 +201,20 @@ impl Manifest {
         if m.name.is_empty() {
             return Err("sspur.toml needs [package] name".into());
         }
-        valid_name(&m.name)?;
-        if m.deps.contains_key(&m.name) {
+        valid_package_name(&m.name)?;
+        if m.deps.iter().any(|(k, s)| s.target(k) == m.name) {
             return Err(format!("package {} can't depend on itself", m.name));
         }
+        let mut seen = BTreeSet::new();
+        if let Some((k, s)) = m.deps.iter().find(|(k, s)| !seen.insert(s.target(k).to_string())) {
+            return Err(format!("dependency {k}: {} is already a dependency under another name", s.target(k)));
+        }
         Ok(m)
+    }
+
+    /// The package the dependency `key` names (see `Source::target`).
+    pub fn target<'a>(&'a self, key: &'a str) -> &'a str {
+        self.deps.get(key).map_or(key, |s| s.target(key))
     }
 
     pub fn read(dir: &Path) -> Result<Option<Manifest>, String> {
@@ -389,8 +464,27 @@ pub fn cached_source(hash: &str) -> Option<(String, String)> {
 #[derive(Clone, Debug, Default)]
 pub struct Env {
     pub name: Option<String>,
+    /// The dependency keys of the package: what its code writes (`use pkg.{f}`, `pkg.f`).
     pub direct: Vec<String>,
+    /// The package each key names, where they differ: a scoped package (`pkg` for
+    /// `acme/pkg`) or a module of a published package (`models` for `acme/pkg:models`).
+    pub alias: BTreeMap<String, String>,
+    /// Every package in the graph by its full name.
     pub all: BTreeMap<String, Arc<Pkg>>,
+}
+
+/// The dependency keys of `m` that name another package: registry dependencies with
+/// `package = ...`, and, when `m` is built as part of the published package `owner`, its path
+/// dependencies, which are that package's modules.
+pub fn aliases(m: &Manifest, owner: Option<&str>) -> BTreeMap<String, String> {
+    m.deps
+        .iter()
+        .filter_map(|(k, s)| match (s, owner) {
+            (Source::Registry { package: Some(p), .. }, _) => Some((k.clone(), p.clone())),
+            (Source::Path(_), Some(o)) => Some((k.clone(), format!("{o}:{k}"))),
+            _ => None,
+        })
+        .collect()
 }
 
 fn kind_of(s: &str) -> Kind {
@@ -409,19 +503,44 @@ impl Env {
         self.all.is_empty() && self.name.is_none()
     }
 
+    /// The link prefixes of every package in the program (see `link_name`).
     pub fn names(&self) -> Vec<String> {
-        self.all.keys().cloned().chain(self.name.clone()).collect()
+        self.all.keys().chain(self.name.as_ref()).map(|n| link_name(n)).collect()
+    }
+
+    /// The full name of the package the key `d` names.
+    pub fn target<'a>(&'a self, d: &'a str) -> &'a str {
+        self.alias.get(d).map_or(d, String::as_str)
+    }
+
+    /// The package of the direct dependency `d`, by its key.
+    pub fn direct_pkg(&self, d: &str) -> Option<&Arc<Pkg>> {
+        self.direct.iter().any(|x| x == d).then(|| self.all.get(self.target(d))).flatten()
+    }
+
+    /// How each link prefix that is not a plain name is shown: by its key for a direct
+    /// dependency, by its full name otherwise.
+    pub fn shown(&self) -> BTreeMap<String, String> {
+        let mut out: BTreeMap<String, String> = self.all.keys().chain(self.name.as_ref()).filter(|n| link_name(n) != **n).map(|n| (link_name(n), n.clone())).collect();
+        for d in &self.direct {
+            let t = self.target(d);
+            if link_name(t) != *t || t != d {
+                out.insert(link_name(t), d.clone());
+            }
+        }
+        out
     }
 
     pub fn scope(&self) -> Scope {
         let mut s = Scope::default();
         for d in &self.direct {
-            if let Some(p) = self.all.get(d) {
+            if let Some(p) = self.all.get(self.target(d)) {
                 let items = p.items.iter().map(|(n, it)| (n.clone(), Item { kind: kind_of(&it.kind), mangled: it.mangled.clone(), public: it.public, arity: it.arity })).collect();
                 s.pkgs.insert(d.clone(), items);
             }
         }
-        s.indirect = self.all.keys().filter(|k| !self.direct.contains(k)).cloned().collect();
+        let direct: BTreeSet<&str> = self.direct.iter().map(|d| self.target(d)).collect();
+        s.indirect = self.all.keys().filter(|k| !direct.contains(k.as_str())).cloned().collect();
         s
     }
 
@@ -432,7 +551,8 @@ impl Env {
 
     pub fn show(&self, text: &str) -> String {
         let names = self.names();
-        link::demangle(text, &|p| names.iter().any(|n| n == p))
+        let shown = self.shown();
+        link::demangle_as(text, &|p| shown.get(p).cloned().or_else(|| names.iter().any(|n| n == p).then(|| p.to_string())))
     }
 
     /// The environment of the package rooted at `root`: its manifest, its lock, and every locked
@@ -446,7 +566,7 @@ impl Env {
                 return Ok(Some(env));
             }
         for (n, s) in &m.deps {
-            if let Some(e) = lock.entries.get(n)
+            if let Some(e) = lock.entries.get(s.target(n))
                 && (e.source != s.key() || e.reference.as_deref() != s.rev()) {
                     let want = s.rev().map_or(s.key(), |r| format!("{}@{r}", s.key()));
                     let have = e.reference.as_ref().map_or(e.source.clone(), |r| format!("{}@{r}", e.source));
@@ -463,18 +583,18 @@ impl Env {
     /// What the lock pins, from the cache, whatever the manifest now says.
     pub fn locked(m: &Manifest, lock: &Lock) -> Env {
         let all = lock.entries.iter().filter_map(|(n, e)| Some((n.clone(), Arc::new(load_locked(e)?)))).collect();
-        Env { name: Some(m.name.clone()), direct: m.deps.keys().cloned().collect(), all }
+        Env { name: Some(m.name.clone()), direct: m.deps.keys().cloned().collect(), alias: aliases(m, None), all }
     }
 
     fn from_lock(m: &Manifest, lock: &Lock) -> Option<Env> {
         let mut all = BTreeMap::new();
         let mut todo: Vec<String> = Vec::new();
         for (n, s) in &m.deps {
-            let e = lock.entries.get(n)?;
+            let e = lock.entries.get(s.target(n))?;
             if e.source != s.key() || e.reference.as_deref() != s.rev() {
                 return None;
             }
-            todo.push(n.clone());
+            todo.push(s.target(n).to_string());
         }
         while let Some(n) = todo.pop() {
             if all.contains_key(&n) {
@@ -484,7 +604,7 @@ impl Env {
             todo.extend(p.deps.keys().cloned());
             all.insert(n, Arc::new(p));
         }
-        Some(Env { name: Some(m.name.clone()), direct: m.deps.keys().cloned().collect(), all })
+        Some(Env { name: Some(m.name.clone()), direct: m.deps.keys().cloned().collect(), alias: aliases(m, None), all })
     }
 }
 
@@ -553,7 +673,7 @@ pub fn link(src: &str, env: &Env) -> Result<Linked, Vec<Diag>> {
     for d in &module.defs[..own] {
         let n = d.name();
         if let Def::Use(u) = d {
-            let Some(p) = env.all.get(&u.pkg).filter(|_| env.direct.contains(&u.pkg)) else {
+            let Some(p) = env.direct_pkg(&u.pkg) else {
                 errs.push(perr("E_PKG_UNKNOWN", format!("no dependency '{}'; add it with 'sspur add <path|git-url>'", u.pkg), u.span));
                 continue;
             };
@@ -607,7 +727,8 @@ pub fn load(src: String, env: &Env, cached: bool) -> Result<Loaded, Vec<Diag>> {
     let mut loaded = if cached { check_cached(l.src, l.module, Some(l.own)) } else { check_full(l.src, l.module) };
     loaded.own = l.own;
     loaded.pkgs = env.names();
-    loaded.exports = env.direct.iter().filter_map(|d| env.all.get(d)).flat_map(|p| p.items.values().filter(|it| it.public && it.owner.is_none()).map(|it| it.mangled.clone())).collect();
+    loaded.shown = env.shown();
+    loaded.exports = env.direct.iter().filter_map(|d| env.direct_pkg(d)).flat_map(|p| p.items.values().filter(|it| it.public && it.owner.is_none()).map(|it| it.mangled.clone())).collect();
     for d in &mut loaded.check.diags {
         d.msg = env.show(&d.msg);
         d.hint = d.hint.as_ref().map(|h| env.show(h));
@@ -638,7 +759,14 @@ fn sig_parts(d: &Def, show: &dyn Fn(&str) -> String) -> (String, Vec<String>, Ve
 /// Builds the cached form of package `m` from its source: checks it against its dependencies,
 /// renames its definitions to `name__f`, and hashes its exports.
 pub fn build_pkg(m: &Manifest, src: &str, deps: &BTreeMap<String, Arc<Pkg>>) -> Result<Pkg, String> {
-    let env = Env { name: Some(m.name.clone()), direct: m.deps.keys().cloned().collect(), all: deps.clone() };
+    build_as(&m.name, m, src, deps, &aliases(m, None))
+}
+
+/// `build_pkg` for the package `full` (a module of a published package is `owner:module`),
+/// whose dependency keys name the packages in `alias`.
+pub fn build_as(full: &str, m: &Manifest, src: &str, deps: &BTreeMap<String, Arc<Pkg>>, alias: &BTreeMap<String, String>) -> Result<Pkg, String> {
+    let env = Env { name: Some(full.to_string()), direct: m.deps.keys().cloned().collect(), alias: alias.clone(), all: deps.clone() };
+    let ln = link_name(full);
     let lines = |src: &str, ds: &[Diag]| -> String {
         let errs: Vec<String> = ds
             .iter()
@@ -646,7 +774,7 @@ pub fn build_pkg(m: &Manifest, src: &str, deps: &BTreeMap<String, Arc<Pkg>>) -> 
             .take(8)
             .map(|d| {
                 let (l, c) = line_col(src, d.span[0]);
-                format!("{}:{l}:{c} {} {}", m.name, d.code, env.show(&d.msg))
+                format!("{full}:{l}:{c} {} {}", d.code, env.show(&d.msg))
             })
             .collect();
         errs.join("\n")
@@ -657,7 +785,7 @@ pub fn build_pkg(m: &Manifest, src: &str, deps: &BTreeMap<String, Arc<Pkg>>) -> 
     }
     let own: Vec<&Def> = loaded.own_defs().iter().filter(|d| !matches!(d, Def::Use(_) | Def::Test(_))).collect();
     if let Some(d) = own.iter().find(|d| matches!(d, Def::Store(_) | Def::Svc(_))) {
-        return Err(format!("{}: '{}': a dependency can't define store or svc", m.name, d.name()));
+        return Err(format!("{full}: '{}': a dependency can't define store or svc", d.name()));
     }
     let mut map: HashMap<String, String> = HashMap::new();
     let mut items: BTreeMap<String, PItem> = BTreeMap::new();
@@ -666,7 +794,7 @@ pub fn build_pkg(m: &Manifest, src: &str, deps: &BTreeMap<String, Arc<Pkg>>) -> 
             continue;
         }
         let n = d.name().to_string();
-        let mg = link::mangle(&m.name, &n);
+        let mg = link::mangle(&ln, &n);
         let (kind, arity) = match d {
             Def::Fn(f) => ("fn", f.params.len()),
             Def::Type(_) => ("type", 0),
@@ -678,21 +806,21 @@ pub fn build_pkg(m: &Manifest, src: &str, deps: &BTreeMap<String, Arc<Pkg>>) -> 
         map.insert(n.clone(), mg);
         if let Def::Type(TypeDef { body: TypeBody::Sum(vs), .. }) = d {
             for v in vs {
-                let vm = link::mangle(&m.name, &v.name);
+                let vm = link::mangle(&ln, &v.name);
                 map.insert(v.name.clone(), vm.clone());
                 items.entry(v.name.clone()).or_insert(PItem { kind: "ctor".into(), mangled: vm, public: d.is_pub(), arity: 0, owner: Some(n.clone()) });
             }
         }
         if let Def::Trait(t) = d {
             for x in &t.methods {
-                let om = link::mangle(&m.name, &x.sig.name);
+                let om = link::mangle(&ln, &x.sig.name);
                 map.insert(x.sig.name.clone(), om.clone());
                 items.entry(x.sig.name.clone()).or_insert(PItem { kind: "op".into(), mangled: om, public: d.is_pub(), arity: x.sig.params.len(), owner: Some(n.clone()) });
             }
         }
         if let Def::Effect(e) = d {
             for op in &e.ops {
-                let om = link::mangle(&m.name, &op.name);
+                let om = link::mangle(&ln, &op.name);
                 map.insert(op.name.clone(), om.clone());
                 items.entry(op.name.clone()).or_insert(PItem { kind: "op".into(), mangled: om, public: d.is_pub(), arity: op.params.len(), owner: Some(n.clone()) });
             }
@@ -717,12 +845,12 @@ pub fn build_pkg(m: &Manifest, src: &str, deps: &BTreeMap<String, Arc<Pkg>>) -> 
     }
     let piece = defs.iter().map(printer::print_def).collect::<Vec<_>>().join("\n\n");
     let prelude = env.prelude();
-    let full = if prelude.is_empty() { format!("{piece}\n") } else { format!("{piece}\n\n{prelude}\n") };
-    let mut module = parse(&full).map_err(|e| format!("{}: internal: the renamed package does not parse: {}", m.name, e.msg))?;
+    let text = if prelude.is_empty() { format!("{piece}\n") } else { format!("{piece}\n\n{prelude}\n") };
+    let mut module = parse(&text).map_err(|e| format!("{full}: internal: the renamed package does not parse: {}", e.msg))?;
     module.own = Some(0);
-    let check = check_cached(full.clone(), module, None);
+    let check = check_cached(text.clone(), module, None);
     if check.check.has_errors() {
-        return Err(format!("{}: internal: the renamed package does not check:\n{}", m.name, lines(&full, &check.check.diags)));
+        return Err(format!("{full}: internal: the renamed package does not check:\n{}", lines(&text, &check.check.diags)));
     }
     let show = |t: &str| env.show(t);
     let mut exports = BTreeMap::new();
@@ -740,10 +868,10 @@ pub fn build_pkg(m: &Manifest, src: &str, deps: &BTreeMap<String, Arc<Pkg>>) -> 
         exports.insert(local, Export { kind, sig, effects, contracts, hash: check.hashes.get(d.name()).cloned().unwrap_or_default() });
     }
     let mut entries: Vec<(String, String)> = exports.iter().map(|(n, e)| (n.clone(), e.hash.clone())).collect();
-    entries.push(("#package".into(), m.name.clone()));
+    entries.push(("#package".into(), full.to_string()));
     let hash = root_hash(&entries);
-    let direct = m.deps.keys().map(|d| (d.clone(), deps.get(d).map(|p| p.hash.clone()).unwrap_or_default())).collect();
-    Ok(Pkg { name: m.name.clone(), version: m.version.clone(), hash, profile: loaded.module.profile.clone(), deps: direct, piece, items, exports })
+    let direct = m.deps.keys().map(|d| env.target(d)).map(|d| (d.to_string(), deps.get(d).map(|p| p.hash.clone()).unwrap_or_default())).collect();
+    Ok(Pkg { name: full.to_string(), version: m.version.clone(), hash, profile: loaded.module.profile.clone(), deps: direct, piece, items, exports })
 }
 
 // ---------- the registry ----------
@@ -892,6 +1020,10 @@ impl Resolver<'_> {
             }
             return Ok(q.clone());
         }
+        let ln = link_name(&e.name);
+        if let Some(other) = self.out.keys().find(|k| link_name(k) == ln) {
+            return Err(format!("E_DEP_CONFLICT {} and {other} link under the same name ({ln}); a program can't hold both", e.name));
+        }
         self.out.insert(e.name.clone(), (e, p.clone()));
         Ok(p)
     }
@@ -954,39 +1086,86 @@ impl Resolver<'_> {
         if m.name != name || m.version != v.version {
             return Err(format!("the published source of {name} {} names itself {} {}", v.version, m.name, m.version));
         }
-        let text = read_src(&co.dir, &m)?;
-        for (dn, ds) in &m.deps {
-            let who = format!("{name} {}", v.version);
-            match ds {
-                Source::Registry { req } => {
-                    self.registry_dep(dn, req, false, &who)?;
-                }
-                _ => return Err(format!("{who} depends on {dn} by {}; published packages depend only on published packages", ds.key())),
-            }
-        }
-        let mut deps = BTreeMap::new();
-        let mut todo: Vec<String> = m.deps.keys().cloned().collect();
-        while let Some(d) = todo.pop() {
-            if deps.contains_key(&d) {
-                continue;
-            }
-            let p = self.out[&d].1.clone();
-            todo.extend(p.deps.keys().cloned());
-            deps.insert(d, p);
-        }
-        let p = build_pkg(&m, &text, &deps)?;
+        let (p, text) = self.published(name, &co.dir, &m, &format!("{name} {}", v.version))?;
         if p.hash != v.hash {
             return Err(format!("E_DEP_HASH {name} {}: the published source hashes to #{}, but {} says #{}; the package is not what was published", v.version, &p.hash[..12], if pinned.is_some() { LOCK } else { "the index" }, &v.hash[..v.hash.len().min(12)]));
         }
         store_cached(&p, &text, &m.text)?;
         self.fetched.push(name.to_string());
-        let entry = LockEntry { name: name.into(), version: v.version.clone(), source: "registry".into(), reference: Some(req.to_string()), rev: Some(v.commit.clone()), hash: p.hash.clone(), deps: m.deps.keys().cloned().collect(), git: Some(v.git.clone()), snapshot: v.snapshot.clone(), sha256: v.sha256.clone() };
+        let entry = LockEntry { name: name.into(), version: v.version.clone(), source: "registry".into(), reference: Some(req.to_string()), rev: Some(v.commit.clone()), hash: p.hash.clone(), deps: p.deps.keys().cloned().collect(), git: Some(v.git.clone()), snapshot: v.snapshot.clone(), sha256: v.sha256.clone() };
         self.record(entry, Arc::new(p), direct)
     }
 
+    /// The closure of `keys` (full names) among the packages resolved so far.
+    fn closure(&self, keys: impl IntoIterator<Item = String>) -> BTreeMap<String, Arc<Pkg>> {
+        let mut deps = BTreeMap::new();
+        let mut todo: Vec<String> = keys.into_iter().collect();
+        while let Some(d) = todo.pop() {
+            if deps.contains_key(&d) {
+                continue;
+            }
+            if let Some((_, p)) = self.out.get(&d) {
+                todo.extend(p.deps.keys().cloned());
+                deps.insert(d, p.clone());
+            }
+        }
+        deps
+    }
+
+    /// Builds the package in `dir` as it is published under the name `full`: its registry
+    /// dependencies from the index, and its path dependencies inside `dir`, which are its
+    /// modules, as the packages `full:module`. Anything else can't be in a published package.
+    fn published(&mut self, full: &str, dir: &Path, m: &Manifest, who: &str) -> Result<(Pkg, String), String> {
+        let text = read_src(dir, m)?;
+        let root = dir.canonicalize().map_err(|e| format!("cannot open {}: {e}", dir.display()))?;
+        self.member_deps(full, &root, dir, m, who)?;
+        let alias = aliases(m, Some(full));
+        let deps = self.closure(m.deps.keys().map(|d| alias.get(d).cloned().unwrap_or_else(|| d.clone())));
+        Ok((build_as(full, m, &text, &deps, &alias)?, text))
+    }
+
+    fn member_deps(&mut self, owner: &str, root: &Path, dir: &Path, m: &Manifest, who: &str) -> Result<(), String> {
+        for (dn, ds) in &m.deps {
+            match ds {
+                Source::Registry { req, .. } => {
+                    self.registry_dep(ds.target(dn), req, false, who)?;
+                }
+                Source::Path(p) => {
+                    self.module_dep(owner, dn, p, root, dir, who)?;
+                }
+                _ => return Err(format!("{who} depends on {dn} by {}; published packages depend only on published packages and on modules in their own directory", ds.key())),
+            }
+        }
+        Ok(())
+    }
+
+    /// The module `key` (at `path` from `base`) of the published package `owner`, rooted at `root`.
+    fn module_dep(&mut self, owner: &str, key: &str, path: &str, root: &Path, base: &Path, who: &str) -> Result<Arc<Pkg>, String> {
+        let full = format!("{owner}:{key}");
+        if let Some((_, p)) = self.out.get(&full) {
+            return Ok(p.clone());
+        }
+        let dir = base.join(path).canonicalize().map_err(|e| format!("{who}: cannot open the module {key} at {path}: {e}"))?;
+        if dir == root || !dir.starts_with(root) {
+            return Err(format!("{who} depends on {key} by path {path}, outside its own directory; published packages depend only on published packages and on modules in their own directory"));
+        }
+        let m = Manifest::read(&dir)?.ok_or_else(|| format!("{who}: the module {key} at {path} has no sspur.toml"))?;
+        if m.name != key {
+            return Err(format!("{who}: the module at {path} is named {}, not {key}", m.name));
+        }
+        let text = read_src(&dir, &m)?;
+        self.member_deps(owner, root, &dir, &m, who)?;
+        let alias = aliases(&m, Some(owner));
+        let deps = self.closure(m.deps.keys().map(|d| alias.get(d).cloned().unwrap_or_else(|| d.clone())));
+        let p = build_as(&full, &m, &text, &deps, &alias)?;
+        store_cached(&p, &text, &m.text)?;
+        let entry = LockEntry { name: full, version: m.version.clone(), source: "module".into(), hash: p.hash.clone(), deps: p.deps.keys().cloned().collect(), ..Default::default() };
+        self.record(entry, Arc::new(p), false)
+    }
+
     fn dep_from(&mut self, name: &str, src: &Source, base: &Path, direct: bool, from: &str) -> Result<Arc<Pkg>, String> {
-        if let Source::Registry { req } = src {
-            return self.registry_dep(name, req, direct, from);
+        if let Source::Registry { req, .. } = src {
+            return self.registry_dep(src.target(name), req, direct, from);
         }
         let key = if direct {
             src.key()
@@ -1013,19 +1192,10 @@ impl Resolver<'_> {
             return Err(format!("the package at {} is named {}, not {name}; use 'sspur add' to add it under its own name", co.dir.display(), m.name));
         }
         let text = read_src(&co.dir, &m)?;
-        let mut deps = BTreeMap::new();
         for (dn, ds) in &m.deps {
             self.dep_from(dn, ds, &co.dir, false, name)?;
         }
-        let mut todo: Vec<String> = m.deps.keys().cloned().collect();
-        while let Some(d) = todo.pop() {
-            if deps.contains_key(&d) {
-                continue;
-            }
-            let p = self.out[&d].1.clone();
-            todo.extend(p.deps.keys().cloned());
-            deps.insert(d, p);
-        }
+        let deps = self.closure(m.deps.iter().map(|(k, s)| s.target(k).to_string()));
         let p = build_pkg(&m, &text, &deps)?;
         if let Some(e) = &pinned
             && e.hash != p.hash {
@@ -1038,7 +1208,7 @@ impl Resolver<'_> {
             }
         store_cached(&p, &text, &m.text)?;
         self.fetched.push(name.to_string());
-        let entry = LockEntry { name: name.into(), version: m.version.clone(), source: key, reference: src.rev().map(String::from), rev: co.sha.clone(), hash: p.hash.clone(), deps: m.deps.keys().cloned().collect(), ..Default::default() };
+        let entry = LockEntry { name: name.into(), version: m.version.clone(), source: key, reference: src.rev().map(String::from), rev: co.sha.clone(), hash: p.hash.clone(), deps: p.deps.keys().cloned().collect(), ..Default::default() };
         self.record(entry, Arc::new(p), direct)
     }
 }
@@ -1053,12 +1223,13 @@ pub fn resolve_with(root: &Path, m: &Manifest, lock: &Lock, update: Option<BTree
     let mut r = Resolver { lock, update, out: BTreeMap::new(), fetched: vec![], plan: BTreeMap::new(), asked: BTreeMap::new() };
     let mut roots = Vec::new();
     let mut keep = BTreeMap::new();
-    for (n, s) in &m.deps {
-        if let Source::Registry { req } = s {
+    for (k, s) in &m.deps {
+        if let Source::Registry { req, .. } = s {
+            let n = s.target(k);
             // A locked version that still meets the requirement is fetched from the lock alone.
             let locked = lock.entries.get(n).is_some_and(|e| e.source == "registry" && !r.unpinned(n) && req_matches(req, &e.version) && e.reference.as_deref() == Some(req.as_str()));
             if !locked {
-                roots.push((n.clone(), req.clone(), m.name.clone()));
+                roots.push((n.to_string(), req.clone(), m.name.clone()));
             }
         }
     }
@@ -1074,8 +1245,16 @@ pub fn resolve_with(root: &Path, m: &Manifest, lock: &Lock, update: Option<BTree
         r.dep_from(n, s, root, true, &m.name)?;
     }
     let lock = Lock { entries: r.out.iter().map(|(n, (e, _))| (n.clone(), e.clone())).collect() };
-    let env = Env { name: Some(m.name.clone()), direct: m.deps.keys().cloned().collect(), all: r.out.into_iter().map(|(n, (_, p))| (n, p)).collect() };
+    let env = Env { name: Some(m.name.clone()), direct: m.deps.keys().cloned().collect(), alias: aliases(m, None), all: r.out.into_iter().map(|(n, (_, p))| (n, p)).collect() };
     Ok((lock, env, r.fetched))
+}
+
+/// The package at `root` built as the registry publishes it, with its export hash: its modules
+/// linked as `name:module` and its registry dependencies as `lock` pins them (else from the
+/// index). This is the hash `sspur api` reports and every dependent checks.
+pub fn build_published(root: &Path, m: &Manifest, lock: &Lock) -> Result<Pkg, String> {
+    let mut r = Resolver { lock, update: None, out: BTreeMap::new(), fetched: vec![], plan: BTreeMap::new(), asked: BTreeMap::new() };
+    r.published(&m.name, root, m, &m.name).map(|(p, _)| p)
 }
 
 /// Rebuilds every locked package from its cached source and checks it against the lock.
@@ -1106,7 +1285,14 @@ fn rebuild(lock: &Lock, source: &dyn Fn(&str) -> Option<(String, String)>, what:
                         todo.extend(p.deps.keys().cloned());
                     }
             }
-            let p = build_pkg(&m, &src, &deps)?;
+            // A published package links its modules under its own name, and a module under the
+            // name of the package it belongs to.
+            let owner = match e.source.as_str() {
+                "registry" => Some(e.name.as_str()),
+                "module" => e.name.split_once(':').map(|(o, _)| o),
+                _ => None,
+            };
+            let p = build_as(&e.name, &m, &src, &deps, &aliases(&m, owner))?;
             if p.hash != e.hash {
                 return Err(format!("E_DEP_HASH {}: {what} hashes to #{}, the lock says #{}; delete {} and run 'sspur deps fetch'", e.name, &p.hash[..12], &e.hash[..e.hash.len().min(12)], pkg_dir(&e.hash).display()));
             }
