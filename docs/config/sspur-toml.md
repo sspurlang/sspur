@@ -10,7 +10,7 @@ A directory with an `sspur.toml` is a package. Every `sspur` command run on a fi
 
 | Key | Required | Meaning |
 |---|---|---|
-| `name` | yes | Lowercase letters, digits and single underscores. Other packages use it as the qualifier: `money.cents` |
+| `name` | yes | Lowercase letters, digits and single underscores, `money`; or a scoped name for the registry, `acme/money`, where `acme` is the GitHub owner of the package's repository ([ADR 0039](../adr/0039-scoped-package-names.md)). Dependents use the dependency key as the qualifier: `money.cents` |
 | `version` | no | A version string, shown by `sspur deps tree` and recorded in dependents' locks. Defaults to `0.0.0` |
 | `src` | no | The source file. Without it the package's source is its `.sspur/` codebase if there is one, else `lib.ssp`, else `main.ssp`. A published package keeps its source in a file |
 | `description` | to publish | One line of at most 200 characters, shown by `sspur search` and the package site |
@@ -19,11 +19,12 @@ A directory with an `sspur.toml` is a package. Every `sspur` command run on a fi
 
 ## [deps]
 
-Each key is a dependency's package name, and its value says where the package comes from. A name must match the dependency's own `[package] name`.
+Each key is the name the code uses for a dependency (`use money.{...}`, `money.f`), and its value says where the package comes from. For a path or git dependency the key must match the dependency's own `[package] name`; a published package can be under any key with `package`.
 
 | Form | Meaning |
 |---|---|
 | `money = { version = "^1.2" }` | A published package, the newest version the requirement allows: `^1.2` (the default, also written `1.2`), `~1.2.0`, `=1.2.0`, `>=1.2, <2`, `*`. See [Publishing a package](../handbook/publishing.md) |
+| `money = { package = "acme/money", version = "^1" }` | A published package under a key that is not its name: a scoped package (`sspur add acme/money` writes this), or a second package with the same short name (`sspur add globex/money --as globex_money`) |
 | `money = { path = "../money" }` | A directory, relative to this manifest. `money = "../money"` is the same |
 | `greet = { git = "https://example.com/greet.git", rev = "v0.1.0" }` | A git repository at a tag, branch or commit. `tag` is accepted as a synonym for `rev` |
 
@@ -34,7 +35,7 @@ Only direct dependencies can be named in code (`E_PKG_UNKNOWN` otherwise). The l
 | Command | Does |
 |---|---|
 | `sspur init --pkg NAME` | Writes a manifest, and creates a codebase as `sspur init` does |
-| `sspur add money`, `sspur add money@^1.2` | Adds a published package and locks its newest matching version |
+| `sspur add money`, `sspur add money@^1.2`, `sspur add money@1.2.3` (exactly), `sspur add acme/money [--as KEY]` | Adds a published package and locks its newest matching version |
 | `sspur add ../lib`, `sspur add URL@REV` | Adds the package under its own name to `[deps]` and locks it |
 | `sspur deps fetch` | Fetches what the lock lists and isn't cached, and checks every hash |
 | `sspur deps update [NAME...] [--force]`, `sspur update` | Re-resolves (published packages to the newest matching version), prints the export diff, and writes the lock only if the package still checks |

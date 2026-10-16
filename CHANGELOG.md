@@ -4,10 +4,19 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+### Added
+- Scoped package names tied to GitHub owners (ADR 0039), so two companies can each have `pkg`: `name = "acme/pkg"` in `sspur.toml`, where `acme` is the GitHub user or organization that owns the repository. The new blocking check `pkg.scope` verifies it: the request must come from that user or, for an organization, from a public member (a private member is told how to make the membership public). Scoped packages live at `packages/@acme/pkg.json` in the index, with releases named `acme--pkg-VERSION`; flat names and existing index files are unchanged, and 0.12.0 clients keep installing flat packages. Every new name, scoped or not, still waits for a maintainer's `/approve`.
+- `sspur add acme/pkg` writes `pkg = { package = "acme/pkg", version = "^1.0.0" }`, using the name after the scope as the dependency key; when the key is taken it says so and `--as NAME` picks another, so two scopes' `pkg` work in one program. Locks record full names, `sspur deps tree` shows the key a package is used under, and `sspur publish`, `yank`, `search`, `source`, the issue forms, the package site (pages at `packages/acme/pkg/`) and the Publish page know scoped names.
+- Published packages can contain module packages: path dependencies inside the package's directory, as the web-app template's `models = { path = "models" }`. Every check covers every module (parse, typecheck, formatting, docs, tests in both tiers, secrets, review rules) with paths from the repository's top; `sspur publish` runs the modules' tests side by side in a copy of the commit. Dependents build the modules under the package's name (`acme/pkg:models`, `source = "module"` in the lock), so they never clash with a dependent's own modules. The package's API is the root module's exports. The Publish page checks multi-module repositories too, listing the tree once with the git trees API.
+- The registry credits authors: the index commit is authored by the requester with their GitHub noreply address and committed by the bot, and the merge uses `gh pr merge --squash --author-email` with a `Co-authored-by` trailer, so the commit on main counts in the author's contributions. The Publish page also lists a user's public organizations and their repositories, and shows the scope check in the browser.
+
 ## [0.12.1] - 2026-10-16
 
 ### Changed
 - The first version of a new package name waits for a maintainer of sspur-packages to comment `/approve` on its request, after every check has passed. The approval holds only for the commit the pull request showed. Later versions still merge on their checks alone.
+- The registry's size limits are 2000 files, 1 MiB per file, 4 MiB of SSPUR source and 20 MiB per repository (were 500 files, 512 KiB of source and 5 MiB), room for a library the size of Apache Commons Lang.
+- `sspur add money@1.2.3` and `sspur source money@1.2.3` mean exactly that version (`=1.2.3`); requirements such as `^1.2` and `~1.2.0` are unchanged.
+- Builds of path packages are reused: a module that many others depend on is built once per command instead of once per path to it, and a build with the same inputs comes from the cache. On a synthetic package of 2.5 MB in 200 modules, a cold `sspur check` went from 166 s to 13 s.
 
 ### Fixed
 - The registry's workflows verify sspur against the release's `SHA256SUMS`, keep their work files in the runner's temp directory, and the Publish page's username pattern is valid in Chrome and Firefox.

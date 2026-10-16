@@ -8,8 +8,8 @@
 
 | Field | Meaning |
 |---|---|
-| `name`, `version` | The package's manifest name and version |
-| `source` | Where it was resolved from: `path+DIR`, `git+URL` or `registry` |
+| `name`, `version` | The package's name and version: the full name of a scoped package (`acme/money`), and `acme/text:strings` for the module `strings` of the published package `acme/text` |
+| `source` | Where it was resolved from: `path+DIR`, `git+URL`, `registry`, or `module` for a module of a published package, which comes with that package |
 | `ref` | The rev the manifest asked for, or for a registry package its version requirement |
 | `rev` | For git and registry sources, the commit |
 | `hash` | The hash of the package's exports |

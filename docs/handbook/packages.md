@@ -44,4 +44,4 @@ A package is a directory with an `sspur.toml`. This page builds two: a library, 
 
 A package can also keep packages inside its own directory, `models = { path = "models" }`, to split a program into modules. Those follow their source: edit one and the next build uses the change, without `sspur deps update`. The web app that `sspur new web-app` creates is built this way.
 
-A dependency can also be a published package from the registry, `sspur add money@^1.2`, which the next chapter, [Publishing a package](publishing.md), covers. The manifest and lock formats are on the [sspur.toml](../config/sspur-toml.md) and [sspur.lock](../config/sspur-lock.md) pages.
+A dependency can also be a published package from the registry, `sspur add money@^1.2` or a scoped `sspur add acme/money`, which the next chapter, [Publishing a package](publishing.md), covers. A published package can contain module packages like these, path dependencies inside its own directory. The manifest and lock formats are on the [sspur.toml](../config/sspur-toml.md) and [sspur.lock](../config/sspur-lock.md) pages.

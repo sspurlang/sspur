@@ -17,7 +17,7 @@ Everything SSPUR does goes through one binary, `sspur`. This is its usage text, 
 | Work on a codebase | `sspur init [FILE]`, `sspur start [NAME...]`, `sspur q QUERY TARGET`, `sspur edit --test -e SRC`, `sspur log`, `sspur src` |
 | Agents and MCP | `sspur spec [--more|--full]`, `sspur start`, `sspur mcp [--dir PATH]` |
 | Editors | `sspur lsp` (the language server, see [Editor setup](../get-started/editors.md)) |
-| Packages | `sspur init --pkg NAME`, `sspur add NAME[@REQ]`, `sspur add PATH-OR-URL[@REV]`, `sspur deps fetch`, `sspur update [NAME...] [--force]` (also `sspur deps update`), `sspur deps tree` |
+| Packages | `sspur init --pkg NAME`, `sspur add NAME[@REQ] [--as KEY]`, `sspur add PATH-OR-URL[@REV]`, `sspur deps fetch`, `sspur update [NAME...] [--force]` (also `sspur deps update`), `sspur deps tree` |
 | The registry | `sspur search [QUERY]`, `sspur source NAME[@VERSION] [DIR]`, `sspur publish [--dry-run]`, `sspur yank NAME@VERSION`, `sspur api [--json]`, `sspur archive` (see [Publishing a package](../handbook/publishing.md)) |
 | Native code and C | `sspur native FILE`, `sspur run --O3`, `--pgo`, `--lto`, `sspur explain-opt FILE`, `sspur bind HEADER.h`, `sspur export-c FILE` |
 | Debug with lldb or gdb | `sspur debug FILE [ARGS]`, `sspur build --debug FILE`, `sspur run --debug FILE`, `sspur debug-init [--install]` (see [Debugging](debugging.md)) |
@@ -66,12 +66,12 @@ The MCP server has both as the tools `fill` and `suggest` ([MCP](../agent/mcp.md
 
 | Command | Does |
 |---|---|
-| `sspur add NAME[@REQ]` | Adds a published package to `[deps]` as `{ version = "REQ" }` (default `^` the newest version) and locks the newest version that meets it. A file or directory called NAME is added by path instead |
+| `sspur add NAME[@REQ]` | Adds a published package to `[deps]` as `{ version = "REQ" }` (default `^` the newest version) and locks the newest version that meets it. `NAME@1.2.3`, a whole version, writes `=1.2.3`: exactly that version. A scoped name, `sspur add acme/money`, is added under the key after the scope, `money = { package = "acme/money", version = "^1.0.0" }`; `--as KEY` chooses the key, and is needed when the key is taken. A file or directory called NAME is added by path instead |
 | `sspur update [NAME...] [--force]` | `sspur deps update`: moves the named packages (or all) to the newest versions their requirements allow, prints the export diff, and writes the lock only if your code still checks |
 | `sspur search [QUERY] [--json]` | Packages whose name, keywords or description match, with their newest version |
-| `sspur source NAME[@VERSION] [DIR]` | Downloads a version's source into DIR (default `NAME-VERSION`), verified against its snapshot SHA-256, without building or running it |
-| `sspur publish` | Runs the registry checks on the package at `HEAD` (its tests natively and in the interpreter too), prints the report, and when no blocking check fails, opens the publish request: with the GitHub CLI if it is signed in, else by printing the prefilled form URL. `--dry-run` only checks, `--ack net,fs` acknowledges new capability effects, `--ref TAG` names the tag (default the tag at `HEAD`), `--repo URL` the GitHub repository (default the `origin` remote), `--no-tests` skips the tests, `--no-gh` prints the URL, `--json` prints the report as JSON |
-| `sspur yank NAME@VERSION` | Opens a request to yank the version; `--undo` unyanks, `--deprecate MESSAGE` deprecates (with `--undo`, undeprecates), `--reason TEXT` explains |
+| `sspur source NAME[@VERSION] [DIR]` | Downloads a version's source into DIR (default `NAME-VERSION`, with `/` as `-` for a scoped name), verified against its snapshot SHA-256, without building or running it. `@1.2.3` is exactly that version, `@^1.2` the newest that matches |
+| `sspur publish` | Runs the registry checks on the package at `HEAD` and every module in it (their tests natively and in the interpreter too, side by side, in a copy of the commit), prints the report, and when no blocking check fails, opens the publish request: with the GitHub CLI if it is signed in, else by printing the prefilled form URL. `--dry-run` only checks, `--ack net,fs` acknowledges new capability effects, `--ref TAG` names the tag (default the tag at `HEAD`), `--repo URL` the GitHub repository (default the `origin` remote), `--no-tests` skips the tests, `--no-gh` prints the URL, `--json` prints the report as JSON |
+| `sspur yank NAME@VERSION` | Opens a request to yank the version (`acme/money@1.0.0` for a scoped name); `--undo` unyanks, `--deprecate MESSAGE` deprecates (with `--undo`, undeprecates), `--reason TEXT` explains |
 | `sspur api [--json] [--rev REV]` | The package's public API with lines and doc comments; `--json` gives the facts the checks read (diagnostics, formatting, definitions, effects, export hash, and in a git repository the files of `REV`) |
 | `sspur archive [--rev REV] [-o FILE]` | Builds the source snapshot of a commit (default `HEAD`) as the registry stores it, a deterministic tar, and prints its SHA-256 and size |
 

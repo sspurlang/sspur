@@ -1294,6 +1294,60 @@ pub fn build_published(root: &Path, m: &Manifest, lock: &Lock) -> Result<Pkg, St
     published_graph(root, m, lock).map(|(p, _)| p)
 }
 
+/// One program that runs the tests of the package at `root` and of all its modules: the root's
+/// source and the modules' tests, linked as dependents link the package, with every module's
+/// definitions after them. A package of many modules then compiles its tests once instead of
+/// once per module (each with its dependencies again). Also returns each module's link prefix
+/// and key, to name its tests in a report.
+pub fn package_tests(root: &Path, m: &Manifest, lock: &Lock) -> Result<(String, Vec<(String, String)>), String> {
+    let (_, all) = published_graph(root, m, lock)?;
+    let read = |p: &str| std::fs::read_to_string(root.join(p)).ok();
+    let (mods, _) = sspur_registry::facts::modules(&m.text, &read);
+    let closure = |keys: Vec<String>| -> BTreeMap<String, Arc<Pkg>> {
+        let mut out = BTreeMap::new();
+        let mut todo = keys;
+        while let Some(d) = todo.pop() {
+            if let Some(p) = all.get(&d).filter(|_| !out.contains_key(&d)) {
+                todo.extend(p.deps.keys().cloned());
+                out.insert(d, p.clone());
+            }
+        }
+        out
+    };
+    let shown = |e: Vec<Diag>| e.iter().map(|d| d.msg.clone()).collect::<Vec<_>>().join("; ");
+    let mut parts = Vec::new();
+    let mut names = Vec::new();
+    let root_src = read(&mods[0].src_path).ok_or_else(|| format!("cannot read {}", mods[0].src_path))?;
+    let alias = aliases(m, Some(&m.name));
+    let env = Env { name: Some(m.name.clone()), direct: m.deps.keys().cloned().collect(), alias: alias.clone(), all: closure(m.deps.keys().map(|d| alias.get(d).cloned().unwrap_or_else(|| d.clone())).collect()) };
+    let l = link(&root_src, &env).map_err(shown)?;
+    parts.extend(l.module.defs[..l.own].iter().filter(|d| !matches!(d, Def::Use(_))).map(printer::print_def));
+    for md in &mods[1..] {
+        let mm = Manifest::parse(&md.manifest)?;
+        let full = format!("{}:{}", m.name, md.key);
+        let src = read(&md.src_path).ok_or_else(|| format!("cannot read {}", md.src_path))?;
+        let alias = aliases(&mm, Some(&m.name));
+        let env = Env { name: Some(full.clone()), direct: mm.deps.keys().cloned().collect(), alias: alias.clone(), all: closure(mm.deps.keys().map(|d| alias.get(d).cloned().unwrap_or_else(|| d.clone())).collect()) };
+        let built = all.get(&full).ok_or_else(|| format!("internal: {full} was not built"))?;
+        let loaded = load(src, &env, false).map_err(shown)?;
+        let map: HashMap<String, String> = built.items.iter().map(|(n, it)| (n.clone(), it.mangled.clone())).collect();
+        let mut methods = loaded.check.user_methods.clone();
+        methods.extend(loaded.check.traits.sites.keys().filter(|k| matches!(k.2, 4 | 5)).map(|k| (k.0, k.1)));
+        let mut tests: Vec<Def> = loaded.own_defs().iter().filter(|d| matches!(d, Def::Test(_))).cloned().collect();
+        rename_defs(&mut tests, &map, &methods);
+        let ln = link_name(&full);
+        for t in &mut tests {
+            if let Def::Test(t) = t {
+                t.name = link::mangle(&ln, &t.name);
+            }
+        }
+        parts.extend(tests.iter().map(printer::print_def));
+        names.push((ln, md.key.clone()));
+    }
+    let prelude = Env { all, ..Env::default() }.prelude();
+    Ok((format!("{}\n\n{prelude}\n", parts.join("\n\n")), names))
+}
+
 /// `build_published`, with every package it was built with by full name: its modules
 /// (`name:module`) and its registry dependencies, the environment dependents build it in.
 pub fn published_graph(root: &Path, m: &Manifest, lock: &Lock) -> Result<(Pkg, BTreeMap<String, Arc<Pkg>>), String> {

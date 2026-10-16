@@ -230,6 +230,7 @@ Published packages come from the registry, [sspur-packages](https://utkarshavard
 ```
 sspur search money
 sspur add money@^1.2                        # sspur update moves to the newest matching version
+sspur add acme/money --as acme_money        # a scoped name: acme is the GitHub owner that publishes it
 sspur publish                               # the registry's checks, then the request on GitHub
 ```
 

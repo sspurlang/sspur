@@ -251,6 +251,34 @@ pub fn all_tests(root: &Path, m: &Manifest, at_head: bool) -> J {
     } else {
         root.to_path_buf()
     };
+    // One program for every module's tests, when the package builds; else each module alone,
+    // so a failure shows where it is.
+    if let Ok((program, names)) = pkg::package_tests(&base, m, &pkg::Lock::read(&base).unwrap_or_default()) {
+        let dir = sspur_store::unique_tmp(&sspur_store::cache::cache_root().join("tmp").join("package-tests"));
+        if std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(dir.join("tests.ssp"), &program)).is_ok() {
+            let rename = |r: J| -> J {
+                let mut r = r;
+                if let Some(d) = r["detail"].as_str() {
+                    let mut d = d.to_string();
+                    for (ln, key) in &names {
+                        d = d.replace(&format!("{ln}__"), &format!("{key}.")).replace(&format!("{}{}__", ln[..1].to_ascii_uppercase(), &ln[1..]), &format!("{key}."));
+                    }
+                    r["detail"] = json!(d);
+                }
+                r
+            };
+            let (native, interp) = std::thread::scope(|sc| {
+                let n = sc.spawn(|| run_tests(&dir, "tests.ssp", false));
+                let i = run_tests(&dir, "tests.ssp", true);
+                (n.join().unwrap_or(J::Null), i)
+            });
+            let _ = std::fs::remove_dir_all(&dir);
+            if let Some(t) = tmp {
+                let _ = std::fs::remove_dir_all(t);
+            }
+            return json!({"native": rename(native), "interp": rename(interp)});
+        }
+    }
     let units: Vec<(String, PathBuf, String)> = mods.iter().map(|md| {
         let file = md.src_path.strip_prefix(&format!("{}/", md.dir)).filter(|_| !md.dir.is_empty()).unwrap_or(&md.src_path).to_string();
         (md.dir.clone(), base.join(&md.dir), if md.dir.is_empty() { src.clone() } else { file })
