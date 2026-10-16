@@ -516,8 +516,11 @@ pub fn manifest(text: &str) -> J {
                         TVal::Table(t) => t.get("package").and_then(TVal::str).unwrap_or(k).to_string(),
                         _ => k.clone(),
                     };
-                    let public = matches!(v, TVal::Table(t) if t.get("public").and_then(TVal::str) == Some("true"));
-                    deps.push(json!({"name": k, "kind": kind, "req": req, "package": package, "public": public}));
+                    let mut d = json!({"name": k, "kind": kind, "req": req, "package": package});
+                    if matches!(v, TVal::Table(t) if t.get("public").and_then(TVal::str) == Some("true")) {
+                        d["public"] = json!(true);
+                    }
+                    deps.push(d);
                 }
                 _ => {}
             }
@@ -607,6 +610,8 @@ mod tests {
         assert!(m["keys"].as_array().unwrap().contains(&json!("package.build")));
         assert_eq!(m["deps"][1], json!({"name": "text", "kind": "registry", "req": "^0.2", "package": "text"}));
         assert_eq!(m["deps"][0]["kind"], "path");
+        let open = manifest("[package]\nname = \"big\"\n\n[deps]\nmodels = { path = \"models\", public = true }\n");
+        assert_eq!(open["deps"][0], json!({"name": "models", "kind": "path", "req": "models", "package": "models", "public": true}));
         let f = file_info("a.bin", &[0x7f, b'E', b'L', b'F', 0, 1], "100644");
         assert_eq!(f["binary"], true);
         assert_eq!(f["head"], "7f454c460001");
