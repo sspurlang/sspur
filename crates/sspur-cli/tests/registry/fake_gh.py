@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import zlib
 
 D = os.environ["FAKE_GH_DIR"]
 os.makedirs(D, exist_ok=True)
@@ -52,6 +53,19 @@ def body_of(args):
         return f.read()
 
 
+def user_id(login):
+    """A stable id for a login, as GitHub gives every account one."""
+    for pair in os.environ.get("FAKE_GH_IDS", "").split(","):
+        if pair.startswith(login + "="):
+            return int(pair.split("=", 1)[1])
+    return 1000 + zlib.crc32(login.encode()) % 9000000
+
+
+def listed(var, org, user):
+    """Whether `org:user` is in the comma separated list in the environment variable `var`."""
+    return f"{org.lower()}:{user.lower()}" in [x.strip().lower() for x in os.environ.get(var, "").split(",")]
+
+
 def git(*a, cwd=None):
     r = subprocess.run(["git", *a], cwd=cwd, capture_output=True, text=True)
     if r.returncode != 0:
@@ -79,7 +93,24 @@ def main(argv):
             if not i:
                 sys.stderr.write("HTTP 404\n")
                 return 1
-            print(json.dumps({"number": i["number"], "title": i["title"], "body": i["body"], "user": {"login": i["user"]}, "state": i["state"]}))
+            print(json.dumps({"number": i["number"], "title": i["title"], "body": i["body"], "user": {"login": i["user"], "id": user_id(i["user"])}, "state": i["state"]}))
+            return 0
+        # Accounts: the logins in FAKE_GH_ORGS are organizations, every other login a user.
+        m = re.match(r"users/([^/]+)$", path)
+        if m:
+            orgs = [x.strip().lower() for x in os.environ.get("FAKE_GH_ORGS", "").split(",")]
+            kind = "Organization" if m.group(1).lower() in orgs else "User"
+            print(kind if opt(argv, "--jq") == ".type" else json.dumps({"login": m.group(1), "id": user_id(m.group(1)), "type": kind}))
+            return 0
+        # Public memberships (FAKE_GH_PUBLIC_MEMBERS, org:user pairs) answer 204 to anyone;
+        # all memberships (FAKE_GH_MEMBERS adds the private ones) only to a member asking.
+        m = re.match(r"orgs/([^/]+)/(public_members|members)/([^/]+)$", path)
+        if m:
+            org, which, user = m.groups()
+            ok = listed("FAKE_GH_PUBLIC_MEMBERS", org, user) or (which == "members" and listed("FAKE_GH_MEMBERS", org, user))
+            if not ok:
+                sys.stderr.write("HTTP 404\n")
+                return 1
             return 0
         m = re.match(r"repos/[^/]+/[^/]+/collaborators/([^/]+)/permission$", path)
         if m:
@@ -139,6 +170,9 @@ def main(argv):
         print(s["prs"][argv[2]]["body"])
         return 0
     if cmd == ["pr", "merge"]:
+        # As GitHub does: the squashed commit's message is the subject and body given, its author
+        # the account of --author-email (else the pull request's), and --match-head-commit must
+        # be the head. FAKE_GH_REFUSE_AUTHOR_EMAIL=1 refuses an author email, as GitHub may.
         p = s["prs"][argv[2]]
         bare = os.environ["FAKE_GH_INDEX"]
         head = git("rev-parse", f"refs/heads/{p['head']}", cwd=bare)
@@ -146,14 +180,26 @@ def main(argv):
         if not st or st[-1].get("state") != "success":
             sys.stderr.write("fake gh: the required status check index-guard has not passed\n")
             return 1
+        want = opt(argv, "--match-head-commit")
+        if want and want != head:
+            sys.stderr.write(f"fake gh: the head is {head}, not {want}\n")
+            return 1
+        email = opt(argv, "--author-email")
+        if email and os.environ.get("FAKE_GH_REFUSE_AUTHOR_EMAIL") == "1":
+            sys.stderr.write("fake gh: GraphQL: the author email can't be used\n")
+            return 1
+        subject = opt(argv, "--subject", f"{p['title']} (#{p['number']})")
+        body = body_of(argv) if (opt(argv, "--body-file") or opt(argv, "--body")) else ""
         with tempfile.TemporaryDirectory() as t:
             git("clone", "-q", bare, t)
             git("checkout", "-q", "main", cwd=t)
             git("merge", "-q", "--squash", f"origin/{p['head']}", cwd=t)
-            git("-c", "user.name=github-actions[bot]", "-c", "user.email=bot@example.com", "commit", "-q", "-m", f"{p['title']} (#{p['number']})", cwd=t)
+            who = ["--author", f"{email.split('@')[0].split('+')[-1]} <{email}>"] if email else []
+            git("-c", "user.name=github-actions[bot]", "-c", "user.email=41898282+github-actions[bot]@users.noreply.github.com", "commit", "-q", *who, "-m", subject + ("\n\n" + body.strip() if body.strip() else ""), cwd=t)
             git("push", "-q", "origin", "main", cwd=t)
             git("push", "-q", "origin", "--delete", p["head"], cwd=t)
         p["state"] = "merged"
+        p["merge"] = {"author_email": email, "subject": subject, "body": body}
         save(s)
         return 0
     if cmd == ["release", "view"]:

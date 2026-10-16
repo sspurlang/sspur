@@ -52,12 +52,13 @@ fn check_in(src: &str, env: &Env) -> (Vec<sspur_check::Diag>, BTreeMap<String, S
     match pkg::load(src.to_string(), env, false) {
         Ok(l) => {
             let mut diags: Vec<sspur_check::Diag> = l.check.diags.iter().filter(|d| own(d)).cloned().collect();
+            let hashes = l.hashes.clone();
             if !l.check.has_errors()
                 && let Err(d) = l.executable()
             {
                 diags.extend(d);
             }
-            (diags, l.hashes.clone())
+            (diags, hashes)
         }
         Err(d) => (d, BTreeMap::new()),
     }
@@ -318,6 +319,24 @@ fn gh_login(g: &str) -> Option<String> {
     (o.status.success() && !s.is_empty()).then_some(s)
 }
 
+fn gh_ok(g: &str, path: &str) -> bool {
+    Command::new(g).args(["api", path]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s| s.success())
+}
+
+/// For a scoped name: who owns the repository and, for an organization, whether `login` is a
+/// public member, or a member only members can see (`gh` is signed in as `login`, so it can).
+fn owner_info(g: &str, owner: &str, login: &str) -> J {
+    let o = Command::new(g).args(["api", &format!("users/{owner}"), "--jq", ".type"]).stdin(Stdio::null()).output().ok();
+    let kind = o.filter(|o| o.status.success()).map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).filter(|k| k == "User" || k == "Organization").unwrap_or_default();
+    let (member, private) = if kind == "Organization" && !login.is_empty() {
+        let public = gh_ok(g, &format!("orgs/{owner}/public_members/{login}"));
+        (json!(public), json!(!public && gh_ok(g, &format!("orgs/{owner}/members/{login}"))))
+    } else {
+        (J::Null, J::Null)
+    };
+    json!({"login": owner, "kind": kind, "member": member, "private_member": private})
+}
+
 fn urlencode(s: &str) -> String {
     s.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect()
 }
@@ -436,10 +455,15 @@ pub fn publish(o: PublishOpts) -> ExitCode {
     };
     let gh_cmd = if o.no_gh { None } else { gh() };
     let author = gh_cmd.as_deref().and_then(gh_login).unwrap_or_default();
+    let owner = repository.trim_start_matches("https://github.com/").split('/').next().unwrap_or("").to_lowercase();
+    let owner_json = match &gh_cmd {
+        Some(g) if m.name.contains('/') && !owner.is_empty() => owner_info(g, &owner, &author),
+        _ => J::Null,
+    };
     let effects: Vec<String> = o.ack.map(|a| a.split(',').map(|x| x.trim().to_lowercase()).filter(|x| !x.is_empty()).collect()).unwrap_or_default();
     let request = json!({"kind": "publish", "name": m.name, "repository": repository, "ref": git_ref, "version": m.version, "effects": effects, "author": author, "issue": 0, "commit": commit, "tag": tagged, "action": "", "reason": ""});
     let files = f.get("files").cloned().unwrap_or(json!([]));
-    let input = json!({"cmd": "check", "facts": f, "files": files, "request": request, "previous": previous, "names": names, "tests": tests, "env": "cli"});
+    let input = json!({"cmd": "check", "facts": f, "files": files, "request": request, "previous": previous, "names": names, "tests": tests, "env": "cli", "owner": owner_json});
     let report = match run_checker(&input) {
         Ok(r) => r,
         Err(e) => return fail(e),
@@ -568,7 +592,7 @@ pub fn source(arg: Option<&String>, dir: Option<&String>) -> ExitCode {
         Ok(v) => v,
         Err(e) => return fail(e),
     };
-    let out = PathBuf::from(dir.cloned().unwrap_or_else(|| format!("{name}-{}", v.version)));
+    let out = PathBuf::from(dir.cloned().unwrap_or_else(|| format!("{}-{}", name.replace('/', "-"), v.version)));
     if out.exists() && std::fs::read_dir(&out).map(|mut d| d.next().is_some()).unwrap_or(true) {
         return fail(format!("{} exists and is not empty", out.display()));
     }

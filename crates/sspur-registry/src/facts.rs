@@ -377,7 +377,7 @@ pub fn facts(path: &str, src: &str, mode: Check) -> J {
 /// own `sspur.toml` (as the web-app template's `models = { path = "models" }`). The package's
 /// root is the module with the key "" and the directory "".
 #[derive(Clone, Debug, PartialEq)]
-pub struct Module {
+pub struct PkgModule {
     /// The dependency key it is used by (its name in its sspur.toml).
     pub key: String,
     /// Its directory relative to the repository root, without a trailing slash.
@@ -417,9 +417,9 @@ pub fn module_src(dir: &str, manifest: &J, exists: &dyn Fn(&str) -> bool) -> Str
 /// The package's modules, root first and then in the order they are reached, read with
 /// `read(path)` (paths relative to the repository root), and the errors of path dependencies
 /// that are not modules: outside the package's directory, or without a sspur.toml.
-pub fn modules(root_manifest: &str, read: &dyn Fn(&str) -> Option<String>) -> (Vec<Module>, Vec<J>) {
+pub fn modules(root_manifest: &str, read: &dyn Fn(&str) -> Option<String>) -> (Vec<PkgModule>, Vec<J>) {
     let exists = |p: &str| read(p).is_some();
-    let root = Module { key: String::new(), dir: String::new(), manifest: root_manifest.to_string(), src_path: module_src("", &manifest(root_manifest), &exists) };
+    let root = PkgModule { key: String::new(), dir: String::new(), manifest: root_manifest.to_string(), src_path: module_src("", &manifest(root_manifest), &exists) };
     let mut out = vec![root];
     let mut errors = Vec::new();
     let mut i = 0;
@@ -445,7 +445,7 @@ pub fn modules(root_manifest: &str, read: &dyn Fn(&str) -> Option<String>) -> (V
                         continue;
                     }
                     let src_path = module_src(&target, &mm, &exists);
-                    out.push(Module { key: key.to_string(), dir: target, manifest: text, src_path });
+                    out.push(PkgModule { key: key.to_string(), dir: target, manifest: text, src_path });
                 }
                 None => errors.push(err(format!("dependency {key} = {{ path = \"{path}\" }}: {target} has no sspur.toml"))),
             }

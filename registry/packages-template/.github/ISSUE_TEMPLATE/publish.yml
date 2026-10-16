@@ -13,15 +13,15 @@ body:
     id: name
     attributes:
       label: Package name
-      description: The name in sspur.toml.
-      placeholder: money
+      description: The name in sspur.toml, either NAME or SCOPE/NAME. A scope is the GitHub user or organization that owns the repository, in lowercase.
+      placeholder: money or acme/money
     validations:
       required: true
   - type: input
     id: repository
     attributes:
       label: Repository
-      description: The public GitHub repository with sspur.toml at its top. The first version must be requested by its owner.
+      description: The public GitHub repository with sspur.toml at its top. The first version must be requested by its owner (for an organization's repository under its scope, by a public member).
       placeholder: https://github.com/OWNER/REPO
     validations:
       required: true

@@ -42,7 +42,7 @@ output() {
 load_vars() {
   while IFS='=' read -r k v; do
     case "$k" in
-      ok|kind|name|version|commit|issue|slug|ref|passed|blocking_failed|failed) printf -v "v_$k" '%s' "$v" ;;
+      ok|kind|name|version|commit|issue|slug|ref|file|tagname|author|author_id|owner|passed|blocking_failed|failed) printf -v "v_$k" '%s' "$v" ;;
     esac
   done < "$1"
 }
@@ -69,7 +69,25 @@ cmd_request() {
   fi
   printf '{"cmd":"parse-request","issue":%s,"commit":"%s","tag":%s}' "$(cat "$WORK/issue.json")" "$commit" "$tag" | reg > "$WORK/parsed.json"
   printf '{"cmd":"vars","parsed":%s}' "$(cat "$WORK/parsed.json")" | reg > "$WORK/vars.txt"
+  owner_info
   output "$WORK/vars.txt"
+}
+
+# For a scoped name (ADR 0039): who owns the repository, and whether the requester is a public
+# member when it is an organization. Public memberships are all a token-less check can see.
+owner_info() {
+  load_vars "$WORK/vars.txt"
+  rm -f "$WORK/owner.json"
+  [ "$v_ok" = true ] && [ "$v_kind" = publish ] && [ -n "$v_owner" ] || return 0
+  case "$v_name" in */*) ;; *) return 0 ;; esac
+  local kind member=null login
+  login="$v_author"
+  kind="$("$GH" api "users/$v_owner" --jq .type 2>/dev/null || true)"
+  case "$kind" in User|Organization) ;; *) kind="" ;; esac
+  if [ "$kind" = Organization ] && [ -n "$login" ]; then
+    if "$GH" api "orgs/$v_owner/public_members/$login" > /dev/null 2>&1; then member=true; else member=false; fi
+  fi
+  printf '{"login":"%s","kind":"%s","member":%s,"private_member":null}' "$v_owner" "$kind" "$member" > "$WORK/owner.json"
 }
 
 clone_package() {
@@ -96,9 +114,9 @@ cmd_check() {
   rm -f "$WORK/snapshot.tar" "$WORK/snapshot.json"
   if (cd "$WORK/pkg" && "$SSPUR" archive --rev "$v_commit" -o "$WORK/snapshot.tar") > "$WORK/snapshot.txt" 2>/dev/null; then
     read -r sha size < "$WORK/snapshot.txt"
-    printf '{"url":"%s/%s-%s/%s-%s.tar","sha256":"%s","size":%s}' "$SNAPSHOT_BASE" "$v_name" "$v_version" "$v_name" "$v_version" "$sha" "$size" > "$WORK/snapshot.json"
+    printf '{"url":"%s/%s-%s/%s-%s.tar","sha256":"%s","size":%s}' "$SNAPSHOT_BASE" "$v_tagname" "$v_version" "$v_tagname" "$v_version" "$sha" "$size" > "$WORK/snapshot.json"
   fi
-  local prev="$INDEX_DIR/packages/${v_name:0:2}/$v_name.json"
+  local prev="$INDEX_DIR/$v_file"
   if [ -f "$prev" ]; then cp "$prev" "$WORK/previous.json"; else rm -f "$WORK/previous.json"; fi
   if [ -f "$INDEX_DIR/index.json" ]; then cp "$INDEX_DIR/index.json" "$WORK/summary.json"; else rm -f "$WORK/summary.json"; fi
   echo "facts and snapshot of $v_name $v_version at $v_commit are in $WORK"
@@ -136,8 +154,15 @@ cmd_write() {
     return 0
   fi
   local name="$v_name" version="$v_version" kind="$v_kind"
-  local file="packages/${name:0:2}/$name.json"
-  local branch="$kind/$name-$version"
+  local file="$v_file" slugname="$v_tagname"
+  local branch="$kind/$slugname-$version"
+  # The index commit is authored by the requester, so it counts as their contribution; the bot
+  # commits it, and the request is the issue they opened.
+  local author=() noreply=""
+  if [ -n "$v_author" ] && [ "${v_author_id:-0}" != 0 ]; then
+    noreply="$v_author_id+$v_author@users.noreply.github.com"
+    author=(--author "$v_author <$noreply>")
+  fi
   local now="${NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
   cd "$INDEX_DIR"
   git fetch -q origin main
@@ -154,8 +179,8 @@ cmd_write() {
     fi
     [ -s "$WORK/facts.json" ] || { echo "no facts from the check job" >&2; return 1; }
     # The index as it is now, not as the check job saw it: another version may have merged since.
-    printf '{"cmd":"check","facts":%s,"parsed":%s,"previous":%s,"summary":%s,"tests":%s,"env":"ci"}' \
-      "$(cat "$WORK/facts.json")" "$(cat "$WORK/parsed.json")" "$(json_or_null "$old")" "$(json_or_null index.json)" "$(json_or_null "$WORK/tests.json")" | reg > "$WORK/report.json"
+    printf '{"cmd":"check","facts":%s,"parsed":%s,"previous":%s,"summary":%s,"tests":%s,"owner":%s,"env":"ci"}' \
+      "$(cat "$WORK/facts.json")" "$(cat "$WORK/parsed.json")" "$(json_or_null "$old")" "$(json_or_null index.json)" "$(json_or_null "$WORK/tests.json")" "$(json_or_null "$WORK/owner.json")" | reg > "$WORK/report.json"
     if grep -q '^{"error"' "$WORK/report.json"; then cat "$WORK/report.json" >&2; return 1; fi
     printf '{"cmd":"vars","report":%s}' "$(cat "$WORK/report.json")" | reg > "$WORK/report-vars.txt"
     load_vars "$WORK/report-vars.txt"
@@ -180,7 +205,7 @@ cmd_write() {
   grep -q '"ok":true' "$WORK/guard.json" || mergeable=false
   git add -A packages index.json
   if ! git diff --cached --quiet; then
-    git -c user.name="$BOT_NAME" -c user.email="$BOT_EMAIL" commit -q -m "$kind: $name $version (#$issue)"
+    git -c user.name="$BOT_NAME" -c user.email="$BOT_EMAIL" commit -q ${author[@]+"${author[@]}"} -m "$kind: $name $version (#$issue)"
   fi
   # Only the package's own file and index.json may change in an automatic pull request.
   local paths
@@ -250,7 +275,7 @@ cmd_write() {
   esac
   if [ "$mergeable" = true ]; then
     if [ "$kind" = publish ] && [ -s "$WORK/snapshot.tar" ]; then
-      local tag="$name-$version" asset="$WORK/$name-$version.tar"
+      local tag="$slugname-$version" asset="$WORK/$slugname-$version.tar"
       cp "$WORK/snapshot.tar" "$asset"
       if "$GH" release view "$tag" --repo "$REPO" > /dev/null 2>&1; then
         "$GH" release upload "$tag" "$asset" --repo "$REPO" --clobber > /dev/null
@@ -258,9 +283,22 @@ cmd_write() {
         "$GH" release create "$tag" "$asset" --repo "$REPO" --title "$name $version" --notes "Source snapshot of $name $version (commit $v_commit, sha256 $(sha256_of "$asset")). Published by request #$issue." > /dev/null
       fi
     fi
-    local try
+    # The squashed commit on main keeps the requester as its author (--author-email) and
+    # co-author (the trailer), and merges only the commit this run pushed.
+    printf 'Request #%s.\n' "$issue" > "$WORK/squash.md"
+    local by=()
+    if [ -n "$noreply" ]; then
+      printf '\nCo-authored-by: %s <%s>\n' "$v_author" "$noreply" >> "$WORK/squash.md"
+      by=(--author-email "$noreply")
+    fi
+    local try merge=("$GH" pr merge "$pr" --repo "$REPO" --squash --delete-branch --match-head-commit "$head_sha" --subject "$title (#$pr)" --body-file "$WORK/squash.md")
     for try in 1 2 3 4 5; do
-      if "$GH" pr merge "$pr" --repo "$REPO" --squash --delete-branch > /dev/null; then break; fi
+      if "${merge[@]}" ${by[@]+"${by[@]}"} > /dev/null; then break; fi
+      # GitHub may refuse an author email the bot can't use; the trailer still credits them.
+      if [ "${#by[@]}" -gt 0 ] && "${merge[@]}" > /dev/null; then
+        echo "note: merged #$pr without --author-email; the Co-authored-by trailer credits $v_author"
+        break
+      fi
       [ "$try" = 5 ] && { echo "cannot merge #$pr" >&2; return 1; }
       sleep "${RETRY_SLEEP:-6}"
     done
@@ -296,7 +334,7 @@ cmd_sweep() {
     load_vars "$WORK/sweep-$n/vars.txt"
     [ -n "$v_commit" ] || continue
     local pr body
-    pr="$(pr_of "publish/$v_name-$v_version")"
+    pr="$(pr_of "publish/$v_tagname-$v_version")"
     body=""
     [ -n "$pr" ] && body="$("$GH" pr view "$pr" --repo "$REPO" --json body --jq .body)"
     case "$body" in
