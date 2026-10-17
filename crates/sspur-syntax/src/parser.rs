@@ -137,7 +137,7 @@ impl Parser {
             Tok::Ident(s) => format!("'{s}'"),
             Tok::Int(n) => format!("'{n}'"),
             Tok::Float(n) => format!("'{n}'"),
-            Tok::Str(_) => "string".into(),
+            Tok::Str(_) | Tok::Interp(_) => "string".into(),
             Tok::Hash(h) => format!("'#{h}'"),
             Tok::Kw(k) => format!("'{k}'"),
             Tok::Sym(s) => format!("'{s}'"),
@@ -422,7 +422,7 @@ impl Parser {
             let es = self.span();
             self.bump();
             let method = if self.eat_kw("post") { "post".to_string() } else { self.expect_ident()? };
-            let Tok::Str(path) = self.peek().clone() else {
+            let Some(path) = raw_text(self.peek()) else {
                 return self.err("E_PARSE_EP", format!("expected a path string after 'ep {method}', found {}", self.describe()));
             };
             self.bump();
@@ -797,7 +797,7 @@ impl Parser {
         for key in ["from", "as"] {
             if matches!(self.peek(), Tok::Ident(w) if w == key) {
                 self.bump();
-                let Tok::Str(v) = self.peek().clone() else { return self.err("E_PARSE_EXTERN", format!("expected a string after '{key}'")) };
+                let Some(v) = raw_text(self.peek()) else { return self.err("E_PARSE_EXTERN", format!("expected a string after '{key}'")) };
                 self.bump();
                 if key == "from" { ext.lib = Some(v) } else { ext.symbol = v }
             }
@@ -869,15 +869,14 @@ impl Parser {
         let mut trusted = None;
         let mut interrupt = None;
         loop {
-            let unsafe_ahead = |p: &Self, i: usize| matches!(p.peek_at(i), Tok::Ident(u) if u == "unsafe") && matches!(p.peek_at(i + 1), Tok::Str(_));
+            let unsafe_ahead = |p: &Self, i: usize| matches!(p.peek_at(i), Tok::Ident(u) if u == "unsafe") && matches!(p.peek_at(i + 1), Tok::Str(_) | Tok::Interp(_));
             let irq_ahead = |p: &Self, i: usize| matches!(p.peek_at(i), Tok::Ident(u) if u == "interrupt") && matches!(p.peek_at(i + 1), Tok::Int(_) | Tok::Ident(_));
             if self.newline_then(|t| matches!(t, Tok::Ident(w) if matches!(w.as_str(), "pre" | "post" | "ex"))).is_some() || (matches!(self.peek(), Tok::Newline(_)) && (unsafe_ahead(self, 1) || irq_ahead(self, 1))) {
                 self.bump();
             }
             if unsafe_ahead(self, 0) {
                 self.bump();
-                let Tok::Str(r) = self.bump().tok else { unreachable!() };
-                trusted = Some(r);
+                trusted = raw_text(&self.bump().tok);
             } else if irq_ahead(self, 0) {
                 self.bump();
                 interrupt = Some(match self.bump().tok {
@@ -1642,6 +1641,7 @@ impl Parser {
                 self.bump();
                 Ok(Pat::Str(s))
             }
+            Tok::Interp(_) => self.err("E_PARSE_PATTERN", "a string pattern can't interpolate; write '\\{' for a literal brace"),
             Tok::Kw("true") => {
                 self.bump();
                 Ok(Pat::Bool(true))
@@ -1875,9 +1875,13 @@ impl Parser {
 
     fn asm(&mut self, start: Span) -> PResult<Expr> {
         let tspan = self.span();
-        let Tok::Str(raw) = self.bump().tok else { unreachable!() };
+        let parts = match self.bump().tok {
+            Tok::Interp(p) => p,
+            Tok::Str(s) => vec![StrPart::Lit(s)],
+            _ => unreachable!(),
+        };
         let mut tmpl = String::new();
-        for part in self.interp(&raw, tspan)? {
+        for part in parts {
             match part {
                 StrPart::Lit(s) => tmpl.push_str(&s),
                 StrPart::Expr(Expr { kind: ExprKind::Name(n), .. }) => tmpl.push_str(&format!("{{{n}}}")),
@@ -1941,7 +1945,11 @@ impl Parser {
             }
             Tok::Str(s) => {
                 self.bump();
-                ExprKind::Str(self.interp(&s, start)?)
+                ExprKind::Str(vec![StrPart::Lit(s)])
+            }
+            Tok::Interp(parts) => {
+                self.bump();
+                ExprKind::Str(parts)
             }
             Tok::Kw("true") => {
                 self.bump();
@@ -1971,7 +1979,7 @@ impl Parser {
                 ExprKind::Par(self.args()?)
             }
             Tok::Kw("if" | "match" | "catch" | "handle" | "do" | "raise" | "return") => return self.expr(),
-            Tok::Ident(name) if name == "asm" && matches!(self.peek_at(1), Tok::Str(_)) => {
+            Tok::Ident(name) if name == "asm" && matches!(self.peek_at(1), Tok::Str(_) | Tok::Interp(_)) => {
                 self.bump();
                 return self.asm(start);
             }
@@ -2050,87 +2058,19 @@ impl Parser {
         self.expect_sym("}")?;
         Ok(out)
     }
-
-    fn interp(&self, s: &str, span: Span) -> PResult<Vec<StrPart>> {
-        let mut parts = Vec::new();
-        let mut lit = String::new();
-        let mut rest = s;
-        while let Some(i) = rest.find(['{', '\\']) {
-            lit.push_str(&rest[..i]);
-            if rest[i..].starts_with("\\{") {
-                lit.push('{');
-                rest = &rest[i + 2..];
-                continue;
-            }
-            if rest.as_bytes()[i] == b'\\' {
-                lit.push('\\');
-                rest = &rest[i + 1..];
-                continue;
-            }
-            let mut depth = 0;
-            let close = rest[i..].char_indices().find_map(|(j, c)| {
-                match c {
-                    '{' => depth += 1,
-                    '}' => {
-                        depth -= 1;
-                        if depth == 0 {
-                            return Some(j);
-                        }
-                    }
-                    _ => {}
-                }
-                None
-            });
-            let Some(close) = close else {
-                return Err(SyntaxError::new("E_LEX_STRING", "unclosed '{' in string".into(), span));
-            };
-            let inner = &rest[i + 1..i + close];
-            let parsed = if inner.trim().is_empty() { None } else { parse_expr(inner).ok() };
-            let Some(mut e) = parsed else {
-                // Literal braces: the lexer kept their text raw, so their escapes apply here.
-                lit.push_str(&unescape(&rest[i..=i + close]));
-                rest = &rest[i + close + 1..];
-                continue;
-            };
-            let base = span.start + 2 + (s.len() - rest.len() + i) as u32;
-            crate::visit::walk_expr_mut(&mut e, &mut |x| {
-                x.span = Span { start: x.span.start + base, end: x.span.end + base };
-            });
-            if !lit.is_empty() {
-                parts.push(StrPart::Lit(std::mem::take(&mut lit)));
-            }
-            parts.push(StrPart::Expr(e));
-            rest = &rest[i + close + 1..];
-        }
-        lit.push_str(rest);
-        if !lit.is_empty() || parts.is_empty() {
-            parts.push(StrPart::Lit(lit));
-        }
-        Ok(parts)
-    }
 }
 
-fn unescape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut cs = s.chars();
-    while let Some(c) = cs.next() {
-        if c != '\\' {
-            out.push(c);
-            continue;
-        }
-        match cs.next() {
-            Some('n') => out.push('\n'),
-            Some('t') => out.push('\t'),
-            Some('r') => out.push('\r'),
-            Some(c @ ('"' | '\\' | '{')) => out.push(c),
-            Some(c) => {
-                out.push('\\');
-                out.push(c);
-            }
-            None => out.push('\\'),
-        }
+/// The text of a string token as written between its quotes, interpolations included: what a
+/// path or a symbol name means.
+fn raw_text(t: &Tok) -> Option<String> {
+    match t {
+        Tok::Str(s) => Some(s.clone()),
+        Tok::Interp(parts) => Some(parts.iter().map(|p| match p {
+            StrPart::Lit(s) => s.clone(),
+            StrPart::Expr(e) => format!("{{{}}}", crate::printer::expr(e, 0)),
+        }).collect()),
+        _ => None,
     }
-    out
 }
 
 fn pat_binds(p: &Pat, out: &mut Vec<String>) {

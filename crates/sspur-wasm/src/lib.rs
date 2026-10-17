@@ -117,8 +117,8 @@ pub fn test(src: &str) -> String {
 /// The source as `sspur fmt` prints it.
 #[wasm_bindgen]
 pub fn fmt(src: &str) -> String {
-    match sspur_syntax::parse(src) {
-        Ok(m) => json!({ "ok": true, "text": sspur_syntax::format_module(&m) }).to_string(),
+    match sspur_syntax::format_source(src) {
+        Ok(text) => json!({ "ok": true, "text": text }).to_string(),
         Err(e) => json!({ "ok": false, "diags": ide::diags_json(src, &[sspur_check::syntax_diag_in(src, &e)], None) }).to_string(),
     }
 }

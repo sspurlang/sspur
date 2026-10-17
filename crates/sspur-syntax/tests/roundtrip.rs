@@ -274,3 +274,22 @@ fn record_shorthand_is_kept() {
     assert!(print_module(&parse("fn h(x: Int) -> R\n= {x, y: x}\n").unwrap()).contains("= {x, y: x}\n"));
     roundtrip(src);
 }
+
+/// A `match` or `catch` that ends an arm's body, other than the last, prints in a block, so its
+/// arms don't take the ones below (corpus program t46).
+#[test]
+fn nested_arms_print_so_they_read_back_the_same() {
+    for src in [
+        "fn f(x: Int, y: Int) -> Int\n= match x\n  | 1 => (match y\n    | 0 => 1\n    | _ => 2)\n  | _ => 3\n",
+        "fn f(x: Int) -> Int ! fail[E]\n= match x\n  | 1 =>\n    if x < 0 then 0\n    else catch g(x)\n      | _ => 5\n  | _ => 2\n",
+        "fn f(x: Int) -> Int\n= match x\n  | 1 => y => match y\n    | 0 => 1\n    | _ => 2\n  | _ => 3\n",
+    ] {
+        let mut a = parse(src).unwrap();
+        strip_spans(&mut a);
+        let printed = print_module(&a);
+        let mut b = parse(&printed).unwrap_or_else(|e| panic!("{printed}\n{e:?}"));
+        strip_spans(&mut b);
+        assert_eq!(a, b, "{printed}");
+        assert_eq!(print_module(&b), printed);
+    }
+}
