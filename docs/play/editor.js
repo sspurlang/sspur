@@ -699,6 +699,10 @@ export function createEditor({ parent, doc, dark, api, onChange, commands, width
         effects: EditorView.scrollIntoView(head, { y: "start", yMargin: y }),
         annotations: [Transaction.userEvent.of("format"), isolateHistory.of("full")],
       });
+      // Broken lines are shorter: start from the left edge again, scrolling sideways only if the
+      // cursor itself is off to the right.
+      view.scrollDOM.scrollLeft = 0;
+      view.dispatch({ effects: EditorView.scrollIntoView(head, { y: "nearest", x: "nearest" }) });
       return true;
     },
     goto(pos) {
