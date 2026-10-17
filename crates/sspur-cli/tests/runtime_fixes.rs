@@ -97,3 +97,32 @@ fn dependency_audits_are_listed_by_check_at_their_own_line() {
     let (out, err) = go(&["check", "main.ssp"]);
     assert_eq!((out.as_str(), err.as_str()), ("ok 1 definitions\n", "frlib/lib.ssp:3:3 audit A_DECLASSIFY Secret value declassified with .expose: a digest is public\n"));
 }
+
+#[test]
+fn a_stale_lock_is_named_with_the_fix() {
+    let d = dir("stale");
+    std::fs::create_dir_all(d.join("lib")).unwrap();
+    std::fs::create_dir_all(d.join("app")).unwrap();
+    std::fs::write(d.join("lib/sspur.toml"), "[package]\nname = \"lib\"\nversion = \"0.1.0\"\n").unwrap();
+    std::fs::write(d.join("lib/lib.ssp"), "// One.\npub fn one() -> Int\n= 1\n").unwrap();
+    std::fs::write(d.join("app/sspur.toml"), "[package]\nname = \"app\"\nversion = \"0.1.0\"\nsrc = \"main.ssp\"\n\n[deps]\nlib = { path = \"../lib\" }\n").unwrap();
+    std::fs::write(d.join("app/main.ssp"), "fn main() -> Unit ! log\n= log(\"{lib.one()}\")\n").unwrap();
+    let app = d.join("app");
+    let cache = d.join("cache");
+    let go = |args: &[&str]| {
+        let o = Command::new(env!("CARGO_BIN_EXE_sspur")).args(args).current_dir(&app).env("SSPUR_CACHE", &cache).env_remove("SSPUR_STRICT_NATIVE").output().unwrap();
+        (String::from_utf8_lossy(&o.stdout).to_string(), String::from_utf8_lossy(&o.stderr).to_string())
+    };
+    assert_eq!(go(&["run", "--interp", "main.ssp"]), ("1\n".to_string(), String::new()));
+    std::fs::write(d.join("lib/lib.ssp"), "// One.\npub fn one() -> Int\n= 1\n// a comment\n").unwrap();
+    assert_eq!(go(&["run", "--interp", "main.ssp"]), ("1\n".to_string(), String::new()));
+    std::fs::write(d.join("lib/lib.ssp"), "// One.\npub fn uno() -> Int\n= 1\n").unwrap();
+    let why = "lib at ../lib changed since sspur.lock pinned it, and this build uses the locked version; run 'sspur deps update lib' to review and use the new one";
+    let (out, err) = go(&["run", "--interp", "main.ssp"]);
+    assert_eq!((out.as_str(), err.as_str()), ("1\n", format!("note: {why}\n").as_str()));
+    std::fs::write(d.join("app/main.ssp"), "fn main() -> Unit ! log\n= log(\"{lib.uno()}\")\n").unwrap();
+    let (_, err) = go(&["run", "main.ssp"]);
+    assert_eq!(err, format!("main.ssp:2:9 E_PKG_NAME lib has no 'uno'; it exports one\n  hint: {why}\n"));
+    go(&["deps", "update", "lib"]);
+    assert_eq!(go(&["run", "main.ssp"]), ("1\n".to_string(), String::new()));
+}

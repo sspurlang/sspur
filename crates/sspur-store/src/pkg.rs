@@ -661,6 +661,45 @@ fn changed_members(root: &Path, lock: &Lock) -> Option<BTreeSet<String>> {
     changed.then_some(members)
 }
 
+/// The path dependencies outside the package at `root` whose source no longer builds to what
+/// sspur.lock pins, with the path the manifest names them by: the program still links the
+/// locked version until `sspur deps update NAME`.
+pub fn stale_deps(root: &Path) -> Vec<(String, String)> {
+    let (Ok(Some(m)), Ok(lock), Ok(base)) = (Manifest::read(root), Lock::read(root), root.canonicalize()) else { return vec![] };
+    let mut env = None;
+    let mut out = vec![];
+    for e in lock.entries.values() {
+        let Some(p) = e.source.strip_prefix("path+") else { continue };
+        let Ok(dir) = root.join(p).canonicalize() else { continue };
+        if dir == base || dir.starts_with(&base) {
+            continue;
+        }
+        let Some((dm, text)) = Manifest::read(&dir).ok().flatten().and_then(|dm| Some((read_src(&dir, &dm).ok()?, dm)).map(|(t, dm)| (dm, t))) else { continue };
+        if cached_source(&e.hash).is_some_and(|(s, mt)| s == text && mt == dm.text) {
+            continue;
+        }
+        let env = env.get_or_insert_with(|| Env::locked(&m, &lock));
+        let deps = dm.deps.iter().filter_map(|(k, s)| Some((s.target(k).to_string(), env.all.get(s.target(k))?.clone()))).collect();
+        if build_pkg(&dm, &text, &deps).is_ok_and(|b| b.hash == e.hash) {
+            continue;
+        }
+        out.push((e.name.clone(), relative(&base, &dir).unwrap_or_else(|| p.to_string())));
+    }
+    out
+}
+
+/// `to` as a path from the directory `from`, both canonical.
+fn relative(from: &Path, to: &Path) -> Option<String> {
+    let (a, b): (Vec<_>, Vec<_>) = (from.components().collect(), to.components().collect());
+    let common = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
+    if common == 0 {
+        return None;
+    }
+    let mut parts: Vec<String> = vec!["..".into(); a.len() - common];
+    parts.extend(b[common..].iter().map(|c| c.as_os_str().to_string_lossy().into_owned()));
+    Some(parts.join("/"))
+}
+
 pub struct Linked {
     pub src: String,
     pub module: Module,

@@ -439,7 +439,11 @@ fn program_cmd(cmd: &str, args: &Args) -> ExitCode {
         Some(path) => match std::fs::read_to_string(path) {
             Ok(src) if cmd == "fmt" => (path.clone(), src.clone(), sspur_syntax::parse(&src).map(|module| Loaded { own: module.defs.len(), src, module, check: Default::default(), hashes: Default::default(), partial: true, pkgs: vec![], shown: Default::default(), exports: Default::default(), dep_audits: vec![] }).map_err(|e| vec![sspur_check::syntax_diag(&e)])),
             Ok(src) => match file_env(path) {
-                Ok(env) => (path.clone(), src.clone(), pkg::load(src, &env, false)),
+                Ok(env) => {
+                    let mut l = pkg::load(src.clone(), &env, false);
+                    stale_notes(path, &mut l, json);
+                    (path.clone(), src, l)
+                }
                 Err(e) => {
                     eprintln!("{e}");
                     return ExitCode::FAILURE;
@@ -934,6 +938,25 @@ fn native_interp_entry(l: &Loaded, args: &Args, want: bool) -> (Interp, Option<r
 
 pub fn default_interp(l: &Loaded) -> Interp {
     native_interp(l, &Args { pos: vec![], flags: vec![] })
+}
+
+/// Says which path dependencies sspur.lock still pins at an older version, and puts that in the
+/// hint of an error about a name the old version doesn't have.
+fn stale_notes(path: &str, l: &mut Result<Loaded, Vec<Diag>>, json: bool) {
+    let dir = std::path::Path::new(path).parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(std::path::Path::new("."));
+    let Some(root) = pkg::find_root(dir) else { return };
+    for (name, at) in pkg::stale_deps(&root) {
+        let why = format!("{name} at {at} changed since sspur.lock pinned it, and this build uses the locked version; run 'sspur deps update {name}' to review and use the new one");
+        match l {
+            Err(ds) => {
+                for d in ds.iter_mut().filter(|d| d.code.starts_with("E_PKG") && d.msg.starts_with(&format!("{name} "))) {
+                    d.hint = Some(why.clone());
+                }
+            }
+            Ok(_) if !json => eprintln!("note: {why}"),
+            Ok(_) => {}
+        }
+    }
 }
 
 fn file_env(path: &str) -> Result<pkg::Env, String> {
