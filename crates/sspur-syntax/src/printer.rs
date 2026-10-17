@@ -160,7 +160,7 @@ pub fn print_sig(f: &FnDef) -> String {
         .iter()
         .map(|p| match &p.refine {
             Some(r) => format!("{}: {} where {}", p.name, ty(&p.ty), expr(r, 0)),
-            None => format!("{}: {}", p.name, ty(&p.ty)),
+            None => cat(&[&p.name, ": ", &ty(&p.ty)]),
         })
         .collect();
     let kw = if f.ext.is_some() {
@@ -170,12 +170,12 @@ pub fn print_sig(f: &FnDef) -> String {
     } else {
         "fn"
     };
-    let mut s = format!("{kw} {}{}({})", f.name, tparams(&f.tparams), layout::group(&params));
+    let mut s = cat(&[kw, " ", &f.name, &tparams(&f.tparams), "(", &layout::group(&params), ")"]);
     if let Some(r) = &f.ret {
-        s.push_str(&format!(" -> {}", ty(r)));
+        s = ext(s, &[" -> ", &ty(r)]);
     }
     if !f.effects.is_empty() {
-        s.push_str(&format!(" ! {}", effects(&f.effects)));
+        s = ext(s, &[" ! ", &effects(&f.effects)]);
     }
     if let Some(k) = &f.kernel {
         match &k.y {
@@ -235,8 +235,9 @@ fn print_fn_at(f: &FnDef, ind: usize) -> String {
         }
         return s;
     }
-    s.push_str(&format!("\n{}= {}", pad(ind), expr(&f.body, ind)));
-    s
+    s.push('\n');
+    s.extend(std::iter::repeat_n(' ', ind));
+    ext(s, &["= ", &expr(&f.body, ind)])
 }
 
 pub fn effects(es: &[Effect]) -> String {
@@ -278,6 +279,7 @@ pub fn ty(t: &Ty) -> String {
 /// String text as it is written between quotes: `{` as `\\{`, and characters that are hard to
 /// see or that the formatter uses itself as `\\u{...}`.
 fn escape_into(s: &mut String, l: &str) {
+    s.reserve(l.len());
     for c in l.chars() {
         match c {
             '"' => s.push_str("\\\""),
@@ -316,7 +318,20 @@ fn prec_of(e: &Expr) -> u8 {
 
 fn operand(e: &Expr, min: u8, ind: usize) -> String {
     let s = expr(e, ind);
-    if prec_of(e) < min { format!("({s})") } else { s }
+    if prec_of(e) < min { cat(&["(", &s, ")"]) } else { s }
+}
+
+fn cat(xs: &[&str]) -> String {
+    let mut s = String::with_capacity(xs.iter().map(|x| x.len()).sum());
+    xs.iter().for_each(|x| s.push_str(x));
+    s
+}
+
+/// `s` with `xs` appended.
+fn ext(mut s: String, xs: &[&str]) -> String {
+    s.reserve(xs.iter().map(|x| x.len()).sum());
+    xs.iter().for_each(|x| s.push_str(x));
+    s
 }
 
 fn pad(n: usize) -> String {
@@ -331,7 +346,7 @@ pub fn expr(e: &Expr, ind: usize) -> String {
             if s.contains(['.', 'e']) { s } else { format!("{s}.0") }
         }
         ExprKind::Str(parts) => {
-            let mut s = format!("{}\"", mark(layout::STR_S));
+            let mut s = cat(&[mark(layout::STR_S), "\""]);
             let was = layout::marking(false);
             let flat = layout::flattening(true);
             for p in parts {
@@ -342,7 +357,10 @@ pub fn expr(e: &Expr, ind: usize) -> String {
                         // `{3}`, `{"a"}` and `{{a}}` would read as text (see the lexer).
                         let lone = matches!(x.kind, ExprKind::Int(_) | ExprKind::Float(_))
                             || (matches!(&x.kind, ExprKind::Str(p) if p.iter().all(|q| matches!(q, StrPart::Lit(_)))) && crate::lexer::code_follows(&t[t.find('"').map_or(0, |i| i + 1)..]));
-                        if lone || t.starts_with('{') { s.push_str(&format!("{{({t})}}")) } else { s.push_str(&format!("{{{t}}}")) }
+                        let paren = lone || t.starts_with('{');
+                        s.push_str(if paren { "{(" } else { "{" });
+                        s.push_str(&t);
+                        s.push_str(if paren { ")}" } else { "}" });
                     }
                 }
             }
@@ -359,8 +377,8 @@ pub fn expr(e: &Expr, ind: usize) -> String {
         ExprKind::Hole(Some(n)) => format!("?{n}"),
         ExprKind::Placeholder => "_".into(),
         // A line can't start with `.0`, so a tuple element is never where a chain breaks.
-        ExprKind::Field(x, f) => format!("{}{}.{}", operand(x, 10, ind), if f.starts_with(|c: char| c.is_ascii_digit()) { "" } else { mark(layout::CHAIN_F) }, f),
-        ExprKind::Call(f, args) => format!("{}({})", operand(f, 10, ind), list(args, ind)),
+        ExprKind::Field(x, f) => ext(operand(x, 10, ind), &[if f.starts_with(|c: char| c.is_ascii_digit()) { "" } else { mark(layout::CHAIN_F) }, ".", f]),
+        ExprKind::Call(f, args) => ext(operand(f, 10, ind), &["(", &list(args, ind), ")"]),
         ExprKind::Method { recv, name, targs, args } if name == "mmio" && targs.len() == 1 => {
             let rest: String = args.iter().map(|a| format!(", {}", expr(a, ind))).collect();
             format!("mmio[{}]({}{rest})", ty(&targs[0]), expr(recv, ind))
@@ -401,16 +419,16 @@ pub fn expr(e: &Expr, ind: usize) -> String {
             s
         }
         ExprKind::Method { recv, name, targs, args } => {
-            let mut s = format!("{}{}.{}", operand(recv, 10, ind), mark(layout::CHAIN_M), name);
+            let mut s = ext(operand(recv, 10, ind), &[mark(layout::CHAIN_M), ".", name]);
             if !targs.is_empty() {
-                s.push_str(&format!("[{}]", targs.iter().map(ty).collect::<Vec<_>>().join(", ")));
+                s = ext(s, &["[", &targs.iter().map(ty).collect::<Vec<_>>().join(", "), "]"]);
             }
             if !args.is_empty() || targs.is_empty() {
-                s.push_str(&format!("({})", list(args, ind)));
+                s = ext(s, &["(", &list(args, ind), ")"]);
             }
             s
         }
-        ExprKind::Index(a, i) => format!("{}[{}]", operand(a, 10, ind), expr(i, ind)),
+        ExprKind::Index(a, i) => ext(operand(a, 10, ind), &["[", &expr(i, ind), "]"]),
         ExprKind::Lambda { body, implicit: true, .. } => expr(body, ind),
         ExprKind::Lambda { params, body, tys, .. } => {
             let ps = if tys.iter().any(Option::is_some) {
@@ -434,7 +452,7 @@ pub fn expr(e: &Expr, ind: usize) -> String {
             let p = op.prec();
             let (lmin, rmin) = if *op == BinOp::Pow { (p + 1, p) } else { (p, p + 1) };
             let ls = if *op == BinOp::Or && matches!(&l.kind, ExprKind::Match(_, arms, MatchForm::Is) if arms[0].guard.is_none()) { expr(l, ind) } else { operand(l, lmin, ind) };
-            format!("{ls} {}{} {}", op.symbol(), layout::bin(p), operand(r, rmin, ind))
+            ext(ls, &[" ", op.symbol(), layout::bin(p), " ", &operand(r, rmin, ind)])
         }
         ExprKind::Unary(UnOp::Neg, x) => format!("-{}", operand(x, 9, ind)),
         ExprKind::Unary(UnOp::Not, x) => format!("not {}", operand(x, 4, ind)),
@@ -466,7 +484,9 @@ pub fn expr(e: &Expr, ind: usize) -> String {
         ExprKind::Block(stmts) => {
             let mut s = String::from("do");
             for l in stmt_lines(stmts, ind + 2) {
-                s.push_str(&format!("\n{}{l}", pad(ind + 2)));
+                s.push('\n');
+                s.extend(std::iter::repeat_n(' ', ind + 2));
+                s.push_str(&l);
             }
             s
         }
@@ -541,32 +561,35 @@ fn guard_lines(e: &Expr, ind: usize) -> Vec<String> {
         ExprKind::Unit => {}
         ExprKind::Block(stmts) => out.extend(stmt_lines(stmts, ind)),
         ExprKind::Match(_, _, MatchForm::LetElse) => out.extend(guard_lines(&arms[0].body, ind)),
-        _ => out.push(stmt(&Stmt::Expr(arms[0].body.clone()), ind)),
+        _ => out.push(expr(&arms[0].body, ind)),
     }
     out
 }
 
 fn if_form(c: &str, t: &Expr, f: Option<&Expr>, ind: usize) -> String {
-    let c = format!("{c}{}", mark(layout::THEN));
+    let c = cat(&[c, mark(layout::THEN)]);
     let nested = matches!(t.kind, ExprKind::If(..) | ExprKind::Match(_, _, MatchForm::IfIs | MatchForm::IfChain) | ExprKind::Lambda { .. });
-    match f {
-        // `sspur fmt` lines `else` up with the `if` and indents each block once (ADR 0040).
-        Some(f) if layout::natural() && (matches!(&t.kind, ExprKind::Match(_, _, MatchForm::LetElse)) || matches!(&t.kind, ExprKind::Block(st) if !matches!(st.as_slice(), [Stmt::Assign(..)]))) => {
-            format!("if {c} then {}\n{}else {}", branch(t, ind), pad(ind), branch(f, ind))
-        }
-        Some(f) if matches!(&t.kind, ExprKind::Match(_, _, MatchForm::LetElse)) || matches!(&t.kind, ExprKind::Block(st) if !matches!(st.as_slice(), [Stmt::Assign(..)])) => {
-            format!("if {c} then {}\n{}else {}", branch(t, ind + 2), pad(ind + 2), branch(f, ind + 2))
-        }
-        Some(f) if nested && !expr(t, ind + 4).contains('\n') => format!("if {c} then ({}){} else {}", expr(t, ind + 4), mark(layout::ELSE), branch(f, ind)),
-        Some(f) if layout::natural() && (nested || matches!(t.kind, ExprKind::Match(..) | ExprKind::Catch(..) | ExprKind::Handle(..))) => {
-            format!("if {c} then do\n{}{}\n{}else {}", pad(ind + 2), expr(t, ind + 2), pad(ind), branch(f, ind))
-        }
-        Some(f) if nested || matches!(t.kind, ExprKind::Match(..) | ExprKind::Catch(..) | ExprKind::Handle(..)) => {
-            format!("if {c} then do\n{}{}\n{}else {}", pad(ind + 4), expr(t, ind + 4), pad(ind + 2), branch(f, ind + 2))
-        }
-        Some(f) => format!("if {c} then {}{} else {}", branch(t, ind), mark(layout::ELSE), branch(f, ind)),
-        None => format!("if {c} then {}", branch(t, ind)),
+    let Some(f) = f else { return cat(&["if ", &c, " then ", &branch(t, ind)]) };
+    let block = matches!(&t.kind, ExprKind::Match(_, _, MatchForm::LetElse)) || matches!(&t.kind, ExprKind::Block(st) if !matches!(st.as_slice(), [Stmt::Assign(..)]));
+    // `sspur fmt` lines `else` up with the `if` and indents each block once (ADR 0040).
+    if block && layout::natural() {
+        return format!("if {c} then {}\n{}else {}", branch(t, ind), pad(ind), branch(f, ind));
     }
+    if block {
+        return format!("if {c} then {}\n{}else {}", branch(t, ind + 2), pad(ind + 2), branch(f, ind + 2));
+    }
+    let wide = nested.then(|| expr(t, ind + 4));
+    if let Some(te) = wide.as_ref().filter(|te| !te.contains('\n')) {
+        return format!("if {c} then ({te}){} else {}", mark(layout::ELSE), branch(f, ind));
+    }
+    let arms = nested || matches!(t.kind, ExprKind::Match(..) | ExprKind::Catch(..) | ExprKind::Handle(..));
+    if arms && layout::natural() {
+        return format!("if {c} then do\n{}{}\n{}else {}", pad(ind + 2), expr(t, ind + 2), pad(ind), branch(f, ind));
+    }
+    if arms {
+        return format!("if {c} then do\n{}{}\n{}else {}", pad(ind + 4), wide.unwrap_or_else(|| expr(t, ind + 4)), pad(ind + 2), branch(f, ind + 2));
+    }
+    format!("if {c} then {}{} else {}", branch(t, ind), mark(layout::ELSE), branch(f, ind))
 }
 
 fn iter_expr(e: &Expr, ind: usize) -> String {
