@@ -623,3 +623,25 @@ test is_expressions = some_count([some(1), none, some(2)]) == 2 and any_pair([[1
 test if_chains = same_kind(TLit{v: 5}, TLit{v: 2}) == 3 and same_kind(TLit{v: 5}, TLit{v: 5}) == 0 and same_kind(TNeg{v: -4}, TClose) == -4 and same_kind(TClose, TClose) == 0
 test guards = head_plus([4, 5, 6]) == 9 and head_plus([4]) == 4 and head_plus([]) == -1 and opt_sum([some(2), none, some(5)]) == 7 and digits("21") == ok(42) and (digits("x") is err(_)) and doubled([some(1), none]) == [2, 0]
 test long_lines = scale(Point{x: 1, y: 2}, 3) == 9 and long_chain([-1, 2, 3]) == 15
+
+// Syntax settled for 1.0 (ADR 0042): annotated bindings, `_ =>`, `with` against `==`, braces
+// and escapes in strings.
+
+type Pt = {a: Int, b: Int} derive Eq
+
+fn annotated(n: Int) -> Int
+= do
+  var seen: List[Int] = []
+  last: Opt[Int] = none
+  for i in 0..n
+    seen := seen.push(i)
+  seen.len + last.or(0)
+
+fn braces(s: Str) -> Bool
+= s.contains("{") or s.contains("}")
+
+test annotations = annotated(3) == 3
+test ignoring_lambdas = (0..3).map(_ => 7) == [7, 7, 7] and ["a", "b"].fold(0, (n, _) => n + 1) == 2
+test with_against_eq = (Pt{a: 0, b: 0} != Pt{a: 0, b: 0} with a := 1) and (Pt{a: 1, b: 0} == Pt{a: 0, b: 0} with a := 1)
+test braces_in_strings = braces("\{id}") and not braces("id") and "{{x}}".len == 5 and "a{3}".len == 4 and "{".len == 1
+test escapes = "\\{1 + 0}" == "\\1" and "\\{1}".len == 4 and "\u{e9}" == "é" and "\u{1F600}".len == 1 and "\}" == "}"
