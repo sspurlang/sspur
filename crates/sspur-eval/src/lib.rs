@@ -2,6 +2,7 @@
 mod builtins;
 #[cfg(feature = "native")]
 mod ffi;
+#[cfg(not(target_family = "wasm"))]
 mod lastuse;
 mod net;
 #[cfg(feature = "native")]
@@ -130,6 +131,7 @@ pub struct Interp {
     drops: HashMap<String, String>,
     moves: HashSet<(u32, u32)>,
     inplace: HashSet<(u32, u32)>,
+    #[cfg(not(target_family = "wasm"))]
     last_uses: RefCell<Option<HashSet<(u32, u32)>>>,
     heap: RefCell<Vec<Option<Vec<Value>>>>,
     sched: sched::Sched,
@@ -257,6 +259,7 @@ fn has_span(set: &HashSet<(u32, u32)>, span: Span) -> bool {
 }
 
 /// Empties `n`'s cell when it still holds `v`, so `v` is the value's only reference.
+#[cfg(not(target_family = "wasm"))]
 fn release(n: &str, v: &Value, env: &Rc<Env>) {
     let Some(c) = env.cell(n) else { return };
     let same = match (&*c.borrow(), v) {
@@ -316,6 +319,7 @@ impl Interp {
             drops: HashMap::new(),
             moves: HashSet::new(),
             inplace: HashSet::new(),
+            #[cfg(not(target_family = "wasm"))]
             last_uses: RefCell::new(None),
             heap: RefCell::new(vec![None]),
             sched: Default::default(),
@@ -1411,6 +1415,7 @@ impl Interp {
     fn eval_method(&self, span: Span, recv: &Expr, name: &str, args: &[Expr], env: &Rc<Env>) -> R {
         let r = self.eval(recv, env)?;
         let a = self.eval_args(args, env)?;
+        #[cfg(not(target_family = "wasm"))]
         if let ExprKind::Name(n) = &recv.kind
             && lastuse::MOVE_METHODS.contains(&name)
             && self.is_last_use(recv.span)
@@ -1421,6 +1426,8 @@ impl Interp {
     }
 
     /// Whether `span` is a variable's last use as the receiver of an appending method.
+    #[cfg(not(target_family = "wasm"))]
+    #[inline(never)]
     fn is_last_use(&self, span: Span) -> bool {
         if self.last_uses.borrow().is_none() {
             let mut lu = lastuse::LastUse::default();
@@ -1954,6 +1961,7 @@ pub fn to_nval(v: &Value) -> Option<sspur_native::nval::NVal> {
         Value::Bool(b) => NVal::Bool(*b),
         Value::Float(x) => NVal::Float(*x),
         Value::Str(s) => NVal::Str(s.to_string()),
+        #[cfg(not(target_family = "wasm"))]
         Value::Buf(s) => NVal::Str(s.to_string()),
         Value::New(n, x) => NVal::New(n.to_string(), Box::new(to_nval(x)?)),
         Value::Wrap(k, x) => NVal::Wrap(k.to_string(), Box::new(to_nval(x)?)),

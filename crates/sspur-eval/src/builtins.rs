@@ -70,15 +70,19 @@ impl Interp {
         })
     }
 
-    pub(crate) fn call_method(&self, name: &str, recv: Value, mut a: Vec<Value>) -> R {
+    pub(crate) fn call_method(&self, name: &str, recv: Value, a: Vec<Value>) -> R {
+        #[cfg(not(target_family = "wasm"))]
+        let mut a = a;
         if name == "str" {
             return Ok(Value::str(&recv.to_string()));
         }
         match recv {
+            #[cfg(not(target_family = "wasm"))]
             Value::List(mut xs) if name == "push" => {
                 Rc::make_mut(&mut xs).push(a.remove(0));
                 Ok(Value::List(xs))
             }
+            #[cfg(not(target_family = "wasm"))]
             Value::List(mut xs) if name == "concat" => match a.remove(0) {
                 Value::List(ys) => {
                     Rc::make_mut(&mut xs).extend(ys.iter().cloned());
@@ -86,23 +90,18 @@ impl Interp {
                 }
                 v => trap(format!("concat expects a List, got {v}")),
             },
+            #[cfg(not(target_family = "wasm"))]
             Value::Map(mut m) if name == "put" => {
                 let k = a.remove(0);
                 Rc::make_mut(&mut m).insert(k, a.remove(0));
                 Ok(Value::Map(m))
             }
-            Value::Map(mut m) if name == "remove" => {
-                Rc::make_mut(&mut m).remove(&a[0]);
-                Ok(Value::Map(m))
-            }
+            #[cfg(not(target_family = "wasm"))]
             Value::Set(mut st) if name == "add" => {
                 Rc::make_mut(&mut st).insert(a.remove(0));
                 Ok(Value::Set(st))
             }
-            Value::Set(mut st) if name == "remove" => {
-                Rc::make_mut(&mut st).remove(&a[0]);
-                Ok(Value::Set(st))
-            }
+            #[cfg(not(target_family = "wasm"))]
             Value::Buf(mut b) => match name {
                 "add" => {
                     Rc::make_mut(&mut b).push_str(s(&a[0])?);

@@ -433,7 +433,10 @@ impl Interp {
         Ok(match n {
             "empty_set" => Value::Set(Rc::new(BTreeSet::new())),
             "empty_heap" => Value::Heap(Rc::new(Vec::new())),
+            #[cfg(not(target_family = "wasm"))]
             "str_buf" => Value::Buf(Rc::new(String::new())),
+            #[cfg(target_family = "wasm")]
+            "str_buf" => Value::str(""),
             "dev_f32" | "dev_f64" | "dev_i32" | "dev_u32" | "dev_int" => crate::kernel::dev_new(n, &a[0])?,
             "gpu_sync" => {
                 crate::kernel::sync()?;

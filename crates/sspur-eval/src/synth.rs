@@ -1253,6 +1253,7 @@ fn hash_value(v: &Value, h: &mut impl std::hash::Hasher, depth: u32) {
         Value::Int(n) => (1u8, n).hash(h),
         Value::Bool(b) => (2u8, b).hash(h),
         Value::Str(s) => (3u8, &**s).hash(h),
+        #[cfg(not(target_family = "wasm"))]
         Value::Buf(s) => (3u8, s.as_str()).hash(h),
         Value::List(xs) | Value::Tuple(xs) => {
             (5u8, xs.len()).hash(h);

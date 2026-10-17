@@ -656,6 +656,29 @@ fn never_matches(e: &Expr, p: &Pat) -> bool {
     }
 }
 
+impl Checker {
+    /// After a statement `x` whose value of type `t` is thrown away: `W_UNUSED_RESULT` when the
+    /// call performed nothing (the frame `infer` pushed for it is empty) and `t` isn't `Unit`.
+    #[inline(never)]
+    fn discarded(&mut self, what: &str, x: &Expr, t: &Type) {
+        let frame = self.frames.pop().unwrap();
+        let pure = frame.is_empty();
+        for (a, (sp, ty)) in frame {
+            self.add_effect(a, sp, ty);
+        }
+        let t = self.resolve(t);
+        if !pure || matches!(&t, Type::Var(_)) || t == Type::unit() {
+            return;
+        }
+        let shown = printer::expr(x, 0);
+        let hint = match &x.kind {
+            ExprKind::Method { recv, .. } if let ExprKind::Name(r) = &recv.kind => format!("values don't change in place: keep the new {t} with '{r} := {shown}' (and 'var {r}'), or write '_ = {shown}'"),
+            _ => format!("bind it ('name = {shown}') or write '_ = {shown}'"),
+        };
+        self.push_diag("W_UNUSED_RESULT", "warning", x.span, format!("the result of {what} ({t}) is discarded"), Some(hint), vec![]);
+    }
+}
+
 /// A call whose value a statement throws away, named for the warning, or `None`.
 fn discardable_call(x: &Expr) -> Option<String> {
     match &x.kind {
@@ -2313,24 +2336,8 @@ impl Checker {
                         self.frames.push(Frame::new());
                     }
                     last = self.infer_stmt(s, if is_last { exp } else if loop_body { Some(&unit) } else { None });
-                    if let Some(what) = discarded {
-                        let frame = self.frames.pop().unwrap();
-                        let pure = frame.is_empty();
-                        for (a, (sp, ty)) in frame {
-                            self.add_effect(a, sp, ty);
-                        }
-                        let t = self.resolve(&last);
-                        if pure && !matches!(&t, Type::Var(_)) && t != Type::unit() && let Stmt::Expr(x) = s {
-                            let shown = printer::expr(x, 0);
-                            let hint = if let ExprKind::Method { recv, .. } = &x.kind
-                                && let ExprKind::Name(r) = &recv.kind
-                            {
-                                format!("values don't change in place: '{shown}' returns a new {t}; keep it with '{r} := {shown}' (declare '{r}' with 'var') or 'name = {shown}', or write '_ = {shown}' to drop it on purpose")
-                            } else {
-                                format!("bind it ('name = {shown}') or write '_ = {shown}' to drop it on purpose")
-                            };
-                            self.push_diag("W_UNUSED_RESULT", "warning", x.span, format!("the result of {what} ({t}) is discarded"), Some(hint), vec![]);
-                        }
+                    if let (Some(what), Stmt::Expr(x)) = (discarded, s) {
+                        self.discarded(&what, x, &last);
                     }
                     if loop_body && let Stmt::Expr(x) = s {
                         self.expect(&unit, &last, x.span);

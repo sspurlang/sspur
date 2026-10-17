@@ -7,9 +7,10 @@ use sspur_syntax::visit::children;
 use sspur_syntax::{Expr, ExprKind, FnDef, Pat, Stmt};
 use std::collections::{HashMap, HashSet};
 
-pub(crate) const MOVE_METHODS: &[&str] = &["push", "concat", "add", "put", "remove"];
+pub(crate) const MOVE_METHODS: &[&str] = &["push", "concat", "add", "put"];
 
-type Live = HashSet<String>;
+/// A set of a function's candidate variables, one bit each.
+type Live = u64;
 
 #[derive(Default)]
 pub(crate) struct LastUse {
@@ -22,34 +23,17 @@ fn binds(p: &Pat) -> Vec<String> {
     out
 }
 
-/// Every name inside lambdas and local functions nested in `e`.
-fn captured(e: &Expr, out: &mut HashSet<String>, inside: bool) {
-    match &e.kind {
-        ExprKind::Name(n) if inside => {
-            out.insert(n.clone());
-        }
-        ExprKind::Lambda { body, .. } => return captured(body, out, true),
-        ExprKind::Block(stmts) => {
-            for s in stmts {
-                match s {
-                    Stmt::Fn(f) => f.pres.iter().chain(&f.posts).chain(std::iter::once(&f.body)).for_each(|x| captured(x, out, true)),
-                    Stmt::Let(_, x) | Stmt::Var(_, x) | Stmt::Assign(_, x, _) | Stmt::Expr(x) => captured(x, out, inside),
-                    Stmt::For(_, a, b) | Stmt::While(a, b) => {
-                        captured(a, out, inside);
-                        captured(b, out, inside);
-                    }
-                }
-            }
-            return;
-        }
-        _ => {}
-    }
-    for c in children(e) {
-        captured(c, out, inside);
+/// The statements' expressions in order, with the local functions' bodies when `fns`.
+fn stmt_exprs(s: &Stmt, fns: bool) -> Vec<&Expr> {
+    match s {
+        Stmt::Fn(f) if fns => f.pres.iter().chain(&f.posts).chain(std::iter::once(&f.body)).collect(),
+        Stmt::Fn(_) => vec![],
+        Stmt::Let(_, x) | Stmt::Var(_, x) | Stmt::Assign(_, x, _) | Stmt::Expr(x) => vec![x],
+        Stmt::For(_, a, b) | Stmt::While(a, b) => vec![a, b],
     }
 }
 
-/// Receivers of moving methods outside nested closures, and names bound locally.
+/// Receivers of moving methods and names bound in `e`, outside nested closures.
 fn scan(e: &Expr, recv: &mut HashSet<String>, bound: &mut HashSet<String>) {
     match &e.kind {
         ExprKind::Lambda { .. } => return,
@@ -66,19 +50,9 @@ fn scan(e: &Expr, recv: &mut HashSet<String>, bound: &mut HashSet<String>) {
                     Stmt::Var(n, _) => {
                         bound.insert(n.clone());
                     }
-                    Stmt::Fn(_) => {}
                     _ => {}
                 }
-            }
-            for s in stmts {
-                match s {
-                    Stmt::Fn(_) => {}
-                    Stmt::Let(_, x) | Stmt::Var(_, x) | Stmt::Assign(_, x, _) | Stmt::Expr(x) => scan(x, recv, bound),
-                    Stmt::For(_, a, b) | Stmt::While(a, b) => {
-                        scan(a, recv, bound);
-                        scan(b, recv, bound);
-                    }
-                }
+                stmt_exprs(s, false).into_iter().for_each(|x| scan(x, recv, bound));
             }
             return;
         }
@@ -89,23 +63,16 @@ fn scan(e: &Expr, recv: &mut HashSet<String>, bound: &mut HashSet<String>) {
     }
 }
 
-/// Nested lambdas and local functions, each analyzed on its own.
+/// Nested lambdas and local functions, each analyzed on its own: parameters, body, contracts.
 fn nested<'a>(e: &'a Expr, out: &mut Vec<(Vec<String>, &'a Expr, bool)>) {
     match &e.kind {
-        ExprKind::Lambda { params, body, .. } => {
-            out.push((params.clone(), body, false));
-            return;
-        }
+        ExprKind::Lambda { params, body, .. } => return out.push((params.clone(), body, false)),
         ExprKind::Block(stmts) => {
             for s in stmts {
-                match s {
-                    Stmt::Fn(f) => out.push((f.params.iter().map(|p| p.name.clone()).collect(), &f.body, !f.posts.is_empty())),
-                    Stmt::Let(_, x) | Stmt::Var(_, x) | Stmt::Assign(_, x, _) | Stmt::Expr(x) => nested(x, out),
-                    Stmt::For(_, a, b) | Stmt::While(a, b) => {
-                        nested(a, out);
-                        nested(b, out);
-                    }
+                if let Stmt::Fn(f) = s {
+                    out.push((f.params.iter().map(|p| p.name.clone()).collect(), &f.body, !f.posts.is_empty()));
                 }
+                stmt_exprs(s, false).into_iter().for_each(|x| nested(x, out));
             }
             return;
         }
@@ -117,173 +84,117 @@ fn nested<'a>(e: &'a Expr, out: &mut Vec<(Vec<String>, &'a Expr, bool)>) {
 }
 
 struct Fx<'a> {
-    cand: HashSet<String>,
+    cand: Vec<String>,
     marks: &'a mut HashMap<(u32, u32), bool>,
 }
 
 impl Fx<'_> {
-    fn reads(&self, e: &Expr, out: &mut Live) {
-        if let ExprKind::Name(n) = &e.kind
-            && self.cand.contains(n)
-        {
-            out.insert(n.clone());
-        }
+    fn bit(&self, n: &str) -> Live {
+        self.cand.iter().position(|c| c == n).map_or(0, |i| 1 << i)
+    }
+
+    fn bits(&self, names: &[String]) -> Live {
+        names.iter().fold(0, |m, n| m | self.bit(n))
+    }
+
+    /// Every candidate named in `e`; with `inside`, only in the closures nested in it.
+    fn reads(&self, e: &Expr, inside: bool) -> Live {
+        let mut m = match &e.kind {
+            ExprKind::Name(n) if !inside => self.bit(n),
+            ExprKind::Lambda { body, .. } if inside => return self.reads(body, false),
+            ExprKind::Block(stmts) if inside => return stmts.iter().fold(0, |m, s| m | stmt_exprs(s, true).iter().fold(0, |m, x| m | self.reads(x, !matches!(s, Stmt::Fn(_))))),
+            _ => 0,
+        };
         for c in children(e) {
-            self.reads(c, out);
+            m |= self.reads(c, inside);
         }
+        m
     }
 
-    fn reads_of(&self, e: &Expr) -> Live {
-        let mut out = Live::new();
-        self.reads(e, &mut out);
-        out
-    }
-
-    fn mark(&mut self, e: &Expr, ok: bool) {
-        let k = (e.span.start, e.span.end);
-        if k.0 >= k.1 {
-            return;
-        }
-        let m = self.marks.entry(k).or_insert(ok);
-        *m = *m && ok;
-    }
-
-    /// The names live before `e`, given those live after it; marks the receivers it can move.
-    fn expr(&mut self, e: &Expr, live: &Live, blk: &HashSet<String>) -> Live {
+    /// The candidates live before `e`, given those live after it; marks the receivers it can move.
+    fn expr(&mut self, e: &Expr, live: Live, blk: Live) -> Live {
         match &e.kind {
-            ExprKind::Name(n) => {
-                let mut l = live.clone();
-                if self.cand.contains(n) {
-                    l.insert(n.clone());
-                }
-                l
-            }
-            ExprKind::Lambda { .. } => live.clone(),
+            ExprKind::Name(n) => live | self.bit(n),
+            ExprKind::Lambda { .. } => live,
             ExprKind::Method { recv, name, args, .. } => {
                 if let ExprKind::Name(n) = &recv.kind
                     && MOVE_METHODS.contains(&name.as_str())
-                    && self.cand.contains(n)
+                    && self.bit(n) != 0
                 {
-                    let ok = !live.contains(n) && !blk.contains(n);
-                    self.mark(recv, ok);
+                    let k = (recv.span.start, recv.span.end);
+                    if k.0 < k.1 {
+                        let ok = (live | blk) & self.bit(n) == 0;
+                        let m = self.marks.entry(k).or_insert(ok);
+                        *m = *m && ok;
+                    }
                 }
-                let mut l = live.clone();
-                for a in args.iter().rev() {
-                    l = self.expr(a, &l, blk);
-                }
-                self.expr(recv, &l, blk)
+                let l = args.iter().rev().fold(live, |l, a| self.expr(a, l, blk));
+                self.expr(recv, l, blk)
             }
             ExprKind::If(c, t, f) => {
-                let mut l = self.expr(t, live, blk);
-                l.extend(match f {
-                    Some(f) => self.expr(f, live, blk),
-                    None => live.clone(),
-                });
-                self.expr(c, &l, blk)
+                let l = self.expr(t, live, blk) | f.as_ref().map_or(live, |f| self.expr(f, live, blk));
+                self.expr(c, l, blk)
             }
             ExprKind::Match(s, arms, _) => {
-                let mut u = Live::new();
+                let mut u = 0;
                 for a in arms {
                     let mut la = self.expr(&a.body, live, blk);
                     if let Some(g) = &a.guard {
-                        la = self.expr(g, &la, blk);
+                        la = self.expr(g, la, blk);
                     }
-                    for n in binds(&a.pat) {
-                        if !live.contains(&n) {
-                            la.remove(&n);
-                        }
-                    }
-                    u.extend(la);
+                    u |= la & !(self.bits(&binds(&a.pat)) & !live);
                 }
-                self.expr(s, &u, blk)
+                self.expr(s, u, blk)
             }
             ExprKind::Catch(s, arms) | ExprKind::Handle(s, arms) => {
-                let mut u = live.clone();
+                let u = arms.iter().fold(live, |m, a| m | self.reads(&a.body, false) | a.guard.as_ref().map_or(0, |g| self.reads(g, false)));
+                let arm_blk = blk | self.reads(s, false);
                 for a in arms {
-                    self.reads(&a.body, &mut u);
+                    let la = self.expr(&a.body, live, arm_blk);
                     if let Some(g) = &a.guard {
-                        self.reads(g, &mut u);
+                        self.expr(g, la, arm_blk);
                     }
                 }
-                let mut b2 = blk.clone();
-                b2.extend(u.iter().cloned());
-                let mut arm_blk = blk.clone();
-                arm_blk.extend(self.reads_of(s));
-                for a in arms {
-                    let la = self.expr(&a.body, live, &arm_blk);
-                    if let Some(g) = &a.guard {
-                        self.expr(g, &la, &arm_blk);
-                    }
-                }
-                let mut l = self.expr(s, &u, &b2);
-                l.extend(u);
-                l
+                self.expr(s, u, blk | u) | u
             }
             ExprKind::Par(xs) => {
-                let mut all = live.clone();
+                let all = xs.iter().fold(live, |m, x| m | self.reads(x, false));
                 for x in xs {
-                    self.reads(x, &mut all);
-                }
-                let mut b2 = blk.clone();
-                b2.extend(all.iter().cloned());
-                for x in xs {
-                    self.expr(x, &all, &b2);
+                    self.expr(x, all, blk | all);
                 }
                 all
             }
             ExprKind::Block(stmts) => self.block(stmts, live, blk),
-            _ => {
-                let mut l = live.clone();
-                for c in children(e).into_iter().rev() {
-                    l = self.expr(c, &l, blk);
-                }
-                l
-            }
+            _ => children(e).into_iter().rev().fold(live, |l, c| self.expr(c, l, blk)),
         }
     }
 
-    fn block(&mut self, stmts: &[Stmt], out: &Live, blk: &HashSet<String>) -> Live {
-        let mut l = out.clone();
-        let restore = |l: &mut Live, names: Vec<String>| {
-            for n in names {
-                if !out.contains(&n) {
-                    l.remove(&n);
-                }
-            }
-        };
+    fn block(&mut self, stmts: &[Stmt], out: Live, blk: Live) -> Live {
+        let mut l = out;
         for s in stmts.iter().rev() {
-            match s {
-                Stmt::Expr(e) => l = self.expr(e, &l, blk),
+            l = match s {
+                Stmt::Expr(e) => self.expr(e, l, blk),
                 Stmt::Let(p, e) => {
-                    restore(&mut l, binds(p));
-                    l = self.expr(e, &l, blk);
+                    let b = self.bits(&binds(p));
+                    self.expr(e, l & !(b & !out), blk)
                 }
                 Stmt::Var(n, e) => {
-                    restore(&mut l, vec![n.clone()]);
-                    l = self.expr(e, &l, blk);
+                    let b = self.bit(n);
+                    self.expr(e, l & !(b & !out), blk)
                 }
-                Stmt::Assign(n, e, _) => {
-                    l.remove(n);
-                    l = self.expr(e, &l, blk);
-                }
+                Stmt::Assign(n, e, _) => self.expr(e, l & !self.bit(n), blk),
                 Stmt::For(_, it, body) => {
-                    let mut lb = l.clone();
-                    self.reads(body, &mut lb);
-                    let inner = self.expr(body, &lb, blk);
-                    l.extend(inner);
-                    l = self.expr(it, &l, blk);
+                    let lb = l | self.reads(body, false);
+                    let inner = self.expr(body, lb, blk);
+                    self.expr(it, l | inner, blk)
                 }
                 Stmt::While(c, body) => {
-                    let mut lb = l.clone();
-                    self.reads(body, &mut lb);
-                    self.reads(c, &mut lb);
-                    let inner = self.expr(body, &lb, blk);
-                    l.extend(inner);
-                    l.extend(lb);
-                    l = self.expr(c, &l, blk);
+                    let lb = l | self.reads(body, false) | self.reads(c, false);
+                    let inner = self.expr(body, lb, blk);
+                    self.expr(c, l | inner | lb, blk)
                 }
-                Stmt::Fn(_) => {}
-            }
+                Stmt::Fn(_) => l,
+            };
         }
         l
     }
@@ -301,14 +212,13 @@ impl LastUse {
         }
         let (mut recv, mut bound) = (HashSet::new(), params.iter().cloned().collect::<HashSet<_>>());
         scan(body, &mut recv, &mut bound);
-        let cand: HashSet<String> = recv.intersection(&bound).cloned().collect();
+        let cand: Vec<String> = recv.intersection(&bound).take(64).cloned().collect();
         if cand.is_empty() {
             return;
         }
-        let mut blk = HashSet::new();
-        captured(body, &mut blk, false);
         let mut fx = Fx { cand, marks: &mut self.marks };
-        fx.expr(body, &Live::new(), &blk);
+        let blk = fx.reads(body, true);
+        fx.expr(body, 0, blk);
     }
 
     pub(crate) fn def(&mut self, f: &FnDef) {
