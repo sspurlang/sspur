@@ -34,7 +34,7 @@ Block lines: `x = e`, `(a, b) = e`, `var x = e`, `x := e`, `for x in xs`, `while
 - `trait Sh` + indented `fn area(x: Self) -> F64` lines; `= e` (same or next line) is a default. The first parameter is `Self`, and a method's effects bound its impls'.
 - `impl Sh for Circle` + indented fns with bodies (`Self` or `Circle` in signatures); a generic type: `impl[T: Show] Show for Box[T]`. Call `c.area`, `c.area()` or `area(c)`; pass `xs.map(area)` where the parameter type is known.
 - Bounds `fn f[T: Ord + Show](xs: List[T])` are checked in `f`; a call with a type that lacks an impl is `E_TRAIT_MISSING`. Bounded fns are compiled per type.
-- Built in: `Eq eq`, `Ord cmp` (negative, 0, positive; `< <= > >=`), `Show show`, `Hash hash`, `Json to_json`, `Add Sub Mul Div` (`+ - * /`; `fn add(a: Self, b: Self) -> Self`), `Neg neg` (`-x`), `Index[K, V] index` (`x[k]`). Numbers, `Str`, `Bool`, lists, tuples, `Opt`, `Map` have them; `==`, `sort` and `.str` stay structural.
+- Built in: `Eq eq`, `Ord cmp` (negative, 0, positive; `< <= > >=`), `Show show`, `Hash hash`, `Json to_json`, `Add Sub Mul Div` (`+ - * /`; `fn add(a: Self, b: Self) -> Self`), `Neg neg` (`-x`), `Index[K, V] index` (`x[k]`). Numbers, `Str`, `Bool`, lists, tuples, `Opt`, `Map` have them; `==` uses a hand-written `Eq` inside `Opt`, `List`, `Res`, tuples and derived types; `sort` and `.str` stay structural.
 - `type P = {..} derive Eq, Ord, Show, Hash, Json` adds structural impls (variants order by name).
 - One impl per (trait, type), in the trait's or the type's package; `pub trait` and `pub impl` export them, and `use lib.{Sh}` brings its methods.
 

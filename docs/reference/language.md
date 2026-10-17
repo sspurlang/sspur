@@ -129,8 +129,8 @@ test t = Circle{r: 1.0}.describe == "shape: 3.14" and Vec2{x: 1, y: 2} + Vec2{x:
 | `Index[K, V]` | `index(x: Self, k: K) -> V` | `x[k]` | `List[T]` as `Index[Int, T]` |
 | `Copy` | | | every type except a `res` type (sys profile) |
 
-- Built-in types keep their own semantics: `Int` arithmetic traps on overflow whether it is reached directly or through a bound. A hand-written impl applies where the static type is the type with the impl; `==` on lists and records that contain it, `sort`, `unique`, `contains`, map keys and `.str` stay structural.
-- `derive Eq, Ord, Show, Hash, Json` on a record, sum or newtype adds structural impls: equality and order as `==` and `sort` (fields in declaration order, variants by name), `show` as `.str`, `to_json` as `json.encode`. Every field type must implement the trait (`E_DERIVE_FIELD`); other names are `E_DERIVE_UNKNOWN`. A generic type's derived impl needs its parameters to implement the trait.
+- Built-in types keep their own semantics: `Int` arithmetic traps on overflow whether it is reached directly or through a bound. A hand-written impl applies where the static type is the type with the impl. `==` and `!=` also use a hand-written `Eq` inside `Opt`, `List`, `Res`, tuples and types that derive `Eq`, so `some(k) == some(k2)` and a derived record compare that field with its impl; an unbounded type parameter, `sort`, `unique`, `contains`, map keys and `.str` stay structural.
+- `derive Eq, Ord, Show, Hash, Json` on a record, sum or newtype adds structural impls: equality and order as `==` and `sort` (fields in declaration order, variants by name; a field with a hand-written `Eq` is compared with it), `show` as `.str`, `to_json` as `json.encode`. Every field type must implement the trait (`E_DERIVE_FIELD`); other names are `E_DERIVE_UNKNOWN`. A generic type's derived impl needs its parameters to implement the trait.
 
 ## Statements (inside `do` blocks)
 

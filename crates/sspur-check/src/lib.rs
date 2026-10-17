@@ -2762,7 +2762,7 @@ impl Checker {
                 }
                 t
             }
-            _ if self.type_has(&t, "Secret") => {
+            _ if self.type_has_in(&t, "Secret", true) => {
                 self.push_diag("E_SECRET_COMPARE", "error", span, format!("comparing {t} directly can leak it through timing or logs"), Some("use s.check(x => x == expected)".into()), vec![]);
                 Type::bool()
             }
@@ -3102,6 +3102,11 @@ impl Checker {
     }
 
     fn type_has(&self, t: &Type, name: &str) -> bool {
+        self.type_has_in(t, name, false)
+    }
+
+    /// `type_has`; with `newtypes`, also inside newtypes, as a comparison sees them.
+    fn type_has_in(&self, t: &Type, name: &str, newtypes: bool) -> bool {
         let mut seen: HashSet<&str> = HashSet::new();
         let mut level = vec![t];
         for _ in 0..=8 {
@@ -3120,6 +3125,7 @@ impl Checker {
                             match &info.1.kind {
                                 TypeKind::Record(fs) => next.extend(fs.iter().map(|(_, t)| t)),
                                 TypeKind::Sum(vs) => next.extend(vs.iter().filter_map(|v| self.ctors.get(v)).filter_map(|c| c.fields.as_ref()).flatten().map(|(_, t)| t)),
+                                TypeKind::New(inner) if newtypes => next.push(inner),
                                 _ => {}
                             }
                         }

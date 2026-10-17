@@ -1,0 +1,42 @@
+// eq_impls: == through hand-written Eq impls
+
+type Ci = new Str
+
+impl Eq for Ci
+  fn eq(a: Ci, b: Ci) -> Bool
+  = a.raw.lower == b.raw.lower
+
+type Tag = {name: Ci, n: Int} derive Eq
+
+type Shape = Dot | Named{label: Ci} derive Eq
+
+type Wrap = new Tag derive Eq
+
+fn res_ci(s: Str) -> Res[Ci, Int]
+= ok(Ci(s))
+
+type KB = new Secret[Bytes]
+
+impl Eq for KB
+  fn eq(a: KB, b: KB) -> Bool
+  = a.raw.check(x => b.raw.check(y => crypto.equal(x, y)))
+
+type Key = {k: KB, id: Int} derive Eq
+
+test eq_reaches_impls_inside_containers = Ci("A") == Ci("a") and
+  some(Ci("A")) == some(Ci("a")) and
+  [Ci("x"), Ci("Y")] == [Ci("X"), Ci("y")] and
+  [Ci("x")] != [Ci("x"), Ci("x")] and
+  (Ci("a"), 1) == (Ci("A"), 1) and
+  res_ci("q") == res_ci("Q")
+
+test derived_eq_uses_field_impls = Tag{name: Ci("Ann"), n: 1} == Tag{name: Ci("ann"), n: 1} and
+  Tag{name: Ci("Ann"), n: 1} != Tag{name: Ci("ann"), n: 2} and
+  Named{label: Ci("P")} == Named{label: Ci("p")} and
+  Dot != Named{label: Ci("p")} and
+  Wrap(Tag{name: Ci("Z"), n: 0}) == Wrap(Tag{name: Ci("z"), n: 0})
+
+test secrets_compare_through_their_impl = Key{k: KB(secret(bytes([1]))), id: 1} ==
+  Key{k: KB(secret(bytes([1]))), id: 1} and
+  Key{k: KB(secret(bytes([1]))), id: 1} != Key{k: KB(secret(bytes([2]))), id: 1} and
+  some(KB(secret(bytes([3])))) == some(KB(secret(bytes([3]))))

@@ -471,3 +471,11 @@ fn lambda_annotations_and_nested_match_layout() {
     assert!(codes(same).contains(&"E_NONEXHAUSTIVE".to_string()));
     assert!(codes("fn f(xs: List[Int]) -> List[Int]\n  pre xs.all(_ > 0)\n  post r.all(_ > 0)\n= xs").is_empty());
 }
+
+#[test]
+fn secrets_in_newtypes_compare_only_through_an_impl() {
+    let base = "type KB = new Secret[Bytes]\n";
+    assert_eq!(codes(&format!("{base}fn f(a: KB, b: KB) -> Bool\n= a == b")), vec!["E_SECRET_COMPARE"]);
+    let with_impl = format!("{base}impl Eq for KB\n  fn eq(a: KB, b: KB) -> Bool\n  = a.raw.check(x => b.raw.check(y => crypto.equal(x, y)))\nfn f(a: KB, b: KB) -> Bool\n= a == b and some(a) == some(b) and [a] == [b]");
+    assert!(codes(&with_impl).is_empty(), "{:?}", diags(&with_impl));
+}

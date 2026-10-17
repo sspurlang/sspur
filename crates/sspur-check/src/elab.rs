@@ -12,8 +12,22 @@ enum Target {
     Builtin,
 }
 
+enum EqShape {
+    Tuple(Vec<Type>),
+    Opt(Type),
+    List(Type),
+    Res(Type, Type),
+    Record(Vec<(String, Type)>),
+    Sum(Vec<(String, Vec<(String, Type)>)>),
+    New(Type),
+}
+
 struct Elab<'a> {
     t: &'a TraitOut,
+    c: &'a CheckOutput,
+    /// The definition being rewritten, where generated helpers go.
+    cur: usize,
+    eq_done: HashSet<String>,
     templates: HashMap<String, (usize, FnDef)>,
     specs: HashMap<String, String>,
     taken: HashSet<String>,
@@ -198,7 +212,119 @@ impl Elab<'_> {
         name
     }
 
+    fn user_eq(&self, t: &Type) -> bool {
+        matches!(t, Type::Con(c, _) if self.t.impls.get(&("Eq".to_string(), c.clone())).is_some_and(|i| !i.derived))
+    }
+
+    /// The parts compared when `==` on `t` is structural: the elements of `Opt`, `List`, `Res`
+    /// and tuples, and the fields of a type that derives `Eq`.
+    fn eq_parts(&self, t: &Type) -> Option<EqShape> {
+        match t {
+            Type::Tuple(xs) => Some(EqShape::Tuple(xs.clone())),
+            Type::Con(c, a) if c == "Opt" || c == "List" => Some(if c == "Opt" { EqShape::Opt(a[0].clone()) } else { EqShape::List(a[0].clone()) }),
+            Type::Con(c, a) if c == "Res" => Some(EqShape::Res(a[0].clone(), a[1].clone())),
+            Type::Con(c, a) if self.t.impls.get(&("Eq".to_string(), c.clone())).is_some_and(|i| i.derived) => {
+                if let Some((ps, fs)) = self.c.records.get(c) {
+                    let map: HashMap<String, Type> = ps.iter().cloned().zip(a.iter().cloned()).collect();
+                    return Some(EqShape::Record(fs.iter().map(|(f, ft)| (f.clone(), subst_params(ft, &map))).collect()));
+                }
+                if let Some((ps, vs)) = self.c.sums.get(c) {
+                    let map: HashMap<String, Type> = ps.iter().cloned().zip(a.iter().cloned()).collect();
+                    return Some(EqShape::Sum(vs.iter().map(|(v, fs)| (v.clone(), fs.iter().flatten().map(|(f, ft)| (f.clone(), subst_params(ft, &map))).collect())).collect()));
+                }
+                self.c.newtypes.get(c).filter(|_| a.is_empty()).map(|i| EqShape::New(i.clone()))
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether `==` on `t` reaches a hand-written `Eq` impl.
+    fn eq_needs(&self, t: &Type, seen: &mut Vec<Type>) -> bool {
+        if self.user_eq(t) {
+            return true;
+        }
+        if seen.contains(t) {
+            return false;
+        }
+        seen.push(t.clone());
+        let parts: Vec<Type> = match self.eq_parts(t) {
+            Some(EqShape::Tuple(xs)) => xs,
+            Some(EqShape::Opt(x) | EqShape::List(x) | EqShape::New(x)) => vec![x],
+            Some(EqShape::Res(a, b)) => vec![a, b],
+            Some(EqShape::Record(fs)) => fs.into_iter().map(|(_, t)| t).collect(),
+            Some(EqShape::Sum(vs)) => vs.into_iter().flat_map(|(_, fs)| fs.into_iter().map(|(_, t)| t)).collect(),
+            None => vec![],
+        };
+        parts.iter().any(|p| self.eq_needs(p, seen))
+    }
+
+    /// `x == y` at type `t`, through the impls it reaches.
+    fn eq_call(&mut self, t: &Type, x: &str, y: &str) -> String {
+        if self.user_eq(t) {
+            if let Some(Target::Fn(f)) = self.target("Eq", "eq", t) {
+                return format!("{f}({x}, {y})");
+            }
+        } else if self.eq_needs(t, &mut vec![]) {
+            return format!("{}({x}, {y})", self.eq_helper(t));
+        }
+        format!("{x} == {y}")
+    }
+
+    /// A function comparing two `t`s part by part, for an `==` that reaches an `Eq` impl.
+    fn eq_helper(&mut self, t: &Type) -> String {
+        let name = format!("__eq__{}", sanitize(t));
+        if !self.eq_done.insert(name.clone()) {
+            return name;
+        }
+        let and = |xs: Vec<String>| if xs.is_empty() { "true".to_string() } else { xs.join(" and ") };
+        let body = match self.eq_parts(t) {
+            Some(EqShape::Tuple(xs)) => {
+                let cs = xs.iter().enumerate().map(|(i, x)| self.eq_call(x, &format!("a.{i}"), &format!("b.{i}"))).collect();
+                and(cs)
+            }
+            Some(EqShape::Opt(x)) => format!("match (a, b)\n  | (some(x), some(y)) => {}\n  | (none, none) => true\n  | _ => false", self.eq_call(&x, "x", "y")),
+            Some(EqShape::List(x)) => format!("a.len == b.len and (0..a.len).all(i => {})", self.eq_call(&x, "a[i]", "b[i]")),
+            Some(EqShape::Res(o, e)) => format!("match (a, b)\n  | (ok(x), ok(y)) => {}\n  | (err(x), err(y)) => {}\n  | _ => false", self.eq_call(&o, "x", "y"), self.eq_call(&e, "x", "y")),
+            Some(EqShape::Record(fs)) => {
+                let cs = fs.iter().map(|(f, ft)| self.eq_call(ft, &format!("a.{f}"), &format!("b.{f}"))).collect();
+                and(cs)
+            }
+            Some(EqShape::New(inner)) => self.eq_call(&inner, "a.raw", "b.raw"),
+            Some(EqShape::Sum(vs)) => {
+                let mut arms = String::new();
+                for (v, fs) in &vs {
+                    let pa: Vec<String> = fs.iter().enumerate().map(|(i, (f, _))| format!("{f}: x{i}")).collect();
+                    let pb: Vec<String> = fs.iter().enumerate().map(|(i, (f, _))| format!("{f}: y{i}")).collect();
+                    let cs = fs.iter().enumerate().map(|(i, (_, ft))| self.eq_call(ft, &format!("x{i}"), &format!("y{i}"))).collect();
+                    let (pa, pb) = if fs.is_empty() { (v.clone(), v.clone()) } else { (format!("{v}{{{}}}", pa.join(", ")), format!("{v}{{{}}}", pb.join(", "))) };
+                    arms.push_str(&format!("\n  | ({pa}, {pb}) => {}", and(cs)));
+                }
+                if vs.len() > 1 {
+                    arms.push_str("\n  | _ => false");
+                }
+                format!("match (a, b){arms}")
+            }
+            None => "a == b".to_string(),
+        };
+        let src = format!("fn {name}(a: {t}, b: {t}) -> Bool\n= {body}\n");
+        match parse(&src) {
+            Ok(m) => {
+                if let Some(Def::Fn(f)) = m.defs.into_iter().next() {
+                    self.taken.insert(name.clone());
+                    self.out.entry(self.cur).or_default().push(f);
+                }
+            }
+            Err(e) => {
+                self.err.get_or_insert_with(|| format!("internal: the comparison of {t} does not parse: {}\n{src}", e.msg));
+            }
+        }
+        name
+    }
+
     fn target(&mut self, tr: &str, m: &str, st: &Type) -> Option<Target> {
+        if tr == "Eq" && !self.user_eq(st) && self.eq_needs(st, &mut vec![]) {
+            return Some(Target::Fn(self.eq_helper(st)));
+        }
         let Type::Con(c, args) = st else {
             return match st {
                 Type::Tuple(_) => Some(Target::Builtin),
@@ -358,6 +484,7 @@ impl Elab<'_> {
 
     fn specialize(&mut self, name: &str, template: &str, map: &HashMap<String, Type>) -> Option<(usize, FnDef)> {
         let (origin, f) = self.templates.get(template).cloned()?;
+        self.cur = origin;
         let mut g = f.clone();
         g.name = name.to_string();
         g.examples.clear();
@@ -380,7 +507,7 @@ fn elaborate(m: &Module, out: &CheckOutput) -> Result<Module, String> {
     let t = &out.traits;
     let own = m.own.unwrap_or(m.defs.len());
     let index: HashMap<&str, usize> = m.defs.iter().enumerate().map(|(i, d)| (d.name(), i)).collect();
-    let mut e = Elab { t, templates: HashMap::new(), specs: HashMap::new(), taken: m.defs.iter().map(|d| d.name().to_string()).collect(), queue: vec![], out: BTreeMap::new(), err: None };
+    let mut e = Elab { t, c: out, cur: 0, eq_done: HashSet::new(), templates: HashMap::new(), specs: HashMap::new(), taken: m.defs.iter().map(|d| d.name().to_string()).collect(), queue: vec![], out: BTreeMap::new(), err: None };
     let mut plain_units: HashMap<usize, Vec<FnDef>> = HashMap::new();
     for (i, d) in m.defs.iter().enumerate() {
         if let Def::Fn(f) = d
@@ -402,6 +529,7 @@ fn elaborate(m: &Module, out: &CheckOutput) -> Result<Module, String> {
     let mut emitted: Vec<(usize, Def)> = Vec::new();
     let mut ex_tests: Vec<(String, String)> = Vec::new();
     for (i, d) in m.defs.iter().enumerate() {
+        e.cur = i;
         match d {
             Def::Fn(f) if t.bounded.contains(&f.name) => {
                 if i < own {

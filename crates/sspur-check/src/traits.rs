@@ -653,9 +653,42 @@ impl Checker {
         Some(t)
     }
 
+    /// Whether `==` on `t` reaches a hand-written `Eq` impl: `t` has one, or holds a type that
+    /// does in an `Opt`, `List`, `Res`, tuple or a type that derives `Eq`.
+    pub(crate) fn eq_reaches_impl(&self, t: &Type, seen: &mut Vec<String>) -> bool {
+        match t {
+            Type::Tuple(xs) => xs.iter().any(|x| self.eq_reaches_impl(x, seen)),
+            Type::Con(c, a) => {
+                match self.impls.get(&("Eq".to_string(), c.clone())) {
+                    Some(i) if !i.derived => return true,
+                    Some(_) => {}
+                    None => return matches!(c.as_str(), "Opt" | "List" | "Res") && a.iter().any(|x| self.eq_reaches_impl(x, seen)),
+                }
+                if seen.contains(c) {
+                    return false;
+                }
+                seen.push(c.clone());
+                let Some(info) = self.types.get(c) else { return false };
+                let map: HashMap<String, Type> = info.params.iter().cloned().zip(a.iter().cloned()).collect();
+                let parts: Vec<Type> = match &info.kind {
+                    TypeKind::Record(fs) => fs.iter().map(|(_, t)| subst_params(t, &map)).collect(),
+                    TypeKind::Sum(vs) => vs.iter().filter_map(|v| self.ctors.get(v)).filter_map(|c| c.fields.as_ref()).flatten().map(|(_, t)| subst_params(t, &map)).collect(),
+                    TypeKind::New(inner) => vec![inner.clone()],
+                    TypeKind::Alias(_) => vec![],
+                };
+                parts.iter().any(|x| self.eq_reaches_impl(x, seen))
+            }
+            _ => false,
+        }
+    }
+
     /// `l op r` on a type that implements the operator's trait through a bound or an impl.
     pub(crate) fn trait_op(&mut self, tr: &str, t: &Type, span: Span, tag: u8) -> bool {
         let t = self.resolve(t);
+        if tr == "Eq" && !matches!(&t, Type::Con(c, _) if self.impls.get(&(tr.to_string(), c.clone())).is_some_and(|i| !i.derived)) && self.eq_reaches_impl(&t, &mut vec![]) {
+            self.pending_sites.push(((span.start, span.end, tag), tr.to_string(), t, span));
+            return true;
+        }
         if !self.trait_target(&t, tr, false) {
             return false;
         }

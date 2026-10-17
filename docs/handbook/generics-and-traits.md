@@ -44,7 +44,7 @@ Resolution is static. Each bounded function is compiled once per type it is call
 
 ## Operators and derive
 
-Operators are trait methods. `impl Add for Money` gives `Money` a `+`; `Sub`, `Mul`, `Div`, `Neg` and `Index[K, V]` work the same way. `derive` writes structural impls for you: `Eq` and `Ord` compare fields in declaration order (variants by name), `Show` prints the value as source, `Hash` hashes that text and `Json` encodes it like `json.encode`.
+Operators are trait methods. `impl Add for Money` gives `Money` a `+`; `Sub`, `Mul`, `Div`, `Neg` and `Index[K, V]` work the same way. `derive` writes structural impls for you: `Eq` and `Ord` compare fields in declaration order (variants by name), and a field whose type has its own `impl Eq` is compared with it, as it is inside an `Opt`, a list or a tuple, `Show` prints the value as source, `Hash` hashes that text and `Json` encodes it like `json.encode`.
 
 ```sspur
 {{#include ../snippets/handbook/traits.ssp:ops}}
