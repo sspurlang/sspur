@@ -192,10 +192,16 @@ impl Gen<'_> {
     }
 
     /// `db.tx(c, f)`: begin, run `f`, commit; an error `f` raises rolls back and is raised again.
-    pub(crate) fn tx_site(&mut self, ret: &Type, fails: &[Type], atoms: &[String], args: Vec<Expr>) -> Result<ExprKind, String> {
+    pub(crate) fn tx_site(&mut self, ret: &Type, fails: &[Type], atoms: &[String], rows: &[String], args: Vec<Expr>) -> Result<ExprKind, String> {
         let base = format!("__dbtx{}", self.wraps);
         self.wraps += 1;
         let rt = src_ty(ret)?;
+        let mut tps = BTreeSet::new();
+        for t in std::iter::once(ret).chain(fails) {
+            type_params(t, &mut tps);
+        }
+        let generics: Vec<String> = tps.into_iter().chain(rows.iter().cloned()).collect();
+        let tgen = if generics.is_empty() { String::new() } else { format!("[{}]", generics.join(", ")) };
         let mut row: Vec<String> = atoms.to_vec();
         row.push("db".into());
         for t in fails {
@@ -221,10 +227,10 @@ impl Gen<'_> {
                 }
                 _ => arms.push_str("  | e => do\n      __db_txn(c, 2)\n      raise e\n"),
             }
-            self.extra.push(format!("fn {name}(c: Db, f: {ft}) -> {rt} ! {effs}\n= catch {cur}\n{arms}"));
+            self.extra.push(format!("fn {name}{tgen}(c: Db, f: {ft}) -> {rt} ! {effs}\n= catch {cur}\n{arms}"));
             cur = format!("{name}(c, f)");
         }
-        self.extra.push(format!("fn {base}(c: Db, f: {ft}) -> {rt} ! {effs}\n= do\n  __db_txn(c, 0)\n  v = {cur}\n  __db_txn(c, 1)\n  v"));
+        self.extra.push(format!("fn {base}{tgen}(c: Db, f: {ft}) -> {rt} ! {effs}\n= do\n  __db_txn(c, 0)\n  v = {cur}\n  __db_txn(c, 1)\n  v"));
         Ok(call_of(&base, args))
     }
 
@@ -362,5 +368,20 @@ impl Gen<'_> {
             }
             _ => Err(format!("internal: csv.{op}")),
         }
+    }
+}
+
+/// The type parameters `t` mentions.
+fn type_params(t: &Type, out: &mut BTreeSet<String>) {
+    match t {
+        Type::Param(p) => {
+            out.insert(p.clone());
+        }
+        Type::Con(_, a) | Type::Tuple(a) => a.iter().for_each(|x| type_params(x, out)),
+        Type::Fn(ps, r, _) => {
+            ps.iter().for_each(|x| type_params(x, out));
+            type_params(r, out);
+        }
+        Type::Var(_) => {}
     }
 }

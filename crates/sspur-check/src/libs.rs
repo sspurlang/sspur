@@ -36,8 +36,9 @@ pub enum LibSite {
     /// `db.exec`, `db.query[T]`, `db.one[T]`, `db.opt[T]`: the operation, the row type (none for
     /// exec) and the parameters.
     Db(String, Option<Type>, Params),
-    /// `db.tx(c, f)`: the result type, the error types `f` can raise and its other effects.
-    Tx(Type, Vec<Type>, Vec<String>),
+    /// `db.tx(c, f)`: the result type, the error types `f` can raise, its other effects, and
+    /// which of those are the enclosing function's effect-row parameters.
+    Tx(Type, Vec<Type>, Vec<String>, Vec<String>),
     /// `csv.decode[T]`, `csv.read[T]`, `csv.fold[T]`, `csv.encode(xs)`: the operation and `T`.
     Csv(String, Type),
 }
@@ -334,7 +335,9 @@ impl Checker {
             fails.push(et);
         }
         let r = self.resolve(&ret);
-        self.lib_site(span, NetSite::Data(LibSite::Tx(r.clone(), fails, atoms)));
+        let rows = atoms.iter().filter(|a| self.cur_rparams.contains(a)).cloned().collect();
+        self.lib_site(span, NetSite::Data(LibSite::Tx(r.clone(), fails, atoms, rows)));
+        self.pending_tx.push((span.start, span.end));
         r
     }
 

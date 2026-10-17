@@ -201,6 +201,8 @@ struct Checker {
     fail_types: HashMap<String, Type>,
     cur_params: Vec<(String, Type)>,
     pending_types: Vec<(ExprKey, Type)>,
+    /// `db.tx` sites, whose types are final only once the definition has been checked.
+    pending_tx: Vec<(u32, u32)>,
     pending_binds: Vec<(u32, String, Type)>,
     bind_at: u32,
     bind_types: HashMap<(u32, String), Type>,
@@ -337,6 +339,7 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
         fail_types: HashMap::new(),
         cur_params: vec![],
         pending_types: vec![],
+        pending_tx: vec![],
         pending_binds: vec![],
         bind_at: 0,
         bind_types: HashMap::new(),
@@ -447,6 +450,14 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
         for (k, t) in std::mem::take(&mut c.pending_types) {
             let r = c.resolve(&t);
             c.expr_types.insert(k, r);
+        }
+        for k in std::mem::take(&mut c.pending_tx) {
+            if let Some(NetSite::Data(libs::LibSite::Tx(r, fails, _, _))) = c.net_sites.get(&k).cloned() {
+                let (r, fails) = (c.resolve(&r), fails.iter().map(|t| c.resolve(t)).collect());
+                if let Some(NetSite::Data(libs::LibSite::Tx(r0, f0, _, _))) = c.net_sites.get_mut(&k) {
+                    (*r0, *f0) = (r, fails);
+                }
+            }
         }
         for (at, n, t) in std::mem::take(&mut c.pending_binds) {
             let r = c.resolve(&t);
