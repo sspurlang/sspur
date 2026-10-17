@@ -588,16 +588,10 @@ fn list(xs: &[Expr], ind: usize) -> String {
     layout::group(&xs.iter().map(|x| expr(x, ind)).collect::<Vec<_>>())
 }
 
-/// Whether `e` ends in arms of its own (`match`, `catch`, `handle`) that would take the arms
+/// Whether `e` has arms of its own (`match`, `catch`, `handle`) that would take the arms
 /// printed after it at the same column.
-fn ends_in_arms(e: &Expr) -> bool {
-    match &e.kind {
-        ExprKind::Match(_, _, MatchForm::Arms) | ExprKind::Catch(..) | ExprKind::Handle(..) => true,
-        ExprKind::If(_, _, Some(f)) => ends_in_arms(f),
-        ExprKind::Lambda { body, implicit: false, .. } => ends_in_arms(body),
-        ExprKind::Raise(x) | ExprKind::Return(x) => ends_in_arms(x),
-        _ => false,
-    }
+fn has_arms(e: &Expr) -> bool {
+    matches!(&e.kind, ExprKind::Match(_, _, MatchForm::Arms) | ExprKind::Catch(..) | ExprKind::Handle(..))
 }
 
 fn print_arms(arms: &[Arm], ind: usize) -> String {
@@ -607,7 +601,7 @@ fn print_arms(arms: &[Arm], ind: usize) -> String {
         if let Some(g) = &a.guard {
             s.push_str(&format!(" if {}{}", expr(g, ind), mark(layout::THEN)));
         }
-        let inner = if i + 1 < arms.len() && ends_in_arms(&a.body) { ind + 2 } else { ind };
+        let inner = if i + 1 < arms.len() && has_arms(&a.body) { ind + 2 } else { ind };
         s.push_str(&format!(" => {}", branch(&a.body, inner)));
     }
     s

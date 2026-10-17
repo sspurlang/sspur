@@ -55,6 +55,8 @@ struct Parser {
     line_indent: u32,
     in_refine: bool,
     notes: Vec<String>,
+    /// How many match or catch arms enclose the current position.
+    arm_depth: u32,
 }
 
 fn is_upper(s: &str) -> bool {
@@ -63,7 +65,7 @@ fn is_upper(s: &str) -> bool {
 
 impl Parser {
     fn new(toks: Vec<Token>) -> Self {
-        Parser { toks, pos: 0, line_indent: 0, in_refine: false, notes: Vec::new() }
+        Parser { toks, pos: 0, line_indent: 0, in_refine: false, notes: Vec::new(), arm_depth: 0 }
     }
 
     fn peek(&self) -> &Tok {
@@ -1339,14 +1341,14 @@ impl Parser {
         Ok(Expr::new(ExprKind::Block(vec![Stmt::Assign(name, value, span)]), full))
     }
 
-    /// Arms on their own lines start at one column: a `|` line left of the first one belongs to
-    /// an enclosing `match`, so a nested match ends where its arms' indentation ends.
+    /// In an arm, a nested match's arms start at one column: a `|` line left of the first one
+    /// belongs to the enclosing match.
     fn arms(&mut self, indent: u32) -> PResult<Vec<Arm>> {
         let mut arms = Vec::new();
         let mut col = None;
         loop {
             if let Some(c) = self.newline_then(|t| matches!(t, Tok::Sym("|"))) {
-                if c < indent || col.is_some_and(|k| c < k) {
+                if c < indent || (self.arm_depth > 0 && col.is_some_and(|k| c < k)) {
                     break;
                 }
                 col.get_or_insert(c);
@@ -1360,7 +1362,10 @@ impl Parser {
             let guard = if self.eat_kw("if") { Some(self.expr()?) } else { None };
             self.expect_sym("=>")?;
             let saved = self.line_indent;
-            let body = if self.assign_ahead() || self.place_assign_ahead() { self.branch()? } else { self.block_or_seq()? };
+            self.arm_depth += 1;
+            let body = if self.assign_ahead() || self.place_assign_ahead() { self.branch() } else { self.block_or_seq() };
+            self.arm_depth -= 1;
+            let body = body?;
             self.line_indent = saved;
             arms.push(Arm { pat, guard, body });
         }
