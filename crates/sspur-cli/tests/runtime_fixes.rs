@@ -74,3 +74,26 @@ fn discarding_a_pure_result_warns() {
     assert!(err.contains("keep it with 'b := b.add(\"a\")' (declare 'b' with 'var')"), "{err}");
     assert_eq!(out, "1\nb\n");
 }
+
+#[test]
+fn dependency_audits_are_listed_by_check_at_their_own_line() {
+    let d = dir("audits");
+    std::fs::create_dir_all(d.join("frlib")).unwrap();
+    std::fs::create_dir_all(d.join("app")).unwrap();
+    std::fs::write(d.join("frlib/sspur.toml"), "[package]\nname = \"frlib\"\nversion = \"0.1.0\"\n").unwrap();
+    std::fs::write(d.join("frlib/lib.ssp"), "// A hash of the key.\npub fn tag(k: Secret[Bytes]) -> Bytes\n= k.map(b => crypto.sha256(b)).expose(\"a digest is public\")\n\n// Unused effect.\npub fn w(x: Int) -> Int ! log\n= x\n").unwrap();
+    std::fs::write(d.join("app/sspur.toml"), "[package]\nname = \"app\"\nversion = \"0.1.0\"\nsrc = \"main.ssp\"\n\n[deps]\nfrlib = { path = \"../frlib\" }\n").unwrap();
+    std::fs::write(d.join("app/main.ssp"), "fn main() -> Unit ! log\n= log(\"{frlib.tag(secret(bytes([1]))).len}\")\n").unwrap();
+    let app = d.join("app");
+    let cache = d.join("cache");
+    let go = |args: &[&str]| {
+        let o = Command::new(env!("CARGO_BIN_EXE_sspur")).args(args).current_dir(&app).env("SSPUR_CACHE", &cache).env_remove("SSPUR_STRICT_NATIVE").output().unwrap();
+        (String::from_utf8_lossy(&o.stdout).to_string(), String::from_utf8_lossy(&o.stderr).to_string())
+    };
+    for args in [&["run", "--interp", "main.ssp"][..], &["run", "main.ssp"]] {
+        let (out, err) = go(args);
+        assert_eq!((out.as_str(), err.as_str()), ("32\n", ""), "{args:?}");
+    }
+    let (out, err) = go(&["check", "main.ssp"]);
+    assert_eq!((out.as_str(), err.as_str()), ("ok 1 definitions\n", "frlib/lib.ssp:3:3 audit A_DECLASSIFY Secret value declassified with .expose: a digest is public\n"));
+}

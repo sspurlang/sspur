@@ -156,6 +156,8 @@ pub struct Loaded {
     pub shown: BTreeMap<String, String>,
     /// Mangled names of the public definitions of direct dependencies.
     pub exports: BTreeSet<String>,
+    /// The audit notes of every dependency, each at its own file and line (`sspur check` lists them).
+    pub dep_audits: Vec<String>,
 }
 
 impl Loaded {
@@ -172,7 +174,7 @@ impl Loaded {
                 let res = Resolution { user_methods: Some(&check.user_methods), record_types: Some(&check.record_types) };
                 let hashes = hash_module_with(&module, &res).into_iter().collect();
                 let own = module.own.unwrap_or(module.defs.len());
-                Ok(Some(Loaded { src: self.src.clone(), module, check, hashes, partial: false, own, pkgs: self.pkgs.clone(), shown: self.shown.clone(), exports: self.exports.clone() }))
+                Ok(Some(Loaded { src: self.src.clone(), module, check, hashes, partial: false, own, pkgs: self.pkgs.clone(), shown: self.shown.clone(), exports: self.exports.clone(), dep_audits: self.dep_audits.clone() }))
             }
             Err(e) => Err(vec![pkg::dep_diag(&e)]),
         }
@@ -293,7 +295,7 @@ pub fn check_full(src: String, module: Module) -> Loaded {
     let res = Resolution { user_methods: Some(&check.user_methods), record_types: Some(&check.record_types) };
     let hashes = hash_module_with(&module, &res).into_iter().collect();
     let own = module.defs.len();
-    Loaded { src, module, check, hashes, partial: false, own, pkgs: vec![], shown: BTreeMap::new(), exports: BTreeSet::new() }
+    Loaded { src, module, check, hashes, partial: false, own, pkgs: vec![], shown: BTreeMap::new(), exports: BTreeSet::new(), dep_audits: vec![] }
 }
 
 fn text_cache() -> &'static Mutex<HashMap<String, String>> {

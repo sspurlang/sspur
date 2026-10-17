@@ -437,7 +437,7 @@ fn program_cmd(cmd: &str, args: &Args) -> ExitCode {
     };
     let (label, text, loaded) = match args.pos.get(1).or(manifest_src.as_ref()) {
         Some(path) => match std::fs::read_to_string(path) {
-            Ok(src) if cmd == "fmt" => (path.clone(), src.clone(), sspur_syntax::parse(&src).map(|module| Loaded { own: module.defs.len(), src, module, check: Default::default(), hashes: Default::default(), partial: true, pkgs: vec![], shown: Default::default(), exports: Default::default() }).map_err(|e| vec![sspur_check::syntax_diag(&e)])),
+            Ok(src) if cmd == "fmt" => (path.clone(), src.clone(), sspur_syntax::parse(&src).map(|module| Loaded { own: module.defs.len(), src, module, check: Default::default(), hashes: Default::default(), partial: true, pkgs: vec![], shown: Default::default(), exports: Default::default(), dep_audits: vec![] }).map_err(|e| vec![sspur_check::syntax_diag(&e)])),
             Ok(src) => match file_env(path) {
                 Ok(env) => (path.clone(), src.clone(), pkg::load(src, &env, false)),
                 Err(e) => {
@@ -475,6 +475,11 @@ fn program_cmd(cmd: &str, args: &Args) -> ExitCode {
         let mut diags = loaded.check.diags.clone();
         fill::enrich(&loaded, &mut diags, (!args.has("--no-fill")).then(|| args.num("--fill-ms", fill::budget(400) as usize) as u64));
         report(&loaded.src, &label, &diags, json);
+        if !json {
+            for a in &loaded.dep_audits {
+                eprintln!("{a}");
+            }
+        }
     } else {
         report(&loaded.src, &label, &loaded.check.diags, json);
     }

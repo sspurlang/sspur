@@ -428,6 +428,9 @@ pub struct Pkg {
     /// The public modules: each key that dependents may `use pkg.key.{..}`, and the package it is.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub public: BTreeMap<String, String>,
+    /// The package's own audit notes, `file:line:col audit CODE message`; not part of the hash.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub audits: Vec<String>,
 }
 
 pub fn pkg_dir(hash: &str) -> PathBuf {
@@ -788,6 +791,9 @@ pub fn load(src: String, env: &Env, cached: bool) -> Result<Loaded, Vec<Diag>> {
     }
     let l = link(&src, env)?;
     let mut loaded = if cached { check_cached(l.src, l.module, Some(l.own)) } else { check_full(l.src, l.module) };
+    // Warnings and audits in dependency code are the dependency's; its own check reports them.
+    loaded.check.diags.retain(|d| d.is_error() || (d.span[0] as usize) < src.len());
+    loaded.dep_audits = env.all.values().flat_map(|p| p.audits.iter().cloned()).collect();
     loaded.own = l.own;
     loaded.pkgs = env.names();
     loaded.shown = env.shown();
@@ -964,7 +970,18 @@ fn build_uncached(full: &str, m: &Manifest, src: &str, deps: &BTreeMap<String, A
     entries.extend(public.iter().map(|(k, f)| (format!("#public {k}"), f.clone())));
     let hash = root_hash(&entries);
     let direct = m.deps.keys().map(|d| env.target(d)).map(|d| (d.to_string(), deps.get(d).map(|p| p.hash.clone()).unwrap_or_default())).collect();
-    Ok(Pkg { name: full.to_string(), version: m.version.clone(), hash, profile: loaded.module.profile.clone(), deps: direct, piece, items, exports, public })
+    let file = format!("{full}/{}", m.src.as_deref().unwrap_or("lib.ssp"));
+    let audits = loaded
+        .check
+        .diags
+        .iter()
+        .filter(|d| d.severity == "audit" && (d.span[0] as usize) < src.len())
+        .map(|d| {
+            let (l, c) = line_col(src, d.span[0]);
+            format!("{file}:{l}:{c} audit {} {}", d.code, env.show(&d.msg))
+        })
+        .collect();
+    Ok(Pkg { name: full.to_string(), version: m.version.clone(), hash, profile: loaded.module.profile.clone(), deps: direct, piece, items, exports, public, audits })
 }
 
 // ---------- the registry ----------

@@ -318,3 +318,5 @@ This page lists every code the compiler can emit, grouped by area. The test suit
 |---|---|
 | `A_DECLASSIFY` | A `Secret`, `Pii`, `Untrusted` or `Guess` value was declassified (`.expose`, `.trust`, `.accept`) with the given reason |
 | `A_UNSAFE` | A function discharges `unsafe` with an `unsafe "reason"` clause |
+
+Audit notes and warnings belong to the package whose code has them. A package's own are printed by `sspur check`, `run` and `test` at its own lines. A dependency's warnings are printed only when the dependency itself is checked, and its audit notes are listed by the dependent's `sspur check` (not by `run` or `test`) at the dependency's own file and line, `frlib/lib.ssp:3:3 audit A_DECLASSIFY ...`, so reviewing an app shows every declassification it relies on, once.
