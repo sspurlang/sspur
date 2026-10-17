@@ -13,7 +13,7 @@ pub mod visit;
 
 pub use ast::*;
 pub use hints::{parse_all, parse_all_noted, syntax_hint};
-pub use parser::{parse, parse_expr, parse_noted};
+pub use parser::{parse, parse_expr, parse_noted, parse_sig};
 pub use comments::{format_source, format_source_at};
 pub use layout::{format_module, format_module_at, WIDTH};
 pub use printer::print_module;

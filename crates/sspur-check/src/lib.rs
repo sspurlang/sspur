@@ -923,9 +923,8 @@ impl Checker {
     }
 
     fn builtin_scheme(&mut self, src: &str) -> (String, Scheme) {
-        let m = parse(&format!("fn {src}\n= ?")).expect("builtin signature must parse");
-        let Def::Fn(f) = &m.defs[0] else { unreachable!() };
-        (f.name.trim_end_matches('_').to_string(), self.scheme_of(f))
+        let f = sspur_syntax::parse_sig(src).expect("builtin signature must parse");
+        (f.name.trim_end_matches('_').to_string(), self.scheme_of(&f))
     }
 
     fn scheme_of(&mut self, f: &FnDef) -> Scheme {

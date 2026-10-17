@@ -55,6 +55,17 @@ pub fn parse_expr(src: &str) -> PResult<Expr> {
     parse_expr_tokens(lex(src)?)
 }
 
+/// A function's signature as written after `fn`: `name[T](params) -> ret ! effects`.
+pub fn parse_sig(src: &str) -> PResult<FnDef> {
+    let mut toks = lex(src)?;
+    toks.insert(0, Token { tok: Tok::Kw("fn"), span: Span::new(0, 0) });
+    let mut p = Parser::new(toks);
+    let f = p.fn_header(Span::new(0, 0))?;
+    p.skip_newlines();
+    p.expect_eof()?;
+    Ok(f)
+}
+
 /// `parse_expr` of tokens already lexed.
 pub(crate) fn parse_expr_tokens(toks: Vec<Token>) -> PResult<Expr> {
     let mut p = Parser::new(toks);
