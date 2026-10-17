@@ -333,6 +333,7 @@ pub fn expr(e: &Expr, ind: usize) -> String {
         ExprKind::Str(parts) => {
             let mut s = format!("{}\"", mark(layout::STR_S));
             let was = layout::marking(false);
+            let flat = layout::flattening(true);
             for p in parts {
                 match p {
                     StrPart::Lit(l) => escape_into(&mut s, l),
@@ -346,6 +347,7 @@ pub fn expr(e: &Expr, ind: usize) -> String {
                 }
             }
             s.push('"');
+            layout::flattening(flat);
             layout::marking(was);
             s.push_str(mark(layout::STR_E));
             s
@@ -576,6 +578,7 @@ fn iter_expr(e: &Expr, ind: usize) -> String {
 
 fn arms_head(e: &Expr, ind: usize) -> String {
     match e.kind {
+        ExprKind::Match(..) | ExprKind::Catch(..) | ExprKind::Handle(..) if layout::flat() => format!("({})", expr(e, ind)),
         ExprKind::Match(..) | ExprKind::Catch(..) | ExprKind::Handle(..) => format!("do\n{}{}", pad(ind + 2), expr(e, ind + 2)),
         _ => expr(e, ind),
     }
@@ -606,16 +609,18 @@ fn list(xs: &[Expr], ind: usize) -> String {
 
 fn print_arms(arms: &[Arm], ind: usize) -> String {
     let mut s = String::new();
-    let lead = format!("\n{}| ", pad(ind));
+    let lead = if layout::flat() { " | ".to_string() } else { format!("\n{}| ", pad(ind)) };
     for (k, a) in arms.iter().enumerate() {
-        s.push_str(&format!("\n{}| {}", pad(ind), pat(&a.pat)));
+        s.push_str(&format!("{lead}{}", pat(&a.pat)));
         if let Some(g) = &a.guard {
             s.push_str(&format!(" if {}{}", expr(g, ind), mark(layout::THEN)));
         }
         let b = branch(&a.body, ind);
         // A `match`, `catch` or `handle` whose arms would print where these are takes the arms
         // below it; a block one level in ends before them.
-        if k + 1 < arms.len() && b.contains(&lead) {
+        if k + 1 < arms.len() && b.contains(&lead) && layout::flat() {
+            s.push_str(&format!(" => ({b})"));
+        } else if k + 1 < arms.len() && b.contains(&lead) {
             s.push_str(&format!(" => do\n{}{}", pad(ind + 2), branch(&a.body, ind + 2)));
         } else {
             s.push_str(&format!(" => {b}"));

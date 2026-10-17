@@ -85,6 +85,23 @@ fn strings_print_back_as_the_same_strings() {
     assert_eq!(print_module(&parse(&printed).unwrap()), printed);
 }
 
+/// A `match` or `catch` inside `{...}` prints its arms on one line, since a string can't span lines.
+#[test]
+fn arms_inside_a_string_stay_on_one_line() {
+    for src in [
+        "fn f(x: Int) -> Str\n= \"{catch g(x) | Bad => 1 | _ => 0} {x}\"\n",
+        "fn f(o: Opt[Int]) -> Str\n= \"{match o | some(x) => (match x | 1 => \"one\" | _ => \"many\") | none => \"none\"}\"\n",
+        "fn f(o: Opt[Int]) -> Str\n= \"{match (match o | some(_) => 1 | none => 0) | 1 => \"y\" | _ => \"n\"}\"\n",
+    ] {
+        let printed = print_module(&parse(src).unwrap());
+        assert_eq!(printed, src);
+        assert_eq!(sspur_syntax::format_source(src).unwrap(), src);
+        let narrow = sspur_syntax::format_source_at(src, 20).unwrap();
+        assert_eq!(print_module(&parse(&narrow).unwrap_or_else(|e| panic!("{narrow}: {e:?}"))), src);
+        assert!(narrow.contains(src.lines().nth(1).unwrap()), "{narrow}");
+    }
+}
+
 #[test]
 fn route_and_asm_strings_keep_their_braces() {
     let m = parse("fn get_user(id: Int) -> Str\n= \"\"\n\nsvc api\n  ep get \"/users/{id}/posts/{post:int}\" = get_user\n").unwrap();

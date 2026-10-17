@@ -35,7 +35,8 @@ const MARKS: [&str; 34] = [
     "\u{E020}", "\u{E021}",
 ];
 
-// Bit 0: print markers; bit 1: print `if` blocks the way `sspur fmt` writes them.
+// Bit 0: print markers; bit 1: print `if` blocks the way `sspur fmt` writes them; bit 2: print
+// arms on one line (inside a string).
 thread_local!(static MODE: Cell<u8> = const { Cell::new(0) });
 
 fn mode() -> u8 {
@@ -53,6 +54,18 @@ pub(crate) fn marking(on: bool) -> bool {
     let m = mode();
     MODE.with(|c| c.set(m & !1 | u8::from(on)));
     m & 1 != 0
+}
+
+/// Whether arms are printed on one line, as a string's interpolation needs.
+pub(crate) fn flat() -> bool {
+    mode() & 4 != 0
+}
+
+/// Turns one-line arms on or off and returns what they were.
+pub(crate) fn flattening(on: bool) -> bool {
+    let m = mode();
+    MODE.with(|c| c.set(m & !4 | if on { 4 } else { 0 }));
+    m & 4 != 0
 }
 
 pub(crate) fn mark(k: u8) -> &'static str {

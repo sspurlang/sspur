@@ -49,6 +49,7 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 - The canonical text of corpus program t46, a `catch` ending a match arm, read back as a different program; a `match`, `catch` or `handle` that ends an arm other than the last now prints inside `do` on its own line. Its content hash is unchanged.
 - `_` in a `pre` or `post` condition is a placeholder lambda, as in any call argument: `post r.map(_ + 1).len == xs.len` checks (it was `E_PLACEHOLDER`).
 - Error spans of names interpolated after an escaped quote point at the name.
+- A `match` or `catch` with arms inside a string's `{...}` prints on one line, so `sspur fmt` keeps the string whole and a program using `http`, `db` or `crypto` with one builds; it failed with `E_DEP internal: the elaborated network program does not parse: unterminated string`.
 
 ## [0.14.0] - 2026-10-17
 
