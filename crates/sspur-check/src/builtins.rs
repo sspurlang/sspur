@@ -153,7 +153,9 @@ pub static LIB_SUMS: &[(&str, &str)] = &[("#DbErr", "type DbErr = Sql{msg: Str} 
 
 
 /// One signature a line.
-pub static STD_GLOBALS: &str = "\
+macro_rules! std_globals_text {
+    () => {
+        "\
 dev_f32(xs: List[F64]) -> DevBuf[F32] ! dev\n\
 dev_f64(xs: List[F64]) -> DevBuf[F64] ! dev\n\
 dev_i32(xs: List[Int]) -> DevBuf[I32] ! dev\n\
@@ -248,15 +250,20 @@ __net_fetch(method: Str, url: Str, headers: List[(Str, Str)], body: Str, timeout
 pi() -> F64\n\
 euler() -> F64\n\
 inf() -> F64\n\
-nan() -> F64";
+nan() -> F64"
+    };
+}
+
+#[cfg(not(target_family = "wasm"))]
+pub static STD_GLOBALS: &str = std_globals_text!();
+/// The playground's `__net_serve`, which only traps, is the one with no `Bytes`.
+#[cfg(target_family = "wasm")]
+pub static STD_GLOBALS: &str = concat!(std_globals_text!(), "\n__net_serve[e](cfg: (Int, Str, Int, Int, Int, Int, List[Str], Bool, List[(Str, Str)], Str, Str, Str, Bool), h: (Str, Str, List[(Str, Str)], Str, Int, Str) -> (Int, List[(Str, Str)], Str, Str) ! e) -> Unit ! net, log, e");
 
 /// `Bytes` and the primitives of the library prelude (ADR 0037), which the playground leaves out.
 #[cfg(not(target_family = "wasm"))]
 pub static LIB_GLOBALS: &str = "bytes(xs: List[Int]) -> Bytes\nfrom_hex(s: Str) -> Opt[Bytes]\nfrom_base64(s: Str) -> Opt[Bytes]\nfrom_base64url(s: Str) -> Opt[Bytes]\nread_bin(path: Str) -> Res[Bytes, Str] ! fs\nwrite_bin(path: Str, b: Bytes) -> Res[Unit, Str] ! fs\n__crypto_hash(alg: Int, data: Bytes) -> Bytes\n__crypto_hmac(alg: Int, key: Bytes, data: Bytes) -> Bytes\n__crypto_random(n: Int) -> Bytes ! rand\n__crypto_same(a: Bytes, b: Bytes) -> Bool\n__crypto_aead(seal: Bool, key: Bytes, nonce: Bytes, ad: Bytes, data: Bytes) -> Opt[Bytes]\n__crypto_argon2(alg: Int, pw: Bytes, salt: Bytes, key: Bytes, ad: Bytes, m: Int, t: Int, p: Int, n: Int) -> Opt[Bytes]\n__crypto_ed_public(seed: Bytes) -> Bytes\n__crypto_ed_sign(seed: Bytes, data: Bytes) -> Bytes\n__crypto_ed_verify(pk: Bytes, data: Bytes, sig: Bytes) -> Bool\n__zip_pack(fmt: Int, level: Int, data: Bytes) -> Bytes\n__zip_unpack(fmt: Int, data: Bytes) -> (Int, Bytes, Str)\n__zip_file(op: Int, src: Str, dst: Str) -> Str ! fs\n__csv_rows(text: Str) -> (Int, Str, List[List[Str]])\n__csv_text(rows: List[List[Str]]) -> Str\n__csv_open(path: Str) -> (Int, Str) ! fs\n__csv_next(h: Int, n: Int) -> (Int, Str, List[List[Str]]) ! fs\n__csv_close(h: Int) -> Unit ! fs\n__db_connect(path: Str) -> (Int, Int, Str) ! db\n__db_disconnect(id: Int) -> Unit ! db\n__db_exec(id: Int, sql: Str, ps: List[(Int, Int, F64, Str, Bytes)], want: Int) -> (Int, Str, List[Str], List[List[(Int, Int, F64, Str, Bytes)]], Int) ! db\n__db_tx(id: Int, op: Int) -> (Int, Str) ! db\n__proc_op(op: Int, id: Int, arg: Str) -> (Int, Str) ! proc\n__net_serve[e](cfg: (Int, Str, Int, Int, Int, Int, List[Str], Bool, List[(Str, Str)], Str, Str, Str, Bool), h: (Str, Str, List[(Str, Str)], Str, Int, Str) -> (Int, List[(Str, Str)], Str, Bytes) ! e) -> Unit ! net, log, e";
 
-/// The playground's `__net_serve`, which only traps: it has no `Bytes`.
-#[cfg(target_family = "wasm")]
-pub static WASM_NET_SERVE: &str = "__net_serve[e](cfg: (Int, Str, Int, Int, Int, Int, List[Str], Bool, List[(Str, Str)], Str, Str, Str, Bool), h: (Str, Str, List[(Str, Str)], Str, Int, Str) -> (Int, List[(Str, Str)], Str, Str) ! e) -> Unit ! net, log, e";
 
 /// `Bytes` (ADR 0037), which the playground leaves out with the libraries that need it.
 #[cfg(not(target_family = "wasm"))]
@@ -702,5 +709,5 @@ pub fn std_globals() -> impl Iterator<Item = &'static str> {
 
 #[cfg(target_family = "wasm")]
 pub fn std_globals() -> impl Iterator<Item = &'static str> {
-    STD_GLOBALS.lines().chain(WASM_NET_SERVE.lines())
+    STD_GLOBALS.lines()
 }
