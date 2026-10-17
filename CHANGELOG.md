@@ -4,6 +4,8 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-18
+
 ### Added
 - Lambda parameters can name their types: `(x: Int) => x + 1`, `(k: Str, v) => ...`.
 - A type alias can take an effect-row parameter, `type Handler[e] = Request -> Response ! e`, used as `fn apply[e](h: Handler[e], r: Request) -> Response ! e` or `Handler[log]`; it was `E_UNKNOWN_TYPE unknown type 'e'`.
@@ -496,7 +498,8 @@ This release covers Phases 3 to 7 of the roadmap and ADRs 0003 to 0024. SSPUR no
 - Language design spec, JSON schemas and the token benchmark.
 - Compiler core: parser, checker, content hashing, interpreter and the `sspur` CLI, with an 11-program suite.
 
-[Unreleased]: https://github.com/sspurlang/sspur/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/sspurlang/sspur/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/sspurlang/sspur/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/sspurlang/sspur/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/sspurlang/sspur/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/sspurlang/sspur/compare/v0.12.1...v0.13.0
