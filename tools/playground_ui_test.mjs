@@ -136,8 +136,9 @@ async function phone(page, name) {
   await ed.set(page, LONG, 10);
   await page.locator("#format-fab").click();
   expect(await settle(page, async () => (await ed.text(page)) !== LONG), `${name}: the Format button reformats`);
-  const hidden = await page.evaluate(() => { const r = document.querySelector(".cm-sspur-ruler"); return !r || r.hidden; });
-  expect(hidden, `${name}: no ruler when lines wrap`);
+  // Phones scroll long lines sideways, so the ruler shows; it hides only where lines wrap.
+  const r = await page.evaluate(() => { const r = document.querySelector(".cm-sspur-ruler"); return { hidden: !r || r.hidden, wraps: !!document.querySelector(".cm-lineWrapping") }; });
+  expect(r.hidden === r.wraps, `${name}: the ruler shows unless lines wrap`, r);
 }
 
 for (const [bname, type] of [["chromium", chromium], ["firefox", firefox], ["webkit", webkit]]) {
