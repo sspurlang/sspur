@@ -3913,6 +3913,7 @@ impl<'a> Cx<'a> {
         let all = format!("int64_t n_ = sz_{m}({mv}.root); {node}** ns_ = ({node}**)sspur_alloc((size_t)(n_ + 1) * sizeof({node}*)); int64_t c_ = 0; fill_{m}({mv}.root, ns_, &c_); ");
         Ok(match name {
             "len" => format!("sz_{m}(({r}).root)"),
+            "is_empty" => format!("((int64_t)(sz_{m}(({r}).root) == 0))"),
             "get" => {
                 let k = self.expr(&args[0])?;
                 let oc = self.cty(t)?;
@@ -4490,6 +4491,12 @@ impl<'a> Cx<'a> {
                     let body = self.apply(&args[0], vec![(x.clone(), et.clone())])?;
                     let oc = self.cty(t)?;
                     format!("({{ __auto_type o_ = {r}; {oc} res_ = {{0}}; if (o_.some) {{ __auto_type {x} = o_.v; res_.some = 1; res_.v = {body}; }} res_; }})")
+                }
+                "and_then" => {
+                    let x = self.fresh("om");
+                    let body = self.apply(&args[0], vec![(x.clone(), et.clone())])?;
+                    let oc = self.cty(t)?;
+                    format!("({{ __auto_type o_ = {r}; {oc} res_ = {{0}}; if (o_.some) {{ __auto_type {x} = o_.v; res_ = {body}; }} res_; }})")
                 }
                 _ => return Err(format!("uses Opt.{name}")),
             });

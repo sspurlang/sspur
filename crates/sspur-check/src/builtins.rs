@@ -84,6 +84,7 @@ pub static METHODS: &[(&str, &str)] = &[
     ("Map", "values[K, V](m: Map[K, V]) -> List[V]"),
     ("Map", "items[K, V](m: Map[K, V]) -> List[(K, V)]"),
     ("Map", "len[K, V](m: Map[K, V]) -> Int"),
+    ("Map", "is_empty[K, V](m: Map[K, V]) -> Bool"),
     ("Secret", "map[A, B](s: Secret[A], f: A -> B) -> Secret[B]"),
     ("Secret", "check[A](s: Secret[A], f: A -> Bool) -> Bool"),
     ("Secret", "expose[A](s: Secret[A], reason: Str) -> A"),
@@ -275,6 +276,9 @@ List choice[A](xs: List[A], seed: Int) -> Opt[A]\n\
 Res is_err[A, E](r: Res[A, E]) -> Bool\n\
 Res or_[A, E](r: Res[A, E], d: A) -> A\n\
 Res map[A, B, E, e](r: Res[A, E], f: A -> B ! e) -> Res[B, E] ! e\n\
+Res and_then[A, B, E, e](r: Res[A, E], f: A -> Res[B, E] ! e) -> Res[B, E] ! e\n\
+Opt and_then[A, B, e](o: Opt[A], f: A -> Opt[B] ! e) -> Opt[B] ! e\n\
+List repeat[A](xs: List[A], n: Int) -> List[A]\n\
 #Set add[A](s: Set[A], x: A) -> Set[A]\n\
 #Set remove[A](s: Set[A], x: A) -> Set[A]\n\
 #Set has[A](s: Set[A], x: A) -> Bool\n\

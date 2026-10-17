@@ -4,8 +4,8 @@ Expected failures are values. `Opt[T]` is `some(x)` or `none`, and `Res[T, E]` i
 
 | Receiver | Methods |
 |---|---|
-| `Opt[A]` | `or(default) is_some is_none get map(f) ok_or(err)` (`ok_or` raises `err` when the option is `none`; `get` traps on `none`) |
-| `Res[A, E]` | `is_ok is_err get or(default) map(f)` (`get` raises the error) |
+| `Opt[A]` | `or(default) is_some is_none get map(f) and_then(f) ok_or(err)` (`and_then` chains a function that gives an `Opt`; `ok_or` raises `err` when the option is `none`; `get` traps on `none`) |
+| `Res[A, E]` | `is_ok is_err get or(default) map(f) and_then(f)` (`and_then` chains a function that gives a `Res` with the same error type; `get` raises the error) |
 
 ## JSON
 

@@ -122,6 +122,10 @@ impl Interp {
                     Ok(v) => Ok(Rc::new(self.apply(&a[0], vec![(*v).clone()])?)),
                     Err(e) => Err(e),
                 })),
+                "and_then" => match r {
+                    Ok(v) => self.apply(&a[0], vec![(*v).clone()]),
+                    Err(e) => Ok(Value::Res(Err(e))),
+                },
                 "get" => match r {
                     Ok(v) => Ok((*v).clone()),
                     Err(e) => Err(Ctrl::Raise((*e).clone())),
@@ -352,6 +356,10 @@ impl Interp {
             "is_none" => Value::Bool(o.is_none()),
             "map" => match o {
                 Some(v) => Value::some(self.apply(&a[0], vec![(*v).clone()])?),
+                None => Value::Opt(None),
+            },
+            "and_then" => match o {
+                Some(v) => self.apply(&a[0], vec![(*v).clone()])?,
                 None => Value::Opt(None),
             },
             "ok_or" => match o {

@@ -891,6 +891,12 @@ impl Cx<'_> {
                     let oc = self.cty(t)?;
                     format!("({{ __auto_type r_ = {r}; {oc} o_; memset(&o_, 0, sizeof o_); if (r_.ok) {{ __auto_type {x} = r_.v; o_.ok = 1; o_.v = {body}; }} else o_.e = r_.e; o_; }})")
                 }
+                "and_then" => {
+                    let x = self.fresh("rm");
+                    let body = self.apply(&args[0], vec![(x.clone(), et.clone())])?;
+                    let oc = self.cty(t)?;
+                    format!("({{ __auto_type r_ = {r}; {oc} o_; memset(&o_, 0, sizeof o_); if (r_.ok) {{ __auto_type {x} = r_.v; o_ = {body}; }} else o_.e = r_.e; o_; }})")
+                }
                 "get" => {
                     let errt = arg1(rt);
                     let rv = self.fresh("rv");
@@ -1033,6 +1039,10 @@ impl Cx<'_> {
                 let body = self.apply(&args[0], vec![(x.clone(), et.clone())])?;
                 let view = if name == "take_while" { format!("({lc}){{k_, {l}.data, {l}.hdr}}") } else { format!("({lc}){{{l}.len - k_, {l}.data + k_, {l}.hdr}}") };
                 wrap(format!("int64_t k_ = 0; while (k_ < {l}.len) {{ __auto_type {x} = {l}.data[k_]; if (!({body})) break; k_++; }} {view};"))
+            }
+            "repeat" => {
+                let k = self.expr(&args[0])?;
+                wrap(format!("int64_t k_ = {k}; int64_t m_ = {l}.len; if (UNLIKELY(k_ < 0)) TRAPV({T_REPEAT}, 0, 0); if (UNLIKELY(m_ && k_ > (((int64_t)1 << 28) / m_))) TRAPV(15, 0, 0); int64_t n_ = m_ * k_; RawL r_ = raw_alloc(n_, sizeof({ec})); {ec}* d_ = ({ec}*)r_.data; for (int64_t {i} = 0; {i} < k_; {i}++) if (m_) memcpy(d_ + {i} * m_, {l}.data, (size_t)m_ * sizeof({ec})); r_.len = n_; r_.hdr[1] = n_; ({lc}){{n_, d_, r_.hdr}};"))
             }
             "rotate" => {
                 let k = self.expr(&args[0])?;

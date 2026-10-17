@@ -766,6 +766,20 @@ impl Interp {
                 }
                 Value::list(if name == "take_while" { xs[..k].to_vec() } else { xs[k..].to_vec() })
             }
+            "repeat" => {
+                let n = int(&a[0])?;
+                if n < 0 {
+                    return trap("repeat count must be >= 0");
+                }
+                if !xs.is_empty() && n > (1i64 << 28) / xs.len() as i64 {
+                    return trap("out of memory");
+                }
+                let mut v = Vec::with_capacity(xs.len() * n as usize);
+                for _ in 0..n {
+                    v.extend(xs.iter().cloned());
+                }
+                Value::list(v)
+            }
             "rotate" => {
                 let mut v = (**xs).clone();
                 if !v.is_empty() {
