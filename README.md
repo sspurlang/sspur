@@ -111,7 +111,7 @@ SSPUR runs on macOS (arm64, x86_64), Linux (x86_64, aarch64) and Windows (x86_64
 ### Homebrew
 
 ```
-brew install utkarshavardhana/sspur/sspur
+brew install sspurlang/sspur/sspur
 ```
 
 ### Install script

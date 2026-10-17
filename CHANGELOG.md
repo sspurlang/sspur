@@ -4,6 +4,9 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+### Changed
+- The Homebrew tap moved to the sspurlang organization: `brew install sspurlang/sspur/sspur`. `packaging/homebrew/core/sspur.rb` is the formula for homebrew-core, so that after 1.0 `brew install sspur` works.
+
 ## [0.14.0] - 2026-10-17
 
 ### Added

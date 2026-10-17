@@ -76,7 +76,7 @@ Decisions with lasting impact get an ADR in `docs/adr/`. If your change alters b
 2. Push that commit to `main` and wait for CI to pass on it. CI doesn't run again for the tag.
 3. Tag and push: `git tag -a v0.14.0 -m v0.14.0 && git push origin v0.14.0`.
 4. `release.yml` first checks that CI passed on the tagged commit and stops if it didn't. Then it builds the six targets (macOS, Linux and Windows, each on arm64 and x86_64), packages the VS Code extension, the LSP4IJ template and the Zed extension, writes `SHA256SUMS`, renders the Homebrew formula with `packaging/homebrew/render.sh VERSION SHA256SUMS` and the Scoop manifest with `packaging/scoop/render.sh`, and creates a draft release with all of them attached.
-5. Review the draft and publish it, then copy the rendered `sspur.rb` into `Formula/sspur.rb` of the `utkarshavardhana/homebrew-sspur` tap.
+5. Review the draft and publish it, then copy the rendered `sspur.rb` into `Formula/sspur.rb` of the `sspurlang/homebrew-sspur` tap.
 
 ## License
 

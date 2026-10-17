@@ -15,7 +15,7 @@ Files inside a directory with an `sspur.toml` are checked with that package's de
 
 ## Install
 
-You need `sspur` 0.7 or later, which has `sspur lsp`: `brew install utkarshavardhana/sspur/sspur`, the install script, or a release binary (see [Installation](https://sspurlang.github.io/sspur/get-started/installation.html)). Check that `sspur --version` works.
+You need `sspur` 0.7 or later, which has `sspur lsp`: `brew install sspurlang/sspur/sspur`, the install script, or a release binary (see [Installation](https://sspurlang.github.io/sspur/get-started/installation.html)). Check that `sspur --version` works.
 
 Then download `sspur-vX.Y.Z.vsix` from the [latest release](https://github.com/sspurlang/sspur/releases/latest) and install it with *Extensions: Install from VSIX...* in the command palette, or `code --install-extension sspur-vX.Y.Z.vsix`. Cursor, Windsurf, VSCodium and other VS Code forks take the same file (`cursor --install-extension ...`, `codium --install-extension ...`). No account or marketplace is needed. To update, install the file from a newer release.
 

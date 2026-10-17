@@ -2,7 +2,7 @@
 
 `sspur mcp` is a Model Context Protocol server over stdio (JSON-RPC, one message per line, protocol `2025-06-18`). It serves the SSPUR codebase (`.sspur/`) in the directory it starts in, or the nearest parent that has one. Use `--dir PATH` or the `SSPUR_DIR` environment variable when the client starts servers somewhere else (Claude Desktop does). If there is no codebase yet, the first `edit` creates one.
 
-Install `sspur` first (`brew install utkarshavardhana/sspur/sspur`, `./install.sh`, or `cargo install --path crates/sspur-cli`) and check that `sspur --version` works in the shell your client starts.
+Install `sspur` first (`brew install sspurlang/sspur/sspur`, `./install.sh`, or `cargo install --path crates/sspur-cli`) and check that `sspur --version` works in the shell your client starts.
 
 ## Claude Code
 
