@@ -79,7 +79,7 @@ fn name[A, e](p: A, f: A -> A ! e) -> A ! e
     if y > 10 then y else 0)
   ```
   A block lambda captures, performs effects and fuses like a one-line one. A `)` on its own line, `x =>` with no `do`, and `x => {` + block + `}` are accepted and stored in the form above. `return` is not allowed inside a lambda (`E_RETURN_IN_LAMBDA`), except as its last line, where `return e` is stored as `e`.
-- `_` inside a call argument or a list element makes a one-parameter lambda, also in `pre` and `post` clauses (`post r.all(_ > 0)`); only in a `where` refinement is `_` the refined value. Every `_` in that argument or element is the same parameter: `xs.map(_.price * _.qty)` means `xs.map(x => x.price * x.qty)`, and `[_ + 1, _ * 2]` is a list of two functions. Tuples are not boundaries: `sort_by((-_.1, _.0))` is one lambda returning a tuple.
+- `_` inside a call argument or a list element makes a one-parameter lambda. Every `_` in that argument or element is the same parameter: `xs.map(_.price * _.qty)` means `xs.map(x => x.price * x.qty)`, and `[_ + 1, _ * 2]` is a list of two functions. Tuples are not boundaries: `sort_by((-_.1, _.0))` is one lambda returning a tuple.
 - A function name can be passed as a value: `xs.map(fizzbuzz)`, `xs.fold(Leaf, insert)`. So can a trait method where the parameter type is known, `xs.map(area)`, `xs.fold(0, add)`: it resolves to the impl for that type (see Traits).
 - There's no overloading and there are no default arguments. Uppercase type parameters can have trait bounds, `[T: Ord + Show]` (see Traits).
 - A call can name the first type argument where nothing else fixes it: `dec[Point](s)`, `rows[(Int, Str)](c, sql)`. A function whose body decodes a type parameter (`json.decode[T]`, `r.json[T]`, `db.query[T]`, `db.one[T]`, `db.opt[T]`, `csv.decode[T]`, `csv.read[T]`, `csv.fold[T]`) is compiled once per type it is called with, like a bounded one, and the call checks that the type can be decoded (`E_JSON`, `E_SQL_ROW`, `E_CSV_TYPE`). Another generic function that passes its own parameter on names it, `dec[U](s)`. A function called with a type argument is compiled per type as well, so in it `==` on the parameter uses the type's `Eq` impl, as with a bound.
@@ -166,14 +166,6 @@ test t = Circle{r: 1.0}.describe == "shape: 3.14" and Vec2{x: 1, y: 2} + Vec2{x:
   | Rect{w, h} if w == h => w * w
   | Rect{w: width, h} => width * h
   | _ => 0.0
-  ```
-  The arms of one `match` start at the same column. A `match` (or `catch`) in an arm ends at the first arm line to the left of its own arms, which belongs to the enclosing match; at the same column it takes the arms below it:
-  ```
-  match o
-  | some(x) => match x
-    | some(n) => n
-    | none => 0
-  | none => -1
   ```
   Patterns: `_`, a name, literals, tuples `(a, 0)`, `Ctor`, `Ctor{field, field: pat}`, `some(p)`, `none`, `ok(p)`, `err(p)`, lists and or-patterns. A non-exhaustive match is a compile error (`E_NONEXHAUSTIVE` lists the missing cases as patterns, nested ones too: `some(none)`, `[_, _, ..]`), and an arm the arms above already cover is the warning `W_ARM_UNREACHABLE`.
 - Or-patterns: `| Circle{r} | Ring{r} => r` takes either alternative, and nests: `some(0 | 1)`, `(Red | Blue, _)`. Every alternative binds the same names with the same types (`E_PATTERN_OR_BINDS`).

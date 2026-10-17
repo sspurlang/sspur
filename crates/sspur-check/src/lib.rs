@@ -2360,7 +2360,7 @@ impl Checker {
                 self.check_arms(&st, arms, &out);
                 if arms.last().is_some_and(|a| matches!(a.body.kind, ExprKind::Match(..))) && self.diags[before..].iter().any(Diag::is_error) {
                     let i = self.diags[before..].iter().position(Diag::is_error).unwrap() + before;
-                    self.diags[i].hint = Some("a match inside an arm takes the arms below it at its column; indent its own arms deeper than the outer ones".into());
+                    self.diags[i].hint = Some("a match inside an arm takes every arm below it; move the inner match into a helper fn".into());
                 }
                 let arm_errors = self.diags[before..].iter().any(Diag::is_error);
                 let missing = self.missing_cases(&st, arms);

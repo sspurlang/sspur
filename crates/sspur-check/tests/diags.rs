@@ -113,7 +113,7 @@ fn foreign_spellings_get_exact_hints() {
     assert_eq!(hint("fn f(n: Int) -> Str\n= \"n=\" + n"), "convert with '.str', or interpolate: \"n={n}\"");
     assert_eq!(hint("fn f(n: Int)\n= n + 1"), "declare the return type: 'fn f(..) -> Int'");
     assert_eq!(hint("type E = A{x: Int} | B{y: Int}\nfn f(e: E) -> Int\n= match e\n  | A{x} => x"), "add | B => ?");
-    assert!(hint("fn f(e: Opt[Int], b: Bool) -> Int\n= match e\n  | some(x) => match b\n  | true => x\n  | false => 0\n  | none => 1").contains("indent its own arms deeper"));
+    assert!(hint("fn f(e: Opt[Int], b: Bool) -> Int\n= match e\n  | some(x) => match b\n    | true => x\n    | false => 0\n  | none => 1").contains("helper fn"));
 }
 
 #[test]
@@ -462,14 +462,9 @@ fn a_wildcard_catch_handles_every_error_type() {
 }
 
 #[test]
-fn lambda_annotations_and_nested_match_layout() {
+fn lambda_annotations_type_the_parameters() {
     assert!(codes("fn f() -> Int\n= ((x: Int) => x + 1)(2)").is_empty());
     assert_eq!(codes("fn f() -> List[Int]\n= [1].map((x: Str) => x.len)"), vec!["E_TYPE_MISMATCH"]);
-    let deeper = "fn f(o: Opt[Opt[Int]]) -> Int\n= match o\n  | some(x) => match x\n    | some(n) => n\n    | none => 0\n  | none => -1";
-    assert!(codes(deeper).is_empty(), "{:?}", diags(deeper));
-    let same = "fn f(o: Opt[Opt[Int]]) -> Int\n= match o\n  | some(x) => match x\n  | some(n) => n\n  | none => 0\n  | none => -1";
-    assert!(codes(same).contains(&"E_NONEXHAUSTIVE".to_string()));
-    assert!(codes("fn f(xs: List[Int]) -> List[Int]\n  pre xs.all(_ > 0)\n  post r.all(_ > 0)\n= xs").is_empty());
 }
 
 #[test]

@@ -55,8 +55,6 @@ struct Parser {
     line_indent: u32,
     in_refine: bool,
     notes: Vec<String>,
-    /// How many match or catch arms enclose the current position.
-    arm_depth: u32,
 }
 
 fn is_upper(s: &str) -> bool {
@@ -65,7 +63,7 @@ fn is_upper(s: &str) -> bool {
 
 impl Parser {
     fn new(toks: Vec<Token>) -> Self {
-        Parser { toks, pos: 0, line_indent: 0, in_refine: false, notes: Vec::new(), arm_depth: 0 }
+        Parser { toks, pos: 0, line_indent: 0, in_refine: false, notes: Vec::new() }
     }
 
     fn peek(&self) -> &Tok {
@@ -888,9 +886,9 @@ impl Parser {
                     _ => unreachable!(),
                 });
             } else if self.eat_kw("pre") {
-                pres.push(self.binary(1)?);
+                pres.push(self.refine_expr()?);
             } else if self.eat_kw("post") {
-                posts.push(self.binary(1)?);
+                posts.push(self.refine_expr()?);
             } else if self.eat_kw("ex") {
                 examples.push(self.binary(1)?);
             } else {
@@ -1341,17 +1339,13 @@ impl Parser {
         Ok(Expr::new(ExprKind::Block(vec![Stmt::Assign(name, value, span)]), full))
     }
 
-    /// In an arm, a nested match's arms start at one column: a `|` line left of the first one
-    /// belongs to the enclosing match.
     fn arms(&mut self, indent: u32) -> PResult<Vec<Arm>> {
         let mut arms = Vec::new();
-        let mut col = None;
         loop {
             if let Some(c) = self.newline_then(|t| matches!(t, Tok::Sym("|"))) {
-                if c < indent || (self.arm_depth > 0 && col.is_some_and(|k| c < k)) {
+                if c < indent {
                     break;
                 }
-                col.get_or_insert(c);
                 self.line_indent = c;
                 self.bump();
             }
@@ -1362,10 +1356,7 @@ impl Parser {
             let guard = if self.eat_kw("if") { Some(self.expr()?) } else { None };
             self.expect_sym("=>")?;
             let saved = self.line_indent;
-            self.arm_depth += 1;
-            let body = if self.assign_ahead() || self.place_assign_ahead() { self.branch() } else { self.block_or_seq() };
-            self.arm_depth -= 1;
-            let body = body?;
+            let body = if self.assign_ahead() || self.place_assign_ahead() { self.branch()? } else { self.block_or_seq()? };
             self.line_indent = saved;
             arms.push(Arm { pat, guard, body });
         }

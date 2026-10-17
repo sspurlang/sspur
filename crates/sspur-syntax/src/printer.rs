@@ -588,21 +588,14 @@ fn list(xs: &[Expr], ind: usize) -> String {
     layout::group(&xs.iter().map(|x| expr(x, ind)).collect::<Vec<_>>())
 }
 
-/// Whether `e` has arms of its own (`match`, `catch`, `handle`) that would take the arms
-/// printed after it at the same column.
-fn has_arms(e: &Expr) -> bool {
-    matches!(&e.kind, ExprKind::Match(_, _, MatchForm::Arms) | ExprKind::Catch(..) | ExprKind::Handle(..))
-}
-
 fn print_arms(arms: &[Arm], ind: usize) -> String {
     let mut s = String::new();
-    for (i, a) in arms.iter().enumerate() {
+    for a in arms {
         s.push_str(&format!("\n{}| {}", pad(ind), pat(&a.pat)));
         if let Some(g) = &a.guard {
             s.push_str(&format!(" if {}{}", expr(g, ind), mark(layout::THEN)));
         }
-        let inner = if i + 1 < arms.len() && has_arms(&a.body) { ind + 2 } else { ind };
-        s.push_str(&format!(" => {}", branch(&a.body, inner)));
+        s.push_str(&format!(" => {}", branch(&a.body, ind)));
     }
     s
 }
