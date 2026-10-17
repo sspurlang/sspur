@@ -57,12 +57,6 @@ fn interpreter_appends_are_linear() {
 }
 
 #[test]
-fn interpreter_recursion_goes_past_twenty_thousand_calls() {
-    let src = "fn down(n: Int) -> Int\n= if n == 0 then 0 else 1 + down(n - 1)\n\nfn main() -> Unit ! log\n= log(\"{down(60000)}\")\n";
-    assert_eq!(both("deep", "run", src).trim(), "60000");
-}
-
-#[test]
 fn interpreter_stack_is_sspur_stack_and_overflow_traps() {
     let d = dir("stackenv");
     std::fs::write(d.join("p.ssp"), "fn down(n: Int) -> Int\n= if n == 0 then 0 else 1 + down(n - 1)\n\nfn forever(n: Int) -> Int\n= 1 + forever(n + 1)\n\nfn main() -> Unit ! log, env\n= log(if args().len > 0 then \"{forever(0)}\" else \"{down(60000)}\")\n").unwrap();
@@ -76,13 +70,19 @@ fn interpreter_stack_is_sspur_stack_and_overflow_traps() {
         let o = c.output().unwrap();
         (String::from_utf8_lossy(&o.stdout).to_string(), String::from_utf8_lossy(&o.stderr).to_string(), o.status.success())
     };
-    assert_eq!(go(None, &[]), ("60000\n".into(), String::new(), true));
-    let (out, err, ok) = go(Some("16M"), &[]);
+    // Without SSPUR_STACK, calls stop at 20,000 deep, as before.
+    let (out, err, ok) = go(None, &[]);
     assert!(!ok && out.is_empty() && err.contains("stack overflow in down"), "{out}{err}");
     let (_, err, ok) = go(None, &["x"]);
     assert!(!ok && err.contains("stack overflow in forever"), "{err}");
+    // With it, the stack is the limit: 60,000 calls fit in 256 MB on every platform, not in 16 MB.
+    assert_eq!(go(Some("256M"), &[]), ("60000\n".into(), String::new(), true));
+    let (out, err, ok) = go(Some("16M"), &[]);
+    assert!(!ok && out.is_empty() && err.contains("stack overflow in down"), "{out}{err}");
+    let (_, err, ok) = go(Some("256M"), &["x"]);
+    assert!(!ok && err.contains("stack overflow in forever"), "{err}");
     let (out, err, ok) = go(Some("lots"), &[]);
-    assert!(ok && out == "60000\n" && err.contains("warning: SSPUR_STACK=lots is not a stack size"), "{out}{err}");
+    assert!(!ok && out.is_empty() && err.contains("warning: SSPUR_STACK=lots is not a stack size") && err.contains("stack overflow in down"), "{out}{err}");
 }
 
 #[test]

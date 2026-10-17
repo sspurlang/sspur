@@ -37,7 +37,7 @@ None of these are needed for normal use. They exist for CI, for pinning toolchai
 | Variable | Effect |
 |---|---|
 | `SSPUR` | Set by `sspur run`, `sspur test` and `sspur debug` to the path of the running `sspur` for the program and the processes it starts, unless it is already set, so a program can run the same compiler with `env_var("SSPUR").or("sspur")` instead of whichever is first on `PATH`. Set it yourself to choose another one |
-| `SSPUR_STACK` | Stack the interpreter may use for nested calls before it traps with `stack overflow in f` (default `256M`, about 130,000 calls of a simple recursive function on macOS and Linux, fewer on Windows, whose frames are larger); a number of bytes with `K`, `M` or `G`, at least `1M`. An invalid value is a warning and the default |
+| `SSPUR_STACK` | Stack the interpreter may use for nested calls, instead of stopping at 20,000 calls; past it a call traps with `stack overflow in f`. A number of bytes with `K`, `M` or `G`, at least `1M`: `256M` fits about 130,000 calls of a simple recursive function on macOS and Linux, fewer on Windows, whose frames are larger. An invalid value is a warning and the 20,000-call limit |
 | `SSPUR_THREADS` | Threads for automatic data parallelism in pure pipelines (default: the number of cores). `1` makes them sequential |
 | `SSPUR_GPU=0` | Run GPU kernels on the CPU even when Metal is available |
 | `SSPUR_GPU_TRACE=1` | Print a line per GPU kernel launch |

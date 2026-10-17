@@ -178,11 +178,11 @@ pub fn stack_from_here(budget: usize) {
     STACK_FLOOR.with(|f| f.set(floor));
 }
 
-/// The interpreter's stack budget: `SSPUR_STACK` (`512M`, `2G`, `65536`), else 256 MB.
+/// The interpreter's stack budget from `SSPUR_STACK` (`512M`, `2G`, `65536`); without it,
+/// interpreted calls stop at 20,000 deep.
 #[cfg(not(target_family = "wasm"))]
-pub fn stack_budget() -> Result<usize, String> {
-    const DEFAULT: usize = 256 << 20;
-    let Ok(v) = std::env::var("SSPUR_STACK") else { return Ok(DEFAULT) };
+pub fn stack_budget() -> Result<Option<usize>, String> {
+    let Ok(v) = std::env::var("SSPUR_STACK") else { return Ok(None) };
     let t = v.trim();
     let (num, shift) = match t.chars().last().map(|c| c.to_ascii_uppercase()) {
         Some('K') => (&t[..t.len() - 1], 10),
@@ -191,8 +191,8 @@ pub fn stack_budget() -> Result<usize, String> {
         _ => (t, 0),
     };
     match num.parse::<usize>().ok().and_then(|n| n.checked_shl(shift).filter(|b| *b >> shift == n)) {
-        Some(b) if b >= 1 << 20 => Ok(b),
-        _ => Err(format!("SSPUR_STACK={v} is not a stack size of at least 1M, like 512M or 2G; using 256M")),
+        Some(b) if b >= 1 << 20 => Ok(Some(b)),
+        _ => Err(format!("SSPUR_STACK={v} is not a stack size of at least 1M, like 512M or 2G; calls stop at 20,000 deep")),
     }
 }
 

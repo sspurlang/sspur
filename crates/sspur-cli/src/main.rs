@@ -71,18 +71,20 @@ const USAGE: &str = "usage:
   sspur sync serve [--port N] | push REMOTE | pull REMOTE | status | resolve ours|theirs [PATH]   replicate by hash (REMOTE: dir or tcp://host:port; ADR 0021)";
 
 fn main() -> ExitCode {
-    // Native code and the interpreter run on this thread. The interpreter may use its budget
-    // (SSPUR_STACK, 256 MB by default) and native code keeps the 512 MB it always had; the rest
-    // is headroom for the builtins at the deepest call. Pages are touched only when used.
+    // Native code and the interpreter run on this thread, which keeps the 512 MB native code
+    // always had. With SSPUR_STACK the interpreter may use that much stack instead of stopping
+    // at 20,000 calls, and the thread grows to fit it. Pages are touched only when used.
     let budget = sspur_eval::stack_budget().unwrap_or_else(|e| {
         eprintln!("warning: {e}");
-        256 << 20
+        None
     });
-    let mut size = (budget + (64 << 20)).max(512 << 20);
+    let mut size = budget.map_or(512 << 20, |b| (b + (64 << 20)).max(512 << 20));
     while size >= 16 << 20 {
-        let b = budget.min(size - (8 << 20));
+        let b = budget.map(|b| b.min(size - (8 << 20)));
         if let Ok(h) = std::thread::Builder::new().stack_size(size).spawn(move || {
-            sspur_eval::stack_from_here(b);
+            if let Some(b) = b {
+                sspur_eval::stack_from_here(b);
+            }
             real_main()
         }) {
             return h.join().unwrap();
