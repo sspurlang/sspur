@@ -43,3 +43,15 @@ fn recursive_function_passed_by_name_and_inside_a_lambda_compiles() {
     let out = both("depth", "test", src);
     assert!(out.contains("1 passed, 0 failed"), "{out}");
 }
+
+#[test]
+fn interpreter_appends_are_linear() {
+    let d = dir("appends");
+    let src = "fn pushes(n: Int) -> Int\n= do\n  var xs = []\n  for i in 0..n\n    xs := xs.push(i)\n  xs.len\n\nfn folds(n: Int) -> Int\n= (0..n).fold([], (acc, i) => acc.push(i)).len\n\nfn bufs(n: Int) -> Int\n= do\n  var b = str_buf()\n  for i in 0..n\n    b := b.add(\"ab\")\n  b.byte_len\n\nfn puts(n: Int) -> Int\n= do\n  var m = empty_map()\n  for i in 0..n\n    m := m.put(i, i)\n  m.len\n\nfn main() -> Unit ! log\n= log(\"{pushes(200000)} {folds(200000)} {bufs(200000)} {puts(200000)}\")\n";
+    std::fs::write(d.join("p.ssp"), src).unwrap();
+    let t = std::time::Instant::now();
+    let (out, err, ok) = sspur(&d, &["run", "--interp", "p.ssp"]);
+    assert!(ok, "{out}{err}");
+    assert_eq!(out.trim(), "200000 200000 400000 200000");
+    assert!(t.elapsed().as_secs() < 30, "quadratic appends: {:?}", t.elapsed());
+}

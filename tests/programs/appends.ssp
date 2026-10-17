@@ -1,0 +1,134 @@
+// appends in place at a variable's last use, and every way the old value can still be seen
+
+type Oops = Bad
+
+fn versions() -> Int
+= do
+  xs = [1, 2]
+  ys = xs.push(3)
+  zs = xs.push(4)
+  xs.len * 100 + ys.len * 10 + zs.len
+
+fn saved_in_loop(n: Int) -> List[Int]
+= do
+  var xs = []
+  var saved = []
+  for i in 0..n
+    if i == 2 then saved := xs
+    xs := xs.push(i)
+  saved.concat(xs)
+
+fn fold_push(n: Int) -> List[Int]
+= (0..n).fold([], (acc, i) => acc.push(i))
+
+fn shadowed() -> Int
+= do
+  xs = [1]
+  y = do
+    ys = xs.push(2)
+    xs = [5, 6, 7]
+    ys.len + xs.len
+  y + xs.len
+
+fn captured() -> Int
+= do
+  xs = [1]
+  f = () => xs.len
+  ys = xs.push(2)
+  f() + ys.len
+
+fn countdown(xs: List[Int], n: Int) -> List[Int]
+= if n == 0 then xs else countdown(xs.push(n), n - 1)
+
+fn bufs() -> Str
+= do
+  b = str_buf().add("a")
+  c = b.add("b")
+  d = b.add("c")
+  "{b.str} {c.str} {d.str} {b.byte_len}"
+
+fn buf_loop(n: Int) -> Int
+= do
+  var b = str_buf()
+  for i in 0..n
+    b := b.add("{i % 10}")
+  b.byte_len
+
+fn maps() -> Int
+= do
+  m = empty_map().put(1, 1)
+  n = m.put(2, 2)
+  o = n.remove(1)
+  m.len * 100 + n.len * 10 + o.len
+
+fn sets() -> Int
+= do
+  s = [1].to_set
+  t = s.add(2)
+  u = t.remove(1)
+  s.len * 100 + t.len * 10 + u.len
+
+fn while_both(n: Int) -> Int ! div
+= do
+  var xs = []
+  var ys = []
+  var i = 0
+  while i < n
+    ys := xs.push(i)
+    xs := xs.push(i * 2)
+    i := i + 1
+  xs.sum + ys.sum
+
+fn with_post(xs: List[Int]) -> List[Int]
+  post r.len == xs.len + 1
+= xs.push(0)
+
+fn risky(x: Int) -> Int ! fail[Oops]
+= if x > 2 then raise Bad else x
+
+fn caught(xs: List[Int]) -> Int
+= catch xs.push(risky(3)).len
+  | Bad => xs.len
+
+fn last_doubled(xs: List[Int]) -> List[Int]
+= match xs
+  | [..init, last] => init.push(last * 2)
+  | _ => xs
+
+fn self_arg(xs: List[Int]) -> List[Int]
+= xs.concat(xs).push(xs.len)
+
+fn twice(xs: List[Int]) -> (List[Int], List[Int])
+= (xs.push(1), xs.push(2))
+
+fn nested_fold(n: Int) -> Int
+= (0..n).fold([], (acc, i) => acc.push((0..i).fold([], (a, j) => a.push(j)).len)).sum
+
+fn local_fn(n: Int) -> Int
+= do
+  xs = [n]
+  fn more(k: Int) -> Int
+  = xs.push(k).len
+  ys = xs.push(1)
+  more(2) + ys.len + xs.len
+
+test versions_stay = versions() == 233
+test saved_old = saved_in_loop(4) == [0, 1, 0, 1, 2, 3]
+test fold_builds = fold_push(5) == [0, 1, 2, 3, 4]
+test shadowing = shadowed() == 6
+test closure_sees_old = captured() == 3
+test recursion = countdown([], 3) == [3, 2, 1]
+test buffers = bufs() == "a ab ac 1"
+test buffer_loop = buf_loop(25) == 25
+test buffer_eq = str_buf().add("ab") == str_buf().add("a").add("b")
+test map_versions = maps() == 121
+test set_versions = sets() == 121
+test while_loop = while_both(4) == 12 + 9
+test post_sees_param = with_post([1, 2]) == [1, 2, 0]
+test catch_sees_old = caught([1]) == 1
+test match_arm = last_doubled([1, 2, 3]) == [1, 2, 6]
+test argument_is_receiver = self_arg([1, 2]) == [1, 2, 1, 2, 2]
+test both_versions = twice([0]) == ([0, 1], [0, 2])
+test nested = nested_fold(4) == 6
+test local_function = local_fn(5) == 2 + 2 + 1
+test fold_big = fold_push(30000).len == 30000

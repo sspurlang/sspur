@@ -4,6 +4,7 @@ mod builtins;
 mod ffi;
 mod net;
 #[cfg(feature = "native")]
+mod lastuse;
 mod libs;
 pub mod fuzz;
 pub mod progen;
@@ -129,6 +130,7 @@ pub struct Interp {
     drops: HashMap<String, String>,
     moves: HashSet<(u32, u32)>,
     inplace: HashSet<(u32, u32)>,
+    last_uses: RefCell<Option<HashSet<(u32, u32)>>>,
     heap: RefCell<Vec<Option<Vec<Value>>>>,
     sched: sched::Sched,
     pub json_types: HashMap<(u32, u32), sspur_check::Type>,
@@ -203,6 +205,21 @@ fn has_span(set: &HashSet<(u32, u32)>, span: Span) -> bool {
     set.contains(&(span.start, span.end))
 }
 
+/// Empties `n`'s cell when it still holds `v`, so `v` is the value's only reference.
+fn release(n: &str, v: &Value, env: &Rc<Env>) {
+    let Some(c) = env.cell(n) else { return };
+    let same = match (&*c.borrow(), v) {
+        (Value::List(a), Value::List(b)) | (Value::Heap(a), Value::Heap(b)) => Rc::ptr_eq(a, b),
+        (Value::Map(a), Value::Map(b)) => Rc::ptr_eq(a, b),
+        (Value::Set(a), Value::Set(b)) => Rc::ptr_eq(a, b),
+        (Value::Buf(a), Value::Buf(b)) => Rc::ptr_eq(a, b),
+        _ => false,
+    };
+    if same {
+        *c.borrow_mut() = Value::Unit;
+    }
+}
+
 #[inline(never)]
 fn closure(params: &[String], body: &Expr, env: &Rc<Env>) -> Value {
     Value::Closure(Rc::new(Closure { params: params.to_vec(), body: body.clone(), env: env.clone() }))
@@ -248,6 +265,7 @@ impl Interp {
             drops: HashMap::new(),
             moves: HashSet::new(),
             inplace: HashSet::new(),
+            last_uses: RefCell::new(None),
             heap: RefCell::new(vec![None]),
             sched: Default::default(),
             json_types: HashMap::new(),
@@ -1342,7 +1360,31 @@ impl Interp {
     fn eval_method(&self, span: Span, recv: &Expr, name: &str, args: &[Expr], env: &Rc<Env>) -> R {
         let r = self.eval(recv, env)?;
         let a = self.eval_args(args, env)?;
+        if let ExprKind::Name(n) = &recv.kind
+            && lastuse::MOVE_METHODS.contains(&name)
+            && self.is_last_use(recv.span)
+        {
+            release(n, &r, env);
+        }
         self.method(span, name, r, a)
+    }
+
+    /// Whether `span` is a variable's last use as the receiver of an appending method.
+    fn is_last_use(&self, span: Span) -> bool {
+        if self.last_uses.borrow().is_none() {
+            let mut lu = lastuse::LastUse::default();
+            for f in self.fns.values() {
+                lu.def(f);
+            }
+            for t in &self.tests {
+                lu.func(&[], &t.body, true);
+            }
+            for e in self.statics.values() {
+                lu.func(&[], e, true);
+            }
+            *self.last_uses.borrow_mut() = Some(lu.finish());
+        }
+        self.last_uses.borrow().as_ref().is_some_and(|s| s.contains(&(span.start, span.end)))
     }
 
     #[inline(never)]
@@ -1855,6 +1897,7 @@ pub fn to_nval(v: &Value) -> Option<sspur_native::nval::NVal> {
         Value::Bool(b) => NVal::Bool(*b),
         Value::Float(x) => NVal::Float(*x),
         Value::Str(s) => NVal::Str(s.to_string()),
+        Value::Buf(s) => NVal::Str(s.to_string()),
         Value::New(n, x) => NVal::New(n.to_string(), Box::new(to_nval(x)?)),
         Value::Wrap(k, x) => NVal::Wrap(k.to_string(), Box::new(to_nval(x)?)),
         Value::Guess(x, c) => NVal::Guess(Box::new(to_nval(x)?), *c),
