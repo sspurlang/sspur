@@ -89,13 +89,15 @@ pub fn children(e: &Expr) -> Vec<&Expr> {
     out
 }
 
-// The walks call `f` through a `dyn` reference, so there is one copy of each for every caller
-// rather than one per closure (two dozen in the playground's WebAssembly).
+// In WebAssembly the walks call `f` through a `dyn` reference, so there is one copy of each
+// rather than one per closure (two dozen in the playground).
 pub fn walk_expr(e: &Expr, f: &mut impl FnMut(&Expr) -> bool) {
+    #[cfg(target_family = "wasm")]
+    let f: &mut dyn FnMut(&Expr) -> bool = f;
     walk(e, f)
 }
 
-fn walk(e: &Expr, f: &mut dyn FnMut(&Expr) -> bool) {
+fn walk<F: FnMut(&Expr) -> bool + ?Sized>(e: &Expr, f: &mut F) {
     if f(e) {
         for c in children(e) {
             walk(c, f);
@@ -104,10 +106,12 @@ fn walk(e: &Expr, f: &mut dyn FnMut(&Expr) -> bool) {
 }
 
 pub fn walk_expr_mut(e: &mut Expr, f: &mut impl FnMut(&mut Expr)) {
+    #[cfg(target_family = "wasm")]
+    let f: &mut dyn FnMut(&mut Expr) = f;
     walk_mut(e, f)
 }
 
-fn walk_mut(e: &mut Expr, f: &mut dyn FnMut(&mut Expr)) {
+fn walk_mut<F: FnMut(&mut Expr) + ?Sized>(e: &mut Expr, f: &mut F) {
     f(e);
     match &mut e.kind {
         ExprKind::Int(_)
