@@ -455,10 +455,19 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
             Def::Effect(_) | Def::Store(_) | Def::Static(_) | Def::Use(_) => {}
             Def::Svc(sv) => c.check_svc(sv, m),
         }
+        // A dependency's warnings and audits belong to its own check, not its users'.
+        let errors_only = |c: &mut Checker| {
+            if !c.own_site {
+                let tail = c.diags.split_off(before);
+                c.diags.extend(tail.into_iter().filter(Diag::is_error));
+            }
+        };
+        errors_only(&mut c);
         if matches!(d, Def::Fn(_) | Def::Test(_)) && !skip.contains(d.name()) {
             body_diags.insert(d.name().to_string(), c.diags[before..].to_vec());
         }
         c.finish_traits_def();
+        errors_only(&mut c);
         for (k, t) in std::mem::take(&mut c.pending_types) {
             let r = c.resolve(&t);
             c.expr_types.insert(k, r);
@@ -852,6 +861,40 @@ impl Checker {
                             self.fresh()
                         }
                     };
+                }
+                if let Some(TypeInfo { params, kind: TypeKind::Alias(target) }) = self.types.get(name).cloned()
+                    && params.iter().any(|p| !p.starts_with(|c: char| c.is_ascii_uppercase()))
+                    && params.len() == args.len()
+                    && !self.tparams.contains(name)
+                {
+                    // `type Handler[e] = Request -> Response ! e`: a lowercase parameter is an
+                    // effect row, and its argument names the row (or one effect) in place.
+                    let mut rows = HashMap::new();
+                    let mut types = Vec::new();
+                    for (p, a) in params.iter().zip(args) {
+                        if p.starts_with(|c: char| c.is_ascii_uppercase()) {
+                            types.push((p.clone(), a.clone()));
+                        } else if let Ty::Named { name: r, args: ra, .. } = a
+                            && ra.is_empty()
+                        {
+                            rows.insert(p.clone(), r.clone());
+                        } else {
+                            self.err("E_TYPE_ARITY", *span, format!("{name}'s parameter '{p}' is an effect row: write an effect or a row parameter, as in {name}[e]"));
+                            return self.fresh();
+                        }
+                    }
+                    if depth > 32 || self.alias_stack.contains(name) {
+                        self.err("E_TYPE_CYCLE", *span, format!("type alias '{name}' is cyclic"));
+                        return self.fresh();
+                    }
+                    let mut target = target.clone();
+                    subst_rows_ty(&mut target, &rows);
+                    let tmap: HashMap<String, Ty> = types.into_iter().collect();
+                    subst_named_ty(&mut target, &tmap);
+                    self.alias_stack.push(name.clone());
+                    let t = self.conv_ty_depth(&target, depth + 1);
+                    self.alias_stack.pop();
+                    return t;
                 }
                 let conv: Vec<Type> = args.iter().map(|x| self.conv_ty_depth(x, depth)).collect();
                 if self.tparams.contains(name) {
@@ -3741,6 +3784,38 @@ fn cell_matches(c: &Cell, name: &str, p: &Point) -> Option<bool> {
             }
             _ => None,
         },
+    }
+}
+
+/// Renames the effects of function types in `t` that are row parameters of an alias.
+fn subst_rows_ty(t: &mut Ty, rows: &HashMap<String, String>) {
+    match t {
+        Ty::Named { args, .. } => args.iter_mut().for_each(|a| subst_rows_ty(a, rows)),
+        Ty::Tuple(xs) => xs.iter_mut().for_each(|a| subst_rows_ty(a, rows)),
+        Ty::Fn { params, ret, effects } => {
+            params.iter_mut().for_each(|a| subst_rows_ty(a, rows));
+            subst_rows_ty(ret, rows);
+            for e in effects {
+                if let Some(r) = rows.get(&e.name).filter(|_| e.args.is_empty()) {
+                    e.name = r.clone();
+                }
+                e.args.iter_mut().for_each(|a| subst_rows_ty(a, rows));
+            }
+        }
+    }
+}
+
+/// Replaces the alias's type parameters in `t` by the written arguments.
+fn subst_named_ty(t: &mut Ty, map: &HashMap<String, Ty>) {
+    match t {
+        Ty::Named { name, args, .. } if args.is_empty() && map.contains_key(name.as_str()) => *t = map[name.as_str()].clone(),
+        Ty::Named { args, .. } => args.iter_mut().for_each(|a| subst_named_ty(a, map)),
+        Ty::Tuple(xs) => xs.iter_mut().for_each(|a| subst_named_ty(a, map)),
+        Ty::Fn { params, ret, effects } => {
+            params.iter_mut().for_each(|a| subst_named_ty(a, map));
+            subst_named_ty(ret, map);
+            effects.iter_mut().flat_map(|e| e.args.iter_mut()).for_each(|a| subst_named_ty(a, map));
+        }
     }
 }
 

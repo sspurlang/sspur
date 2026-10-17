@@ -143,3 +143,20 @@ test json_of_a_type_parameter = decode_as[Pt]("\{\"x\":1,\"y\":2}") == ok(Pt{x: 
   round_trip(Pt{x: 3, y: 4}) == ok(Pt{x: 3, y: 4}) and
   round_trip([1, 2]) == ok([1, 2]) and
   first_of[Str]([]) == none
+
+type Step[e] = Int -> Int ! e
+
+fn apply_step[e](h: Step[e], x: Int) -> Int ! e
+= h(x)
+
+fn loud_step(x: Int) -> Int ! log
+= do
+  log("step {x}")
+  x + 1
+
+fn logged_step(h: Step[log]) -> Int ! log
+= h(1)
+
+test aliases_take_effect_rows = apply_step(x => x * 2, 4) == 8 and
+  apply_step(loud_step, 1) == 2 and
+  logged_step(loud_step) == 2

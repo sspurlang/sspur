@@ -53,7 +53,7 @@ A `|` at the start of a line still begins a match arm, a variant or a rule row, 
 | Function types | `A -> B`, `(A, B) -> C`, `A -> B ! e` (effect row `e`) |
 | Record | `type P = {x: Int, y: Int}` |
 | Sum | `type S = A | B{f: Int}`. Variant names are capitalized and globally unique. `type E = Bad` declares a single-variant sum |
-| Generic types | `type Pair[A, B] = {first: A, second: B}`, `type Tree[T] = Leaf | Node{left: Tree[T], value: T, right: Tree[T]}` |
+| Generic types | `type Pair[A, B] = {first: A, second: B}`, `type Tree[T] = Leaf | Node{left: Tree[T], value: T, right: Tree[T]}`. A lowercase parameter of an alias is an effect row: `type Handler[e] = Request -> Response ! e`, used as `Handler[e]` or `Handler[log]` |
 | Refinement | `Int where _ > 0` on fields, params, and aliases. `_` is the value. Checked at runtime |
 | Newtype | `type UserId = new Str`. Construct with `UserId("a")`, unwrap with `.raw`. It doesn't mix with `Str` or other newtypes |
 

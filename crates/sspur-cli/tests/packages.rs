@@ -436,3 +436,14 @@ fn effect_names_in_signatures_survive_linking() {
     w.pkg("bad", "bad", &[], "effect time() -> Int\n\nfn f() -> Int ! time\n= time()\n");
     assert!(w.err("bad", &["check", "lib.ssp"]).contains("E_DUPLICATE effect 'time' is built in"));
 }
+
+#[test]
+fn a_dependencys_audits_stay_in_its_own_check() {
+    let w = Ws::new("depaudit");
+    w.pkg("lib", "frlib", &[], "// A hash of the key.\npub fn tag(k: Secret[Bytes]) -> Bytes\n= k.map(b => crypto.sha256(b)).expose(\"a digest is public\")\n");
+    w.pkg("app", "app", &[("frlib", "{ path = \"../lib\" }")], "fn main() -> Unit ! log\n= log(\"{frlib.tag(secret(bytes([1]))).len}\")\n");
+    assert!(w.ok("lib", &["check", "lib.ssp"]).contains("A_DECLASSIFY"));
+    for args in [&["run", "lib.ssp"][..], &["run", "--interp", "lib.ssp"]] {
+        assert_eq!(w.ok("app", args), "32");
+    }
+}
