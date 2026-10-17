@@ -117,12 +117,11 @@ impl Interp {
                 "is_ok" => Ok(Value::Bool(r.is_ok())),
                 "is_err" => Ok(Value::Bool(r.is_err())),
                 "or" => Ok(r.map_or_else(|_| a[0].clone(), |v| (*v).clone())),
-                "map" => Ok(Value::Res(match r {
-                    Ok(v) => Ok(Rc::new(self.apply(&a[0], vec![(*v).clone()])?)),
-                    Err(e) => Err(e),
-                })),
-                "and_then" => match r {
-                    Ok(v) => self.apply(&a[0], vec![(*v).clone()]),
+                "map" | "and_then" => match r {
+                    Ok(v) => {
+                        let r = self.apply(&a[0], vec![(*v).clone()])?;
+                        Ok(if name == "map" { Value::Res(Ok(Rc::new(r))) } else { r })
+                    }
                     Err(e) => Ok(Value::Res(Err(e))),
                 },
                 "get" => match r {
@@ -353,12 +352,11 @@ impl Interp {
                 None => return trap("unwrapped none with .get; check with is_some, match on some/none, or use .or(default)"),
             },
             "is_none" => Value::Bool(o.is_none()),
-            "map" => match o {
-                Some(v) => Value::some(self.apply(&a[0], vec![(*v).clone()])?),
-                None => Value::Opt(None),
-            },
-            "and_then" => match o {
-                Some(v) => self.apply(&a[0], vec![(*v).clone()])?,
+            "map" | "and_then" => match o {
+                Some(v) => {
+                    let r = self.apply(&a[0], vec![(*v).clone()])?;
+                    if name == "map" { Value::some(r) } else { r }
+                }
                 None => Value::Opt(None),
             },
             "ok_or" => match o {

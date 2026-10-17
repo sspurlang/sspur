@@ -103,20 +103,26 @@ impl Checker {
                 out.push(sig(&f.name, SigKind::Fn, s));
             }
         }
-        let mut globals: Vec<(&String, &Scheme)> = self.globals.iter().filter(|(n, _)| !self.op_effect.contains_key(*n) && !n.starts_with("__")).collect();
-        globals.sort_by_key(|(n, _)| *n);
-        out.extend(globals.into_iter().map(|(n, s)| sig(n, SigKind::Global, s)));
-        let mut methods: Vec<(&(String, String), &Scheme)> = self.methods.iter().map(|(k, s)| (k, std::borrow::Borrow::<Scheme>::borrow(s))).collect();
-        methods.sort_by_key(|(k, _)| *k);
-        out.extend(methods.into_iter().map(|((recv, n), s)| sig(n, SigKind::Method(recv.clone()), s)));
-        let mut traits: Vec<_> = self.traits.iter().filter(|(_, t)| !t.builtin && t.params.is_empty()).collect();
-        traits.sort_by_key(|(n, _)| *n);
-        for (tname, info) in traits {
+        // Sorting names rather than entries keeps to one sort routine (less code in the playground).
+        let mut globals: Vec<&str> = self.globals.keys().filter(|n| !self.op_effect.contains_key(*n) && !n.starts_with("__")).map(String::as_str).collect();
+        globals.sort();
+        out.extend(globals.into_iter().map(|n| sig(n, SigKind::Global, &self.globals[n])));
+        let mut methods: Vec<String> = self.methods.keys().map(|(recv, n)| format!("{recv}\0{n}")).collect();
+        methods.sort();
+        for k in methods {
+            let (recv, n) = k.split_once('\0').unwrap_or_default();
+            let s = &self.methods[&(recv.to_string(), n.to_string())];
+            out.push(sig(n, SigKind::Method(recv.to_string()), std::borrow::Borrow::<Scheme>::borrow(s)));
+        }
+        let mut traits: Vec<&str> = self.traits.iter().filter(|(_, t)| !t.builtin && t.params.is_empty()).map(|(n, _)| n.as_str()).collect();
+        traits.sort();
+        for tname in traits {
+            let info = &self.traits[tname];
             let mut types: Vec<String> = self.impls.keys().filter(|(t, _)| t == tname).map(|(_, ty)| ty.clone()).collect();
             types.sort();
             for mname in &info.methods {
                 if let Some(s) = info.schemes.get(mname) {
-                    out.push(Sig { owner: tname.clone(), self_types: types.clone(), ..sig(mname, SigKind::Trait, s) });
+                    out.push(Sig { owner: tname.to_string(), self_types: types.clone(), ..sig(mname, SigKind::Trait, s) });
                 }
             }
         }
