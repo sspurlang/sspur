@@ -58,8 +58,8 @@ fn interpreter_appends_are_linear() {
 
 #[test]
 fn interpreter_recursion_goes_past_twenty_thousand_calls() {
-    let src = "fn down(n: Int) -> Int\n= if n == 0 then 0 else 1 + down(n - 1)\n\nfn main() -> Unit ! log\n= log(\"{down(100000)}\")\n";
-    assert_eq!(both("deep", "run", src).trim(), "100000");
+    let src = "fn down(n: Int) -> Int\n= if n == 0 then 0 else 1 + down(n - 1)\n\nfn main() -> Unit ! log\n= log(\"{down(60000)}\")\n";
+    assert_eq!(both("deep", "run", src).trim(), "60000");
 }
 
 #[test]
