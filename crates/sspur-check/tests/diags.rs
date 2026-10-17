@@ -113,7 +113,9 @@ fn foreign_spellings_get_exact_hints() {
     assert_eq!(hint("fn f(n: Int) -> Str\n= \"n=\" + n"), "convert with '.str', or interpolate: \"n={n}\"");
     assert_eq!(hint("fn f(n: Int)\n= n + 1"), "declare the return type: 'fn f(..) -> Int'");
     assert_eq!(hint("type E = A{x: Int} | B{y: Int}\nfn f(e: E) -> Int\n= match e\n  | A{x} => x"), "add | B => ?");
-    assert!(hint("fn f(e: Opt[Int], b: Bool) -> Int\n= match e\n  | some(x) => match b\n    | true => x\n    | false => 0\n  | none => 1").contains("helper fn"));
+    assert!(hint("fn f(e: Opt[Int], b: Bool) -> Int\n= match e\n| some(x) => match b\n| true => x\n| false => 0\n| none => 1").contains("indent its arms deeper"));
+    // Arms indented deeper than the outer ones end at the next outer arm.
+    assert!(codes("fn f(e: Opt[Int], b: Bool) -> Int\n= match e\n  | some(x) => match b\n    | true => x\n    | false => 0\n  | none => 1").is_empty());
 }
 
 #[test]
