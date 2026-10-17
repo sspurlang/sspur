@@ -4,15 +4,26 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-17
+
 ### Added
 - `sspur fmt` breaks lines over 100 columns (ADR 0040): lists, tuples, calls, records and parameter lists one element per line with a trailing comma, `with` updates one per line, `if` chains with each `else` on its own line, conditions after `and` and `or`, other operators and method chains where the pieces then fit. `if` blocks are written with `else` under the `if`. The canonical text that definitions are hashed and stored as is unchanged, so no content or export hash moves and every `sspur.lock` and published package still verifies. The language server's formatting and the playground use the same formatter.
 - Public modules: a package marks a module `public = true` in its `sspur.toml` (`models = { path = "models", public = true }`), and dependents import its definitions with `use pkg.models.{Doc}`. The registry's API listing, semver check and site include them as `models.Doc`. Without the flag a module stays private, so no published package's API or export hash changes.
 - The playground's Format is Reformat Code: Cmd+Option+L or Ctrl+Alt+L as well as Shift+Alt+F, the definitions a selection touches, the cursor kept after the same code and on the same screen line, one undo to go back, and code that doesn't parse left alone with the error shown in place. A ruler marks column 100 when lines don't wrap, phones get a Format button in the editor's corner, and an optional "Format on run" (remembered, off by default) formats before Run, Test and Share. Enter keeps a list element's indent, and a closing bracket typed at the start of a line goes back to its opener's indent (also in VS Code and the language server).
 
 ### Changed
+- The registry's site renders README tables (stacked on phones), shows the top 12 packages with descriptions capped at three lines, and its 404 page, like sspurlang.github.io's, reads as a compiler error with a quick fix to the closest page or package. The docs link the registry and the home page from the top of the packages chapters.
+- The playground scrolls long lines sideways on phones instead of wrapping them.
 - The registry check `build.fmt` accepts what `sspur fmt` now writes, as well as the one-line form of 0.13, and a statement broken anywhere the lexer reads as one line.
 - The Claude Code plugin's version is the release version (it was 0.2.1); a test keeps it and the editor extensions there.
 - The playground's WebAssembly is 3 KB smaller gzipped although it now breaks lines: the editor docs keep only the tables hover reads, and wasm-opt folds constant offsets into loads and stores.
+
+### Fixed
+- A function imported with `use` no longer shadows a record field of the same name: `t.digest` is the field when `t` has one, as it already was for local functions, in both tiers.
+- A number after `.` is always a tuple index, so `p.0.1` reads, and `(p.0).1` next to a trait-bounded function no longer fails with an internal error.
+- In a string literal, escapes apply inside literal braces too: `"{x\\y}"` has one backslash, as the reference says.
+- `sspur q` names scoped dependencies by their key (`pkg.f`), not their link prefix.
+- The playground's Reformat returns to the left edge after breaking long lines.
 
 ## [0.13.1] - 2026-10-17
 
@@ -437,7 +448,8 @@ This release covers Phases 3 to 7 of the roadmap and ADRs 0003 to 0024. SSPUR no
 - Language design spec, JSON schemas and the token benchmark.
 - Compiler core: parser, checker, content hashing, interpreter and the `sspur` CLI, with an 11-program suite.
 
-[Unreleased]: https://github.com/sspurlang/sspur/compare/v0.13.1...HEAD
+[Unreleased]: https://github.com/sspurlang/sspur/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/sspurlang/sspur/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/sspurlang/sspur/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/sspurlang/sspur/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/sspurlang/sspur/compare/v0.12.0...v0.12.1

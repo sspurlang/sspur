@@ -122,4 +122,4 @@
 
 </div>
 
-SSPUR is at version 0.13 and under active development. The language and tools are usable, but the syntax and standard library can still change between minor releases. It is designed, written and maintained by [Utkarsha Vardhana](https://github.com/utkarshavardhana), and dual-licensed under MIT and Apache 2.0.
+SSPUR is at version 0.14 and under active development. The language and tools are usable, but the syntax and standard library can still change between minor releases. It is designed, written and maintained by [Utkarsha Vardhana](https://github.com/utkarshavardhana), and dual-licensed under MIT and Apache 2.0.
