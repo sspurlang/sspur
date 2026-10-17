@@ -95,6 +95,7 @@ fn route_and_asm_strings_keep_their_braces() {
 #[test]
 fn an_interpolated_string_literal_still_interpolates() {
     assert_eq!(parts(r#""{"x"} {"-".repeat(2)}""#), ["{\"x\"}", " ", "{\"-\".repeat(2)}"]);
+    assert_eq!(parts(r#""{6} {"-7"} {" x "}""#), ["{6} ", "{\"-7\"}", " ", "{\" x \"}"]);
     for src in [r#"s == "{" or s == "}""#, r#"f("{", "}")"#, r#"["{", "}"]"#, r#""{" + x + "}""#] {
         let e = parse_expr(src).unwrap();
         assert!(!matches!(e.kind, ExprKind::Str(_)), "{src}: {:?}", e.kind);

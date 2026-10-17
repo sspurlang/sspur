@@ -383,14 +383,16 @@ fn escape(src: &str, at: usize, out: &mut String, in_group: bool) -> Result<usiz
 }
 
 /// Whether `rest` can come after a string literal in code: the end of the line, a closing
-/// bracket, a comma, an operator or `and`, `or`, `is`, `with`, `then`, `else`, `do`, `in`.
+/// bracket, a comma, `.`, an operator strings have or `and`, `or`, `is`, `with`, `then`, `else`,
+/// `do`, `in`.
 pub(crate) fn code_follows(rest: &str) -> bool {
     let r = rest.trim_start_matches([' ', '\t']);
     let n = r.bytes().take_while(|c| c.is_ascii_alphanumeric() || *c == b'_').count();
     match r.bytes().next() {
         None => true,
         Some(c) if n > 0 => !c.is_ascii_digit() && ["and", "or", "is", "with", "then", "else", "do", "in"].contains(&&r[..n]),
-        Some(c) => b"\n\r)]},.+-*/%=!<>&|;:[".contains(&c),
+        // Not `-`, `*`, `/` or `%`, which don't apply to strings: `"{"-7"}"` interpolates "-7".
+        Some(c) => b"\n\r)]},.+=!<>&|;:[".contains(&c),
     }
 }
 
