@@ -49,6 +49,16 @@ impl Cx<'_> {
         for d in deps {
             self.std(d);
         }
+        let own = match key {
+            "bits" => Some(("#Bits", "BI")),
+            "sbuf" => Some(("#StrBuf", "BU")),
+            "big" | "dec" | "ratio" => Some(("#Dec", "DC")),
+            "regex" => Some(("#Regex", "RX")),
+            _ => None,
+        };
+        if let Some((t, m)) = own {
+            self.std_cty(&Type::con(t), m).expect("std runtime type");
+        }
         if key == "locale" {
             self.protos.push_str(&crate::locale::c_tables());
         }
@@ -1520,10 +1530,6 @@ mod tests {
                 let smt = sspur_smt::Oracle::new(&m, &check);
                 let mut cx = Cx::new(&check, &eligible, &alias, &fields, &smt);
                 cx.win = win::on();
-                cx.std_cty(&Type::con("#StrBuf"), "BU").unwrap();
-                cx.std_cty(&Type::con("#Bits"), "BI").unwrap();
-                cx.std_cty(&Type::con("#BigInt"), "BG").unwrap();
-                cx.std_cty(&Type::con("#Regex"), "RX").unwrap();
                 cx.std(key);
                 let src = format!("{PRELUDE}{}{}", cx.defs, cx.protos);
                 (key, if win::on() { win::adapt(&src) } else { src })

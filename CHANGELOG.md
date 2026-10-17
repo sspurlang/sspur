@@ -9,6 +9,9 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 - The SMT cache is `smt2/` in the cache directory: each answer is an empty file named by the question and the answer, and a build lists a directory once instead of opening a file per question, which takes a warm `sspur test` of the package above from 9.8 s to 4.9 s. Answers in the old `smt/` directory aren't read.
 - The Homebrew tap moved to the sspurlang organization: `brew install sspurlang/sspur/sspur`. `packaging/homebrew/core/sspur.rb` is the formula for homebrew-core, so that after 1.0 `brew install sspur` works.
 
+### Fixed
+- A program whose only use of `Bits` is `List.to_bits` builds natively; it failed with `unknown type name 'SBits'` and fell back to the interpreter. Every C runtime section now declares the types it uses, and the test that compiles each section alone no longer declares them for it.
+
 ## [0.14.0] - 2026-10-17
 
 ### Added
