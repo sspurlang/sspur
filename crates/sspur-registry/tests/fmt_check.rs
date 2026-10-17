@@ -2,7 +2,7 @@
 //! that 0.13 wrote, for every program the repository has.
 
 use sspur_registry::facts::fmt_check;
-use sspur_syntax::{format_module, format_module_at, parse, print_module};
+use sspur_syntax::{format_module, format_module_at, format_source, format_source_at, parse, print_module};
 use std::path::{Path, PathBuf};
 
 fn root() -> PathBuf {
@@ -28,9 +28,10 @@ fn check_all() {
         srcs.push((format!("corpus {}", v["id"].as_str().unwrap()), v["src"].as_str().unwrap().to_string()));
     }
     let mut files = Vec::new();
-    for d in ["tests/programs", "tests/fuzz", "docs/snippets", "examples", "templates", "pulse"] {
+    for d in ["tests", "docs", "examples", "templates", "pulse", "bench", "registry", "crates"] {
         ssp_files(&root().join(d), &mut files);
     }
+    files.retain(|p| !p.components().any(|c| ["target", "book", "node_modules"].contains(&c.as_os_str().to_str().unwrap_or(""))));
     files.sort();
     srcs.extend(files.into_iter().map(|p| (p.display().to_string(), std::fs::read_to_string(&p).unwrap())));
     // Layouts that used to disagree: a `match` as a call argument inside a lambda, and
@@ -43,7 +44,14 @@ fn check_all() {
         if std::env::var("SHOW").is_ok_and(|v| name.contains(&v)) {
             println!("{}\n{}", format_module(&m), print_module(&m));
         }
-        for (form, text) in [("fmt", format_module(&m)), ("fmt at 40", format_module_at(&m, 40)), ("0.13", print_module(&m))] {
+        let forms = [
+            ("fmt", format_module(&m)),
+            ("fmt at 40", format_module_at(&m, 40)),
+            ("0.13", print_module(&m)),
+            ("fmt with comments", format_source(src).unwrap()),
+            ("fmt at 40 with comments", format_source_at(src, 40).unwrap()),
+        ];
+        for (form, text) in forms {
             let r = fmt_check(&text, &parse(&text).unwrap());
             if r["clean"] != true {
                 bad.push(format!("{name} ({form}): {r}"));
