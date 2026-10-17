@@ -947,7 +947,11 @@ impl Cx<'_> {
             "pow" | "atan2" | "hypot" => format!("({{ double x_ = {r}; double y_ = {}; {name}(x_, y_); }})", vals[0]),
             "exp" | "log2" | "log10" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" => one(name),
             "ln" => one("log"),
-            "ceil" | "trunc" => format!("f2i({name}({r}))"),
+            "ceil" | "trunc" => f2i(&format!("{name}({r})")),
+            "checked_round" | "checked_floor" | "checked_ceil" | "checked_trunc" => {
+                let oc = self.cty(&Type::app("Opt", vec![Type::con("Int")]))?;
+                format!("({{ double d_ = {}({r}); {oc} o_ = {{0}}; if (F2I_OK(d_)) {{ o_.some = 1; o_.v = (int64_t)d_; }} o_; }})", &name[8..])
+            }
             "is_nan" => format!("({{ double x_ = {r}; (int64_t)(x_ != x_); }})"),
             "is_finite" => format!("((int64_t)isfinite({r}))"),
             "is_inf" => format!("((int64_t)isinf({r}))"),

@@ -126,3 +126,17 @@ fn a_stale_lock_is_named_with_the_fix() {
     go(&["deps", "update", "lib"]);
     assert_eq!(go(&["run", "main.ssp"]), ("1\n".to_string(), String::new()));
 }
+
+#[test]
+fn float_to_int_conversions_trap_like_int_overflow() {
+    let d = dir("f2i");
+    let src = "fn r(x: F64) -> Int\n= x.round\n\nfn f(x: F64) -> Int\n= x.floor\n\nfn c(x: F64) -> Int\n= x.ceil\n\nfn t(x: F64) -> Int\n= x.trunc\n\ntest t_nan = r(nan()) == 0\ntest t_big = f(1.0e19) == 0\ntest t_inf = c(inf()) == 0\ntest t_low = t(-1.0e19) == 0\ntest t_edge = t(-9223372036854775808.0) == -9223372036854775807 - 1\n";
+    std::fs::write(d.join("p.ssp"), src).unwrap();
+    let want = "FAIL  t_nan: integer overflow\nFAIL  t_big: integer overflow\nFAIL  t_inf: integer overflow\nFAIL  t_low: integer overflow\n1 passed, 4 failed\n";
+    let (iout, _, _) = sspur(&d, &["test", "--interp", "p.ssp"]);
+    assert_eq!(iout, want);
+    if has_cc() {
+        let (nout, nerr, _) = sspur(&d, &["test", "--strict-native", "p.ssp"]);
+        assert_eq!(nout, want, "{nerr}");
+    }
+}

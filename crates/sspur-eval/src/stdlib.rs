@@ -1008,12 +1008,16 @@ pub(crate) fn std_str(name: &str, x: &str, a: Vec<Value>) -> R {
     })
 }
 
+/// An integral `d` as an Int; NaN, the infinities and values outside Int's range trap like Int overflow.
+pub(crate) fn f2i(d: f64) -> R {
+    if d >= -9223372036854775808.0 && d < 9223372036854775808.0 { Ok(Value::Int(d as i64)) } else { trap("integer overflow") }
+}
+
 pub(crate) fn std_float(name: &str, x: f64, a: Vec<Value>) -> R {
     let y = || match a.first() {
         Some(Value::Float(y)) => Ok(*y),
         v => trap(format!("expected F64, got {v:?}", v = v.map(|v| v.to_string()))),
     };
-    let to_int = |v: f64| Value::Int(v as i64);
     Ok(match name {
         "fmt" => {
             let d = int(&a[0])?;
@@ -1035,8 +1039,17 @@ pub(crate) fn std_float(name: &str, x: f64, a: Vec<Value>) -> R {
         "atan" => Value::Float(x.atan()),
         "atan2" => Value::Float(x.atan2(y()?)),
         "hypot" => Value::Float(x.hypot(y()?)),
-        "ceil" => to_int(x.ceil()),
-        "trunc" => to_int(x.trunc()),
+        "ceil" => f2i(x.ceil())?,
+        "trunc" => f2i(x.trunc())?,
+        "checked_round" | "checked_floor" | "checked_ceil" | "checked_trunc" => {
+            let d = match name {
+                "checked_round" => x.round(),
+                "checked_floor" => x.floor(),
+                "checked_ceil" => x.ceil(),
+                _ => x.trunc(),
+            };
+            f2i(d).map_or(Value::Opt(None), Value::some)
+        }
         "is_nan" => Value::Bool(x.is_nan()),
         "is_finite" => Value::Bool(x.is_finite()),
         "is_inf" => Value::Bool(x.is_infinite()),

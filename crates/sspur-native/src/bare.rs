@@ -37,14 +37,9 @@ const SOFT_DOUBLE: &str = include_str!("bare_softfp.c");
 
 const FLOAT_PRELUDE: &str = r#"static inline int64_t dbits(double x) { int64_t b; memcpy(&b, &x, 8); return b; }
 static inline double bitsd(int64_t b) { double x; memcpy(&x, &b, 8); return x; }
-static inline int64_t dkey(double x) { int64_t b = x != x ? 0x7ff8000000000000LL : dbits(x); b ^= (int64_t)(((uint64_t)(b >> 63)) >> 1); return b; }
+static inline int64_t dkey(double x) { int64_t b = x != x ? 0x7ff8000000000000LL : x == 0.0 ? 0 : dbits(x); b ^= (int64_t)(((uint64_t)(b >> 63)) >> 1); return b; }
 static inline int cmp_D(double a, double b) { int64_t x = dkey(a), y = dkey(b); return (x > y) - (x < y); }
-static inline int64_t f2i(double x) {
-    if (x != x) return 0;
-    if (x >= 9223372036854775807.0) return 9223372036854775807LL;
-    if (x <= -9223372036854775808.0) return INT64_MIN;
-    return (int64_t)x;
-}
+#define F2I_OK(d) ((d) >= -9223372036854775808.0 && (d) < 9223372036854775808.0)
 #ifdef __aarch64__
 static inline double ss_sqrt(double x) { double r; __asm__("fsqrt %d0, %d1" : "=w"(r) : "w"(x)); return r; }
 #endif

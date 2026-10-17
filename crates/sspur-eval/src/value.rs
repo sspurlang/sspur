@@ -178,8 +178,15 @@ fn cmp_fields(a: &Fields, b: &Fields) -> Ordering {
     a.iter().map(|(_, v)| v).cmp(b.iter().map(|(_, v)| v))
 }
 
+/// F64 order: numeric, except that NaN equals itself and sorts above +inf; -0.0 equals 0.0.
 fn canon(x: f64) -> f64 {
-    if x.is_nan() { f64::NAN } else { x }
+    if x.is_nan() {
+        f64::NAN
+    } else if x == 0.0 {
+        0.0
+    } else {
+        x
+    }
 }
 
 impl Ord for Value {

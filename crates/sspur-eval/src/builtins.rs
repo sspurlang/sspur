@@ -210,8 +210,8 @@ impl Interp {
             },
             Value::Float(x) => match name {
                 "abs" => Ok(Value::Float(x.abs())),
-                "round" => Ok(Value::Int(x.round() as i64)),
-                "floor" => Ok(Value::Int(x.floor() as i64)),
+                "round" => crate::stdlib::f2i(x.round()),
+                "floor" => crate::stdlib::f2i(x.floor()),
                 "sqrt" => Ok(Value::Float(x.sqrt())),
                 _ => crate::stdlib::std_float(name, x, a),
             },

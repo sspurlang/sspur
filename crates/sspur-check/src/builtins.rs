@@ -317,6 +317,10 @@ F64 atan2(y: F64, x: F64) -> F64\n\
 F64 hypot(x: F64, y: F64) -> F64\n\
 F64 ceil(x: F64) -> Int\n\
 F64 trunc(x: F64) -> Int\n\
+F64 checked_round(x: F64) -> Opt[Int]\n\
+F64 checked_floor(x: F64) -> Opt[Int]\n\
+F64 checked_ceil(x: F64) -> Opt[Int]\n\
+F64 checked_trunc(x: F64) -> Opt[Int]\n\
 F64 is_nan(x: F64) -> Bool\n\
 F64 is_finite(x: F64) -> Bool\n\
 Int gcd(a: Int, b: Int) -> Int\n\
