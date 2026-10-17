@@ -126,8 +126,34 @@ fn matches(want: &[String], got: &[String]) -> bool {
     match want.split_first() {
         None => got.is_empty(),
         Some((w, rest)) if w == "..." => (0..=got.len()).any(|i| matches(rest, &got[i..])),
-        Some((w, rest)) => got.first().is_some_and(|g| g == w) && matches(rest, &got[1..]),
+        Some((w, rest)) => got.first().is_some_and(|g| same_line(g, w)) && matches(rest, &got[1..]),
     }
+}
+
+// Lines match exactly, except the values in a counterexample: Z3 picks a different one from
+// version to version (5.1 gave `total = -1, n = 2`, 5.3 `total = -999, n = 1000`). The function,
+// the contract and the verdict still have to match.
+fn same_line(got: &str, want: &str) -> bool {
+    got == want || (got.contains("counterexample: ") && want.contains("counterexample: ") && cx_shape(got) == cx_shape(want))
+}
+
+fn cx_shape(l: &str) -> String {
+    let mut out = String::new();
+    let mut depth = 0;
+    for c in l.chars() {
+        match c {
+            '(' => {
+                if depth == 0 {
+                    out.push_str("(..)");
+                }
+                depth += 1;
+            }
+            ')' if depth > 0 => depth -= 1,
+            _ if depth > 0 => {}
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 fn lines(s: &str) -> Vec<String> {
