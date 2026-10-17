@@ -29,6 +29,17 @@ pub const KEYWORDS: &[&str] = &[
     "false", "and", "or", "not", "par", "ex", "while", "rule", "trait", "impl", "store", "svc", "queue", "effect",
 ];
 
+const KW_MAX: usize = {
+    let (mut m, mut i) = (0, 0);
+    while i < KEYWORDS.len() {
+        if KEYWORDS[i].len() > m {
+            m = KEYWORDS[i].len();
+        }
+        i += 1;
+    }
+    m
+};
+
 /// Reserved words that are keywords only where they start a construct; anywhere else
 /// (a parameter, a local, a field) they lex as identifiers.
 pub const SOFT_KEYWORDS: &[&str] = &["profile", "derive", "pre", "post", "dec", "cost", "new", "ex", "rule", "trait", "impl", "store", "svc", "queue", "effect"];
@@ -167,7 +178,7 @@ fn lex_into(src: &str, mut comments: Option<&mut Vec<Comment>>) -> Result<Vec<To
                 }
                 // `pkg.Name` and `pkg.module.Name` are one name: a package's (or one of its
                 // public modules') type or constructor.
-                if bytes[start].is_ascii_lowercase() && (start == 0 || bytes[start - 1] != b'.') && !KEYWORDS.contains(&&src[start..i]) {
+                if bytes.get(i) == Some(&b'.') && bytes[start].is_ascii_lowercase() && (start == 0 || bytes[start - 1] != b'.') && !KEYWORDS.contains(&&src[start..i]) {
                     let word = |mut j: usize| {
                         while j < bytes.len() && (bytes[j] == b'_' || bytes[j].is_ascii_alphanumeric()) {
                             j += 1;
@@ -183,7 +194,8 @@ fn lex_into(src: &str, mut comments: Option<&mut Vec<Comment>>) -> Result<Vec<To
                     }
                 }
                 let word = &src[start..i];
-                let tok = match KEYWORDS.iter().find(|k| **k == word && !SOFT_KEYWORDS.contains(k)) {
+                let kw = word.len() <= KW_MAX && bytes[start].is_ascii_lowercase();
+                let tok = match KEYWORDS.iter().find(|k| kw && k.as_bytes()[0] == c && **k == word && !SOFT_KEYWORDS.contains(k)) {
                     Some(k) => Tok::Kw(k),
                     None if word == "_" => Tok::Sym("_"),
                     None => Tok::Ident(word.to_string()),
@@ -192,7 +204,7 @@ fn lex_into(src: &str, mut comments: Option<&mut Vec<Comment>>) -> Result<Vec<To
             }
             _ => {
                 let rest = &src[i..];
-                let Some(sym) = SYMBOLS.iter().find(|s| rest.starts_with(**s)) else {
+                let Some(sym) = SYMBOLS.iter().find(|s| s.as_bytes()[0] == c && rest.starts_with(**s)) else {
                     let ch = rest.chars().next().unwrap();
                     return Err(SyntaxError::new("E_LEX_CHAR", format!("unexpected character '{ch}'"), Span::new(i, i + ch.len_utf8())));
                 };
@@ -412,7 +424,7 @@ fn group(src: &str, open: usize, quote: u8, lenient: bool) -> Brace {
     // `"{xs.join(\" -> \")}"`: a string written with escaped quotes inside an interpolation
     // is the same string as `"{xs.join(" -> ")}"`.
     let escaped_only = inner.contains("\\\"") && !inner.replace("\\\"", "").contains('"');
-    let code = if escaped_only { inner.replace("\\\"", "\"") } else { inner.to_string() };
+    let code = if escaped_only { std::borrow::Cow::Owned(inner.replace("\\\"", "\"")) } else { std::borrow::Cow::Borrowed(inner) };
     let t = code.trim_start();
     let quoted = {
         let b = inner.as_bytes();
@@ -423,10 +435,16 @@ fn group(src: &str, open: usize, quote: u8, lenient: bool) -> Brace {
         return other();
     }
     let Ok(toks) = lex(&code) else { return other() };
-    let toks: Vec<&Tok> = toks.iter().map(|t| &t.tok).filter(|t| !matches!(t, Tok::Newline(_) | Tok::Eof)).collect();
+    let mut sig = toks.iter().map(|t| &t.tok).filter(|t| !matches!(t, Tok::Newline(_) | Tok::Eof));
+    let sig: [Option<&Tok>; 3] = [sig.next(), sig.next(), sig.next()];
+    let sig: &[&Tok] = match sig {
+        [Some(a), None, _] => &[a],
+        [Some(a), Some(b), None] => &[a, b],
+        _ => &[],
+    };
     // `"{" or s == "}"`: read as text, the `{` ends its string where code can go on (`)`, `,`,
     // an operator, `or`, the end of the line); `"{"x"}"` interpolates "x".
-    let lone = match toks.as_slice() {
+    let lone = match sig {
         [Tok::Int(_) | Tok::Float(_)] | [Tok::Sym("-"), Tok::Int(_) | Tok::Float(_)] => true,
         [Tok::Str(_)] => {
             let q = open + 1 + (inner.len() - inner.trim_start().len());
@@ -434,10 +452,10 @@ fn group(src: &str, open: usize, quote: u8, lenient: bool) -> Brace {
         }
         _ => false,
     };
-    if lone || (lenient && !matches!(toks.as_slice(), [Tok::Ident(_)])) {
+    if lone || (lenient && !matches!(sig, [Tok::Ident(_)])) {
         return other();
     }
-    match crate::parser::parse_expr(&code) {
+    match crate::parser::parse_expr_tokens(toks) {
         Ok(mut e) => {
             let base = (open + 1) as u32;
             crate::visit::walk_expr_mut(&mut e, &mut |x| {

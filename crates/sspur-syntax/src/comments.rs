@@ -14,8 +14,11 @@ pub fn format_source(src: &str) -> Result<String, SyntaxError> {
 
 pub fn format_source_at(src: &str, width: usize) -> Result<String, SyntaxError> {
     let (toks, cs) = lex_comments(src)?;
-    let m = crate::parser::parse_tokens(toks.clone())?.0;
-    let toks: Vec<_> = toks.into_iter().filter(|t| !matches!(t.tok, Tok::Newline(_) | Tok::Eof)).collect();
+    if cs.is_empty() {
+        return Ok(crate::layout::format_module_at(&crate::parser::parse_tokens(toks)?.0, width));
+    }
+    let (m, mut toks) = crate::parser::parse_kept(toks)?;
+    toks.retain(|t| !matches!(t.tok, Tok::Newline(_) | Tok::Eof));
     let text = |c: &Comment| src[c.span.start as usize..c.span.end as usize].trim_end();
     let spans: Vec<Span> = m.defs.iter().map(|d| d.span()).collect();
     let starts: Vec<usize> = src.match_indices('\n').map(|(i, _)| i).collect();

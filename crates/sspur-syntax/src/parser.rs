@@ -22,6 +22,19 @@ pub(crate) fn parse_tokens(toks: Vec<Token>) -> PResult<(Module, Vec<String>)> {
     Ok((m, p.notes))
 }
 
+/// The module and the tokens it was parsed from, as lexed.
+pub(crate) fn parse_kept(toks: Vec<Token>) -> PResult<(Module, Vec<Token>)> {
+    let mut p = Parser::new(toks);
+    let mut m = p.module()?;
+    normalize(&mut m);
+    for t in &mut p.toks {
+        if t.tok == Tok::Kw("fn") && t.span.end - t.span.start == 4 {
+            t.tok = Tok::Ident("rule".into());
+        }
+    }
+    Ok((m, p.toks))
+}
+
 const BUILTIN_TYPE_NAMES: &[&str] = &["Int", "I8", "I16", "I32", "U8", "U16", "U32", "U64", "F32", "F64", "Bool", "Str", "Unit", "List", "Opt", "Res", "Map", "Secret", "Pii", "Untrusted", "Guess"];
 
 fn normalize(m: &mut Module) {
@@ -39,7 +52,11 @@ fn normalize(m: &mut Module) {
 }
 
 pub fn parse_expr(src: &str) -> PResult<Expr> {
-    let toks = lex(src)?;
+    parse_expr_tokens(lex(src)?)
+}
+
+/// `parse_expr` of tokens already lexed.
+pub(crate) fn parse_expr_tokens(toks: Vec<Token>) -> PResult<Expr> {
     let mut p = Parser::new(toks);
     let e = p.expr_seq()?;
     p.skip_newlines();
@@ -87,11 +104,17 @@ impl Parser {
         self.toks[self.pos.saturating_sub(1)].span
     }
 
-    fn bump(&mut self) -> Token {
-        let t = self.toks[self.pos].clone();
+    fn bump(&mut self) -> Span {
+        let t = self.toks[self.pos].span;
         if self.pos < self.toks.len() - 1 {
             self.pos += 1;
         }
+        t
+    }
+
+    fn bump_tok(&mut self) -> Tok {
+        let t = self.peek().clone();
+        self.bump();
         t
     }
 
@@ -152,7 +175,7 @@ impl Parser {
 
     fn expect_sym(&mut self, s: &str) -> PResult<Span> {
         if self.is_sym(s) {
-            Ok(self.bump().span)
+            Ok(self.bump())
         } else {
             self.err("E_PARSE_EXPECTED", format!("expected '{s}', found {}", self.describe()))
         }
@@ -160,7 +183,7 @@ impl Parser {
 
     fn expect_kw(&mut self, k: &str) -> PResult<Span> {
         if self.is_kw(k) {
-            Ok(self.bump().span)
+            Ok(self.bump())
         } else {
             self.err("E_PARSE_EXPECTED", format!("expected '{k}', found {}", self.describe()))
         }
@@ -298,7 +321,7 @@ impl Parser {
     }
 
     fn use_def(&mut self) -> PResult<Def> {
-        let start = self.bump().span;
+        let start = self.bump();
         if let Tok::Ident(q) = self.peek().clone()
             && let Some((p, n)) = q.rsplit_once('.') {
                 return Err(SyntaxError::new("E_PARSE_USE", format!("write 'use {p}' or 'use {p}.{{{n}}}'"), self.span()));
@@ -365,7 +388,7 @@ impl Parser {
     }
 
     fn trait_def(&mut self) -> PResult<TraitDef> {
-        let start = self.bump().span;
+        let start = self.bump();
         let name = self.expect_ident()?;
         let params = self.tparams()?;
         let methods = self.member_fns("trait", true)?.into_iter().map(|(sig, default)| TraitMethod { sig, default }).collect();
@@ -373,7 +396,7 @@ impl Parser {
     }
 
     fn impl_def(&mut self) -> PResult<ImplDef> {
-        let start = self.bump().span;
+        let start = self.bump();
         let tparams = self.tparams()?;
         let trait_name = self.expect_ident()?;
         let mut trait_args = Vec::new();
@@ -637,7 +660,7 @@ impl Parser {
 
     fn ty(&mut self) -> PResult<Ty> {
         if self.is_sym("&") {
-            let span = self.bump().span;
+            let span = self.bump();
             let name = if matches!(self.peek(), Tok::Ident(m) if m == "mut") && matches!(self.peek_at(1), Tok::Ident(_) | Tok::Sym("(" | "[")) {
                 self.bump();
                 "&mut"
@@ -648,12 +671,12 @@ impl Parser {
             return Ok(Ty::Named { name: name.into(), args: vec![inner], span: span.to(self.prev_span()) });
         }
         if matches!(self.peek(), Tok::Ident(o) if o == "own") && matches!(self.peek_at(1), Tok::Ident(_) | Tok::Sym("(")) {
-            let span = self.bump().span;
+            let span = self.bump();
             let inner = self.ty()?;
             return Ok(Ty::Named { name: "own".into(), args: vec![inner], span: span.to(self.prev_span()) });
         }
         if self.is_sym("[") {
-            let span = self.bump().span;
+            let span = self.bump();
             let inner = self.ty()?;
             self.expect_sym("]")?;
             return Ok(Ty::Named { name: "[]".into(), args: vec![inner], span: span.to(self.prev_span()) });
@@ -682,7 +705,7 @@ impl Parser {
             if self.eat_sym("[") {
                 loop {
                     if let Tok::Int(n) = self.peek().clone() {
-                        let sp = self.bump().span;
+                        let sp = self.bump();
                         args.push(Ty::Named { name: n.to_string(), args: vec![], span: sp });
                         if !self.eat_sym(",") {
                             break;
@@ -889,10 +912,10 @@ impl Parser {
             }
             if unsafe_ahead(self, 0) {
                 self.bump();
-                trusted = raw_text(&self.bump().tok);
+                trusted = raw_text(&self.bump_tok());
             } else if irq_ahead(self, 0) {
                 self.bump();
-                interrupt = Some(match self.bump().tok {
+                interrupt = Some(match self.bump_tok() {
                     Tok::Int(n) => n.to_string(),
                     Tok::Ident(v) => v,
                     _ => unreachable!(),
@@ -1143,7 +1166,7 @@ impl Parser {
         if loose && !self.parenthesized(save, self.pos) {
             return self.err("E_PARSE_IS", "'is' would test the whole condition before it");
         }
-        let at = self.bump().span;
+        let at = self.bump();
         let pat = self.pat()?;
         let op = self.binop();
         if matches!(self.peek(), Tok::Ident(w) if w == "is") || self.is_sym("..") || op.is_some_and(|o| !matches!(o, BinOp::And | BinOp::Or)) {
@@ -1204,7 +1227,7 @@ impl Parser {
             Some(Box::new(self.branch()?))
         } else if is_elif(self.peek()) {
             self.note("elif -> else if");
-            let s2 = self.bump().span;
+            let s2 = self.bump();
             let indent = self.line_indent;
             Some(Box::new(self.if_rest(s2, indent)?))
         } else {
@@ -1359,7 +1382,7 @@ impl Parser {
             return self.block_or_expr();
         }
         let span = self.span();
-        let Tok::Ident(name) = self.bump().tok else { unreachable!() };
+        let Tok::Ident(name) = self.bump_tok() else { unreachable!() };
         self.bump();
         let value = self.expr()?;
         let full = span.to(self.prev_span());
@@ -1700,7 +1723,7 @@ impl Parser {
             }
             Tok::Sym("-") if matches!(self.peek_at(1), Tok::Int(_)) => {
                 self.bump();
-                let Tok::Int(n) = self.bump().tok else { unreachable!() };
+                let Tok::Int(n) = self.bump_tok() else { unreachable!() };
                 Ok(Pat::Int(-n))
             }
             Tok::Str(s) => {
@@ -1948,7 +1971,7 @@ impl Parser {
 
     fn asm(&mut self, start: Span) -> PResult<Expr> {
         let tspan = self.span();
-        let parts = match self.bump().tok {
+        let parts = match self.bump_tok() {
             Tok::Interp(p) => p,
             Tok::Str(s) => vec![StrPart::Lit(s)],
             _ => unreachable!(),
@@ -1977,7 +2000,7 @@ impl Parser {
             self.bump();
             while !self.is_sym(")") {
                 let sp = self.span();
-                match (g, self.bump().tok) {
+                match (g, self.bump_tok()) {
                     (2, Tok::Str(c)) => groups[2].push((c, Expr::new(ExprKind::Unit, sp))),
                     (0 | 1, Tok::Ident(n)) => {
                         self.expect_sym(":")?;
@@ -2086,7 +2109,7 @@ impl Parser {
                     if items.is_empty() && self.is_sym(";") {
                         self.bump();
                         let nspan = self.span();
-                        let Tok::Int(n) = self.bump().tok else { return self.err("E_PARSE_ARRAY", "expected the array length, a literal, after ';'") };
+                        let Tok::Int(n) = self.bump_tok() else { return self.err("E_PARSE_ARRAY", "expected the array length, a literal, after ';'") };
                         self.expect_sym("]")?;
                         let targs = vec![Ty::Named { name: n.to_string(), args: vec![], span: nspan }];
                         return Ok(Expr::new(ExprKind::Method { recv: Box::new(item), name: "#array".into(), targs, args: vec![] }, start.to(self.prev_span())));

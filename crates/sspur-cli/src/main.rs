@@ -445,7 +445,10 @@ fn program_cmd(cmd: &str, args: &Args) -> ExitCode {
     };
     let (label, text, loaded) = match args.pos.get(1).or(manifest_src.as_ref()) {
         Some(path) => match std::fs::read_to_string(path) {
-            Ok(src) if cmd == "fmt" => (path.clone(), src.clone(), sspur_syntax::parse(&src).map(|module| Loaded { own: module.defs.len(), src, module, check: Default::default(), hashes: Default::default(), partial: true, pkgs: vec![], shown: Default::default(), exports: Default::default(), dep_audits: vec![] }).map_err(|e| vec![sspur_check::syntax_diag(&e)])),
+            Ok(src) if cmd == "fmt" => match sspur_syntax::format_source(&src) {
+                Ok(out) => return write_fmt(path, &out, args),
+                Err(e) => return fail_diags(&src, path, &[sspur_check::syntax_diag(&e)], json),
+            },
             Ok(src) => match file_env(path) {
                 Ok(env) => {
                     let mut l = pkg::load(src.clone(), &env, false);
@@ -473,15 +476,7 @@ fn program_cmd(cmd: &str, args: &Args) -> ExitCode {
     };
     if cmd == "fmt" {
         let out = if loaded.pkgs.is_empty() { sspur_syntax::format_source(&loaded.src).unwrap_or_else(|_| sspur_syntax::format_module(&loaded.module)) } else { cwd_store().and_then(|s| s.head_root().map(|r| s.root_src(&r))).map(|t| sspur_syntax::parse(&t).ok().filter(|m| print_module(m) == t).map_or(t, |m| sspur_syntax::format_module(&m))).unwrap_or_default() };
-        if args.has("--write") && label != "HEAD" {
-            if let Err(e) = std::fs::write(&label, &out) {
-                eprintln!("cannot write {label}: {e}");
-                return ExitCode::FAILURE;
-            }
-        } else {
-            print!("{out}");
-        }
-        return ExitCode::SUCCESS;
+        return write_fmt(&label, &out, args);
     }
     if cmd == "check" {
         let mut diags = loaded.check.diags.clone();
@@ -990,6 +985,18 @@ pub fn interp(l: &Loaded) -> Interp {
         .map(|((s, e, _), _)| (*s, *e))
         .collect();
     it
+}
+
+fn write_fmt(label: &str, out: &str, args: &Args) -> ExitCode {
+    if args.has("--write") && label != "HEAD" {
+        if let Err(e) = std::fs::write(label, out) {
+            eprintln!("cannot write {label}: {e}");
+            return ExitCode::FAILURE;
+        }
+    } else {
+        print!("{out}");
+    }
+    ExitCode::SUCCESS
 }
 
 fn fail_diags(src: &str, label: &str, d: &[Diag], json: bool) -> ExitCode {
