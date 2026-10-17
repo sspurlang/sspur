@@ -289,10 +289,10 @@ fn measure_indent(bytes: &[u8], mut i: usize) -> (u32, usize) {
 
 /// One string literal starting at the quote at `start`, and the offset after its closing quote.
 /// A `{` starts an interpolation when its group `{...}` closes on the line and holds an
-/// expression that is not a lone literal (`{3}` and `{"a"}` interpolate nothing) and does not
-/// start with `{` (`{{x}}`). Otherwise the brace is text: when the group has an unescaped quote
-/// in it, the `{` alone (so `"{"` is a string even if another `}"` follows on the line), else
-/// the whole group, with its escapes applied. `\{` and `\}` are always braces. In `lenient`
+/// expression that is not a lone number (`{3}`), nor a lone string ending where code could go
+/// on (`"{" or s == "}"`), and does not start with `{` (`{{x}}`). Otherwise the brace is text:
+/// when the group has an unescaped quote in it, the `{` alone (so `"{"` is a string even if
+/// another `}"` follows on the line), else the whole group, with its escapes applied. `\{` and `\}` are always braces. In `lenient`
 /// strings (`asm` templates, `ep` paths) only names interpolate.
 fn lex_string(src: &str, start: usize, lenient: bool) -> Result<(Tok, usize), SyntaxError> {
     let quote = src.as_bytes()[start];

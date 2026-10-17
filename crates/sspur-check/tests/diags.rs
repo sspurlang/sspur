@@ -434,3 +434,13 @@ fn refined_types_decode_from_json() {
     let src = "type Title = Str where _.len > 0\ntype N = {title: Title, n: Int where _ >= 0}\nfn f(s: Str) -> Res[N, Str]\n= json.decode[N](s)\nfn g(s: Str) -> Res[List[Title], Str]\n= json.decode[List[Title]](s)\nfn add(n: N) -> Int\n= n.n\nsvc api\n  ep post \"/n\" = add\n";
     assert!(codes(src).is_empty(), "{:?}", diags(src));
 }
+
+/// `x: T = e` checks `e` against `T`, and the annotation gives an empty list its element type.
+#[test]
+fn binding_annotations_are_checked() {
+    assert_eq!(codes("fn f() -> Int\n= do\n  s: Str = 1\n  0\n"), vec!["E_TYPE_MISMATCH"]);
+    assert_eq!(codes("fn f() -> Int\n= do\n  var xs: List[Str] = []\n  xs := xs.push(1)\n  0\n"), vec!["E_TYPE_MISMATCH"]);
+    assert!(codes("fn f() -> Int\n= do\n  var xs: List[Int] = []\n  o: Opt[Str] = none\n  xs.len + o.map(s => s.len).or(0)\n").is_empty());
+    let out = check(&parse("fn f() -> Int\n= do\n  xs: List[Int] = []\n  xs.len\n").unwrap());
+    assert!(out.diags.is_empty() && out.ascribed, "{:?}", out.diags);
+}
