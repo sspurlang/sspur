@@ -187,7 +187,7 @@ test generic_eq_uses_impl = same_all([Frac{num: 1, den: 2}, Frac{num: 3, den: 6}
 test generic_eq_builtin = same_all([1, 1], 1) and not same_all([1, 2], 1)
 test index_impl = third(Row{cells: [1.0, 2.0, 3.5]}) == 3.5 and at(Row{cells: [4.0]}, 0) == 4.0
 test neg_generic = negate_all([1, -2]) == [-1, 2] and negate_all([Vec2{x: 1, y: 1}]) == [Vec2{x: -1, y: -1}]
-test builtin_list_eq_is_structural = [Frac{num: 1, den: 2}] != [Frac{num: 2, den: 4}]
+test builtin_list_eq_uses_the_element_impl = [Frac{num: 1, den: 2}] == [Frac{num: 2, den: 4}] and [Frac{num: 1, den: 2}].contains(Frac{num: 1, den: 2}) and not [Frac{num: 1, den: 2}].contains(Frac{num: 2, den: 4})
 
 
 // derive
