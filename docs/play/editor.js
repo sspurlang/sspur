@@ -296,7 +296,7 @@ function diffRange(a, b) {
 }
 // format rules: end
 
-// A thin line at the formatter's width, unless the editor wraps lines (on a phone), where a
+// A thin line at the formatter's width (it never shows if the editor wraps lines, where a
 // column would mean nothing.
 function ruler(col) {
   return ViewPlugin.fromClass(class {
@@ -598,7 +598,6 @@ export function createEditor({ parent, doc, dark, api, onChange, commands, width
     state: EditorState.create({
       doc,
       extensions: [
-        ...(matchMedia("(max-width: 720px)").matches ? [EditorView.lineWrapping] : []),
         lineNumbers(),
         highlightActiveLineGutter(),
         highlightSpecialChars(),
