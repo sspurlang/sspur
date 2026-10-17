@@ -4,10 +4,13 @@
 
 [![CI](https://github.com/sspurlang/sspur/actions/workflows/ci.yml/badge.svg)](https://github.com/sspurlang/sspur/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/badge/docs-sspurlang.github.io%2Fsspur-blue)](https://sspurlang.github.io/sspur/)
+[![Packages](https://img.shields.io/badge/packages-sspur--packages-8b5cf6)](https://sspurlang.github.io/sspur-packages/)
 
 **A programming language for AI agents to write, read, and maintain.**
 
 Documentation: **[sspurlang.github.io/sspur](https://sspurlang.github.io/sspur/)**, with [Get Started](https://sspurlang.github.io/sspur/get-started/five-minutes.html), the [Handbook](https://sspurlang.github.io/sspur/handbook/index.html), the [Reference](https://sspurlang.github.io/sspur/reference/language.html) and [Tutorials](https://sspurlang.github.io/sspur/tutorials/index.html). To try it without installing anything, open the **[Playground](https://sspurlang.github.io/sspur/play/)**, which runs the checker and the interpreter in your browser.
+
+Home: **[sspurlang.github.io](https://sspurlang.github.io/)** · Packages: **[sspurlang.github.io/sspur-packages](https://sspurlang.github.io/sspur-packages/)**, the package registry, where you can search packages and publish your own.
 
 **[SSPUR Pulse](https://sspurlang.github.io/sspur/pulse/)** is a live dashboard of the world today, recomputed every 6 hours by SSPUR programs ([how it works](https://sspurlang.github.io/sspur/pulse-how-it-works.html)).
 

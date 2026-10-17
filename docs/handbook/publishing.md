@@ -1,5 +1,7 @@
 # Publishing a package
 
+> **[Browse packages](https://sspurlang.github.io/sspur-packages/)** · **[Publish a package](https://sspurlang.github.io/sspur-packages/publish/)** · [Standards](https://github.com/sspurlang/sspur-packages/blob/main/CONTRIBUTING.md)
+
 The SSPUR registry is [sspur-packages](https://github.com/sspurlang/sspur-packages), a public GitHub repository with one file per package. Its [site](https://sspurlang.github.io/sspur-packages/) lists every package. This page covers using published packages, publishing your own, and what happens in between.
 
 ## Using a published package

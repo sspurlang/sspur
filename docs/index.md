@@ -16,6 +16,8 @@
 
 [SSPUR Pulse](pulse/index.html) is a live dashboard of the world today, fetched, checked and rendered by SSPUR programs every 6 hours. [How it works](pulse-how-it-works.md) describes the programs behind it.
 
+**[SSPUR packages](https://sspurlang.github.io/sspur-packages/)** is the package registry: search packages, read their API docs, and publish your own from the browser or with `sspur publish`. SSPUR's home page is **[sspurlang.github.io](https://sspurlang.github.io/)**.
+
 <div class="sspur-cards">
 
 <div class="sspur-card">
@@ -30,6 +32,7 @@
 <li><a href="get-started/installation.html">Installation</a></li>
 <li><a href="play/index.html">Playground</a></li>
 <li><a href="pulse/index.html">SSPUR Pulse</a></li>
+<li><a href="https://sspurlang.github.io/sspur-packages/">Package registry</a></li>
 </ul>
 </div>
 

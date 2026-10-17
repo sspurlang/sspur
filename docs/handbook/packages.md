@@ -1,5 +1,7 @@
 # Packages
 
+> **Looking for packages?** Browse and search the registry at **[sspurlang.github.io/sspur-packages](https://sspurlang.github.io/sspur-packages/)**, and add one with `sspur add NAME`. To publish yours, see [Publishing a package](publishing.md).
+
 A package is a directory with an `sspur.toml`. This page builds two: a library, `money`, and an app, `shop`, that depends on it.
 
 ## A library

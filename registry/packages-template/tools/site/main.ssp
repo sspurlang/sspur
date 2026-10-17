@@ -23,7 +23,7 @@ type Ctx = {index: Str, sources: Str, out: Str, web: Str}
 
 type Card = {name: Str, description: Str, latest: Str, effects: List[Str], keywords: List[Str], updated: Str, yanked: Bool, deprecated: Opt[Str]}
 
-type Md = {out: List[Str], para: List[Str], items: List[Str], ordered: Bool, code: Opt[List[Str]], lang: Str, quote: List[Str]}
+type Md = {out: List[Str], para: List[Str], items: List[Str], ordered: Bool, code: Opt[List[Str]], lang: Str, quote: List[Str], table: List[Str]}
 
 // ---------- text ----------
 
@@ -125,7 +125,41 @@ fn flush(m: Md, base: Str) -> Md
   tag = if m.ordered then "ol" else "ul"
   b = if m.items.is_empty() then [] else ["<{tag}>" + m.items.map(i => "<li>{inline(i, base)}</li>").join("") + "</{tag}>"]
   c = if m.quote.is_empty() then [] else ["<blockquote><p>{inline(m.quote.join(" "), base)}</p></blockquote>"]
-  m with out := m.out + a + b + c, para := [], items := [], quote := []
+  d = if m.table.is_empty() then [] else [table_html(m.table, base)]
+  m with out := m.out + a + b + c + d, para := [], items := [], quote := [], table := []
+
+// The cells of a table row: split on `|` outside code spans, without the outer pipes. `\|` is a
+// literal pipe.
+fn cells(row: Str) -> List[Str]
+= do
+  r = row.trim
+  inner = (if r.ends_with("|") and not r.ends_with("\\|") then r.take(r.len - 1) else r).drop(if r.starts_with("|") then 1 else 0)
+  parts = inner.chars.fold(([], "", false, false), (acc, c) => do
+    (done, cur, code, esc) = acc
+    if esc then (done, cur + (if c == "|" then "|" else "\\" + c), code, false) else if c == "\\" then (done, cur, code, true) else if c == "`" then (done, cur + c, not code, false) else if c == "|" and not code then (done.push(cur), "", code, false) else (done, cur + c, code, false))
+  parts.0.push(parts.1).map(_.trim)
+
+// Whether a row is a table's delimiter row, such as `|---|:--:|`.
+fn delimiter_row(row: Str) -> Bool
+= do
+  cs = cells(row)
+  not cs.is_empty() and cs.all(c => c.len > 0 and c.chars.all(x => x == "-" or x == ":") and c.contains("-"))
+
+fn align_of(c: Str) -> Str
+= if c.starts_with(":") and c.ends_with(":") then " style=\"text-align:center\"" else if c.ends_with(":") then " style=\"text-align:right\"" else ""
+
+// A GitHub-style table, in a wrapper that scrolls sideways on narrow screens. Rows without a
+// delimiter row after the first are plain text, as on GitHub.
+fn table_html(rows: List[Str], base: Str) -> Str
+= if rows.len < 2 or not delimiter_row(rows.get(1).or("")) then "<p>{inline(rows.join(" "), base)}</p>" else do
+  head = cells(rows.get(0).or(""))
+  aligns = cells(rows.get(1).or("")).map(align_of)
+  n = head.len
+  th = head.enumerate().map(p => "<th{aligns.get(p.0).or("")}>{inline(p.1, base)}</th>").join("")
+  body = rows.drop(2).map(r => do
+    cs = cells(r)
+    "<tr>" + (0..n).map(i => "<td{aligns.get(i).or("")}>{inline(cs.get(i).or(""), base)}</td>").join("") + "</tr>").join("")
+  "<div class=\"table-wrap\"><table><thead><tr>{th}</tr></thead><tbody>{body}</tbody></table></div>"
 
 fn heading_level(l: Str) -> Int
 = do
@@ -167,6 +201,12 @@ fn md_line(m: Md, l: Str, base: Str) -> Md
   else if t == "---" or t == "***" or t == "___" then do
     f = flush(m, base)
     f with out := f.out.push("<hr>")
+  else if t.starts_with("|") then do
+    f = if m.para.is_empty() and m.items.is_empty() and m.quote.is_empty() then m else flush(m, base)
+    f with table := f.table.push(t)
+  else if not m.table.is_empty() then do
+    f = flush(m, base)
+    f with para := [t]
   else if t.starts_with(">") then do
     f = if m.para.is_empty() and m.items.is_empty() then m else flush(m, base)
     f with quote := f.quote.push(t.drop(1).trim)
@@ -183,7 +223,7 @@ fn md_line(m: Md, l: Str, base: Str) -> Md
 // fenced code. Relative links resolve against `base`.
 fn markdown(text: Str, base: Str) -> Str
 = do
-  start = Md{out: [], para: [], items: [], ordered: false, code: none, lang: "", quote: []}
+  start = Md{out: [], para: [], items: [], ordered: false, code: none, lang: "", quote: [], table: []}
   m = text.replace("\r\n", "\n").split("\n").fold(start, (acc, l) => md_step(acc, l, base))
   done = match m.code
     | some(lines) => m with out := m.out.push(code_block(lines, m.lang)), code := none
@@ -191,6 +231,12 @@ fn markdown(text: Str, base: Str) -> Str
   done.out.join("\n")
 
 test markdown_basics = markdown("# Title\n\nSome *em* and **strong** with `code <b>`.\n\n- one\n- two [link](https://example.com/a)\n\n```sspur\nfn f() -> Int = 1 < 2\n```", "") == "<h2>Title</h2>\n<p>Some <em>em</em> and <strong>strong</strong> with <code>code &lt;b&gt;</code>.</p>\n<ul><li>one</li><li>two <a href=\"https://example.com/a\" rel=\"nofollow noopener\">link</a></li></ul>\n<pre><code class=\"language-sspur\">fn f() -&gt; Int = 1 &lt; 2</code></pre>"
+
+test markdown_tables = do
+  h = markdown("Before.\n\n| Definition | What it is |\n|---|:---:|\n| `a \\| b` | One `x|y` and *two* |\n| plain | <b> |\n\nAfter.", "")
+  h.contains("<table><thead><tr><th>Definition</th><th style=\"text-align:center\">What it is</th></tr></thead>") and h.contains("<td><code>a | b</code></td>") and h.contains("<code>x|y</code> and <em>two</em>") and h.contains("<td style=\"text-align:center\">&lt;b&gt;</td>") and h.contains("<p>After.</p>") and h.contains("<p>Before.</p>")
+
+test pipes_without_a_delimiter_are_text = markdown("| not | a table |", "") == "<p>| not | a table |</p>"
 
 test markdown_is_safe = do
   h = markdown("<script>alert(1)</script> [x](javascript:alert(1)) [y](docs/a.md) ![i](data:x)", "https://github.com/a/b/blob/c/")
@@ -206,8 +252,10 @@ fn logo() -> Str
 fn icon(name: Str) -> Str
 = if name == "search" then "<svg class='ic' viewBox='0 0 24 24' aria-hidden='true'><circle cx='11' cy='11' r='7'/><path d='m20 20-3.5-3.5'/></svg>" else if name == "up" then "<svg class='ic' viewBox='0 0 24 24' aria-hidden='true'><path d='M12 19V5M5 12l7-7 7 7'/></svg>" else if name == "docs" then "<svg class='ic' viewBox='0 0 24 24' aria-hidden='true'><path d='M4 5a2 2 0 0 1 2-2h12v16H6a2 2 0 0 0-2 2z'/><path d='M4 19V5'/></svg>" else if name == "git" then "<svg class='ic' viewBox='0 0 24 24' aria-hidden='true'><circle cx='6' cy='6' r='2'/><circle cx='18' cy='18' r='2'/><circle cx='6' cy='18' r='2'/><path d='M6 8v8M8 6h5a5 5 0 0 1 5 5v5'/></svg>" else if name == "copy" then "<svg class='ic' viewBox='0 0 24 24' aria-hidden='true'><rect x='9' y='9' width='11' height='11' rx='2'/><path d='M5 15V6a2 2 0 0 1 2-2h9'/></svg>" else "<svg class='ic' viewBox='0 0 24 24' aria-hidden='true'><circle cx='12' cy='12' r='4'/><path d='M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4'/></svg>"
 
+// Relative links up `depth` levels; a negative depth is the site's absolute root, for pages served
+// at any path (404.html).
 fn up(depth: Int) -> Str
-= if depth == 0 then "./" else "../".repeat(depth)
+= if depth < 0 then "/sspur-packages/" else if depth == 0 then "./" else "../".repeat(depth)
 
 fn chip(href: Str, label: Str, ic: Str, on: Bool) -> Str
 = "<a class='chip{if on then " on" else ""}' href='{href}'{if on then " aria-current='page'" else ""}>{icon(ic)}{label}</a>"
@@ -218,7 +266,7 @@ fn shell(title: Str, desc: Str, depth: Int, active: Str, body: Str) -> Str
   head = "<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'><title>{esc(title)}</title><meta name='description' content='{esc(desc)}'><meta name='color-scheme' content='light dark'><meta name='theme-color' content='#f6f5f1' media='(prefers-color-scheme: light)'><meta name='theme-color' content='#0d0f14' media='(prefers-color-scheme: dark)'><link rel='icon' href='{r}assets/icon.svg' type='image/svg+xml'><link rel='stylesheet' href='{r}assets/site.css'><script>try\{var t=localStorage.getItem('sspur-theme');if(t)document.documentElement.dataset.theme=t}catch(e)\{}document.documentElement.classList.add('js')</script></head>"
   nav = "<nav class='chips-nav' aria-label='Site'><div class='chips-row'>" + chip("{r}", "Packages", "search", active == "packages") + chip("{r}publish/", "Publish", "up", active == "publish") + chip("https://sspurlang.github.io/sspur/handbook/publishing.html", "Docs", "docs", false) + chip("https://github.com/sspurlang/sspur-packages", "Index", "git", false) + "</div></nav>"
   top = "<a class='skip' href='#main'>Skip to content</a><header class='top'><div class='wrap top-in'><a class='logo' href='{r}'><img class='logo-mark' src='{r}assets/icon.svg' width='32' height='32' alt=''><span>SSPUR packages</span></a>{nav}<button class='theme' type='button' data-theme-toggle aria-label='Switch between light and dark'>{icon("sun")}</button></div></header>"
-  foot = "<footer class='foot'><div class='wrap'><p class='foot-lead'>Built from <a href='https://github.com/sspurlang/sspur-packages'>the index</a> by SSPUR programs on every change. No servers, no keys, no trackers.</p><p class='foot-links'><a href='https://sspurlang.github.io/sspur/'>SSPUR docs</a><a href='https://sspurlang.github.io/sspur/play/'>Playground</a><a href='https://github.com/sspurlang/sspur-packages/blob/main/CONTRIBUTING.md'>Standards</a><a href='https://github.com/sspurlang/sspur'>Source</a></p><p class='made'>Created by <a href='https://utkarshavardhana.github.io/' target='_blank' rel='noopener'>Utkarsha Vardhana</a></p></div></footer>"
+  foot = "<footer class='foot'><div class='wrap'><p class='foot-lead'>Built from <a href='https://github.com/sspurlang/sspur-packages'>the index</a> by SSPUR programs on every change. No servers, no keys, no trackers.</p><p class='foot-links'><a href='https://sspurlang.github.io/'>SSPUR home</a><a href='https://sspurlang.github.io/sspur/'>SSPUR docs</a><a href='https://sspurlang.github.io/sspur/play/'>Playground</a><a href='https://github.com/sspurlang/sspur-packages/blob/main/CONTRIBUTING.md'>Standards</a><a href='https://github.com/sspurlang/sspur'>Source</a></p><p class='made'>Created by <a href='https://utkarshavardhana.github.io/' target='_blank' rel='noopener'>Utkarsha Vardhana</a></p></div></footer>"
   "{head}<body>{top}<main id='main'>{body}</main>{foot}<div class='toast' role='status' aria-live='polite' hidden></div><script src='{r}assets/site.js' defer></script></body></html>\n"
 
 // ---------- packages ----------
@@ -242,11 +290,11 @@ fn card_html(c: Card) -> Str
 = do
   note = if c.yanked then " <span class='pill bad'>yanked</span>" else if c.deprecated.is_some() then " <span class='pill warn'>deprecated</span>" else ""
   kw = c.keywords.map(k => esc(k)).join(" ")
-  "<li class='pkg card' data-name='{esc(c.name)}' data-text='{esc(c.name + " " + c.description + " " + kw).lower}'><a class='pkg-link' href='packages/{esc(c.name)}/'><span class='pkg-name'>{name_html(c.name)}</span> <span class='pill'>{esc(c.latest)}</span>{note}</a><p class='pkg-desc'>{esc(c.description)}</p><p class='pkg-meta'>{pills(c.effects)} <span class='muted small'>updated {esc(day(c.updated))}</span></p></li>"
+  "<li class='pkg card' data-name='{esc(c.name)}' data-text='{esc(c.name + " " + c.description + " " + kw).lower}'><a class='pkg-link' href='packages/{esc(c.name)}/'><span class='pkg-name'>{name_html(c.name)}</span> <span class='pill'>{esc(c.latest)}</span>{note}</a><p class='pkg-desc' title='{esc(c.description)}'>{esc(c.description)}</p><p class='pkg-meta'>{pills(c.effects)} <span class='muted small'>updated {esc(day(c.updated))}</span></p></li>"
 
 // How many packages the home page shows before a search.
 fn top_n() -> Int
-= 10
+= 12
 
 fn index_page(cards: List[Card]) -> Str
 = do
@@ -349,6 +397,11 @@ fn copy_static(cx: Ctx) -> Unit ! fs, log
   copy_dir(cx.web + "/assets", cx.out + "/assets")
   copy_dir(cx.web + "/publish", cx.out + "/publish")
 
+// The not-found page: the missing path as a compiler error, with a quick fix to the closest real
+// page or package (assets/lost.js fills in the path and the suggestion).
+fn lost_body() -> Str
+= "<section class='hero wrap lost'><p class='kicker'>404</p><h1>That package doesn't check.</h1><p class='lede'>The registry looked everywhere. Here's what it says:</p><figure class='lost-card' aria-label='A compiler error for the missing page'><div class='lost-bar'><span class='lost-dots' aria-hidden='true'><i></i><i></i><i></i></span><span>terminal</span></div><pre class='lost-term' id='lost-term'><span class='lost-prompt'>$ </span>sspur open <span id='lost-path'>/this/page</span>\n<span class='lost-err'>error[E_NOT_FOUND]</span>: no page at <span class='lost-p'>/this/page</span>\n<span class='lost-dim'>   |</span>\n<span class='lost-dim'> 1 |</span> <span class='lost-p'>/this/page</span>\n<span class='lost-dim'>   |</span> <span class='lost-caret' id='lost-caret'>^^^^^^^^^^</span> <span class='lost-dim'>not found in the registry</span>\n<span class='lost-help' id='lost-help'>   = help: search the packages</span></pre></figure><p class='lost-actions'><a class='btn primary' id='lost-fix' href='/sspur-packages/'>Apply the fix</a><a class='btn' id='lost-home' href='/sspur-packages/'>All packages</a><a class='btn' href='/sspur-packages/publish/'>Publish</a><a class='btn' href='https://sspurlang.github.io/'>SSPUR home</a></p></section><script src='/sspur-packages/assets/lost.js' defer></script>"
+
 fn search_json(cards: List[Card]) -> Str
 = json.encode(cards)
 
@@ -370,7 +423,7 @@ fn build(cx: Ctx) -> Int ! fs, log
     put("{cx.out}/{package_path(p.name)}", read_or("{cx.index}/{package_path(p.name)}", ""))
   publish = read_or(cx.web + "/publish.html", "<p>The Publish page is missing.</p>")
   put(cx.out + "/publish/index.html", shell("Publish a package: SSPUR packages", "Check a package in your browser and open its publish request on GitHub.", 1, "publish", publish))
-  put(cx.out + "/404.html", shell("Not found: SSPUR packages", "This page does not exist.", 0, "", "<section class='hero wrap'><p class='kicker'>404</p><h1>No such page</h1><p class='lede'>It may be a package that was never published. <a href='/sspur-packages/'>Search the packages</a>.</p></section>"))
+  put(cx.out + "/404.html", shell("Not found: SSPUR packages", "This page does not exist.", -1, "", lost_body()))
   copy_static(cx)
   all.len
 
