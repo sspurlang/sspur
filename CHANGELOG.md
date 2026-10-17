@@ -25,6 +25,7 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 - A dependency's warnings and audit lines (such as `A_DECLASSIFY` for its `.expose`) are no longer printed on every check and run of its users, against lines of their files; the dependency's own check reports them.
 - A build notes a path dependency outside the package whose source changed since `sspur.lock` pinned it (`note: geo changed since sspur.lock pinned it; ...`); it still uses the pinned version until `sspur deps update`, as before, but no longer silently.
 - `BigInt`, `Dec` and `Ratio` have the arithmetic operators their methods implied: `big(2) + big(3)`, `-d`, `ratio(1, 2) / ratio(1, 4)` (no `/` for `Dec`, whose division takes a scale), including through `[T: Add]`; they were `E_OPERATOR`.
+- `W_DISCARDED` warns about a statement such as `b.add(s)` or `xs.push(x)` whose updated `StrBuf` or collection is dropped, which does nothing since values don't change in place.
 - A package whose function takes a function value with one of the package's own effects (`pub fn handled(f: () -> Int ! tick) -> Int`) builds as a dependency; the effect inside the parameter's type was not renamed with the package. A package may also export functions named like a built-in effect (`pub fn fail`, `pub fn log`): its `fail[E]` and `log` rows stay the built-in effects. A user effect can't take a built-in effect's name (`E_DUPLICATE`).
 
 ## [0.14.0] - 2026-10-17

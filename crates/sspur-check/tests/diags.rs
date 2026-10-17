@@ -479,3 +479,10 @@ fn secrets_in_newtypes_compare_only_through_an_impl() {
     let with_impl = format!("{base}impl Eq for KB\n  fn eq(a: KB, b: KB) -> Bool\n  = a.raw.check(x => b.raw.check(y => crypto.equal(x, y)))\nfn f(a: KB, b: KB) -> Bool\n= a == b and some(a) == some(b) and [a] == [b]");
     assert!(codes(&with_impl).is_empty(), "{:?}", diags(&with_impl));
 }
+
+#[test]
+fn a_dropped_update_warns() {
+    assert_eq!(codes("fn f() -> Str\n= do\n  b = str_buf()\n  b.add(\"a\")\n  b.str"), vec!["W_DISCARDED"]);
+    assert_eq!(codes("fn f(xs: List[Int]) -> List[Int]\n= do\n  xs.push(1)\n  xs"), vec!["W_DISCARDED"]);
+    assert!(codes("fn f(xs: List[Int]) -> List[Int]\n= do\n  var ys = xs\n  ys := ys.push(1)\n  ys").is_empty());
+}
