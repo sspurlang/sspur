@@ -36,3 +36,10 @@ fn to_bits_alone_builds_natively() {
     let out = both("bits", "test", "fn g(n: Int) -> Bool\n= [4].to_bits(n).has(2)\n\ntest t = not g(8)\n\ntest u = not g(5)\n");
     assert!(out.contains("2 passed, 0 failed"), "{out}");
 }
+
+#[test]
+fn recursive_function_passed_by_name_and_inside_a_lambda_compiles() {
+    let src = "type C = Leaf | All{cs: List[C]}\n\nfn depth(c: C) -> Int\n= match c\n  | Leaf => 0\n  | All{cs} => 1 + cs.map(depth).sum\n\nfn total(gs: List[List[C]]) -> Int\n= gs.map(g => g.map(depth).sum).sum\n\ntest t = total([[Leaf, All{cs: [Leaf, All{cs: [Leaf]}]}], [All{cs: []}]]) == 3\n";
+    let out = both("depth", "test", src);
+    assert!(out.contains("1 passed, 0 failed"), "{out}");
+}

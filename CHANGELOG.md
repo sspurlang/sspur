@@ -11,6 +11,7 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ### Fixed
 - A program whose only use of `Bits` is `List.to_bits` builds natively; it failed with `unknown type name 'SBits'` and fell back to the interpreter. Every C runtime section now declares the types it uses, and the test that compiles each section alone no longer declares them for it.
+- The native compiler no longer overflows its stack on a recursive function passed by name to `map` and also mapped inside a lambda (`cs.map(depth)` with `gs.map(g => g.map(depth))`): the cost estimate follows a function named as an argument at most three levels deep and never into a recursive one, as it already did for calls.
 
 ## [0.14.0] - 2026-10-17
 

@@ -965,7 +965,11 @@ impl Opt<'_> {
     fn lambda_cost(&self, f: &Expr, depth: usize) -> f64 {
         match &f.kind {
             ExprKind::Lambda { body, .. } => self.est(body, depth),
-            ExprKind::Name(n) => self.global_fn(n).map_or(30.0, |g| CALL + self.est(&g.body, depth + 1)),
+            ExprKind::Name(n) => match self.global_fn(n) {
+                Some(g) if depth < 3 && !self.recursive.contains(n) => CALL + self.est(&g.body, depth + 1),
+                Some(_) => CALL + 50.0,
+                None => 30.0,
+            },
             _ => self.est(f, depth),
         }
     }
