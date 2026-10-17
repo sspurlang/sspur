@@ -149,8 +149,13 @@ impl Fx<'_, '_> {
     }
 
     fn fkey(&mut self, v: &str) -> String {
-        let (b, s, m, k) = (self.tmp(), self.tmp(), self.tmp(), self.tmp());
-        self.emit(format!("{b} = bitcast double {v} to i64"));
+        let (raw, nan, zero, z, b) = (self.tmp(), self.tmp(), self.tmp(), self.tmp(), self.tmp());
+        self.emit(format!("{raw} = bitcast double {v} to i64"));
+        self.emit(format!("{nan} = fcmp uno double {v}, {v}"));
+        self.emit(format!("{zero} = fcmp oeq double {v}, 0.0"));
+        self.emit(format!("{z} = select i1 {zero}, i64 0, i64 {raw}"));
+        self.emit(format!("{b} = select i1 {nan}, i64 9221120237041090560, i64 {z}"));
+        let (s, m, k) = (self.tmp(), self.tmp(), self.tmp());
         self.emit(format!("{s} = ashr i64 {b}, 63"));
         self.emit(format!("{m} = lshr i64 {s}, 1"));
         self.emit(format!("{k} = xor i64 {b}, {m}"));
@@ -402,7 +407,14 @@ impl Fx<'_, '_> {
             ("round" | "floor", T::F, 0) => {
                 let q = self.tmp();
                 self.emit(format!("{q} = call double @llvm.{name}.f64(double {v})"));
-                self.emit(format!("{r} = call i64 @llvm.fptosi.sat.i64.f64(double {q})"));
+                let (lo, hi, ok) = (self.tmp(), self.tmp(), self.tmp());
+                self.emit(format!("{lo} = fcmp oge double {q}, 0xC3E0000000000000"));
+                self.emit(format!("{hi} = fcmp olt double {q}, 0x43E0000000000000"));
+                self.emit(format!("{ok} = and i1 {lo}, {hi}"));
+                let bad = self.tmp();
+                self.emit(format!("{bad} = xor i1 {ok}, true"));
+                self.trap_if(&bad, 1);
+                self.emit(format!("{r} = fptosi double {q} to i64"));
                 return Ok((r, T::I));
             }
             ("abs", T::I, 0) => {

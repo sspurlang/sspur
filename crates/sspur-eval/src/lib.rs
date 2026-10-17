@@ -2,6 +2,8 @@
 mod builtins;
 #[cfg(feature = "native")]
 mod ffi;
+#[cfg(not(target_family = "wasm"))]
+mod lastuse;
 mod net;
 #[cfg(feature = "native")]
 mod libs;
@@ -129,6 +131,8 @@ pub struct Interp {
     drops: HashMap<String, String>,
     moves: HashSet<(u32, u32)>,
     inplace: HashSet<(u32, u32)>,
+    #[cfg(not(target_family = "wasm"))]
+    last_uses: RefCell<Option<HashSet<(u32, u32)>>>,
     heap: RefCell<Vec<Option<Vec<Value>>>>,
     sched: sched::Sched,
     pub json_types: HashMap<(u32, u32), sspur_check::Type>,
@@ -147,7 +151,58 @@ pub struct Interp {
     record: RefCell<(String, Vec<Vec<Value>>)>,
 }
 
+/// Calls deep on a thread whose stack the interpreter doesn't know (see `stack_from_here`).
 const MAX_DEPTH: u32 = 20_000;
+/// Calls deep on a thread that registered its stack; the stack itself is the real limit.
+#[cfg(not(target_family = "wasm"))]
+const MAX_DEPTH_KNOWN: u32 = 50_000_000;
+
+#[cfg(not(target_family = "wasm"))]
+thread_local! {
+    static STACK_FLOOR: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(not(target_family = "wasm"))]
+#[inline(always)]
+fn stack_pointer() -> usize {
+    let here = 0u8;
+    std::hint::black_box(&here) as *const u8 as usize
+}
+
+/// Lets interpreted calls on this thread nest until they use `budget` bytes of stack below the
+/// caller's frame, instead of stopping at 20,000 calls. The thread must have more stack than
+/// that, for the builtins and native code that run at the deepest call.
+#[cfg(not(target_family = "wasm"))]
+pub fn stack_from_here(budget: usize) {
+    let floor = stack_pointer().saturating_sub(budget);
+    STACK_FLOOR.with(|f| f.set(floor));
+}
+
+/// The interpreter's stack budget: `SSPUR_STACK` (`512M`, `2G`, `65536`), else 256 MB.
+#[cfg(not(target_family = "wasm"))]
+pub fn stack_budget() -> Result<usize, String> {
+    const DEFAULT: usize = 256 << 20;
+    let Ok(v) = std::env::var("SSPUR_STACK") else { return Ok(DEFAULT) };
+    let t = v.trim();
+    let (num, shift) = match t.chars().last().map(|c| c.to_ascii_uppercase()) {
+        Some('K') => (&t[..t.len() - 1], 10),
+        Some('M') => (&t[..t.len() - 1], 20),
+        Some('G') => (&t[..t.len() - 1], 30),
+        _ => (t, 0),
+    };
+    match num.parse::<usize>().ok().and_then(|n| n.checked_shl(shift).filter(|b| *b >> shift == n)) {
+        Some(b) if b >= 1 << 20 => Ok(b),
+        _ => Err(format!("SSPUR_STACK={v} is not a stack size of at least 1M, like 512M or 2G; using 256M")),
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn too_deep(d: u32) -> bool {
+    match STACK_FLOOR.with(Cell::get) {
+        0 => d > MAX_DEPTH,
+        floor => d > MAX_DEPTH_KNOWN || stack_pointer() < floor,
+    }
+}
 const BARE_NAMES: &[&str] = &["halt", "wait_irq", "irq_enable", "timer_start", "ticks", "tick_hz", "arch", "start_core", "core_id"];
 pub const OUT_OF_FUEL: &str = "evaluation step budget exhausted";
 
@@ -203,6 +258,22 @@ fn has_span(set: &HashSet<(u32, u32)>, span: Span) -> bool {
     set.contains(&(span.start, span.end))
 }
 
+/// Empties `n`'s cell when it still holds `v`, so `v` is the value's only reference.
+#[cfg(not(target_family = "wasm"))]
+fn release(n: &str, v: &Value, env: &Rc<Env>) {
+    let Some(c) = env.cell(n) else { return };
+    let same = match (&*c.borrow(), v) {
+        (Value::List(a), Value::List(b)) | (Value::Heap(a), Value::Heap(b)) => Rc::ptr_eq(a, b),
+        (Value::Map(a), Value::Map(b)) => Rc::ptr_eq(a, b),
+        (Value::Set(a), Value::Set(b)) => Rc::ptr_eq(a, b),
+        (Value::Buf(a), Value::Buf(b)) => Rc::ptr_eq(a, b),
+        _ => false,
+    };
+    if same {
+        *c.borrow_mut() = Value::Unit;
+    }
+}
+
 #[inline(never)]
 fn closure(params: &[String], body: &Expr, env: &Rc<Env>) -> Value {
     Value::Closure(Rc::new(Closure { params: params.to_vec(), body: body.clone(), env: env.clone() }))
@@ -248,6 +319,8 @@ impl Interp {
             drops: HashMap::new(),
             moves: HashSet::new(),
             inplace: HashSet::new(),
+            #[cfg(not(target_family = "wasm"))]
+            last_uses: RefCell::new(None),
             heap: RefCell::new(vec![None]),
             sched: Default::default(),
             json_types: HashMap::new(),
@@ -801,7 +874,7 @@ impl Interp {
         #[cfg(target_family = "wasm")]
         let too_deep = d > MAX_DEPTH || hop::stack_low();
         #[cfg(not(target_family = "wasm"))]
-        let too_deep = d > MAX_DEPTH;
+        let too_deep = too_deep(d);
         if too_deep {
             return trap(format!("stack overflow in {}", f.name));
         }
@@ -1342,7 +1415,34 @@ impl Interp {
     fn eval_method(&self, span: Span, recv: &Expr, name: &str, args: &[Expr], env: &Rc<Env>) -> R {
         let r = self.eval(recv, env)?;
         let a = self.eval_args(args, env)?;
+        #[cfg(not(target_family = "wasm"))]
+        if let ExprKind::Name(n) = &recv.kind
+            && lastuse::MOVE_METHODS.contains(&name)
+            && self.is_last_use(recv.span)
+        {
+            release(n, &r, env);
+        }
         self.method(span, name, r, a)
+    }
+
+    /// Whether `span` is a variable's last use as the receiver of an appending method.
+    #[cfg(not(target_family = "wasm"))]
+    #[inline(never)]
+    fn is_last_use(&self, span: Span) -> bool {
+        if self.last_uses.borrow().is_none() {
+            let mut lu = lastuse::LastUse::default();
+            for f in self.fns.values() {
+                lu.def(f);
+            }
+            for t in &self.tests {
+                lu.func(&[], &t.body, true);
+            }
+            for e in self.statics.values() {
+                lu.func(&[], e, true);
+            }
+            *self.last_uses.borrow_mut() = Some(lu.finish());
+        }
+        self.last_uses.borrow().as_ref().is_some_and(|s| s.contains(&(span.start, span.end)))
     }
 
     #[inline(never)]
@@ -1501,7 +1601,13 @@ impl Interp {
             given.insert(n.as_str(), self.eval(x, env)?);
         }
         for n in &order {
-            let v = given.remove(n.as_str()).map_or_else(|| trap(format!("missing field {n}")), Ok)?;
+            let v = match given.remove(n.as_str()) {
+                Some(v) => v,
+                #[cfg(not(target_family = "wasm"))]
+                None if sspur_check::std_field_default(&owner, n) && n == "data" => Value::bytes(vec![]),
+                None if sspur_check::std_field_default(&owner, n) => Value::str(""),
+                None => return trap(format!("missing field {n}")),
+            };
             vals.push((Rc::<str>::from(n.as_str()), v));
         }
         let fs = self.build_record(&owner, vals)?;
@@ -1855,6 +1961,8 @@ pub fn to_nval(v: &Value) -> Option<sspur_native::nval::NVal> {
         Value::Bool(b) => NVal::Bool(*b),
         Value::Float(x) => NVal::Float(*x),
         Value::Str(s) => NVal::Str(s.to_string()),
+        #[cfg(not(target_family = "wasm"))]
+        Value::Buf(s) => NVal::Str(s.to_string()),
         Value::New(n, x) => NVal::New(n.to_string(), Box::new(to_nval(x)?)),
         Value::Wrap(k, x) => NVal::Wrap(k.to_string(), Box::new(to_nval(x)?)),
         Value::Guess(x, c) => NVal::Guess(Box::new(to_nval(x)?), *c),

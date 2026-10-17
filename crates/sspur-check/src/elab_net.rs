@@ -11,7 +11,7 @@ use std::fmt::Write as _;
 #[cfg(not(target_family = "wasm"))]
 const PRELUDE: &str = concat!(include_str!("net_prelude.ssp"), "\n", include_str!("net_prelude_serve.ssp"), "\n", include_str!("lib_prelude.ssp"));
 #[cfg(target_family = "wasm")]
-const PRELUDE: &str = include_str!("net_prelude.ssp");
+const PRELUDE: &str = concat!(include_str!("net_prelude.ssp"), "\nfn __http_out(r: Response) -> (Int, List[(Str, Str)], Str, Str)\n= (r.status, r.headers, r.body, \"\")\n");
 
 pub(crate) fn name_expr(n: &str) -> Expr {
     Expr::new(ExprKind::Name(n.to_string()), Span::default())

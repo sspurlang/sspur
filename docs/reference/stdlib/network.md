@@ -6,8 +6,8 @@ The HTTP client and server perform the `net` effect. Both tiers use the same run
 
 | Type | Fields |
 |---|---|
-| `Request` | `method: Str, url: Str, headers: List[(Str, Str)], body: Str, timeout_ms: Int, retries: Int, redirects: Int`. On the server, `url` is the request target (`/a?b=1`), `timeout_ms` the server's and the other two `0` |
-| `Response` | `status: Int, headers: List[(Str, Str)], body: Str` |
+| `Request` | `method: Str, url: Str, headers: List[(Str, Str)], body: Str, timeout_ms: Int, retries: Int, redirects: Int, peer: Str`. On the server, `url` is the request target (`/a?b=1`), `timeout_ms` the server's, `retries` and `redirects` `0`, and `peer` the address of the client the connection comes from (`127.0.0.1`, `2001:db8::1`; an IPv4 client of an IPv6 socket as IPv4). A literal may leave `peer` out (`""`) |
+| `Response` | `status: Int, headers: List[(Str, Str)], body: Str, data: Bytes`. A server sends `body`, then `data`, so binary or compressed content goes in `data`. A literal may leave `data` out (empty); the client's responses have it empty |
 | `HttpErr` | `Dns{msg: Str} \| Connect{msg: Str} \| Tls{msg: Str} \| Timeout{msg: Str} \| HttpStatus{code: Int, body: Str} \| Io{msg: Str}` |
 | `Server` | `port, host, workers, max_body, timeout_ms, max_requests, cors, gzip, files, health, cert, key, access_log` (see the handbook for each) |
 
@@ -38,12 +38,15 @@ Certificates are verified against the system's roots, or the certificates in the
 | `http.serve_with(server, handler)` | the same, with a `Server` |
 | `http.server(port)` | `Server` with the defaults |
 | `http.text(status, s)`, `http.html(status, s)`, `http.json(status, v)` | `Response` with that content type; `json` encodes any data value |
+| `http.bytes(status, b)` | `Response` with `b` as its `data` and the type `application/octet-stream`; set another `content-type` with `with headers := ...`, and `content-encoding: gzip` for `gzip.compress` output |
 | `req.path` | the target without the query string, as sent (not decoded) |
 | `req.query(name)` | `Opt[Str]`, decoded, the first occurrence |
 | `req.header(name)` | `Opt[Str]`, case-insensitive; `x-request-id` is always there |
 | `req.json[T]` | `Res[T, Str]` |
 | `req.form(name)` | `Opt[Str]`: the first field of that name in a form body (`application/x-www-form-urlencoded`), decoded |
 | `req.cookie(name)` | `Opt[Str]`: the cookie of that name in the `Cookie` header |
+
+`req.peer` is the address the TCP connection comes from, which the client can't forge. Behind a reverse proxy or a load balancer that is the proxy's address; the client's is then in a header the proxy adds, such as `X-Forwarded-For` or `Forwarded`, which anyone can also send. Trust such a header only from a proxy you run: take its rightmost entry that isn't one of your proxies, and only when `req.peer` is a proxy's address.
 
 The handler is a function from `Request` to `Response`, a lambda, or a `svc` name; a `svc api(app: App)` with parameters is the handler `api(app)`, and its endpoints' parameters named `app` receive the value. Errors a handler raises become responses; it can't perform `db.*` or user-defined effects (`E_SERVE_EFFECT`), assign variables from outside it (`E_PAR_RACE`) or use function values from outside it (`E_PAR_SHARE`), because handlers run concurrently.
 

@@ -46,6 +46,12 @@ static HTTP_SIGS: &[&str] = &[
     "html(status: Int, body: Str) -> Response",
 ];
 
+/// `http.bytes`, outside the playground, which has no `Bytes`.
+#[cfg(not(target_family = "wasm"))]
+static HTTP_BYTES: &[&str] = &["bytes(status: Int, data: Bytes) -> Response"];
+#[cfg(target_family = "wasm")]
+static HTTP_BYTES: &[&str] = &[];
+
 /// Methods of the std records, typed through `STD_METHODS` and rewritten to these functions.
 pub const RECORD_METHODS: &[(&str, &str, &str)] = &[
     ("#Request", "header", "__http_req_header"),
@@ -148,13 +154,19 @@ impl Checker {
                 return Type::con("#Response");
             }
             "serve" | "serve_with" => return self.infer_serve(name == "serve_with", args, span),
+            #[cfg(not(target_family = "wasm"))]
+            "bytes" if args.len() == 2 => {
+                let cs = vec![self.lib_arg(&Type::int(), &args[0], "http.bytes"), self.lib_arg(&Type::con("#Bytes"), &args[1], "http.bytes")];
+                self.lib_site(span, NetSite::Lib("__http_bytes".into(), cs));
+                return Type::con("#Response");
+            }
             _ => {}
         }
-        let Some(src) = HTTP_SIGS.iter().find(|s| s.starts_with(&format!("{name}("))) else {
+        let Some(src) = HTTP_SIGS.iter().chain(HTTP_BYTES).find(|s| s.starts_with(&format!("{name}("))) else {
             for a in args {
                 self.infer(a, None);
             }
-            self.push_diag("E_UNKNOWN_METHOD", "error", span, format!("no http operation '{name}'"), Some("http.get, post, send, fetch, download, req, serve, serve_with, server, text, html, json".into()), vec![]);
+            self.push_diag("E_UNKNOWN_METHOD", "error", span, format!("no http operation '{name}'"), Some("http.get, post, send, fetch, download, req, serve, serve_with, server, text, html, json, bytes".into()), vec![]);
             return self.fresh();
         };
         let (_, s) = self.builtin_scheme(src);

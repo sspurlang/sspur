@@ -73,7 +73,7 @@ The whole heap is released when native code returns to the interpreter. `SSPUR_M
 | **In-place reuse** (ADR 0008): a tree updated through `t := insert(t, x)` from a fresh value is uniquely owned, so `insert` rewrites the matched node; `ps := ps.map(f)` maps its buffer in place | One allocation per insert instead of a path copy; no per-step buffers |
 | **Pipeline fusion**: `filter`/`map` chains ending in `sum`, `len`, `map`, or `filter`, `(a..b).map(f)`, and a `map` or `filter` folded by an effect-free function | One loop, no intermediate lists |
 | **Linearity analysis**: a map built from `empty_map()` and consumed exactly once per step (`fold`, or `var m` with `m := m.put(..)`) is mutated in place | Persistent semantics, with in-place speed when the compiler proves no one else can observe the old version |
-| `Map` is a persistent treap with key-ordered iteration | O(log n) `put`, versus the interpreter's O(n) copy |
+| `Map` is a persistent treap with key-ordered iteration | O(log n) `put`; the interpreter's ordered map is updated in place when the old version is dead and copied when it isn't |
 | `counts` uses a hash table consistent with SSPUR equality, sized to the distinct keys; `s.words.counts` counts while scanning | O(n), first-seen order preserved, no intermediate word list |
 | ASCII fast paths for case mapping, `words`, and `trim` | Unicode-exact host fallback only for non-ASCII text |
 | Single-allocation `join` with inline short copies; `for` loops that push once per iteration reserve capacity up front; hand-written integer formatting | No `snprintf`, no reallocation chains |

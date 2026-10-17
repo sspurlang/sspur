@@ -364,9 +364,10 @@ fn components(ctx: &HoleCtx, check: &CheckOutput, site: &HoleSite) -> Vec<Comp> 
         }
         out.push(Comp { name: s.name.clone(), kind, tparams: s.tparams.clone(), params: s.params.clone(), ret: s.ret.clone(), effects: s.effects.clone(), self_types: s.self_types.clone(), commutes: matches!(s.name.as_str(), "min" | "max" | "gcd" | "lcm") });
     }
-    let mut records: Vec<_> = check.records.iter().filter(|(n, _)| !n.starts_with('#')).collect();
-    records.sort_by_key(|(n, _)| *n);
-    for (name, (params, fields)) in records {
+    let mut names: Vec<&String> = check.records.keys().filter(|n| !n.starts_with('#')).collect();
+    names.sort();
+    for name in names {
+        let (params, fields) = &check.records[name];
         let ty = Type::Con(name.clone(), params.iter().map(|p| Type::Param(p.clone())).collect());
         for (f, ft) in fields {
             out.push(Comp { name: f.clone(), kind: Kind::Field(f.clone()), tparams: params.clone(), params: vec![ty.clone()], ret: ft.clone(), effects: BTreeSet::new(), self_types: vec![], commutes: false });
@@ -378,9 +379,10 @@ fn components(ctx: &HoleCtx, check: &CheckOutput, site: &HoleSite) -> Vec<Comp> 
             out.push(Comp { name: name.clone(), kind: Kind::Record(fields.iter().map(|(f, _)| f.clone()).collect()), tparams: params.clone(), params: fields.iter().map(|(_, t)| t.clone()).collect(), ret: ty.clone(), effects: BTreeSet::new(), self_types: vec![], commutes: false });
         }
     }
-    let mut sums: Vec<_> = check.sums.iter().collect();
-    sums.sort_by_key(|(n, _)| *n);
-    for (name, (params, variants)) in sums {
+    let mut sums: Vec<&String> = check.sums.keys().collect();
+    sums.sort();
+    for &name in &sums {
+        let (params, variants) = &check.sums[name];
         let ty = Type::Con(name.clone(), params.iter().map(|p| Type::Param(p.clone())).collect());
         for (v, fields) in variants {
             let fields = fields.clone().unwrap_or_default();
@@ -389,9 +391,8 @@ fn components(ctx: &HoleCtx, check: &CheckOutput, site: &HoleSite) -> Vec<Comp> 
             }
         }
     }
-    let mut tested: Vec<_> = check.sums.iter().filter(|(n, (_, vs))| vs.len() > 1 && !n.starts_with('#')).collect();
-    tested.sort_by_key(|(n, _)| *n);
-    for (name, (params, variants)) in tested {
+    for name in sums.into_iter().filter(|n| check.sums[*n].1.len() > 1 && !n.starts_with('#')) {
+        let (params, variants) = &check.sums[name];
         let ty = Type::Con(name.clone(), params.iter().map(|p| Type::Param(p.clone())).collect());
         for (v, _) in variants {
             out.push(Comp { name: v.clone(), kind: Kind::Is(Pat::Ctor { name: v.clone(), args: CtorArgs::None }), tparams: params.clone(), params: vec![ty.clone()], ret: Type::bool(), effects: BTreeSet::new(), self_types: vec![], commutes: false });
@@ -1253,6 +1254,8 @@ fn hash_value(v: &Value, h: &mut impl std::hash::Hasher, depth: u32) {
         Value::Int(n) => (1u8, n).hash(h),
         Value::Bool(b) => (2u8, b).hash(h),
         Value::Str(s) => (3u8, &**s).hash(h),
+        #[cfg(not(target_family = "wasm"))]
+        Value::Buf(s) => (3u8, s.as_str()).hash(h),
         Value::List(xs) | Value::Tuple(xs) => {
             (5u8, xs.len()).hash(h);
             for x in xs.iter().take(if deep { 8 } else { 0 }) {

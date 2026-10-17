@@ -58,7 +58,7 @@ A handler of `http.serve` that raises `DbErr` answers `404` for `NoRow`, `409` w
 | `crypto.public_key(sk)`, `crypto.sign(sk, data)`, `crypto.verify(pk, data, sig)` | `Bytes`, a 64-byte `Bytes`, `Bool` |
 | `uuid.v4()`, `uuid.v7()` | `Str ! rand` (and `time` for v7), RFC 9562 text |
 
-A `Bytes` parameter (`data`) also takes a `Str`, as its UTF-8 bytes, and a `Secret[X]` parameter (`key`, `pw`, `sk`) also takes an `X`. A key of the wrong length traps (`crypto.seal: the key must be 32 bytes, got 16`). The generator is `BCryptGenRandom` on Windows, `arc4random_buf` on macOS and `getrandom` on Linux.
+A `Bytes` parameter (`data`) also takes a `Str`, as its UTF-8 bytes, a `Secret[X]` parameter (`key`, `pw`, `sk`) also takes an `X`, and a `Secret[Bytes]` one a `Str` or a `Secret[Str]`; every `ns.f(...)` call of a std namespace converts the same way, and nothing else converts (see [Safety types](../language.md#safety-types)). A key of the wrong length traps (`crypto.seal: the key must be 32 bytes, got 16`). The generator is `BCryptGenRandom` on Windows, `arc4random_buf` on macOS and `getrandom` on Linux.
 
 ## Compression: `gzip`, `deflate`, `zstd`
 

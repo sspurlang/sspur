@@ -247,5 +247,5 @@ pub fn check_cached(src: String, module: Module, linked: Option<usize>) -> Loade
     let res = Resolution { user_methods: Some(&check.user_methods), record_types: Some(&check.record_types) };
     let hashes = hash_module_with(&module, &res).into_iter().collect();
     let own = linked.unwrap_or(module.defs.len());
-    Loaded { src, module, check, hashes, partial: true, own, pkgs: vec![], shown: Default::default(), exports: BTreeSet::new() }
+    Loaded { src, module, check, hashes, partial: true, own, pkgs: vec![], shown: Default::default(), exports: BTreeSet::new(), dep_audits: vec![] }
 }

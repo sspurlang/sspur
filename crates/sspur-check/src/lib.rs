@@ -28,7 +28,7 @@ pub use deploy::{db_op, HTTP_METHODS};
 pub use types::{Row, Type};
 pub use traits::{ImplOut, TraitOut};
 pub use holes::{HoleCtx, HoleSite, Sig, SigKind};
-pub use builtins::{is_std_global, std_globals, std_methods, std_sums, std_types, BARE_NAMES, GLOBALS, METHODS, OPEN_STD_RECORDS, STD_GLOBALS, STD_GLOBAL_NAMES, STD_METHODS, STD_RECORDS, STD_SUMS, STD_TYPES};
+pub use builtins::{is_std_global, std_field_default, std_globals, std_methods, std_sums, std_types, BARE_NAMES, GLOBALS, METHODS, OPEN_STD_RECORDS, STD_GLOBALS, STD_GLOBAL_NAMES, STD_METHODS, STD_RECORDS, STD_SUMS, STD_TYPES};
 pub use net::NetSite;
 
 #[derive(Clone, Debug, Serialize)]
@@ -178,6 +178,23 @@ struct Local {
 type Frame = BTreeMap<String, (Span, Option<Type>)>;
 type Hole = (Span, Option<String>, Type, Vec<(String, Type)>);
 
+/// About 450 builtin methods: boxed, a bucket of the table is 56 bytes, not 300, and the checker
+/// uses less memory; the playground keeps them inline, which is less code.
+#[cfg(not(target_family = "wasm"))]
+type MethodScheme = Box<Scheme>;
+#[cfg(target_family = "wasm")]
+type MethodScheme = Scheme;
+
+#[cfg(not(target_family = "wasm"))]
+fn method_scheme(s: Scheme) -> MethodScheme {
+    Box::new(s)
+}
+
+#[cfg(target_family = "wasm")]
+fn method_scheme(s: Scheme) -> MethodScheme {
+    s
+}
+
 struct Checker {
     fn_defs: HashMap<String, FnDef>,
     device_fns: HashSet<String>,
@@ -185,7 +202,7 @@ struct Checker {
     ctors: HashMap<String, CtorInfo>,
     fns: HashMap<String, Scheme>,
     globals: HashMap<String, Scheme>,
-    methods: HashMap<(String, String), Scheme>,
+    methods: HashMap<(String, String), MethodScheme>,
     subst: Vec<Option<Type>>,
     rsubst: Vec<Option<Row>>,
     scopes: Vec<HashMap<String, Local>>,
@@ -407,7 +424,7 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
         }
         for (recv, src) in builtins::SYS_METHODS {
             let (name, s) = c.builtin_scheme(src);
-            c.methods.insert((recv.to_string(), name), s);
+            c.methods.insert((recv.to_string(), name), method_scheme(s));
         }
     }
     if c.bare {
@@ -417,7 +434,7 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
         }
         for (recv, src) in builtins::BARE_METHODS {
             let (name, s) = c.builtin_scheme(src);
-            c.methods.insert((recv.to_string(), name), s);
+            c.methods.insert((recv.to_string(), name), method_scheme(s));
         }
     }
     c.collect(m);
@@ -674,6 +691,41 @@ fn never_matches(e: &Expr, p: &Pat) -> bool {
     }
 }
 
+impl Checker {
+    /// After a statement `x` whose value of type `t` is thrown away: `W_UNUSED_RESULT` when the
+    /// call performed nothing (the frame `infer` pushed for it is empty) and `t` isn't `Unit`.
+    #[inline(never)]
+    fn discarded(&mut self, what: &str, x: &Expr, t: &Type) {
+        let frame = self.frames.pop().unwrap();
+        let pure = frame.is_empty();
+        for (a, (sp, ty)) in frame {
+            self.add_effect(a, sp, ty);
+        }
+        let t = self.resolve(t);
+        if !pure || matches!(&t, Type::Var(_)) || t == Type::unit() {
+            return;
+        }
+        let shown = printer::expr(x, 0);
+        let hint = match &x.kind {
+            ExprKind::Method { recv, .. } if let ExprKind::Name(r) = &recv.kind => format!("values don't change in place: keep the new {t} with '{r} := {shown}' (and 'var {r}'), or write '_ = {shown}'"),
+            _ => format!("bind it ('name = {shown}') or write '_ = {shown}'"),
+        };
+        self.push_diag("W_UNUSED_RESULT", "warning", x.span, format!("the result of {what} ({t}) is discarded"), Some(hint), vec![]);
+    }
+}
+
+/// A call whose value a statement throws away, named for the warning, or `None`.
+fn discardable_call(x: &Expr) -> Option<String> {
+    match &x.kind {
+        ExprKind::Method { name, .. } => Some(format!("'.{name}'")),
+        ExprKind::Call(f, _) => match &f.kind {
+            ExprKind::Name(n) if n != "resume" => Some(format!("'{n}'")),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn irrefutable(p: &Pat) -> bool {
     match p {
         Pat::Wild | Pat::Bind(_) => true,
@@ -737,7 +789,7 @@ impl Checker {
         }
         for (recv, src) in builtins::METHODS {
             let (name, s) = self.builtin_scheme(src);
-            self.methods.insert((recv.to_string(), name), s);
+            self.methods.insert((recv.to_string(), name), method_scheme(s));
         }
         for src in builtins::std_globals() {
             let (name, s) = self.builtin_scheme(src);
@@ -745,7 +797,7 @@ impl Checker {
         }
         for (recv, src) in builtins::std_methods() {
             let (name, s) = self.builtin_scheme(src);
-            self.methods.insert((recv.to_string(), name), s);
+            self.methods.insert((recv.to_string(), name), method_scheme(s));
         }
         let t = Type::Param("T".into());
         let s = Scheme { tparams: vec!["T".into()], rparams: vec![], params: vec![t.clone()], ret: Type::unit(), atoms: BTreeSet::new(), fails: vec![], ueffs: vec![("yield".into(), vec![t])], bounds: vec![], origin: String::new() };
@@ -1770,7 +1822,7 @@ impl Checker {
             };
             return Type::list(Type::con(host));
         }
-        let found = self.methods.get(&(con.clone(), name.to_string())).or_else(|| self.methods.get(&("*".to_string(), name.to_string()))).cloned();
+        let found = self.methods.get(&(con.clone(), name.to_string())).or_else(|| self.methods.get(&("*".to_string(), name.to_string()))).map(|s| std::borrow::Borrow::<Scheme>::borrow(s).clone());
         if found.is_none()
             && let Some(t) = self.trait_method_call(recv, &rt, name, args, span, true) {
                 return t;
@@ -1825,7 +1877,7 @@ impl Checker {
     }
 
     fn has_method(&self, con: &str, m: &str) -> Option<Scheme> {
-        self.methods.get(&(con.to_string(), m.to_string())).or_else(|| self.methods.get(&("*".to_string(), m.to_string()))).cloned()
+        self.methods.get(&(con.to_string(), m.to_string())).or_else(|| self.methods.get(&("*".to_string(), m.to_string()))).map(|s| std::borrow::Borrow::<Scheme>::borrow(s).clone())
     }
 
     /// A method spelled the way another language spells it, with one SSPUR meaning on this
@@ -2394,7 +2446,17 @@ impl Checker {
                 for (i, s) in stmts.iter().enumerate() {
                     let is_last = i + 1 == stmts.len();
                     let loop_body = matches!(s, Stmt::Expr(x) if self.while_bodies.contains(&(x.span.start, x.span.end)));
+                    let discarded = match s {
+                        Stmt::Expr(x) if !is_last && !loop_body => discardable_call(x),
+                        _ => None,
+                    };
+                    if discarded.is_some() {
+                        self.frames.push(Frame::new());
+                    }
                     last = self.infer_stmt(s, if is_last { exp } else if loop_body { Some(&unit) } else { None });
+                    if let (Some(what), Stmt::Expr(x)) = (discarded, s) {
+                        self.discarded(&what, x, &last);
+                    }
                     if loop_body && let Stmt::Expr(x) = s {
                         self.expect(&unit, &last, x.span);
                     }
@@ -2886,7 +2948,7 @@ impl Checker {
                         .types
                         .iter()
                         .filter_map(|(n, i)| match &i.kind {
-                            TypeKind::Record(fs) if fs.iter().map(|(f, _)| f.as_str()).collect::<BTreeSet<_>>() == names => Some((n.clone(), i.params.clone(), fs.clone())),
+                            TypeKind::Record(fs) if fs.iter().map(|(f, _)| f.as_str()).collect::<BTreeSet<_>>() == names || fs.iter().filter(|(f, _)| !builtins::std_field_default(n, f)).map(|(f, _)| f.as_str()).collect::<BTreeSet<_>>() == names => Some((n.clone(), i.params.clone(), fs.clone())),
                             _ => None,
                         })
                         .collect();
@@ -2926,6 +2988,7 @@ impl Checker {
                     let t = self.infer(v, Some(&fr));
                     self.expect(fty, &t, v.span);
                 }
+                None if builtins::std_field_default(&name, fname) => {}
                 None => self.err("E_FIELD_MISSING", span, format!("{name} is missing field '{fname}'")),
             }
         }

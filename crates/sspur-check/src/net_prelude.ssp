@@ -82,10 +82,7 @@ fn __http_server(port: Int) -> Server
 = Server{port, host: "127.0.0.1", workers: 0, max_body: 1048576, timeout_ms: 30000, max_requests: 0, cors: [], gzip: false, files: [], health: "", cert: "", key: "", access_log: true}
 
 fn __http_serve[e](c: Server, h: Request -> Response ! e) -> Unit ! net, log, e
-= __net_serve((c.port, c.host, c.workers, c.max_body, c.timeout_ms, c.max_requests, c.cors, c.gzip, c.files, c.health, c.cert, c.key, c.access_log), (m, u, hs, b, t) => __http_out(h(Request{method: m, url: u, headers: hs, body: b, timeout_ms: t, retries: 0, redirects: 0})))
-
-fn __http_out(r: Response) -> (Int, List[(Str, Str)], Str)
-= (r.status, r.headers, r.body)
+= __net_serve((c.port, c.host, c.workers, c.max_body, c.timeout_ms, c.max_requests, c.cors, c.gzip, c.files, c.health, c.cert, c.key, c.access_log), (m, u, hs, b, t, p) => __http_out(h(Request{method: m, url: u, headers: hs, body: b, timeout_ms: t, retries: 0, redirects: 0, peer: p})))
 
 fn __http_typed(status: Int, ctype: Str, body: Str) -> Response
 = Response{status, headers: [("content-type", ctype)], body}

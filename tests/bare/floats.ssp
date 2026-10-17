@@ -54,7 +54,7 @@ fn flag(b: Bool, w: F64) -> F64
 fn special() -> F64
 = do
   z = 0.0
-  flag((1.0 / z).is_inf, 1.0) + flag((z / z).is_nan, 2.0) + flag(-z < z, 4.0) + flag(pi() > 3.14159, 8.0) + flag((1.0 / 3.0) * 3.0 == 1.0, 16.0) + flag(inf() > pow2(1023), 32.0) + flag(-(z.copysign(-1.0)) == z, 64.0)
+  flag((1.0 / z).is_inf, 1.0) + flag((z / z).is_nan, 2.0) + flag(-z == z and not (-z < z), 4.0) + flag(pi() > 3.14159, 8.0) + flag((1.0 / 3.0) * 3.0 == 1.0, 16.0) + flag(inf() > pow2(1023), 32.0) + flag(-(z.copysign(-1.0)) == z, 64.0)
 
 fn horner(x: F64) -> F64
 = ((((0.5 * x - 1.25) * x + 3.0) * x - 0.75) * x + 2.0) * x - 0.125

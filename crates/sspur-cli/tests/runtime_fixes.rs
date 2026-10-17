@@ -1,0 +1,176 @@
+use std::path::PathBuf;
+use std::process::Command;
+
+fn dir(name: &str) -> PathBuf {
+    let d = std::env::temp_dir().join(format!("sspur-rtfix-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).unwrap();
+    d
+}
+
+fn has_cc() -> bool {
+    Command::new("clang").arg("--version").output().is_ok()
+}
+
+fn sspur(d: &std::path::Path, args: &[&str]) -> (String, String, bool) {
+    let o = Command::new(env!("CARGO_BIN_EXE_sspur")).args(args).current_dir(d).env("SSPUR_CACHE", d.join("cache")).env_remove("SSPUR_STRICT_NATIVE").output().unwrap();
+    (String::from_utf8_lossy(&o.stdout).to_string(), String::from_utf8_lossy(&o.stderr).to_string(), o.status.success())
+}
+
+/// Runs `cmd` (`test` or `run`) on `src` natively (strict) and interpreted; both must agree and succeed.
+fn both(name: &str, cmd: &str, src: &str) -> String {
+    let d = dir(name);
+    std::fs::write(d.join("p.ssp"), src).unwrap();
+    let (iout, ierr, iok) = sspur(&d, &[cmd, "--interp", "p.ssp"]);
+    assert!(iok, "interp {name}: {iout}{ierr}");
+    if has_cc() {
+        let (nout, nerr, nok) = sspur(&d, &[cmd, "--strict-native", "p.ssp"]);
+        assert!(nok, "native {name}: {nout}{nerr}");
+        assert_eq!(iout, nout, "{name}: tiers differ");
+    }
+    iout
+}
+
+#[test]
+fn to_bits_alone_builds_natively() {
+    let out = both("bits", "test", "fn g(n: Int) -> Bool\n= [4].to_bits(n).has(2)\n\ntest t = not g(8)\n\ntest u = not g(5)\n");
+    assert!(out.contains("2 passed, 0 failed"), "{out}");
+}
+
+#[test]
+fn recursive_function_passed_by_name_and_inside_a_lambda_compiles() {
+    let src = "type C = Leaf | All{cs: List[C]}\n\nfn depth(c: C) -> Int\n= match c\n  | Leaf => 0\n  | All{cs} => 1 + cs.map(depth).sum\n\nfn total(gs: List[List[C]]) -> Int\n= gs.map(g => g.map(depth).sum).sum\n\ntest t = total([[Leaf, All{cs: [Leaf, All{cs: [Leaf]}]}], [All{cs: []}]]) == 3\n";
+    let out = both("depth", "test", src);
+    assert!(out.contains("1 passed, 0 failed"), "{out}");
+}
+
+#[test]
+fn interpreter_appends_are_linear() {
+    let d = dir("appends");
+    let src = "fn pushes(n: Int) -> Int\n= do\n  var xs = []\n  for i in 0..n\n    xs := xs.push(i)\n  xs.len\n\nfn folds(n: Int) -> Int\n= (0..n).fold([], (acc, i) => acc.push(i)).len\n\nfn bufs(n: Int) -> Int\n= do\n  var b = str_buf()\n  for i in 0..n\n    b := b.add(\"ab\")\n  b.byte_len\n\nfn puts(n: Int) -> Int\n= do\n  var m = empty_map()\n  for i in 0..n\n    m := m.put(i, i)\n  m.len\n\nfn main() -> Unit ! log\n= log(\"{pushes(200000)} {folds(200000)} {bufs(200000)} {puts(200000)}\")\n";
+    std::fs::write(d.join("p.ssp"), src).unwrap();
+    let t = std::time::Instant::now();
+    let (out, err, ok) = sspur(&d, &["run", "--interp", "p.ssp"]);
+    assert!(ok, "{out}{err}");
+    assert_eq!(out.trim(), "200000 200000 400000 200000");
+    assert!(t.elapsed().as_secs() < 30, "quadratic appends: {:?}", t.elapsed());
+}
+
+#[test]
+fn interpreter_recursion_goes_past_twenty_thousand_calls() {
+    let src = "fn down(n: Int) -> Int\n= if n == 0 then 0 else 1 + down(n - 1)\n\nfn main() -> Unit ! log\n= log(\"{down(100000)}\")\n";
+    assert_eq!(both("deep", "run", src).trim(), "100000");
+}
+
+#[test]
+fn interpreter_stack_is_sspur_stack_and_overflow_traps() {
+    let d = dir("stackenv");
+    std::fs::write(d.join("p.ssp"), "fn down(n: Int) -> Int\n= if n == 0 then 0 else 1 + down(n - 1)\n\nfn forever(n: Int) -> Int\n= 1 + forever(n + 1)\n\nfn main() -> Unit ! log, env\n= log(if args().len > 0 then \"{forever(0)}\" else \"{down(60000)}\")\n").unwrap();
+    let go = |stack: Option<&str>, args: &[&str]| {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_sspur"));
+        c.args(["run", "--interp", "p.ssp"]).args(args).current_dir(&d).env("SSPUR_CACHE", d.join("cache"));
+        match stack {
+            Some(s) => c.env("SSPUR_STACK", s),
+            None => c.env_remove("SSPUR_STACK"),
+        };
+        let o = c.output().unwrap();
+        (String::from_utf8_lossy(&o.stdout).to_string(), String::from_utf8_lossy(&o.stderr).to_string(), o.status.success())
+    };
+    assert_eq!(go(None, &[]), ("60000\n".into(), String::new(), true));
+    let (out, err, ok) = go(Some("16M"), &[]);
+    assert!(!ok && out.is_empty() && err.contains("stack overflow in down"), "{out}{err}");
+    let (_, err, ok) = go(None, &["x"]);
+    assert!(!ok && err.contains("stack overflow in forever"), "{err}");
+    let (out, err, ok) = go(Some("lots"), &[]);
+    assert!(ok && out == "60000\n" && err.contains("warning: SSPUR_STACK=lots is not a stack size"), "{out}{err}");
+}
+
+#[test]
+fn discarding_a_pure_result_warns() {
+    let d = dir("unused");
+    let src = "fn helper(x: Int) -> Int\n= x + 1\n\nfn main() -> Unit ! log, fs\n= do\n  b = str_buf()\n  b.add(\"a\")\n  var c = str_buf()\n  c := c.add(\"b\")\n  _ = helper(1)\n  helper(2)\n  write_file(\"/nonexistent/x\", \"y\")\n  [1].map(x => do\n    log(\"{x}\")\n    x)\n  log(\"{b.str}{c.str}\")\n";
+    std::fs::write(d.join("p.ssp"), src).unwrap();
+    let (out, err, ok) = sspur(&d, &["run", "--interp", "p.ssp"]);
+    assert!(ok, "{out}{err}");
+    let warns: Vec<&str> = err.lines().filter(|l| l.contains("W_UNUSED_RESULT")).collect();
+    assert_eq!(warns, ["p.ssp:7:3 warning W_UNUSED_RESULT the result of '.add' (StrBuf) is discarded", "p.ssp:11:3 warning W_UNUSED_RESULT the result of 'helper' (Int) is discarded"], "{err}");
+    assert!(err.contains("keep the new StrBuf with 'b := b.add(\"a\")' (and 'var b')"), "{err}");
+    assert_eq!(out, "1\nb\n");
+}
+
+#[test]
+fn dependency_audits_are_listed_by_check_at_their_own_line() {
+    let d = dir("audits");
+    std::fs::create_dir_all(d.join("frlib")).unwrap();
+    std::fs::create_dir_all(d.join("app")).unwrap();
+    std::fs::write(d.join("frlib/sspur.toml"), "[package]\nname = \"frlib\"\nversion = \"0.1.0\"\n").unwrap();
+    std::fs::write(d.join("frlib/lib.ssp"), "// A hash of the key.\npub fn tag(k: Secret[Bytes]) -> Bytes\n= k.map(b => crypto.sha256(b)).expose(\"a digest is public\")\n\n// Unused effect.\npub fn w(x: Int) -> Int ! log\n= x\n").unwrap();
+    std::fs::write(d.join("app/sspur.toml"), "[package]\nname = \"app\"\nversion = \"0.1.0\"\nsrc = \"main.ssp\"\n\n[deps]\nfrlib = { path = \"../frlib\" }\n").unwrap();
+    std::fs::write(d.join("app/main.ssp"), "fn main() -> Unit ! log\n= log(\"{frlib.tag(secret(bytes([1]))).len}\")\n").unwrap();
+    let app = d.join("app");
+    let cache = d.join("cache");
+    let go = |args: &[&str]| {
+        let o = Command::new(env!("CARGO_BIN_EXE_sspur")).args(args).current_dir(&app).env("SSPUR_CACHE", &cache).env_remove("SSPUR_STRICT_NATIVE").output().unwrap();
+        (String::from_utf8_lossy(&o.stdout).to_string(), String::from_utf8_lossy(&o.stderr).to_string())
+    };
+    for args in [&["run", "--interp", "main.ssp"][..], &["run", "main.ssp"]] {
+        let (out, err) = go(args);
+        assert_eq!((out.as_str(), err.as_str()), ("32\n", ""), "{args:?}");
+    }
+    let (out, err) = go(&["check", "main.ssp"]);
+    assert_eq!((out.as_str(), err.as_str()), ("ok 1 definitions\n", "frlib/lib.ssp:3:3 audit A_DECLASSIFY Secret value declassified with .expose: a digest is public\n"));
+}
+
+#[test]
+fn a_stale_lock_is_named_with_the_fix() {
+    let d = dir("stale");
+    std::fs::create_dir_all(d.join("lib")).unwrap();
+    std::fs::create_dir_all(d.join("app")).unwrap();
+    std::fs::write(d.join("lib/sspur.toml"), "[package]\nname = \"lib\"\nversion = \"0.1.0\"\n").unwrap();
+    std::fs::write(d.join("lib/lib.ssp"), "// One.\npub fn one() -> Int\n= 1\n").unwrap();
+    std::fs::write(d.join("app/sspur.toml"), "[package]\nname = \"app\"\nversion = \"0.1.0\"\nsrc = \"main.ssp\"\n\n[deps]\nlib = { path = \"../lib\" }\n").unwrap();
+    std::fs::write(d.join("app/main.ssp"), "fn main() -> Unit ! log\n= log(\"{lib.one()}\")\n").unwrap();
+    let app = d.join("app");
+    let cache = d.join("cache");
+    let go = |args: &[&str]| {
+        let o = Command::new(env!("CARGO_BIN_EXE_sspur")).args(args).current_dir(&app).env("SSPUR_CACHE", &cache).env_remove("SSPUR_STRICT_NATIVE").output().unwrap();
+        (String::from_utf8_lossy(&o.stdout).to_string(), String::from_utf8_lossy(&o.stderr).to_string())
+    };
+    assert_eq!(go(&["run", "--interp", "main.ssp"]), ("1\n".to_string(), String::new()));
+    std::fs::write(d.join("lib/lib.ssp"), "// One.\npub fn one() -> Int\n= 1\n// a comment\n").unwrap();
+    assert_eq!(go(&["run", "--interp", "main.ssp"]), ("1\n".to_string(), String::new()));
+    std::fs::write(d.join("lib/lib.ssp"), "// One.\npub fn uno() -> Int\n= 1\n").unwrap();
+    let why = "lib at ../lib changed since sspur.lock pinned it, and this build uses the locked version; run 'sspur deps update lib' to review and use the new one";
+    let (out, err) = go(&["run", "--interp", "main.ssp"]);
+    assert_eq!((out.as_str(), err.as_str()), ("1\n", format!("note: {why}\n").as_str()));
+    std::fs::write(d.join("app/main.ssp"), "fn main() -> Unit ! log\n= log(\"{lib.uno()}\")\n").unwrap();
+    let (_, err) = go(&["run", "main.ssp"]);
+    assert_eq!(err, format!("main.ssp:2:9 E_PKG_NAME lib has no 'uno'; it exports one\n  hint: {why}\n"));
+    go(&["deps", "update", "lib"]);
+    assert_eq!(go(&["run", "main.ssp"]), ("1\n".to_string(), String::new()));
+}
+
+#[test]
+fn float_to_int_conversions_trap_like_int_overflow() {
+    let d = dir("f2i");
+    let src = "fn r(x: F64) -> Int\n= x.round\n\nfn f(x: F64) -> Int\n= x.floor\n\nfn c(x: F64) -> Int\n= x.ceil\n\nfn t(x: F64) -> Int\n= x.trunc\n\ntest t_nan = r(nan()) == 0\ntest t_big = f(1.0e19) == 0\ntest t_inf = c(inf()) == 0\ntest t_low = t(-1.0e19) == 0\ntest t_edge = t(-9223372036854775808.0) == -9223372036854775807 - 1\n";
+    std::fs::write(d.join("p.ssp"), src).unwrap();
+    let want = "FAIL  t_nan: integer overflow\nFAIL  t_big: integer overflow\nFAIL  t_inf: integer overflow\nFAIL  t_low: integer overflow\n1 passed, 4 failed\n";
+    let (iout, _, _) = sspur(&d, &["test", "--interp", "p.ssp"]);
+    assert_eq!(iout, want);
+    if has_cc() {
+        let (nout, nerr, _) = sspur(&d, &["test", "--strict-native", "p.ssp"]);
+        assert_eq!(nout, want, "{nerr}");
+    }
+}
+
+#[test]
+fn namespaced_calls_convert_arguments_and_nothing_else_does() {
+    let src = "fn mine(b: Bytes) -> Int\n= b.len\n\nfn r() -> Response\n= http.bytes(200, \"hi\")\n\ntest lib_takes_str = crypto.sha256(\"abc\") == crypto.sha256(\"abc\".to_bytes)\ntest http_takes_str = r().data == \"hi\".to_bytes and r().body == \"\"\ntest own_is_explicit = mine(\"abc\".to_bytes) == 3\n";
+    let out = both("coerce", "test", src);
+    assert!(out.contains("3 passed, 0 failed"), "{out}");
+    let d = dir("coerce-own");
+    std::fs::write(d.join("p.ssp"), "fn mine(b: Bytes) -> Int\n= b.len\n\ntest t = mine(\"abc\") == 3\n").unwrap();
+    let (_, err, ok) = sspur(&d, &["check", "p.ssp"]);
+    assert!(!ok && err.contains("E_TYPE_MISMATCH"), "{err}");
+}

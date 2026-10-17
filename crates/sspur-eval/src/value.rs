@@ -14,6 +14,10 @@ pub enum Value {
     Int(i64),
     Float(f64),
     Str(Rc<str>),
+    /// A `StrBuf`: compares, shows and converts as the `Str` it holds. The playground, which
+    /// doesn't append in place, uses a `Str`.
+    #[cfg(not(target_family = "wasm"))]
+    Buf(Rc<String>),
     List(Rc<Vec<Value>>),
     Tuple(Rc<Vec<Value>>),
     Record(Rc<str>, Fields),
@@ -123,6 +127,8 @@ impl Value {
             Value::Int(_) => 2,
             Value::Float(_) => 3,
             Value::Str(_) => 4,
+            #[cfg(not(target_family = "wasm"))]
+            Value::Buf(_) => 4,
             Value::List(_) => 5,
             Value::Tuple(_) => 6,
             Value::Record(..) => 7,
@@ -176,8 +182,15 @@ fn cmp_fields(a: &Fields, b: &Fields) -> Ordering {
     a.iter().map(|(_, v)| v).cmp(b.iter().map(|(_, v)| v))
 }
 
+/// F64 order: numeric, except that NaN equals itself and sorts above +inf; -0.0 equals 0.0.
 fn canon(x: f64) -> f64 {
-    if x.is_nan() { f64::NAN } else { x }
+    if x.is_nan() {
+        f64::NAN
+    } else if x == 0.0 {
+        0.0
+    } else {
+        x
+    }
 }
 
 impl Ord for Value {
@@ -189,6 +202,12 @@ impl Ord for Value {
             (Int(a), Int(b)) => a.cmp(b),
             (Float(a), Float(b)) => canon(*a).total_cmp(&canon(*b)),
             (Str(a), Str(b)) => a.cmp(b),
+            #[cfg(not(target_family = "wasm"))]
+            (Buf(a), Buf(b)) => a.cmp(b),
+            #[cfg(not(target_family = "wasm"))]
+            (Buf(a), Str(b)) => (**a).as_str().cmp(&**b),
+            #[cfg(not(target_family = "wasm"))]
+            (Str(a), Buf(b)) => (**a).cmp(b.as_str()),
             (List(a), List(b)) | (Tuple(a), Tuple(b)) => a.iter().cmp(b.iter()),
             (Record(n1, a), Record(n2, b)) if &**n1 == "#Ratio" && &**n2 == "#Ratio" => match (&a[0].1, &a[1].1, &b[0].1, &b[1].1) {
                 (Big(an), Big(ad), Big(bn), Big(bd)) => sspur_native::bigint::ratio_cmp(an, ad, bn, bd),
@@ -268,6 +287,8 @@ impl fmt::Display for Quoted<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
             Value::Str(s) => write!(f, "{s:?}"),
+            #[cfg(not(target_family = "wasm"))]
+            Value::Buf(s) => write!(f, "{s:?}"),
             v => write!(f, "{v}"),
         }
     }
@@ -284,6 +305,8 @@ impl fmt::Display for Value {
                 write!(f, "{s}")
             }
             Value::Str(s) => write!(f, "{s}"),
+            #[cfg(not(target_family = "wasm"))]
+            Value::Buf(s) => write!(f, "{s}"),
             Value::List(xs) => write_seq(f, "[", "]", xs),
             Value::Tuple(xs) => write_seq(f, "(", ")", xs),
             Value::Record(n, fs) if &**n == "#File" => write!(f, "File({})", Quoted(&fs[1].1)),

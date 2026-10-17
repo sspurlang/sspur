@@ -458,6 +458,7 @@ typedef struct SnCall {
     SnStr method, url, body;
     SnHdr* headers; int64_t nheaders;
     int64_t timeout_ms;
+    SnStr peer;
     // private
     struct SnCall* next;
     SnServer* srv;
@@ -532,6 +533,15 @@ typedef struct {
     char* buf; int64_t n, cap, start;
     char peer[64];
 } SnConn;
+
+// The peer's numeric address, without the port; an IPv4 address mapped into IPv6 as plain IPv4.
+static void sn_peer_name(const struct sockaddr_storage* sa, socklen_t sl, char* out, size_t n) {
+    out[0] = 0;
+    if (getnameinfo((const struct sockaddr*)sa, sl, out, (socklen_t)n, 0, 0, NI_NUMERICHOST) != 0) { out[0] = 0; return; }
+    if (!strncmp(out, "::ffff:", 7) && strchr(out + 7, '.')) memmove(out, out + 7, strlen(out + 7) + 1);
+    char* pct = strchr(out, '%');
+    if (pct) *pct = 0;
+}
 
 static int conn_wait(SnConn* c, int64_t ms) {
     if (c->ssl && sn_ssl.SSL_pending(c->ssl) > 0) return 1;
@@ -1028,7 +1038,7 @@ static void conn_main(void* arg) {
             status = 400;
             ok = send_simple(c, &h, 400, "text/plain; charset=utf-8", "the request is not valid UTF-8\n", close_after, id);
         } else {
-            int64_t need = h.method_n + h.target_n + body.n + 64 + (int64_t)strlen(id);
+            int64_t need = h.method_n + h.target_n + body.n + 64 + (int64_t)strlen(id) + (int64_t)strlen(c->peer);
             for (int i = 0; i < h.nhdrs; i++) need += h.hdrs[i].name.n + h.hdrs[i].value.n + 2;
             SnCall* call = (SnCall*)calloc(1, sizeof(SnCall));
             call->store = (char*)malloc((size_t)need);
@@ -1038,6 +1048,7 @@ static void conn_main(void* arg) {
             SN_PUT(call->method, h.method, h.method_n);
             SN_PUT(call->url, h.target, h.target_n);
             SN_PUT(call->body, body.p ? body.p : "", body.n);
+            SN_PUT(call->peer, c->peer, (int64_t)strlen(c->peer));
             int64_t nh = 0;
             for (int i = 0; i < h.nhdrs; i++) {
                 if (sn_ieq(h.hdrs[i].name.p, h.hdrs[i].name.n, "x-request-id")) continue;
@@ -1149,6 +1160,7 @@ static void accept_main(void* arg) {
         sn_unlock(&s->mu);
         SnConn* c = (SnConn*)calloc(1, sizeof(SnConn));
         c->srv = s; c->fd = fd; c->cap = 16384; c->buf = (char*)malloc((size_t)c->cap);
+        sn_peer_name(&sa, sl, c->peer, sizeof c->peer);
         if (busy) {
             const char* m = "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
             conn_write(c, m, (int64_t)strlen(m));

@@ -702,19 +702,14 @@ static inline int64_t ss_cas(SsAtom* a, int64_t e, int64_t v) { return __atomic_
 #define TO_RAW(l) ((RawL){(l).len, (void*)(l).data, (l).hdr})
 static inline int64_t dbits(double x) { int64_t b; memcpy(&b, &x, 8); return b; }
 static inline double bitsd(int64_t b) { double x; memcpy(&x, &b, 8); return x; }
-static inline int64_t dkey(double x) { int64_t b = x != x ? 0x7ff8000000000000LL : dbits(x); b ^= (int64_t)(((uint64_t)(b >> 63)) >> 1); return b; }
+static inline int64_t dkey(double x) { int64_t b = x != x ? 0x7ff8000000000000LL : x == 0.0 ? 0 : dbits(x); b ^= (int64_t)(((uint64_t)(b >> 63)) >> 1); return b; }
 static uint64_t sspur_prio_state = 0x9E3779B97F4A7C15ULL;
 static inline uint64_t sspur_prio(void) { uint64_t z = SS_MT() ? __atomic_add_fetch(&sspur_prio_state, 0x9E3779B97F4A7C15ULL, __ATOMIC_RELAXED) : (sspur_prio_state += 0x9E3779B97F4A7C15ULL); z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL; z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL; return z ^ (z >> 31); }
 static inline uint64_t hmix(uint64_t h) { h ^= h >> 33; h *= 0xff51afd7ed558ccdULL; h ^= h >> 33; h *= 0xc4ceb9fe1a85ec53ULL; h ^= h >> 33; return h; }
 static inline uint64_t hash_I(int64_t v) { return hmix((uint64_t)v); }
 static inline int cmp_I(int64_t a, int64_t b) { return (a > b) - (a < b); }
 static inline int cmp_D(double a, double b) { int64_t x = dkey(a), y = dkey(b); return (x > y) - (x < y); }
-static inline int64_t f2i(double x) {
-    if (x != x) return 0;
-    if (x >= 9223372036854775807.0) return INT64_MAX;
-    if (x <= -9223372036854775808.0) return INT64_MIN;
-    return (int64_t)x;
-}
+#define F2I_OK(d) ((d) >= -9223372036854775808.0 && (d) < 9223372036854775808.0)
 typedef struct { int64_t v; int64_t code; } PowR;
 static inline PowR sspur_pow(int64_t b, int64_t e) {
     if (e < 0) return (PowR){0, 6};
@@ -1136,6 +1131,11 @@ pub fn bare_c(m: &Module, check: &CheckOutput, arch: &str) -> Result<String, Str
     let Some(rest) = src.strip_prefix(crate::bare::PRELUDE) else { return Ok(src) };
     let marks = format!("{}{}", if fpu { crate::bare::FPU_MARK } else { "" }, if smp { crate::bare::SMP_MARK } else { "" });
     Ok(format!("{}{marks}{rest}", crate::bare::PRELUDE))
+}
+
+/// `d` (a double) as an Int; NaN, the infinities and values outside Int's range trap like Int overflow.
+pub(crate) fn f2i(d: &str) -> String {
+    format!("({{ double d_ = {d}; if (UNLIKELY(!F2I_OK(d_))) TRAPV({T_OVERFLOW}, 0, 0); (int64_t)d_; }})")
 }
 
 fn uses_f64(t: &Type) -> bool {
@@ -3441,7 +3441,7 @@ impl<'a> Cx<'a> {
                         temps.insert(fname.clone(), tv);
                     }
                     let rv = self.fresh("rv");
-                    let inits: Vec<String> = decl.iter().map(|(f, _)| format!(".{f} = {}", temps[f])).collect();
+                    let inits: Vec<String> = decl.iter().map(|(f, _)| format!(".{f} = {}", temps.get(f).map_or("str_lit(\"\", 0)", String::as_str))).collect();
                     write!(s, "{rc} {rv} = ({rc}){{{}}}; ", inits.join(", ")).unwrap();
                     let proven = self.proven_fields(e, &owner, fields);
                     s.push_str(&self.record_checks_except(&owner, &rv, ".", &decl, &proven)?);
@@ -3943,6 +3943,7 @@ impl<'a> Cx<'a> {
         let all = format!("int64_t n_ = sz_{m}({mv}.root); {node}** ns_ = ({node}**)sspur_alloc((size_t)(n_ + 1) * sizeof({node}*)); int64_t c_ = 0; fill_{m}({mv}.root, ns_, &c_); ");
         Ok(match name {
             "len" => format!("sz_{m}(({r}).root)"),
+            "is_empty" => format!("((int64_t)(sz_{m}(({r}).root) == 0))"),
             "get" => {
                 let k = self.expr(&args[0])?;
                 let oc = self.cty(t)?;
@@ -4521,6 +4522,12 @@ impl<'a> Cx<'a> {
                     let oc = self.cty(t)?;
                     format!("({{ __auto_type o_ = {r}; {oc} res_ = {{0}}; if (o_.some) {{ __auto_type {x} = o_.v; res_.some = 1; res_.v = {body}; }} res_; }})")
                 }
+                "and_then" => {
+                    let x = self.fresh("om");
+                    let body = self.apply(&args[0], vec![(x.clone(), et.clone())])?;
+                    let oc = self.cty(t)?;
+                    format!("({{ __auto_type o_ = {r}; {oc} res_ = {{0}}; if (o_.some) {{ __auto_type {x} = o_.v; res_ = {body}; }} res_; }})")
+                }
                 _ => return Err(format!("uses Opt.{name}")),
             });
         }
@@ -4541,8 +4548,7 @@ impl<'a> Cx<'a> {
         if is(&rt, "F64") {
             return Ok(match name {
                 "abs" => format!("fabs({r})"),
-                "round" => format!("f2i(round({r}))"),
-                "floor" => format!("f2i(floor({r}))"),
+                "round" | "floor" => f2i(&format!("{name}({r})")),
                 "sqrt" => format!("sqrt({r})"),
                 _ => return self.std_float(&r, name, args),
             });

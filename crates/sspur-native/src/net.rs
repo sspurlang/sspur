@@ -67,6 +67,7 @@ struct SnCall {
     headers: *const SnHdr,
     nheaders: i64,
     timeout_ms: i64,
+    peer: SnStr,
 }
 
 #[repr(C)]
@@ -226,6 +227,8 @@ pub struct Call {
     pub body: String,
     pub headers: Vec<(String, String)>,
     pub timeout_ms: i64,
+    /// The client's address as the server sees it (a proxy's, behind one).
+    pub peer: String,
 }
 
 pub enum Next {
@@ -283,7 +286,7 @@ impl Server {
         }
         let r = unsafe { &*c };
         let hs = unsafe { std::slice::from_raw_parts(r.headers, r.nheaders as usize) };
-        Next::Call(Call { ptr: c, api: self.api, method: r.method.get(), url: r.url.get(), body: r.body.get(), headers: hs.iter().map(|h| (h.name.get(), h.value.get())).collect(), timeout_ms: r.timeout_ms })
+        Next::Call(Call { ptr: c, api: self.api, method: r.method.get(), url: r.url.get(), body: r.body.get(), headers: hs.iter().map(|h| (h.name.get(), h.value.get())).collect(), timeout_ms: r.timeout_ms, peer: r.peer.get() })
     }
 }
 
@@ -294,7 +297,7 @@ impl Drop for Server {
 }
 
 impl Call {
-    pub fn reply(self, status: i64, headers: &[(String, String)], body: &str) {
+    pub fn reply(self, status: i64, headers: &[(String, String)], body: &[u8]) {
         let hs: Vec<SnHdr> = headers.iter().map(|(n, v)| SnHdr { name: SnStr::of(n), value: SnStr::of(v) }).collect();
         unsafe { (self.api.reply)(self.ptr, status, hs.as_ptr(), hs.len() as i64, body.as_ptr(), body.len() as i64) };
         std::mem::forget(self);

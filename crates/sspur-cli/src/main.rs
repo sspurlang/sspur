@@ -71,7 +71,25 @@ const USAGE: &str = "usage:
   sspur sync serve [--port N] | push REMOTE | pull REMOTE | status | resolve ours|theirs [PATH]   replicate by hash (REMOTE: dir or tcp://host:port; ADR 0021)";
 
 fn main() -> ExitCode {
-    std::thread::Builder::new().stack_size(1 << 29).spawn(real_main).unwrap().join().unwrap()
+    // Native code and the interpreter run on this thread. The interpreter may use its budget
+    // (SSPUR_STACK, 256 MB by default) and native code keeps the 512 MB it always had; the rest
+    // is headroom for the builtins at the deepest call. Pages are touched only when used.
+    let budget = sspur_eval::stack_budget().unwrap_or_else(|e| {
+        eprintln!("warning: {e}");
+        256 << 20
+    });
+    let mut size = (budget + (64 << 20)).max(512 << 20);
+    while size >= 16 << 20 {
+        let b = budget.min(size - (8 << 20));
+        if let Ok(h) = std::thread::Builder::new().stack_size(size).spawn(move || {
+            sspur_eval::stack_from_here(b);
+            real_main()
+        }) {
+            return h.join().unwrap();
+        }
+        size /= 2;
+    }
+    real_main()
 }
 
 struct Args {
@@ -427,9 +445,13 @@ fn program_cmd(cmd: &str, args: &Args) -> ExitCode {
     };
     let (label, text, loaded) = match args.pos.get(1).or(manifest_src.as_ref()) {
         Some(path) => match std::fs::read_to_string(path) {
-            Ok(src) if cmd == "fmt" => (path.clone(), src.clone(), sspur_syntax::parse(&src).map(|module| Loaded { own: module.defs.len(), src, module, check: Default::default(), hashes: Default::default(), partial: true, pkgs: vec![], shown: Default::default(), exports: Default::default() }).map_err(|e| vec![sspur_check::syntax_diag(&e)])),
+            Ok(src) if cmd == "fmt" => (path.clone(), src.clone(), sspur_syntax::parse(&src).map(|module| Loaded { own: module.defs.len(), src, module, check: Default::default(), hashes: Default::default(), partial: true, pkgs: vec![], shown: Default::default(), exports: Default::default(), dep_audits: vec![] }).map_err(|e| vec![sspur_check::syntax_diag(&e)])),
             Ok(src) => match file_env(path) {
-                Ok(env) => (path.clone(), src.clone(), pkg::load(src, &env, false)),
+                Ok(env) => {
+                    let mut l = pkg::load(src.clone(), &env, false);
+                    stale_notes(path, &mut l, json);
+                    (path.clone(), src, l)
+                }
                 Err(e) => {
                     eprintln!("{e}");
                     return ExitCode::FAILURE;
@@ -465,6 +487,11 @@ fn program_cmd(cmd: &str, args: &Args) -> ExitCode {
         let mut diags = loaded.check.diags.clone();
         fill::enrich(&loaded, &mut diags, (!args.has("--no-fill")).then(|| args.num("--fill-ms", fill::budget(400) as usize) as u64));
         report(&loaded.src, &label, &diags, json);
+        if !json {
+            for a in &loaded.dep_audits {
+                eprintln!("{a}");
+            }
+        }
     } else {
         report(&loaded.src, &label, &loaded.check.diags, json);
     }
@@ -919,6 +946,25 @@ fn native_interp_entry(l: &Loaded, args: &Args, want: bool) -> (Interp, Option<r
 
 pub fn default_interp(l: &Loaded) -> Interp {
     native_interp(l, &Args { pos: vec![], flags: vec![] })
+}
+
+/// Says which path dependencies sspur.lock still pins at an older version, and puts that in the
+/// hint of an error about a name the old version doesn't have.
+fn stale_notes(path: &str, l: &mut Result<Loaded, Vec<Diag>>, json: bool) {
+    let dir = std::path::Path::new(path).parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(std::path::Path::new("."));
+    let Some(root) = pkg::find_root(dir) else { return };
+    for (name, at) in pkg::stale_deps(&root) {
+        let why = format!("{name} at {at} changed since sspur.lock pinned it, and this build uses the locked version; run 'sspur deps update {name}' to review and use the new one");
+        match l {
+            Err(ds) => {
+                for d in ds.iter_mut().filter(|d| matches!(d.code.as_str(), "E_PKG_NAME" | "E_PKG_PRIVATE") && d.msg.starts_with(&format!("{name} "))) {
+                    d.hint = Some(why.clone());
+                }
+            }
+            Ok(_) if !json => eprintln!("note: {why}"),
+            Ok(_) => {}
+        }
+    }
 }
 
 fn file_env(path: &str) -> Result<pkg::Env, String> {

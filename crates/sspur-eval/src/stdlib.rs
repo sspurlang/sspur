@@ -433,6 +433,9 @@ impl Interp {
         Ok(match n {
             "empty_set" => Value::Set(Rc::new(BTreeSet::new())),
             "empty_heap" => Value::Heap(Rc::new(Vec::new())),
+            #[cfg(not(target_family = "wasm"))]
+            "str_buf" => Value::Buf(Rc::new(String::new())),
+            #[cfg(target_family = "wasm")]
             "str_buf" => Value::str(""),
             "dev_f32" | "dev_f64" | "dev_i32" | "dev_u32" | "dev_int" => crate::kernel::dev_new(n, &a[0])?,
             "gpu_sync" => {
@@ -766,6 +769,20 @@ impl Interp {
                 }
                 Value::list(if name == "take_while" { xs[..k].to_vec() } else { xs[k..].to_vec() })
             }
+            "repeat" => {
+                let n = int(&a[0])?;
+                if n < 0 {
+                    return trap("repeat count must be >= 0");
+                }
+                if !xs.is_empty() && n > (1i64 << 28) / xs.len() as i64 {
+                    return trap("out of memory");
+                }
+                let mut v = Vec::with_capacity(xs.len() * n as usize);
+                for _ in 0..n {
+                    v.extend(xs.iter().cloned());
+                }
+                Value::list(v)
+            }
             "rotate" => {
                 let mut v = (**xs).clone();
                 if !v.is_empty() {
@@ -1008,12 +1025,16 @@ pub(crate) fn std_str(name: &str, x: &str, a: Vec<Value>) -> R {
     })
 }
 
+/// An integral `d` as an Int; NaN, the infinities and values outside Int's range trap like Int overflow.
+pub(crate) fn f2i(d: f64) -> R {
+    if (-9223372036854775808.0..9223372036854775808.0).contains(&d) { Ok(Value::Int(d as i64)) } else { trap("integer overflow") }
+}
+
 pub(crate) fn std_float(name: &str, x: f64, a: Vec<Value>) -> R {
     let y = || match a.first() {
         Some(Value::Float(y)) => Ok(*y),
         v => trap(format!("expected F64, got {v:?}", v = v.map(|v| v.to_string()))),
     };
-    let to_int = |v: f64| Value::Int(v as i64);
     Ok(match name {
         "fmt" => {
             let d = int(&a[0])?;
@@ -1035,8 +1056,17 @@ pub(crate) fn std_float(name: &str, x: f64, a: Vec<Value>) -> R {
         "atan" => Value::Float(x.atan()),
         "atan2" => Value::Float(x.atan2(y()?)),
         "hypot" => Value::Float(x.hypot(y()?)),
-        "ceil" => to_int(x.ceil()),
-        "trunc" => to_int(x.trunc()),
+        "ceil" => f2i(x.ceil())?,
+        "trunc" => f2i(x.trunc())?,
+        "checked_round" | "checked_floor" | "checked_ceil" | "checked_trunc" => {
+            let d = match name {
+                "checked_round" => x.round(),
+                "checked_floor" => x.floor(),
+                "checked_ceil" => x.ceil(),
+                _ => x.trunc(),
+            };
+            f2i(d).map_or(Value::Opt(None), Value::some)
+        }
         "is_nan" => Value::Bool(x.is_nan()),
         "is_finite" => Value::Bool(x.is_finite()),
         "is_inf" => Value::Bool(x.is_infinite()),

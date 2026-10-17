@@ -49,6 +49,16 @@ impl Cx<'_> {
         for d in deps {
             self.std(d);
         }
+        let own = match key {
+            "bits" => Some(("#Bits", "BI")),
+            "sbuf" => Some(("#StrBuf", "BU")),
+            "big" | "dec" | "ratio" => Some(("#Dec", "DC")),
+            "regex" => Some(("#Regex", "RX")),
+            _ => None,
+        };
+        if let Some((t, m)) = own {
+            self.std_cty(&Type::con(t), m).expect("std runtime type");
+        }
         if key == "locale" {
             self.protos.push_str(&crate::locale::c_tables());
         }
@@ -881,6 +891,12 @@ impl Cx<'_> {
                     let oc = self.cty(t)?;
                     format!("({{ __auto_type r_ = {r}; {oc} o_; memset(&o_, 0, sizeof o_); if (r_.ok) {{ __auto_type {x} = r_.v; o_.ok = 1; o_.v = {body}; }} else o_.e = r_.e; o_; }})")
                 }
+                "and_then" => {
+                    let x = self.fresh("rm");
+                    let body = self.apply(&args[0], vec![(x.clone(), et.clone())])?;
+                    let oc = self.cty(t)?;
+                    format!("({{ __auto_type r_ = {r}; {oc} o_; memset(&o_, 0, sizeof o_); if (r_.ok) {{ __auto_type {x} = r_.v; o_ = {body}; }} else o_.e = r_.e; o_; }})")
+                }
                 "get" => {
                     let errt = arg1(rt);
                     let rv = self.fresh("rv");
@@ -937,7 +953,11 @@ impl Cx<'_> {
             "pow" | "atan2" | "hypot" => format!("({{ double x_ = {r}; double y_ = {}; {name}(x_, y_); }})", vals[0]),
             "exp" | "log2" | "log10" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" => one(name),
             "ln" => one("log"),
-            "ceil" | "trunc" => format!("f2i({name}({r}))"),
+            "ceil" | "trunc" => f2i(&format!("{name}({r})")),
+            "checked_round" | "checked_floor" | "checked_ceil" | "checked_trunc" => {
+                let oc = self.cty(&Type::app("Opt", vec![Type::con("Int")]))?;
+                format!("({{ double d_ = {}({r}); {oc} o_ = {{0}}; if (F2I_OK(d_)) {{ o_.some = 1; o_.v = (int64_t)d_; }} o_; }})", &name[8..])
+            }
             "is_nan" => format!("({{ double x_ = {r}; (int64_t)(x_ != x_); }})"),
             "is_finite" => format!("((int64_t)isfinite({r}))"),
             "is_inf" => format!("((int64_t)isinf({r}))"),
@@ -1019,6 +1039,10 @@ impl Cx<'_> {
                 let body = self.apply(&args[0], vec![(x.clone(), et.clone())])?;
                 let view = if name == "take_while" { format!("({lc}){{k_, {l}.data, {l}.hdr}}") } else { format!("({lc}){{{l}.len - k_, {l}.data + k_, {l}.hdr}}") };
                 wrap(format!("int64_t k_ = 0; while (k_ < {l}.len) {{ __auto_type {x} = {l}.data[k_]; if (!({body})) break; k_++; }} {view};"))
+            }
+            "repeat" => {
+                let k = self.expr(&args[0])?;
+                wrap(format!("int64_t k_ = {k}; int64_t m_ = {l}.len; if (UNLIKELY(k_ < 0)) TRAPV({T_REPEAT}, 0, 0); if (UNLIKELY(m_ && k_ > (((int64_t)1 << 28) / m_))) TRAPV(15, 0, 0); int64_t n_ = m_ * k_; RawL r_ = raw_alloc(n_, sizeof({ec})); {ec}* d_ = ({ec}*)r_.data; for (int64_t {i} = 0; {i} < k_; {i}++) if (m_) memcpy(d_ + {i} * m_, {l}.data, (size_t)m_ * sizeof({ec})); r_.len = n_; r_.hdr[1] = n_; ({lc}){{n_, d_, r_.hdr}};"))
             }
             "rotate" => {
                 let k = self.expr(&args[0])?;
@@ -1520,10 +1544,6 @@ mod tests {
                 let smt = sspur_smt::Oracle::new(&m, &check);
                 let mut cx = Cx::new(&check, &eligible, &alias, &fields, &smt);
                 cx.win = win::on();
-                cx.std_cty(&Type::con("#StrBuf"), "BU").unwrap();
-                cx.std_cty(&Type::con("#Bits"), "BI").unwrap();
-                cx.std_cty(&Type::con("#BigInt"), "BG").unwrap();
-                cx.std_cty(&Type::con("#Regex"), "RX").unwrap();
                 cx.std(key);
                 let src = format!("{PRELUDE}{}{}", cx.defs, cx.protos);
                 (key, if win::on() { win::adapt(&src) } else { src })

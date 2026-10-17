@@ -196,7 +196,8 @@ fn keys(x: F64) -> Int
 = empty_map().put(x, 1).put(neg(x), 2).put(x * 0.0, 3).len
 
 test same_nan = order(nan()) == "true false true [-0.0, 0.0, 1.0, NaN, NaN] 2.0 NaN"
-test zeros = order(0.0) == "false false false [-0.0, -0.0, 0.0, 0.0, 1.0] -0.0 2.0"
+test zeros = order(0.0) == "true false false [0.0, -0.0, -0.0, 0.0, 1.0] -0.0 2.0"
+test zero_keys = keys(0.0) == 1
 test nan_keys = keys(nan()) == 1
 
 // case native_handlers

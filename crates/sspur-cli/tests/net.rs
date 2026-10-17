@@ -193,7 +193,7 @@ fn raw(port: u16, req: &[u8], show: &[&str]) -> String {
     s.write_all(req).unwrap();
     let mut buf = Vec::new();
     let _ = s.read_to_end(&mut buf);
-    let text = String::from_utf8_lossy(&buf).into_owned();
+    let text: String = buf.iter().map(|&b| if b < 0x80 { b as char } else { '?' }).collect();
     responses(&text, show)
 }
 
@@ -254,6 +254,9 @@ fn protocol(tier: &str) -> String {
         ("absolute-form target", "GET http://example.com/items/4 HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n".into(), &[]),
         ("percent-encoded path", "GET /items/%35 HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n".into(), &[]),
         ("handler trap", "GET /trap HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n".into(), &[]),
+        ("peer address", "GET /peer HTTP/1.1\r\nHost: a\r\nX-Forwarded-For: 6.6.6.6\r\nConnection: close\r\n\r\n".into(), &[]),
+        ("bytes body", "GET /bytes HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n".into(), &["content-type", "content-length"]),
+        ("text then bytes", "GET /both HTTP/1.1\r\nHost: a\r\nConnection: close\r\n\r\n".into(), &["content-length"]),
     ];
     let mut out = String::new();
     for (name, req, show) in &cases {
@@ -294,6 +297,9 @@ fn wire_protocol_is_the_same_in_both_tiers() {
         "absolute-form target:\nHTTP/1.1 200 OK |  | {\"id\":4",
         "percent-encoded path:\nHTTP/1.1 200 OK |  | {\"id\":5",
         "handler trap:\nHTTP/1.1 500 Internal Server Error |  | {\"error\":\"internal error\"}",
+        "peer address:\nHTTP/1.1 200 OK |  | peer 127.0.0.1",
+        "bytes body:\nHTTP/1.1 200 OK | content-type: application/octet-stream content-length: 3 | hi?",
+        "text then bytes:\nHTTP/1.1 200 OK | content-length: 4 | abc?",
     ] {
         assert!(native.contains(want), "missing:\n{want}\n\nin:\n{native}");
     }

@@ -71,10 +71,45 @@ impl Interp {
     }
 
     pub(crate) fn call_method(&self, name: &str, recv: Value, a: Vec<Value>) -> R {
+        #[cfg(not(target_family = "wasm"))]
+        let mut a = a;
         if name == "str" {
             return Ok(Value::str(&recv.to_string()));
         }
         match recv {
+            #[cfg(not(target_family = "wasm"))]
+            Value::List(mut xs) if name == "push" => {
+                Rc::make_mut(&mut xs).push(a.remove(0));
+                Ok(Value::List(xs))
+            }
+            #[cfg(not(target_family = "wasm"))]
+            Value::List(mut xs) if name == "concat" => match a.remove(0) {
+                Value::List(ys) => {
+                    Rc::make_mut(&mut xs).extend(ys.iter().cloned());
+                    Ok(Value::List(xs))
+                }
+                v => trap(format!("concat expects a List, got {v}")),
+            },
+            #[cfg(not(target_family = "wasm"))]
+            Value::Map(mut m) if name == "put" => {
+                let k = a.remove(0);
+                Rc::make_mut(&mut m).insert(k, a.remove(0));
+                Ok(Value::Map(m))
+            }
+            #[cfg(not(target_family = "wasm"))]
+            Value::Set(mut st) if name == "add" => {
+                Rc::make_mut(&mut st).insert(a.remove(0));
+                Ok(Value::Set(st))
+            }
+            #[cfg(not(target_family = "wasm"))]
+            Value::Buf(mut b) => match name {
+                "add" => {
+                    Rc::make_mut(&mut b).push_str(s(&a[0])?);
+                    Ok(Value::Buf(b))
+                }
+                "byte_len" => Ok(Value::Int(b.len() as i64)),
+                _ => str_method(name, &b, a),
+            },
             Value::List(xs) => self.list_method(name, &xs, a),
             Value::Str(x) => str_method(name, &x, a),
             Value::Opt(o) => self.opt_method(name, o, a),
@@ -82,10 +117,13 @@ impl Interp {
                 "is_ok" => Ok(Value::Bool(r.is_ok())),
                 "is_err" => Ok(Value::Bool(r.is_err())),
                 "or" => Ok(r.map_or_else(|_| a[0].clone(), |v| (*v).clone())),
-                "map" => Ok(Value::Res(match r {
-                    Ok(v) => Ok(Rc::new(self.apply(&a[0], vec![(*v).clone()])?)),
-                    Err(e) => Err(e),
-                })),
+                "map" | "and_then" => match r {
+                    Ok(v) => {
+                        let r = self.apply(&a[0], vec![(*v).clone()])?;
+                        Ok(if name == "map" { Value::Res(Ok(Rc::new(r))) } else { r })
+                    }
+                    Err(e) => Ok(Value::Res(Err(e))),
+                },
                 "get" => match r {
                     Ok(v) => Ok((*v).clone()),
                     Err(e) => Err(Ctrl::Raise((*e).clone())),
@@ -174,8 +212,8 @@ impl Interp {
             },
             Value::Float(x) => match name {
                 "abs" => Ok(Value::Float(x.abs())),
-                "round" => Ok(Value::Int(x.round() as i64)),
-                "floor" => Ok(Value::Int(x.floor() as i64)),
+                "round" => crate::stdlib::f2i(x.round()),
+                "floor" => crate::stdlib::f2i(x.floor()),
                 "sqrt" => Ok(Value::Float(x.sqrt())),
                 _ => crate::stdlib::std_float(name, x, a),
             },
@@ -314,8 +352,11 @@ impl Interp {
                 None => return trap("unwrapped none with .get; check with is_some, match on some/none, or use .or(default)"),
             },
             "is_none" => Value::Bool(o.is_none()),
-            "map" => match o {
-                Some(v) => Value::some(self.apply(&a[0], vec![(*v).clone()])?),
+            "map" | "and_then" => match o {
+                Some(v) => {
+                    let r = self.apply(&a[0], vec![(*v).clone()])?;
+                    if name == "map" { Value::some(r) } else { r }
+                }
                 None => Value::Opt(None),
             },
             "ok_or" => match o {
