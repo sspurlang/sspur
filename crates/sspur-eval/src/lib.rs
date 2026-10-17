@@ -154,9 +154,6 @@ const MAX_DEPTH: u32 = 20_000;
 /// Calls deep on a thread that registered its stack; the stack itself is the real limit.
 #[cfg(not(target_family = "wasm"))]
 const MAX_DEPTH_KNOWN: u32 = 50_000_000;
-/// Stack left for builtins and native code when a call traps for depth.
-#[cfg(not(target_family = "wasm"))]
-const STACK_RESERVE: usize = 8 << 20;
 
 #[cfg(not(target_family = "wasm"))]
 thread_local! {
@@ -170,12 +167,31 @@ fn stack_pointer() -> usize {
     std::hint::black_box(&here) as *const u8 as usize
 }
 
-/// Tells the interpreter that this thread has `size` bytes of stack below the caller's frame,
-/// so calls nest until that is nearly used up instead of stopping at 20,000.
+/// Lets interpreted calls on this thread nest until they use `budget` bytes of stack below the
+/// caller's frame, instead of stopping at 20,000 calls. The thread must have more stack than
+/// that, for the builtins and native code that run at the deepest call.
 #[cfg(not(target_family = "wasm"))]
-pub fn stack_from_here(size: usize) {
-    let floor = stack_pointer().saturating_sub(size.saturating_sub(STACK_RESERVE));
+pub fn stack_from_here(budget: usize) {
+    let floor = stack_pointer().saturating_sub(budget);
     STACK_FLOOR.with(|f| f.set(floor));
+}
+
+/// The interpreter's stack budget: `SSPUR_STACK` (`512M`, `2G`, `65536`), else 256 MB.
+#[cfg(not(target_family = "wasm"))]
+pub fn stack_budget() -> Result<usize, String> {
+    const DEFAULT: usize = 256 << 20;
+    let Ok(v) = std::env::var("SSPUR_STACK") else { return Ok(DEFAULT) };
+    let t = v.trim();
+    let (num, shift) = match t.chars().last().map(|c| c.to_ascii_uppercase()) {
+        Some('K') => (&t[..t.len() - 1], 10),
+        Some('M') => (&t[..t.len() - 1], 20),
+        Some('G') => (&t[..t.len() - 1], 30),
+        _ => (t, 0),
+    };
+    match num.parse::<usize>().ok().and_then(|n| n.checked_shl(shift).filter(|b| *b >> shift == n)) {
+        Some(b) if b >= 1 << 20 => Ok(b),
+        _ => Err(format!("SSPUR_STACK={v} is not a stack size of at least 1M, like 512M or 2G; using 256M")),
+    }
 }
 
 #[cfg(not(target_family = "wasm"))]

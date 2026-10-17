@@ -71,15 +71,23 @@ const USAGE: &str = "usage:
   sspur sync serve [--port N] | push REMOTE | pull REMOTE | status | resolve ours|theirs [PATH]   replicate by hash (REMOTE: dir or tcp://host:port; ADR 0021)";
 
 fn main() -> ExitCode {
-    // The interpreter recurses on this stack: 2 GB (reserved, not committed) is about a million
-    // calls; a system that won't reserve that much gets 512 MB.
-    for size in [if cfg!(target_pointer_width = "64") { 1usize << 31 } else { 1 << 29 }, 1 << 29] {
+    // Native code and the interpreter run on this thread. The interpreter may use its budget
+    // (SSPUR_STACK, 256 MB by default) and native code keeps the 512 MB it always had; the rest
+    // is headroom for the builtins at the deepest call. Pages are touched only when used.
+    let budget = sspur_eval::stack_budget().unwrap_or_else(|e| {
+        eprintln!("warning: {e}");
+        256 << 20
+    });
+    let mut size = (budget + (64 << 20)).max(512 << 20);
+    while size >= 16 << 20 {
+        let b = budget.min(size - (8 << 20));
         if let Ok(h) = std::thread::Builder::new().stack_size(size).spawn(move || {
-            sspur_eval::stack_from_here(size - (256 << 10));
+            sspur_eval::stack_from_here(b);
             real_main()
         }) {
             return h.join().unwrap();
         }
+        size /= 2;
     }
     real_main()
 }
@@ -949,7 +957,7 @@ fn stale_notes(path: &str, l: &mut Result<Loaded, Vec<Diag>>, json: bool) {
         let why = format!("{name} at {at} changed since sspur.lock pinned it, and this build uses the locked version; run 'sspur deps update {name}' to review and use the new one");
         match l {
             Err(ds) => {
-                for d in ds.iter_mut().filter(|d| d.code.starts_with("E_PKG") && d.msg.starts_with(&format!("{name} "))) {
+                for d in ds.iter_mut().filter(|d| matches!(d.code.as_str(), "E_PKG_NAME" | "E_PKG_PRIVATE") && d.msg.starts_with(&format!("{name} "))) {
                     d.hint = Some(why.clone());
                 }
             }

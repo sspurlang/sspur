@@ -58,8 +58,31 @@ fn interpreter_appends_are_linear() {
 
 #[test]
 fn interpreter_recursion_goes_past_twenty_thousand_calls() {
-    let src = "fn down(n: Int) -> Int\n= if n == 0 then 0 else 1 + down(n - 1)\n\nfn main() -> Unit ! log\n= log(\"{down(250000)}\")\n";
-    assert_eq!(both("deep", "run", src).trim(), "250000");
+    let src = "fn down(n: Int) -> Int\n= if n == 0 then 0 else 1 + down(n - 1)\n\nfn main() -> Unit ! log\n= log(\"{down(100000)}\")\n";
+    assert_eq!(both("deep", "run", src).trim(), "100000");
+}
+
+#[test]
+fn interpreter_stack_is_sspur_stack_and_overflow_traps() {
+    let d = dir("stackenv");
+    std::fs::write(d.join("p.ssp"), "fn down(n: Int) -> Int\n= if n == 0 then 0 else 1 + down(n - 1)\n\nfn forever(n: Int) -> Int\n= 1 + forever(n + 1)\n\nfn main() -> Unit ! log, env\n= log(if args().len > 0 then \"{forever(0)}\" else \"{down(60000)}\")\n").unwrap();
+    let go = |stack: Option<&str>, args: &[&str]| {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_sspur"));
+        c.args(["run", "--interp", "p.ssp"]).args(args).current_dir(&d).env("SSPUR_CACHE", d.join("cache"));
+        match stack {
+            Some(s) => c.env("SSPUR_STACK", s),
+            None => c.env_remove("SSPUR_STACK"),
+        };
+        let o = c.output().unwrap();
+        (String::from_utf8_lossy(&o.stdout).to_string(), String::from_utf8_lossy(&o.stderr).to_string(), o.status.success())
+    };
+    assert_eq!(go(None, &[]), ("60000\n".into(), String::new(), true));
+    let (out, err, ok) = go(Some("16M"), &[]);
+    assert!(!ok && out.is_empty() && err.contains("stack overflow in down"), "{out}{err}");
+    let (_, err, ok) = go(None, &["x"]);
+    assert!(!ok && err.contains("stack overflow in forever"), "{err}");
+    let (out, err, ok) = go(Some("lots"), &[]);
+    assert!(ok && out == "60000\n" && err.contains("warning: SSPUR_STACK=lots is not a stack size"), "{out}{err}");
 }
 
 #[test]
