@@ -70,12 +70,12 @@ impl Checker {
 
 impl Checker {
 
-    fn lib_site(&mut self, span: Span, site: NetSite) {
+    pub(crate) fn lib_site(&mut self, span: Span, site: NetSite) {
         self.net_sites.insert((span.start, span.end), site);
     }
 
     /// Checks the argument against a parameter type, allowing the coercions of `Coerce`.
-    fn lib_arg(&mut self, p: &Type, a: &Expr, what: &str) -> Coerce {
+    pub(crate) fn lib_arg(&mut self, p: &Type, a: &Expr, what: &str) -> Coerce {
         let bytes = Type::con("#Bytes");
         let secret = |t: Type| Type::app("Secret", vec![t]);
         let flexible = *p == bytes || matches!(p, Type::Con(n, _) if n == "Secret");

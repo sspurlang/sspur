@@ -140,3 +140,14 @@ fn float_to_int_conversions_trap_like_int_overflow() {
         assert_eq!(nout, want, "{nerr}");
     }
 }
+
+#[test]
+fn namespaced_calls_convert_arguments_and_nothing_else_does() {
+    let src = "fn mine(b: Bytes) -> Int\n= b.len\n\nfn r() -> Response\n= http.bytes(200, \"hi\")\n\ntest lib_takes_str = crypto.sha256(\"abc\") == crypto.sha256(\"abc\".to_bytes)\ntest http_takes_str = r().data == \"hi\".to_bytes and r().body == \"\"\ntest own_is_explicit = mine(\"abc\".to_bytes) == 3\n";
+    let out = both("coerce", "test", src);
+    assert!(out.contains("3 passed, 0 failed"), "{out}");
+    let d = dir("coerce-own");
+    std::fs::write(d.join("p.ssp"), "fn mine(b: Bytes) -> Int\n= b.len\n\ntest t = mine(\"abc\") == 3\n").unwrap();
+    let (_, err, ok) = sspur(&d, &["check", "p.ssp"]);
+    assert!(!ok && err.contains("E_TYPE_MISMATCH"), "{err}");
+}

@@ -573,6 +573,8 @@ There is one cell per parameter. A cell is `_`, a pattern (constructor or litera
 
 The reason must be a non-empty string literal. Every declassification is reported as an `A_DECLASSIFY` audit diagnostic. The functions passed to `map`, `check`, and `validate` must be pure.
 
+Conversions are explicit, with one exception. The calls of the std namespaces (`crypto.*`, `gzip.*`, `deflate.*`, `zstd.*`, `csv.*`, `db.*`, `proc.*`, `http.*`) convert their arguments: a `Bytes` parameter also takes a `Str` (its UTF-8 bytes), a `Secret[X]` parameter takes an `X`, and a `Secret[Bytes]` parameter takes a `Str` or a `Secret[Str]`. Everywhere else, including your own functions, record fields and methods, write the conversion: `s.to_bytes`, `b.to_str` (an `Opt`), `secret(x)`, `k.map(t => t.to_bytes)` for a `Secret[Str]` to a `Secret[Bytes]`.
+
 ## Contracts
 
 `pre`, `post` (with `r` as the result), and `where` refinements are checked at run time. A violation traps with the contract text. Contracts must be pure.

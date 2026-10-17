@@ -154,6 +154,12 @@ impl Checker {
                 return Type::con("#Response");
             }
             "serve" | "serve_with" => return self.infer_serve(name == "serve_with", args, span),
+            #[cfg(not(target_family = "wasm"))]
+            "bytes" if args.len() == 2 => {
+                let cs = vec![self.lib_arg(&Type::int(), &args[0], "http.bytes"), self.lib_arg(&Type::con("#Bytes"), &args[1], "http.bytes")];
+                self.lib_site(span, NetSite::Lib("__http_bytes".into(), cs));
+                return Type::con("#Response");
+            }
             _ => {}
         }
         let Some(src) = HTTP_SIGS.iter().chain(HTTP_BYTES).find(|s| s.starts_with(&format!("{name}("))) else {
