@@ -62,9 +62,12 @@ pub fn lower(m: &Module, out: &CheckOutput) -> Result<Option<(Module, CheckOutpu
     Ok(Some(lower_net_again(m2, c2)?))
 }
 
+/// A module with its check output.
+pub type Checked = (Module, CheckOutput);
+
 /// `lower` of a program it may consume, which it gives back when there is nothing to lower. Each
 /// stage's input is dropped before the next check, so less is alive at once.
-pub fn lower_owned(m: Module, out: CheckOutput) -> Result<Result<(Module, CheckOutput), (Module, CheckOutput)>, String> {
+pub fn lower_owned(m: Module, out: CheckOutput) -> Result<Result<Checked, Checked>, String> {
     if out.has_errors() || out.ascribed {
         return Ok(lower(&m, &out)?.ok_or((m, out)));
     }
