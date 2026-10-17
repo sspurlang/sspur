@@ -182,7 +182,8 @@ struct Checker {
     ctors: HashMap<String, CtorInfo>,
     fns: HashMap<String, Scheme>,
     globals: HashMap<String, Scheme>,
-    methods: HashMap<(String, String), Scheme>,
+    /// Boxed: about 450 builtin methods, and a bucket of the table is then 56 bytes, not 300.
+    methods: HashMap<(String, String), Box<Scheme>>,
     subst: Vec<Option<Type>>,
     rsubst: Vec<Option<Row>>,
     scopes: Vec<HashMap<String, Local>>,
@@ -390,7 +391,7 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
         }
         for (recv, src) in builtins::SYS_METHODS {
             let (name, s) = c.builtin_scheme(src);
-            c.methods.insert((recv.to_string(), name), s);
+            c.methods.insert((recv.to_string(), name), Box::new(s));
         }
     }
     if c.bare {
@@ -400,7 +401,7 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
         }
         for (recv, src) in builtins::BARE_METHODS {
             let (name, s) = c.builtin_scheme(src);
-            c.methods.insert((recv.to_string(), name), s);
+            c.methods.insert((recv.to_string(), name), Box::new(s));
         }
     }
     c.collect(m);
@@ -730,7 +731,7 @@ impl Checker {
         }
         for (recv, src) in builtins::METHODS {
             let (name, s) = self.builtin_scheme(src);
-            self.methods.insert((recv.to_string(), name), s);
+            self.methods.insert((recv.to_string(), name), Box::new(s));
         }
         for src in builtins::std_globals() {
             let (name, s) = self.builtin_scheme(src);
@@ -738,7 +739,7 @@ impl Checker {
         }
         for (recv, src) in builtins::std_methods() {
             let (name, s) = self.builtin_scheme(src);
-            self.methods.insert((recv.to_string(), name), s);
+            self.methods.insert((recv.to_string(), name), Box::new(s));
         }
         let t = Type::Param("T".into());
         let s = Scheme { tparams: vec!["T".into()], rparams: vec![], params: vec![t.clone()], ret: Type::unit(), atoms: BTreeSet::new(), fails: vec![], ueffs: vec![("yield".into(), vec![t])], bounds: vec![], origin: String::new() };
@@ -1703,7 +1704,7 @@ impl Checker {
             };
             return Type::list(Type::con(host));
         }
-        let found = self.methods.get(&(con.clone(), name.to_string())).or_else(|| self.methods.get(&("*".to_string(), name.to_string()))).cloned();
+        let found = self.methods.get(&(con.clone(), name.to_string())).or_else(|| self.methods.get(&("*".to_string(), name.to_string()))).map(|s| (**s).clone());
         if found.is_none()
             && let Some(t) = self.trait_method_call(recv, &rt, name, args, span, true) {
                 return t;
@@ -1758,7 +1759,7 @@ impl Checker {
     }
 
     fn has_method(&self, con: &str, m: &str) -> Option<Scheme> {
-        self.methods.get(&(con.to_string(), m.to_string())).or_else(|| self.methods.get(&("*".to_string(), m.to_string()))).cloned()
+        self.methods.get(&(con.to_string(), m.to_string())).or_else(|| self.methods.get(&("*".to_string(), m.to_string()))).map(|s| (**s).clone())
     }
 
     /// A method spelled the way another language spells it, with one SSPUR meaning on this

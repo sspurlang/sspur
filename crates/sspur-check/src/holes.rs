@@ -106,7 +106,7 @@ impl Checker {
         let mut globals: Vec<(&String, &Scheme)> = self.globals.iter().filter(|(n, _)| !self.op_effect.contains_key(*n) && !n.starts_with("__")).collect();
         globals.sort_by_key(|(n, _)| *n);
         out.extend(globals.into_iter().map(|(n, s)| sig(n, SigKind::Global, s)));
-        let mut methods: Vec<(&(String, String), &Scheme)> = self.methods.iter().collect();
+        let mut methods: Vec<(&(String, String), &Scheme)> = self.methods.iter().map(|(k, s)| (k, &**s)).collect();
         methods.sort_by_key(|(k, _)| *k);
         out.extend(methods.into_iter().map(|((recv, n), s)| sig(n, SigKind::Method(recv.clone()), s)));
         let mut traits: Vec<_> = self.traits.iter().filter(|(_, t)| !t.builtin && t.params.is_empty()).collect();
