@@ -253,6 +253,7 @@ struct Checker {
     std_sum_fields: HashMap<String, SumVariants>,
     svc_params: HashMap<String, Vec<String>>,
     /// Library sites whose types are resolved when their definition is checked.
+    #[cfg(not(target_family = "wasm"))]
     pending_lib: Vec<(u32, u32)>,
     /// The type the context expects of the call being inferred, by the call's span.
     call_exp: Option<((u32, u32), Type)>,
@@ -393,6 +394,7 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
         par_word: "task",
         std_sum_fields: HashMap::new(),
         svc_params: HashMap::new(),
+        #[cfg(not(target_family = "wasm"))]
         pending_lib: vec![],
         call_exp: None,
         explicit_targs: None,
