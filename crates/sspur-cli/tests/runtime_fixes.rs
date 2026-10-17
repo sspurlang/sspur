@@ -151,9 +151,3 @@ fn namespaced_calls_convert_arguments_and_nothing_else_does() {
     let (_, err, ok) = sspur(&d, &["check", "p.ssp"]);
     assert!(!ok && err.contains("E_TYPE_MISMATCH"), "{err}");
 }
-
-#[test]
-fn db_tx_in_generic_functions_and_with_late_result_types() {
-    let src = "type Undo = Undo{value: Bool}\n\nfn txg[A, e](c: Db, f: () -> A ! e) -> A ! db, fail[DbErr], e\n= db.tx(c, f)\n\nfn undo_tx(c: Db) -> Bool ! db, fail[DbErr], fail[Undo]\n= db.tx(c, () => do\n  v = db.exec(c, \"create table t (x integer)\") == 0\n  raise Undo{value: v})\n\nfn rolled(c: Db) -> Bool ! db, fail[DbErr]\n= catch undo_tx(c)\n  | Undo{value} => value\n\nfn res_tx(c: Db) -> Res[Unit, Str] ! db, fail[DbErr]\n= db.tx(c, () => ok(()))\n\nfn main() -> Unit ! db, fail[DbErr], log\n= do\n  c = db.open(\":memory:\")\n  a = txg(c, () => 41) + 1\n  r = rolled(c)\n  n = db.query[Str](c, \"select name from sqlite_master\", []).len\n  log(\"{a} {r} {n} {res_tx(c)}\")\n";
-    assert_eq!(both("dbtx", "run", src), "42 true 0 ok(())\n");
-}

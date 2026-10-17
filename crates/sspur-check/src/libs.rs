@@ -36,9 +36,8 @@ pub enum LibSite {
     /// `db.exec`, `db.query[T]`, `db.one[T]`, `db.opt[T]`: the operation, the row type (none for
     /// exec) and the parameters.
     Db(String, Option<Type>, Params),
-    /// `db.tx(c, f)`: the result type, the error types `f` can raise, its other effects, and
-    /// which of those are the enclosing function's effect-row parameters.
-    Tx(Type, Vec<Type>, Vec<String>, Vec<String>),
+    /// `db.tx(c, f)`: the result type, the error types `f` can raise and its other effects.
+    Tx(Type, Vec<Type>, Vec<String>),
     /// `csv.decode[T]`, `csv.read[T]`, `csv.fold[T]`, `csv.encode(xs)`: the operation and `T`.
     Csv(String, Type),
 }
@@ -286,18 +285,6 @@ impl Checker {
         }
     }
 
-    /// Resolves the types of the definition's `db.tx` sites, now that it has been checked.
-    pub(crate) fn finish_tx(&mut self) {
-        for k in std::mem::take(&mut self.pending_tx) {
-            if let Some(NetSite::Data(LibSite::Tx(r, fails, _, _))) = self.net_sites.get(&k).cloned() {
-                let (r, fails) = (self.resolve(&r), fails.iter().map(|t| self.resolve(t)).collect());
-                if let Some(NetSite::Data(LibSite::Tx(r0, f0, _, _))) = self.net_sites.get_mut(&k) {
-                    (*r0, *f0) = (r, fails);
-                }
-            }
-        }
-    }
-
     fn infer_tx(&mut self, targs: &[Ty], args: &[Expr], span: Span) -> Type {
         if !targs.is_empty() {
             self.err("E_UNSUPPORTED", span, "db.tx takes no type arguments".into());
@@ -347,9 +334,7 @@ impl Checker {
             fails.push(et);
         }
         let r = self.resolve(&ret);
-        let rows = atoms.iter().filter(|a| self.cur_rparams.contains(a)).cloned().collect();
-        self.lib_site(span, NetSite::Data(LibSite::Tx(r.clone(), fails, atoms, rows)));
-        self.pending_tx.push((span.start, span.end));
+        self.lib_site(span, NetSite::Data(LibSite::Tx(r.clone(), fails, atoms)));
         r
     }
 

@@ -519,7 +519,7 @@ pub fn lower(m: &Module, out: &CheckOutput) -> Result<Option<Module>, String> {
                 (NetSite::Data(site), ExprKind::Method { args, .. }) => {
                     let r = match site {
                         crate::libs::LibSite::Db(op, t, ps) => g.db_site(op, t, ps, args),
-                        crate::libs::LibSite::Tx(t, fails, atoms, rows) => g.tx_site(t, fails, atoms, rows, args),
+                        crate::libs::LibSite::Tx(t, fails, atoms) => g.tx_site(t, fails, atoms, args),
                         crate::libs::LibSite::Csv(op, t) => g.csv_site(op, t, args),
                     };
                     match r {
