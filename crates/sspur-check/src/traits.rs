@@ -97,6 +97,20 @@ trait Copy
 
 const STRUCTURAL: &[&str] = &["Eq", "Ord", "Show", "Hash"];
 
+/// The method an arithmetic operator calls on `BigInt`, `Dec` and `Ratio`, which have methods
+/// rather than built-in operators (`Dec` division takes a scale, so it has no `/`).
+pub fn big_op(con: &str, tr: &str) -> Option<&'static str> {
+    let m = match tr {
+        "Add" => "add",
+        "Sub" => "sub",
+        "Mul" => "mul",
+        "Div" if con != "#Dec" => "div",
+        "Neg" => "neg",
+        _ => return None,
+    };
+    matches!(con, "#BigInt" | "#Dec" | "#Ratio").then_some(m)
+}
+
 /// Types whose `<` is the built-in comparison.
 pub(crate) fn native_lt(t: &Type) -> bool {
     t.is_numeric() || *t == Type::str() || matches!(t, Type::Con(n, a) if a.is_empty() && matches!(n.as_str(), "#Time" | "#Duration" | "#BigInt" | "#Dec" | "#Ratio"))
@@ -469,7 +483,7 @@ impl Checker {
 
     /// Built-in impls: the components that must implement the trait too, if `con` has one.
     pub(crate) fn intrinsic(&self, con: &str, args: &[Type], tr: &str) -> Option<Vec<Type>> {
-        if tr == crate::implicit::INST {
+        if tr == crate::implicit::INST || big_op(con, tr).is_some() {
             return Some(vec![]);
         }
         let user = self.types.contains_key(con) && !con.starts_with('#');
@@ -707,7 +721,8 @@ impl Checker {
     /// `l op r` on a type that implements the operator's trait through a bound or an impl.
     pub(crate) fn trait_op(&mut self, tr: &str, t: &Type, span: Span, tag: u8) -> bool {
         let t = self.resolve(t);
-        if tr == "Eq" && !matches!(&t, Type::Con(c, _) if self.impls.get(&(tr.to_string(), c.clone())).is_some_and(|i| !i.derived)) && self.eq_reaches_impl(&t, &mut vec![]) {
+        let big = matches!(&t, Type::Con(c, _) if big_op(c, tr).is_some() && !self.impls.contains_key(&(tr.to_string(), c.clone())));
+        if big || (tr == "Eq" && !matches!(&t, Type::Con(c, _) if self.impls.get(&(tr.to_string(), c.clone())).is_some_and(|i| !i.derived)) && self.eq_reaches_impl(&t, &mut vec![])) {
             self.pending_sites.push(((span.start, span.end, tag), tr.to_string(), t, span));
             return true;
         }

@@ -9,6 +9,8 @@ const MAX_SPECS: usize = 500;
 
 enum Target {
     Fn(String),
+    /// The receiver's own method, as `a.add(b)` for `+` on `BigInt`.
+    Method(&'static str),
     Builtin,
 }
 
@@ -340,6 +342,12 @@ impl Elab<'_> {
         if tr == "Eq" && !self.user_eq(st) && self.eq_needs(st, &mut vec![]) {
             return Some(Target::Fn(self.eq_helper(st)));
         }
+        if let Type::Con(c, _) = st
+            && !self.t.impls.contains_key(&(tr.to_string(), c.clone()))
+            && let Some(name) = traits::big_op(c, tr)
+        {
+            return Some(Target::Method(name));
+        }
         let Type::Con(c, args) = st else {
             return match st {
                 Type::Tuple(_) => Some(Target::Builtin),
@@ -451,6 +459,7 @@ impl Elab<'_> {
             ExprKind::Binary(op, l, r) => {
                 let m = Self::method_of(&tr);
                 match self.target(&tr, m, &st) {
+                    Some(Target::Method(name)) => ExprKind::Method { recv: l, name: name.into(), targs: vec![], args: vec![*r] },
                     Some(Target::Fn(f)) => match op {
                         BinOp::Ne => ExprKind::Unary(UnOp::Not, Box::new(synth(call(&f, vec![*l, *r])))),
                         BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => ExprKind::Binary(op, Box::new(synth(call(&f, vec![*l, *r]))), Box::new(synth(ExprKind::Int(0)))),
@@ -462,6 +471,7 @@ impl Elab<'_> {
             }
             ExprKind::Unary(UnOp::Neg, a) => match self.target(&tr, "neg", &st) {
                 Some(Target::Fn(f)) => call(&f, vec![*a]),
+                Some(Target::Method(name)) => ExprKind::Method { recv: a, name: name.into(), targs: vec![], args: vec![] },
                 _ => ExprKind::Unary(UnOp::Neg, a),
             },
             ExprKind::Index(a, i) => match self.target(&tr, "index", &st) {
@@ -482,6 +492,7 @@ impl Elab<'_> {
                 call(&f, all)
             }
             Some(Target::Builtin) => Self::builtin_call(name.rsplit("__").next().unwrap_or(name), recv, args),
+            Some(Target::Method(m)) => ExprKind::Method { recv: Box::new(recv), name: m.into(), targs: vec![], args },
             None => {
                 self.err.get_or_insert_with(|| format!("internal: no impl of {tr} for {st}"));
                 ExprKind::Unit

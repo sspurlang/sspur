@@ -10,6 +10,8 @@
 | `Dec` | `add(d) sub(d) mul(d) div(d, scale) round(scale) scale neg abs sign to_f64`; `add sub mul` are exact, `div` and `round` round half to even; prints like `12.50`. Equal values with different scales differ (`1.5 < 1.50`) |
 | `Ratio` | fields `num den` (`BigInt`, always normalized: gcd 1, `den > 0`), `add(r) sub(r) mul(r) div(r) neg abs inv pow(k) sign is_int floor ceil trunc round to_f64 to_dec(scale)` (`floor ceil trunc round` give `BigInt`, `round` is half to even; `to_f64` is correctly rounded). `< <= > >=` and sorting compare values; prints as `3/4` or `5`. Division by zero traps |
 
+`+`, `-`, `*` and unary `-` on `BigInt`, `Dec` and `Ratio` call `add sub mul neg`, and `/` on `BigInt` and `Ratio` calls `div` (a `Dec` division takes a scale: `d.div(e, 2)`), also through `[T: Add]` bounds.
+
 Constructors: `big(n)`, `parse_big(s)` and `decimal(s)` (both `Opt`), `ratio(n, d)` and `ratio_big(n, d)` (a zero denominator traps), `parse_ratio(s)`, `pi() euler() inf() nan()`, `min(a, b)`, `max(a, b)`, `clamp(x, lo, hi)`.
 
 Random numbers are pure: each call takes a seed and returns `(value, next_seed)`. `rand(seed)` is non-negative, `rand_int(seed, lo, hi)` is in `lo..hi` (it traps unless `lo < hi`), `rand_f64(seed)` is in `[0, 1)`, and `rand_normal(seed, mean, sd)`, `rand_uniform(seed, lo, hi)`, `rand_exp(seed, rate)` and `rand_bool(seed, p)` give the usual distributions. `xs.shuffle(seed)` and `xs.choice(seed)` use the same generator.
