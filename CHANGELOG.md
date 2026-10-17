@@ -7,7 +7,7 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 ### Added
 - `sspur fmt` keeps comments (ADR 0042), and so do the language server's formatting, the playground's Reformat and the wasm `fmt`. A comment on its own line stays on its own line before the same code, a comment after code stays after it, comments between definitions keep their blank lines, and a short list, call, record, parameter list, pattern or sum type with a comment inside is written one element per line so the comment stays next to its element. Comments are still not part of the canonical text or any hash. A property test formats every `.ssp` file in the repository and every corpus program at 40 and 100 columns and checks that every comment comes back once, in order, with the same code before it, and that the canonical text, the hashes and idempotency hold.
 - Binding annotations: `x: T = e` and `var x: T = e` are checked (`e` against `T`) and kept in the canonical text, so `var seen: List[Int] = []` survives `sspur fmt` and `build.fmt`. They used to be accepted and dropped.
-- `\u{...}` escapes in strings (1 to 6 hex digits, `"caf\u{e9}"`), and `\}` for a literal `}`.
+- `\u{...}` escapes in strings (1 to 6 hex digits, `"caf\u{e9}"`), `\}` for a literal `}` and `\'` for a quote in a `'...'` string.
 - `_ => e` and `(acc, _) => e`: lambdas that ignore a parameter.
 - `pkg.models.Doc` names a public module's definition in expressions, types, record literals and patterns, without a `use`.
 
@@ -18,6 +18,7 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 - A `{` in a string interpolates only an expression that is not a lone literal and doesn't start with `{`: `"a{3}"`, `"^a{2,4}$"` and `"{{x}}"` are text, as `"{}"` and CSS braces already were. A brace that is text no longer swallows the code after it: `s.contains("{") or s.contains("}")` is two calls and `"{" + x + "}"` three strings (they were one string). No program in the repository or the corpus changes meaning.
 - `with` binds tighter than comparisons: `p == q with a := 1` is `p == (q with a := 1)` (it updated the `Bool`, an error). The reference lists the precedence of every operator.
 - A `match` in a match arm ends at the first arm indented less than its own, so `| some(x) => match x` with its arms indented deeper no longer takes the outer `| none`. Arms at the same column still belong to the inner match.
+- The playground's WebAssembly is 990,576 bytes gzipped, 2.9 KB smaller although it now keeps comments: expression clones and walks are no longer inlined into every caller, and the editor features and the runtime helpers shared with native code are built for size. Checking and running take the same time; inlay hints are faster, since they count UTF-16 offsets once and look up parameter names only for calls with a literal argument.
 - `build.fmt` counts comments now that `sspur fmt` keeps them: each one where `sspur fmt` puts it (indent and blank lines don't count). It also reads a long sum type broken one variant per line and a broken list pattern with `..`.
 
 ### Fixed
