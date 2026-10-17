@@ -228,7 +228,7 @@ struct Checker {
     stores: BTreeMap<String, (Type, Type)>,
     json_sites: Vec<((u32, u32), Type, Span, bool)>,
     /// The bounds in scope at the JSON sites of bounded functions.
-    json_bounds: HashMap<(u32, u32), Vec<traits::Bound>>,
+    json_bounds: Vec<((u32, u32), Vec<traits::Bound>)>,
     refined_names: HashSet<String>,
     kernel_sigs: HashMap<String, Vec<kernel::KParam>>,
     kernels: BTreeMap<String, kernel::Kernel>,
@@ -371,7 +371,7 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
         while_bodies: HashSet::new(),
         stores: BTreeMap::new(),
         json_sites: vec![],
-        json_bounds: HashMap::new(),
+        json_bounds: vec![],
         refined_names: HashSet::new(),
         kernel_sigs: HashMap::new(),
         kernels: BTreeMap::new(),
@@ -1642,13 +1642,13 @@ impl Checker {
         // The expected result types the arguments, as in `xs.fold([], ...)`, when it fits.
         if let Some(w) = want {
             let (r, w) = (self.resolve(&ret), self.resolve(&w));
-            let mut in_rows = BTreeSet::new();
+            let mut in_rows = Vec::new();
             for p in &params {
                 self.row_vars(p, &mut in_rows);
             }
-            let mut in_ret = BTreeSet::new();
+            let mut in_ret = Vec::new();
             ty_vars(&r, &mut in_ret);
-            if !fn_inside(&r) && !fn_inside(&w) && in_ret.is_disjoint(&in_rows) && self.fits(&r, &w, &mut HashMap::new()) {
+            if !fn_inside(&r) && !fn_inside(&w) && !in_ret.iter().any(|v| in_rows.contains(v)) && self.fits(&r, &w, &mut Vec::new()) {
                 self.unify(&r, &w);
             }
         }
@@ -2575,7 +2575,7 @@ impl Checker {
     }
 
     /// The type variables in the effect arguments (`fail[?1]`, `yield[?2]`) of the rows in `t`.
-    fn row_vars(&self, t: &Type, out: &mut BTreeSet<u32>) {
+    fn row_vars(&self, t: &Type, out: &mut Vec<u32>) {
         match self.resolve(t) {
             Type::Fn(ps, r, row) => {
                 for a in &row.atoms {
@@ -2592,12 +2592,12 @@ impl Checker {
     }
 
     /// Whether `a` and `b` unify (without function types), without binding anything.
-    fn fits(&self, a: &Type, b: &Type, seen: &mut HashMap<u32, Type>) -> bool {
-        let look = |c: &Self, t: &Type, seen: &HashMap<u32, Type>| -> Type {
+    fn fits(&self, a: &Type, b: &Type, seen: &mut Vec<(u32, Type)>) -> bool {
+        let look = |c: &Self, t: &Type, seen: &[(u32, Type)]| -> Type {
             let mut t = c.resolve(t);
             while let Type::Var(v) = t {
-                match seen.get(&v) {
-                    Some(x) => t = c.resolve(x),
+                match seen.iter().find(|(x, _)| *x == v) {
+                    Some((_, x)) => t = c.resolve(x),
                     None => break,
                 }
             }
@@ -2607,7 +2607,7 @@ impl Checker {
         match (&a, &b) {
             (Type::Var(x), Type::Var(y)) if x == y => true,
             (Type::Var(x), t) | (t, Type::Var(x)) => {
-                seen.insert(*x, t.clone());
+                seen.push((*x, t.clone()));
                 true
             }
             (Type::Con(n1, a1), Type::Con(n2, a2)) => n1 == n2 && a1.len() == a2.len() && a1.iter().zip(a2).all(|(x, y)| self.fits(x, y, seen)),
@@ -3812,11 +3812,9 @@ fn subst_named_ty(t: &mut Ty, map: &HashMap<String, Ty>) {
     }
 }
 
-fn ty_vars(t: &Type, out: &mut BTreeSet<u32>) {
+fn ty_vars(t: &Type, out: &mut Vec<u32>) {
     match t {
-        Type::Var(v) => {
-            out.insert(*v);
-        }
+        Type::Var(v) => out.push(*v),
         Type::Con(_, a) | Type::Tuple(a) => a.iter().for_each(|x| ty_vars(x, out)),
         Type::Fn(ps, r, _) => {
             ps.iter().for_each(|x| ty_vars(x, out));

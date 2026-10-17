@@ -54,10 +54,11 @@ fi
 # so give it 32 MiB rather than the 1 MiB default: enough for 20,000 small calls, the limit of
 # `sspur run --interp`. A program that doesn't recurse deeply never touches most of it.
 # opt-level 2 rather than the release profile's 3: the wasm is about 3% smaller gzipped, and
-# the interpreter, checker and formatter run slightly fewer instructions under Node.
+# the interpreter, checker and formatter run slightly fewer instructions under Node. The checker
+# is built for size: about 2% smaller gzipped, and it runs once per edit, not per call.
 CARGO_PROFILE_RELEASE_OPT_LEVEL=2 \
 CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS="-C link-arg=-zstack-size=33554432" \
-  cargo build --release -p sspur-wasm --target wasm32-unknown-unknown
+  cargo build --release -p sspur-wasm --target wasm32-unknown-unknown --config 'profile.release.package.sspur-check.opt-level="s"'
 
 rm -rf "$out/pkg"
 wasm-bindgen --target web --no-typescript --out-dir "$out/pkg" "${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/release/sspur_wasm.wasm"

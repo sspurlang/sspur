@@ -41,7 +41,7 @@ impl Checker {
 
     pub(crate) fn json_site(&mut self, key: (u32, u32), t: Type, span: Span, decode: bool) {
         if !self.bounds.is_empty() {
-            self.json_bounds.insert(key, self.bounds.clone());
+            self.json_bounds.push((key, self.bounds.clone()));
         }
         self.json_sites.push((key, t, span, decode));
     }
@@ -127,7 +127,7 @@ impl Checker {
         let mut out = HashMap::new();
         let saved = std::mem::take(&mut self.bounds);
         for (key, t, span, decode) in std::mem::take(&mut self.json_sites) {
-            self.bounds = self.json_bounds.remove(&key).unwrap_or_default();
+            self.bounds = self.json_bounds.iter().find(|(k, _)| *k == key).map(|(_, b)| b.clone()).unwrap_or_default();
             let r = self.resolve(&t);
             #[cfg(not(target_family = "wasm"))]
             let refined_ok = matches!(self.net_sites.get(&key), Some(NetSite::Decode | NetSite::Body));
@@ -139,6 +139,7 @@ impl Checker {
             out.insert(key, r);
         }
         self.bounds = saved;
+        self.json_bounds.clear();
         out
     }
 }
