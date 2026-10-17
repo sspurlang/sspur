@@ -197,14 +197,70 @@ fn method_scheme(s: Scheme) -> MethodScheme {
     s
 }
 
+/// A table whose builtin entries the playground shares between checks, with the check's own
+/// entries over them.
+struct Layered<K: 'static, V: 'static> {
+    base: Option<&'static HashMap<K, V>>,
+    own: HashMap<K, V>,
+}
+
+impl<K: 'static, V: 'static> Default for Layered<K, V> {
+    fn default() -> Self {
+        Layered { base: None, own: HashMap::new() }
+    }
+}
+
+impl<K: Eq + std::hash::Hash, V> Layered<K, V> {
+    fn get<Q: Eq + std::hash::Hash + ?Sized>(&self, k: &Q) -> Option<&V>
+    where
+        K: std::borrow::Borrow<Q>,
+    {
+        self.own.get(k).or_else(|| self.base?.get(k))
+    }
+
+    fn contains_key<Q: Eq + std::hash::Hash + ?Sized>(&self, k: &Q) -> bool
+    where
+        K: std::borrow::Borrow<Q>,
+    {
+        self.get(k).is_some()
+    }
+
+    fn insert(&mut self, k: K, v: V) {
+        self.own.insert(k, v);
+    }
+
+    fn keys(&self) -> impl Iterator<Item = &K> {
+        self.own.keys().chain(self.base.into_iter().flat_map(|b| b.keys()).filter(|k| !self.own.contains_key(*k)))
+    }
+}
+
+impl<K: Eq + std::hash::Hash + std::borrow::Borrow<Q>, V, Q: Eq + std::hash::Hash + ?Sized> std::ops::Index<&Q> for Layered<K, V> {
+    type Output = V;
+    fn index(&self, k: &Q) -> &V {
+        self.get(k).expect("no such entry")
+    }
+}
+
+/// The builtin globals and methods, and the effect atoms their signatures name.
+#[cfg(target_family = "wasm")]
+struct Builtins {
+    globals: HashMap<String, Scheme>,
+    methods: HashMap<(String, String), MethodScheme>,
+    fail_types: HashMap<String, Type>,
+    ueff_atoms: HashMap<String, (String, Vec<Type>)>,
+}
+
+#[cfg(target_family = "wasm")]
+static BUILTINS: std::sync::OnceLock<Builtins> = std::sync::OnceLock::new();
+
 struct Checker {
     fn_defs: HashMap<String, FnDef>,
     device_fns: HashSet<String>,
     types: HashMap<String, TypeInfo>,
     ctors: HashMap<String, CtorInfo>,
     fns: HashMap<String, Scheme>,
-    globals: HashMap<String, Scheme>,
-    methods: HashMap<(String, String), MethodScheme>,
+    globals: Layered<String, Scheme>,
+    methods: Layered<(String, String), MethodScheme>,
     subst: Vec<Option<Type>>,
     rsubst: Vec<Option<Row>>,
     scopes: Vec<HashMap<String, Local>>,
@@ -350,8 +406,8 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
         types: HashMap::new(),
         ctors: HashMap::new(),
         fns: HashMap::new(),
-        globals: HashMap::new(),
-        methods: HashMap::new(),
+        globals: Layered::default(),
+        methods: Layered::default(),
         subst: vec![],
         rsubst: vec![],
         scopes: vec![],
@@ -787,21 +843,44 @@ impl Checker {
             self.types.insert(internal.to_string(), TypeInfo { params: vec![], kind: TypeKind::Sum(vs.iter().map(|v| v.name.clone()).collect()) });
             self.std_sum_fields.insert(internal.to_string(), variants);
         }
-        for src in builtins::GLOBALS {
-            let (name, s) = self.builtin_scheme(src);
-            self.globals.insert(name, s);
+        // The playground parses them once for every check; a command, which checks a few times,
+        // builds them each time, so no copy is alive while the program is elaborated.
+        #[cfg(target_family = "wasm")]
+        {
+            let b = match BUILTINS.get() {
+                Some(b) => b,
+                None => {
+                    let b = self.builtin_tables();
+                    BUILTINS.get_or_init(|| b)
+                }
+            };
+            for (k, v) in &b.fail_types {
+                self.fail_types.entry(k.clone()).or_insert_with(|| v.clone());
+            }
+            for (k, v) in &b.ueff_atoms {
+                self.ueff_atoms.entry(k.clone()).or_insert_with(|| v.clone());
+            }
+            self.globals.base = Some(&b.globals);
+            self.methods.base = Some(&b.methods);
         }
-        for (recv, src) in builtins::METHODS {
-            let (name, s) = self.builtin_scheme(src);
-            self.methods.insert((recv.to_string(), name), method_scheme(s));
-        }
-        for src in builtins::std_globals() {
-            let (name, s) = self.builtin_scheme(src);
-            self.globals.insert(name, s);
-        }
-        for (recv, src) in builtins::std_methods() {
-            let (name, s) = self.builtin_scheme(src);
-            self.methods.insert((recv.to_string(), name), method_scheme(s));
+        #[cfg(not(target_family = "wasm"))]
+        {
+            for src in builtins::GLOBALS {
+                let (name, s) = self.builtin_scheme(src);
+                self.globals.insert(name, s);
+            }
+            for (recv, src) in builtins::METHODS {
+                let (name, s) = self.builtin_scheme(src);
+                self.methods.insert((recv.to_string(), name), method_scheme(s));
+            }
+            for src in builtins::std_globals() {
+                let (name, s) = self.builtin_scheme(src);
+                self.globals.insert(name, s);
+            }
+            for (recv, src) in builtins::std_methods() {
+                let (name, s) = self.builtin_scheme(src);
+                self.methods.insert((recv.to_string(), name), method_scheme(s));
+            }
         }
         let t = Type::Param("T".into());
         let s = Scheme { tparams: vec!["T".into()], rparams: vec![], params: vec![t.clone()], ret: Type::unit(), atoms: BTreeSet::new(), fails: vec![], ueffs: vec![("yield".into(), vec![t])], bounds: vec![], origin: String::new() };
@@ -821,6 +900,26 @@ impl Checker {
         }
         self.ueff_atoms.entry(atom.clone()).or_insert((name.to_string(), args));
         atom
+    }
+
+    /// The builtin signatures, and the effect atoms they add.
+    #[cfg(target_family = "wasm")]
+    fn builtin_tables(&mut self) -> Builtins {
+        let fail_types = std::mem::take(&mut self.fail_types);
+        let ueff_atoms = std::mem::take(&mut self.ueff_atoms);
+        let mut globals = HashMap::new();
+        let mut methods = HashMap::new();
+        for src in builtins::GLOBALS.iter().copied().chain(builtins::std_globals()) {
+            let (name, s) = self.builtin_scheme(src);
+            globals.insert(name, s);
+        }
+        for (recv, src) in builtins::METHODS.iter().copied().chain(builtins::std_methods()) {
+            let (name, s) = self.builtin_scheme(src);
+            methods.insert((recv.to_string(), name), method_scheme(s));
+        }
+        let fail_types = std::mem::replace(&mut self.fail_types, fail_types);
+        let ueff_atoms = std::mem::replace(&mut self.ueff_atoms, ueff_atoms);
+        Builtins { globals, methods, fail_types, ueff_atoms }
     }
 
     fn builtin_scheme(&mut self, src: &str) -> (String, Scheme) {
