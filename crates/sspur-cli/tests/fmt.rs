@@ -78,13 +78,14 @@ fn wrapping_keeps_meaning() {
         assert_eq!(print_module(&parse(&canon).unwrap()), canon, "{name}");
     }
     assert!(wrapped >= 20, "only {wrapped} sources have a line over 100 columns");
-    // A `catch` with arms as the `else` of an `if` in a match arm prints its arms where the
-    // outer match's are: a canonical-text bug older than line breaking, not changed by it.
-    assert_eq!(odd, ["corpus t46"]);
+    // Every canonical text reads back as the same program (corpus t46 didn't before 0.15: a
+    // `catch` ending a match arm printed its arms where the outer match's were).
+    assert!(odd.is_empty(), "{odd:?}");
 }
 
 /// What 0.13.0 printed for every corpus program, by blake3: the canonical text, which the
-/// store and the export hashes of packages (`sspur.lock`, the registry) are built from.
+/// store and the export hashes of packages (`sspur.lock`, the registry) are built from. The one
+/// change since is corpus program t46, whose 0.13 text read back as a different program.
 #[test]
 fn the_canonical_text_is_what_0_13_printed() {
     let corpus = std::fs::read_to_string(root().join("bench/eval/corpus.jsonl")).unwrap();
@@ -101,7 +102,7 @@ fn the_canonical_text_is_what_0_13_printed() {
 }
 
 const GOLDEN_COUNT: usize = 210;
-const GOLDEN: &str = "a0e6ed1102a71f3c9fa89419edabda2aa48f4c0d4ebf1421ae8edaa2633c395a";
+const GOLDEN: &str = "b782e6462ba86ffd9638d36fc474b0fda56f85b41e498e8914786c60b5c96c23";
 
 #[test]
 fn long_literals_calls_and_chains_break_one_element_per_line() {
@@ -178,4 +179,88 @@ fn run_both_tiers() {
         assert_eq!(out, format_module(&m), "{o}: sspur fmt of the narrow text");
     }
     std::fs::remove_dir_all(&dir).ok();
+}
+
+/// Every `.ssp` file in the repository (outside build output) and every corpus program.
+fn every_source() -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = sources().into_iter().filter(|s| s.0.starts_with("corpus ")).collect();
+    let mut files = Vec::new();
+    for d in ["tests", "docs", "examples", "templates", "pulse", "bench", "registry", "crates"] {
+        ssp_files(&root().join(d), &mut files);
+    }
+    files.retain(|p| !p.components().any(|c| c.as_os_str() == "target" || c.as_os_str() == "book" || c.as_os_str() == "node_modules"));
+    files.sort();
+    out.extend(files.into_iter().map(|p| (p.display().to_string(), std::fs::read_to_string(&p).unwrap())));
+    out.retain(|(_, s)| parse(s).is_ok());
+    out
+}
+
+fn comment_texts(src: &str) -> Vec<String> {
+    let (_, cs) = sspur_syntax::lexer::lex_comments(src).unwrap();
+    cs.iter().map(|c| src[c.span.start as usize..c.span.end as usize].trim_end().to_string()).collect()
+}
+
+/// For each comment, the names and literals before it, in order: the same in the source and in
+/// what `sspur fmt` writes means every comment stayed between the same pieces of code. The
+/// printer's own rewrites (`let`, `x: x`, `&&`) are left out of the comparison.
+fn words_before(src: &str) -> Vec<Vec<String>> {
+    use sspur_syntax::lexer::Tok;
+    let (toks, cs) = sspur_syntax::lexer::lex_comments(src).unwrap();
+    let word = |t: &Tok| match t {
+        Tok::Ident(w) if !matches!(w.as_str(), "let" | "mut" | "const" | "val" | "pub") => Some(w.clone()),
+        Tok::Int(n) => Some(n.to_string()),
+        Tok::Str(_) => Some("\"\"".into()),
+        _ => None,
+    };
+    let mut seen: Vec<String> = Vec::new();
+    let mut out = Vec::new();
+    let mut ti = toks.iter().peekable();
+    for c in &cs {
+        while let Some(t) = ti.peek().filter(|t| t.span.start < c.span.start) {
+            if let Some(w) = word(&t.tok) {
+                seen.push(w);
+            }
+            ti.next();
+        }
+        out.push(seen.clone());
+    }
+    out
+}
+
+#[test]
+fn fmt_keeps_every_comment_where_it_was() {
+    big_stack(keeps_comments);
+}
+
+fn keeps_comments() {
+    let srcs = every_source();
+    assert!(srcs.len() > 400, "{}", srcs.len());
+    let (mut with, mut total, mut moved) = (0, 0, Vec::new());
+    for (name, src) in &srcs {
+        let m = parse(src).unwrap();
+        let canon = print_module(&m);
+        let hashes = hash_module(&m);
+        let texts = comment_texts(src);
+        with += usize::from(!texts.is_empty());
+        total += texts.len();
+        for w in [40, 100] {
+            let out = sspur_syntax::format_source_at(src, w).unwrap();
+            let m2 = parse(&out).unwrap_or_else(|e| panic!("{name} at {w}: {e:?}\n{out}"));
+            assert_eq!(print_module(&m2), canon, "{name} at {w}:\n{out}");
+            assert_eq!(hash_module(&m2), hashes, "{name} at {w}");
+            assert_eq!(comment_texts(&out), texts, "{name} at {w}: the comments changed\n{out}");
+            assert_eq!(sspur_syntax::format_source_at(&out, w).unwrap(), out, "{name} at {w}: not idempotent");
+            if w == 100 {
+                let (a, b) = (words_before(src), words_before(&out));
+                for (k, (x, y)) in a.iter().zip(&b).enumerate() {
+                    if x != y {
+                        let d = x.iter().zip(y).position(|(p, q)| p != q).unwrap_or(x.len().min(y.len()));
+                        moved.push(format!("{name}: {} ({} vs {} words; {:?} vs {:?})", texts[k], x.len(), y.len(), x.get(d), y.get(d)));
+                    }
+                }
+            }
+        }
+    }
+    assert!(with > 80 && total > 700, "{with} sources with {total} comments");
+    assert!(moved.is_empty(), "comments moved past code:\n{}", moved.join("\n"));
 }

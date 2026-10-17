@@ -1,4 +1,4 @@
-use crate::ast::Span;
+use crate::ast::{Expr, Span, StrPart};
 use crate::SyntaxError;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -6,7 +6,10 @@ pub enum Tok {
     Ident(String),
     Int(i64),
     Float(f64),
+    /// A string without interpolation, its escapes applied.
     Str(String),
+    /// A string with at least one `{expr}`: literal text and the expressions, in order.
+    Interp(Vec<StrPart>),
     Hash(String),
     Kw(&'static str),
     Sym(&'static str),
@@ -35,7 +38,25 @@ const SYMBOLS: &[&str] = &[
     ":", ".", "=", "<", ">", "+", "-", "*", "/", "%", "|", "!", "?", ";", "&", "@",
 ];
 
+/// A `//` comment: its span, without the line break, and whether it is alone on its line.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Comment {
+    pub span: Span,
+    pub own_line: bool,
+}
+
 pub fn lex(src: &str) -> Result<Vec<Token>, SyntaxError> {
+    lex_into(src, None)
+}
+
+/// The tokens and, in order, the comments, which `lex` skips.
+pub fn lex_comments(src: &str) -> Result<(Vec<Token>, Vec<Comment>), SyntaxError> {
+    let mut cs = Vec::new();
+    let toks = lex_into(src, Some(&mut cs))?;
+    Ok((toks, cs))
+}
+
+fn lex_into(src: &str, mut comments: Option<&mut Vec<Comment>>) -> Result<Vec<Token>, SyntaxError> {
     let bytes = src.as_bytes();
     let mut out = Vec::new();
     let mut i = 0;
@@ -57,6 +78,9 @@ pub fn lex(src: &str) -> Result<Vec<Token>, SyntaxError> {
             }
             if bytes[next..].starts_with(b"//") {
                 i = next + bytes[next..].iter().position(|&b| b == b'\n').unwrap_or(bytes.len() - next);
+                if let Some(cs) = comments.as_deref_mut() {
+                    cs.push(Comment { span: Span::new(next, i), own_line: true });
+                }
                 continue;
             }
             let base = stmt_ind.iter().rev().find(|(d, _)| *d == depth).map(|x| x.1);
@@ -95,8 +119,12 @@ pub fn lex(src: &str) -> Result<Vec<Token>, SyntaxError> {
         match c {
             b' ' | b'\t' | b'\r' => i += 1,
             b'/' if bytes.get(i + 1) == Some(&b'/') => {
+                let start = i;
                 while i < bytes.len() && bytes[i] != b'\n' {
                     i += 1;
+                }
+                if let Some(cs) = comments.as_deref_mut() {
+                    cs.push(Comment { span: Span::new(start, i), own_line: false });
                 }
             }
             b'\n' => {
@@ -104,8 +132,10 @@ pub fn lex(src: &str) -> Result<Vec<Token>, SyntaxError> {
                 at_line_start = true;
             }
             b'"' | b'\'' => {
-                let (s, end) = lex_string(src, i)?;
-                out.push(Token { tok: Tok::Str(s), span: Span::new(i, end) });
+                let lenient = matches!(out.last().map(|t: &Token| &t.tok), Some(Tok::Ident(w)) if w == "asm")
+                    || (out.len() >= 2 && matches!(&out[out.len() - 2].tok, Tok::Ident(w) if w == "ep"));
+                let (s, end) = lex_string(src, i, lenient)?;
+                out.push(Token { tok: s, span: Span::new(i, end) });
                 i = end;
             }
             b'#' => {
@@ -135,15 +165,21 @@ pub fn lex(src: &str) -> Result<Vec<Token>, SyntaxError> {
                 while i < bytes.len() && (bytes[i] == b'_' || bytes[i].is_ascii_alphanumeric()) {
                     i += 1;
                 }
-                if bytes[start].is_ascii_lowercase()
-                    && bytes.get(i) == Some(&b'.')
-                    && bytes.get(i + 1).is_some_and(u8::is_ascii_uppercase)
-                    && (start == 0 || bytes[start - 1] != b'.')
-                    && !KEYWORDS.contains(&&src[start..i])
-                {
-                    i += 1;
-                    while i < bytes.len() && (bytes[i] == b'_' || bytes[i].is_ascii_alphanumeric()) {
-                        i += 1;
+                // `pkg.Name` and `pkg.module.Name` are one name: a package's (or one of its
+                // public modules') type or constructor.
+                if bytes[start].is_ascii_lowercase() && (start == 0 || bytes[start - 1] != b'.') && !KEYWORDS.contains(&&src[start..i]) {
+                    let word = |mut j: usize| {
+                        while j < bytes.len() && (bytes[j] == b'_' || bytes[j].is_ascii_alphanumeric()) {
+                            j += 1;
+                        }
+                        j
+                    };
+                    let mut j = i;
+                    while bytes.get(j) == Some(&b'.') && bytes.get(j + 1).is_some_and(|c| c.is_ascii_lowercase()) {
+                        j = word(j + 1);
+                    }
+                    if bytes.get(j) == Some(&b'.') && bytes.get(j + 1).is_some_and(u8::is_ascii_uppercase) {
+                        i = word(j + 1);
                     }
                 }
                 let word = &src[start..i];
@@ -190,7 +226,7 @@ fn set_ind(stmt_ind: &mut Vec<(i32, u32)>, depth: i32, indent: u32) {
 }
 
 fn ends_operand(t: &Tok) -> bool {
-    matches!(t, Tok::Ident(_) | Tok::Int(_) | Tok::Float(_) | Tok::Str(_) | Tok::Hash(_) | Tok::Kw("true" | "false") | Tok::Sym(")" | "]" | "}" | "_" | "?"))
+    matches!(t, Tok::Ident(_) | Tok::Int(_) | Tok::Float(_) | Tok::Str(_) | Tok::Interp(_) | Tok::Hash(_) | Tok::Kw("true" | "false") | Tok::Sym(")" | "]" | "}" | "_" | "?"))
 }
 
 /// Whether the line starting at `rest` continues the line before it instead of starting a
@@ -251,46 +287,166 @@ fn measure_indent(bytes: &[u8], mut i: usize) -> (u32, usize) {
     (n, i)
 }
 
-fn lex_string(src: &str, start: usize) -> Result<(String, usize), SyntaxError> {
-    let mut out = String::new();
-    let quote = src[start..].chars().next().unwrap();
-    let mut chars = src[start + 1..].char_indices();
-    let mut skip_to = 0;
-    while let Some((off, ch)) = chars.next() {
-        let pos = start + 1 + off;
-        if pos < skip_to {
-            continue;
-        }
-        match ch {
-            '{' => match interp_end(src, pos) {
-                Some(end) => {
-                    // `"{xs.join(\" -> \")}"`: a string written with escaped quotes inside an
-                    // interpolation is the same string as `"{xs.join(" -> ")}"`.
-                    let inner = &src[pos..=end];
-                    let escaped_only = inner.contains("\\\"") && !inner.replace("\\\"", "").contains('"');
-                    out.push_str(&if escaped_only { inner.replace("\\\"", "\"") } else { inner.to_string() });
-                    skip_to = end + 1;
-                }
-                None => out.push_str("\\{"),
-            },
-            c if c == quote => return Ok((out, pos + 1)),
-            '\\' => match chars.next() {
-                Some((_, 'n')) => out.push('\n'),
-                Some((_, 't')) => out.push('\t'),
-                Some((_, 'r')) => out.push('\r'),
-                Some((_, '"')) => out.push('"'),
-                Some((_, '\\')) => out.push('\\'),
-                Some((_, '{')) => out.push_str("\\{"),
-                Some((_, c)) => {
-                    return Err(SyntaxError::new("E_LEX_ESCAPE", format!("unknown escape '\\{c}'"), Span::new(pos, pos + 2)));
-                }
-                None => break,
-            },
+/// One string literal starting at the quote at `start`, and the offset after its closing quote.
+/// A `{` starts an interpolation when its group `{...}` closes on the line and holds an
+/// expression that is not a lone number (`{3}`), nor a lone string ending where code could go
+/// on (`"{" or s == "}"`), and does not start with `{` (`{{x}}`). Otherwise the brace is text:
+/// when the group has an unescaped quote in it, the `{` alone (so `"{"` is a string even if
+/// another `}"` follows on the line), else the whole group, with its escapes applied. `\{` and `\}` are always braces. In `lenient`
+/// strings (`asm` templates, `ep` paths) only names interpolate.
+fn lex_string(src: &str, start: usize, lenient: bool) -> Result<(Tok, usize), SyntaxError> {
+    let quote = src.as_bytes()[start];
+    let mut parts = Vec::new();
+    let mut lit = String::new();
+    let mut i = start + 1;
+    while i < src.len() {
+        let c = src[i..].chars().next().unwrap();
+        match c {
             '\n' => break,
-            c => out.push(c),
+            _ if c as u32 == quote as u32 => {
+                let tok = if parts.is_empty() {
+                    Tok::Str(lit)
+                } else {
+                    if !lit.is_empty() {
+                        parts.push(StrPart::Lit(lit));
+                    }
+                    Tok::Interp(parts)
+                };
+                return Ok((tok, i + 1));
+            }
+            '\\' => i = escape(src, i, &mut lit, false)?,
+            '{' => match group(src, i, quote, lenient) {
+                Brace::Interp(e, end) => {
+                    if !lit.is_empty() {
+                        parts.push(StrPart::Lit(std::mem::take(&mut lit)));
+                    }
+                    parts.push(StrPart::Expr(e));
+                    i = end + 1;
+                }
+                Brace::Group(end) => {
+                    lit.push('{');
+                    let mut j = i + 1;
+                    while j <= end {
+                        if src.as_bytes()[j] == b'\\' {
+                            j = escape(src, j, &mut lit, true)?;
+                        } else {
+                            let ch = src[j..].chars().next().unwrap();
+                            lit.push(ch);
+                            j += ch.len_utf8();
+                        }
+                    }
+                    i = end + 1;
+                }
+                Brace::Text => {
+                    lit.push('{');
+                    i += 1;
+                }
+            },
+            c => {
+                lit.push(c);
+                i += c.len_utf8();
+            }
         }
     }
     Err(SyntaxError::new("E_LEX_STRING", "unterminated string".into(), Span::new(start, start + 1)))
+}
+
+/// The escape at `at` (a backslash) appended to `out`, and the offset after it. In a literal
+/// group an unknown escape stays as written, as the group's text.
+fn escape(src: &str, at: usize, out: &mut String, in_group: bool) -> Result<usize, SyntaxError> {
+    let Some(c) = src[at + 1..].chars().next() else { return Ok(at + 1) };
+    let ch = match c {
+        'n' => '\n',
+        't' => '\t',
+        'r' => '\r',
+        '"' | '\'' | '\\' | '{' | '}' => c,
+        'u' if src[at + 2..].starts_with('{') => {
+            let body = &src[at + 3..];
+            let n = body.find('}').unwrap_or(0);
+            let ch = (n <= 6).then(|| u32::from_str_radix(&body[..n], 16).ok()).flatten().and_then(char::from_u32);
+            let Some(ch) = ch.filter(|_| body.as_bytes()[..n].iter().all(u8::is_ascii_hexdigit)) else {
+                return Err(SyntaxError::new("E_LEX_ESCAPE", "a '\\u{...}' escape takes 1 to 6 hex digits of a Unicode scalar value, such as '\\u{e9}'".into(), Span::new(at, at + 4 + n)));
+            };
+            out.push(ch);
+            return Ok(at + 4 + n);
+        }
+        '\n' => return Err(SyntaxError::new("E_LEX_STRING", "unterminated string".into(), Span::new(at, at + 1))),
+        c if in_group => {
+            out.push('\\');
+            out.push(c);
+            return Ok(at + 1 + c.len_utf8());
+        }
+        c => return Err(SyntaxError::new("E_LEX_ESCAPE", format!("unknown escape '\\{c}'"), Span::new(at, at + 1 + c.len_utf8()))),
+    };
+    out.push(ch);
+    Ok(at + 2)
+}
+
+/// Whether `rest` can come after a string literal in code: the end of the line, a closing
+/// bracket, a comma, `.`, an operator strings have or `and`, `or`, `is`, `with`, `then`, `else`,
+/// `do`, `in`.
+pub(crate) fn code_follows(rest: &str) -> bool {
+    let r = rest.trim_start_matches([' ', '\t']);
+    let n = r.bytes().take_while(|c| c.is_ascii_alphanumeric() || *c == b'_').count();
+    match r.bytes().next() {
+        None => true,
+        Some(c) if n > 0 => !c.is_ascii_digit() && ["and", "or", "is", "with", "then", "else", "do", "in"].contains(&&r[..n]),
+        // Not `-`, `*`, `/` or `%`, which don't apply to strings: `"{"-7"}"` interpolates "-7".
+        Some(c) => b"\n\r)]},.+=!<>&|;:[".contains(&c),
+    }
+}
+
+enum Brace {
+    /// An interpolation, and the offset of its `}`.
+    Interp(Expr, usize),
+    /// A literal group ending at that `}`.
+    Group(usize),
+    /// Just the `{`.
+    Text,
+}
+
+/// What the `{` at `open` in a string quoted with `quote` starts (see `lex_string`).
+fn group(src: &str, open: usize, quote: u8, lenient: bool) -> Brace {
+    let Some(end) = interp_end(src, open) else { return Brace::Text };
+    let inner = &src[open + 1..end];
+    // `"{xs.join(\" -> \")}"`: a string written with escaped quotes inside an interpolation
+    // is the same string as `"{xs.join(" -> ")}"`.
+    let escaped_only = inner.contains("\\\"") && !inner.replace("\\\"", "").contains('"');
+    let code = if escaped_only { inner.replace("\\\"", "\"") } else { inner.to_string() };
+    let t = code.trim_start();
+    let quoted = {
+        let b = inner.as_bytes();
+        (0..b.len()).any(|k| b[k] == quote && (k == 0 || b[k - 1] != b'\\'))
+    };
+    let other = || if quoted { Brace::Text } else { Brace::Group(end) };
+    if t.is_empty() || t.starts_with('{') {
+        return other();
+    }
+    let Ok(toks) = lex(&code) else { return other() };
+    let toks: Vec<&Tok> = toks.iter().map(|t| &t.tok).filter(|t| !matches!(t, Tok::Newline(_) | Tok::Eof)).collect();
+    // `"{" or s == "}"`: read as text, the `{` ends its string where code can go on (`)`, `,`,
+    // an operator, `or`, the end of the line); `"{"x"}"` interpolates "x".
+    let lone = match toks.as_slice() {
+        [Tok::Int(_) | Tok::Float(_)] | [Tok::Sym("-"), Tok::Int(_) | Tok::Float(_)] => true,
+        [Tok::Str(_)] => {
+            let q = open + 1 + (inner.len() - inner.trim_start().len());
+            code_follows(&src[q + 1..])
+        }
+        _ => false,
+    };
+    if lone || (lenient && !matches!(toks.as_slice(), [Tok::Ident(_)])) {
+        return other();
+    }
+    match crate::parser::parse_expr(&code) {
+        Ok(mut e) => {
+            let base = (open + 1) as u32;
+            crate::visit::walk_expr_mut(&mut e, &mut |x| {
+                x.span = Span { start: x.span.start + base, end: x.span.end + base };
+            });
+            Brace::Interp(e, end)
+        }
+        Err(_) => other(),
+    }
 }
 
 fn interp_end(src: &str, open: usize) -> Option<usize> {
@@ -307,7 +463,7 @@ fn interp_end(src: &str, open: usize) -> Option<usize> {
                 }
             }
             b'"' | b'\'' if depth > 0 => {
-                let (_, end) = lex_string(src, i).ok()?;
+                let (_, end) = lex_string(src, i, false).ok()?;
                 i = end;
                 continue;
             }

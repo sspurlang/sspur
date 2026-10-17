@@ -472,7 +472,7 @@ fn program_cmd(cmd: &str, args: &Args) -> ExitCode {
         Err(d) => return fail_diags(&text, &label, &d, json),
     };
     if cmd == "fmt" {
-        let out = if loaded.pkgs.is_empty() { sspur_syntax::format_module(&loaded.module) } else { cwd_store().and_then(|s| s.head_root().map(|r| s.root_src(&r))).map(|t| sspur_syntax::parse(&t).ok().filter(|m| print_module(m) == t).map_or(t, |m| sspur_syntax::format_module(&m))).unwrap_or_default() };
+        let out = if loaded.pkgs.is_empty() { sspur_syntax::format_source(&loaded.src).unwrap_or_else(|_| sspur_syntax::format_module(&loaded.module)) } else { cwd_store().and_then(|s| s.head_root().map(|r| s.root_src(&r))).map(|t| sspur_syntax::parse(&t).ok().filter(|m| print_module(m) == t).map_or(t, |m| sspur_syntax::format_module(&m))).unwrap_or_default() };
         if args.has("--write") && label != "HEAD" {
             if let Err(e) = std::fs::write(&label, &out) {
                 eprintln!("cannot write {label}: {e}");

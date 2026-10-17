@@ -127,14 +127,18 @@ fn fields(fs: &[Field]) -> String {
 fn print_type_def(t: &TypeDef) -> String {
     let body = match &t.body {
         TypeBody::Record(fs) => fields(fs),
-        TypeBody::Sum(vs) => vs
-            .iter()
-            .map(|v| match &v.fields {
-                Some(fs) => format!("{}{}", v.name, fields(fs)),
-                None => v.name.clone(),
-            })
-            .collect::<Vec<_>>()
-            .join(" | "),
+        TypeBody::Sum(vs) => {
+            let items: Vec<String> = vs
+                .iter()
+                .map(|v| match &v.fields {
+                    Some(fs) => format!("{}{}", v.name, fields(fs)),
+                    None => v.name.clone(),
+                })
+                .collect();
+            // Broken, each variant goes on its own line after `|`.
+            let m = if items.len() > 1 { mark(layout::SUM) } else { "" };
+            format!("{m}{}", items.join(&format!(" {m}| ")))
+        }
         TypeBody::Alias(t, None) => ty(t),
         TypeBody::Alias(t, Some(r)) => format!("{} where {}", ty(t), expr(r, 0)),
         TypeBody::New(t) => format!("new {}", ty(t)),
@@ -271,6 +275,23 @@ pub fn ty(t: &Ty) -> String {
     }
 }
 
+/// String text as it is written between quotes: `{` as `\\{`, and characters that are hard to
+/// see or that the formatter uses itself as `\\u{...}`.
+fn escape_into(s: &mut String, l: &str) {
+    for c in l.chars() {
+        match c {
+            '"' => s.push_str("\\\""),
+            '\\' => s.push_str("\\\\"),
+            '\n' => s.push_str("\\n"),
+            '\t' => s.push_str("\\t"),
+            '\r' => s.push_str("\\r"),
+            '{' => s.push_str("\\{"),
+            c if (c as u32) < 0x20 || c == '\u{7f}' || ('\u{e000}'..='\u{e0ff}').contains(&c) => s.push_str(&format!("\\u{{{:x}}}", c as u32)),
+            c => s.push(c),
+        }
+    }
+}
+
 fn prec_of(e: &Expr) -> u8 {
     match &e.kind {
         ExprKind::Binary(op, ..) => op.prec(),
@@ -314,20 +335,14 @@ pub fn expr(e: &Expr, ind: usize) -> String {
             let was = layout::marking(false);
             for p in parts {
                 match p {
-                    StrPart::Lit(l) => {
-                        for c in l.chars() {
-                            match c {
-                                '"' => s.push_str("\\\""),
-                                '\\' => s.push_str("\\\\"),
-                                '\n' => s.push_str("\\n"),
-                                '\t' => s.push_str("\\t"),
-                                '\r' => s.push_str("\\r"),
-                                '{' => s.push_str("\\{"),
-                                c => s.push(c),
-                            }
-                        }
+                    StrPart::Lit(l) => escape_into(&mut s, l),
+                    StrPart::Expr(x) => {
+                        let t = expr(x, ind);
+                        // `{3}`, `{"a"}` and `{{a}}` would read as text (see the lexer).
+                        let lone = matches!(x.kind, ExprKind::Int(_) | ExprKind::Float(_))
+                            || (matches!(&x.kind, ExprKind::Str(p) if p.iter().all(|q| matches!(q, StrPart::Lit(_)))) && crate::lexer::code_follows(&t[t.find('"').map_or(0, |i| i + 1)..]));
+                        if lone || t.starts_with('{') { s.push_str(&format!("{{({t})}}")) } else { s.push_str(&format!("{{{t}}}")) }
                     }
-                    StrPart::Expr(x) => s.push_str(&format!("{{{}}}", expr(x, ind))),
                 }
             }
             s.push('"');
@@ -349,6 +364,7 @@ pub fn expr(e: &Expr, ind: usize) -> String {
             format!("mmio[{}]({}{rest})", ty(&targs[0]), expr(recv, ind))
         }
         ExprKind::Method { recv, name, targs, .. } if name == "#array" && targs.len() == 1 => format!("[{}; {}]", expr(recv, ind), ty(&targs[0])),
+        ExprKind::Method { recv, name, .. } if name == ASCRIBE => expr(recv, ind),
         ExprKind::Method { recv, name, targs, args } if name == "asm" && args.len() == 3 => {
             let tmpl = match &recv.kind {
                 ExprKind::Str(p) => p.iter().map(|x| if let StrPart::Lit(s) = x { s.as_str() } else { "" }).collect::<String>(),
@@ -471,7 +487,7 @@ pub fn expr(e: &Expr, ind: usize) -> String {
         ExprKind::Table(_) => "<rule table>".into(),
         ExprKind::With(base, ups) => {
             let items: Vec<String> = ups.iter().map(|(p, v)| format!("{} := {}", path(p, ind), expr(v, ind))).collect();
-            format!("{} with {}", operand(base, 1, ind), layout::updates(&items))
+            format!("{} with {}", operand(base, 5, ind), layout::updates(&items))
         }
     }
 }
@@ -590,20 +606,34 @@ fn list(xs: &[Expr], ind: usize) -> String {
 
 fn print_arms(arms: &[Arm], ind: usize) -> String {
     let mut s = String::new();
-    for a in arms {
+    let lead = format!("\n{}| ", pad(ind));
+    for (k, a) in arms.iter().enumerate() {
         s.push_str(&format!("\n{}| {}", pad(ind), pat(&a.pat)));
         if let Some(g) = &a.guard {
             s.push_str(&format!(" if {}{}", expr(g, ind), mark(layout::THEN)));
         }
-        s.push_str(&format!(" => {}", branch(&a.body, ind)));
+        let b = branch(&a.body, ind);
+        // A `match`, `catch` or `handle` whose arms would print where these are takes the arms
+        // below it; a block one level in ends before them.
+        if k + 1 < arms.len() && b.contains(&lead) {
+            s.push_str(&format!(" => do\n{}{}", pad(ind + 2), branch(&a.body, ind + 2)));
+        } else {
+            s.push_str(&format!(" => {b}"));
+        }
     }
     s
 }
 
 fn stmt(s: &Stmt, ind: usize) -> String {
     match s {
-        Stmt::Let(p, e) => format!("{} = {}", pat(p), expr(e, ind)),
-        Stmt::Var(n, e) => format!("var {} = {}", n, expr(e, ind)),
+        Stmt::Let(p, e) => match e.ascription() {
+            Some((v, t)) => format!("{}: {} = {}", pat(p), ty(t), expr(v, ind)),
+            None => format!("{} = {}", pat(p), expr(e, ind)),
+        },
+        Stmt::Var(n, e) => match e.ascription() {
+            Some((v, t)) => format!("var {n}: {} = {}", ty(t), expr(v, ind)),
+            None => format!("var {} = {}", n, expr(e, ind)),
+        },
         Stmt::Assign(n, e, _) => match &e.kind {
             ExprKind::With(base, ups) if matches!(&base.kind, ExprKind::Name(b) if b == n) && ups.len() == 1 && !ups[0].0.is_empty() => {
                 let mut p = n.clone();
@@ -663,12 +693,16 @@ pub fn pat(p: &Pat) -> String {
         Pat::Wild => "_".into(),
         Pat::Bind(n) => n.clone(),
         Pat::Int(n) => n.to_string(),
-        Pat::Str(s) => format!("{}{s:?}{}", mark(layout::STR_S), mark(layout::STR_E)),
+        Pat::Str(s) => {
+            let mut t = String::from("\"");
+            escape_into(&mut t, s);
+            format!("{}{t}\"{}", mark(layout::STR_S), mark(layout::STR_E))
+        }
         Pat::Bool(b) => b.to_string(),
-        Pat::Tuple(xs) => format!("({})", xs.iter().map(pat).collect::<Vec<_>>().join(", ")),
+        Pat::Tuple(xs) => format!("({})", layout::group(&xs.iter().map(pat).collect::<Vec<_>>())),
         Pat::Ctor { name, args: CtorArgs::None } => name.clone(),
         Pat::Ctor { name, args: CtorArgs::Positional(xs) } => {
-            format!("{}({})", name, xs.iter().map(pat).collect::<Vec<_>>().join(", "))
+            format!("{}({})", name, layout::group(&xs.iter().map(pat).collect::<Vec<_>>()))
         }
         Pat::Ctor { name, args: CtorArgs::Record(fs) } => {
             let items: Vec<String> = fs
@@ -678,7 +712,7 @@ pub fn pat(p: &Pat) -> String {
                     _ => format!("{}: {}", f, pat(p)),
                 })
                 .collect();
-            format!("{}{{{}}}", name, items.join(", "))
+            format!("{}{{{}}}", name, layout::group(&items))
         }
         Pat::Or(alts) => alts.iter().map(|a| match a {
             Pat::Or(_) => format!("({})", pat(a)),
@@ -690,7 +724,7 @@ pub fn pat(p: &Pat) -> String {
                 items.push(format!("..{}", r.as_deref().unwrap_or("")));
                 items.extend(tail.iter().map(pat));
             }
-            format!("[{}]", items.join(", "))
+            format!("[{}]", layout::group(&items))
         }
     }
 }

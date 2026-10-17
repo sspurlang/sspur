@@ -70,7 +70,25 @@ pub fn hints(a: &Analysis, opts: &Opts) -> Vec<Hint> {
 
 /// The hints with UTF-16 offsets, for the playground.
 pub fn hints_json(a: &Analysis, opts: &Opts) -> J {
-    J::Array(hints(a, opts).into_iter().map(|h| json!({ "at": u16_of(&a.src, h.at), "label": h.label, "kind": if h.kind == Kind::Type { "type" } else { "param" } })).collect())
+    // The hints are in order, so each offset is counted on from the one before.
+    let (mut byte, mut at) = (0, 0);
+    J::Array(
+        hints(a, opts)
+            .into_iter()
+            .map(|h| {
+                if h.at >= byte {
+                    at += u16_of(&a.src[byte..], h.at - byte);
+                    byte = h.at.min(a.src.len());
+                    while !a.src.is_char_boundary(byte) {
+                        byte -= 1;
+                    }
+                } else {
+                    (byte, at) = (h.at, u16_of(&a.src, h.at));
+                }
+                json!({ "at": at, "label": h.label, "kind": if h.kind == Kind::Type { "type" } else { "param" } })
+            })
+            .collect(),
+    )
 }
 
 struct W<'a> {
@@ -120,13 +138,14 @@ impl W<'_> {
                     }
                 }
             }
-            ExprKind::Call(f, args) if self.opts.params => {
+            // Only literal arguments get a name, so the names are looked up only for those calls.
+            ExprKind::Call(f, args) if self.opts.params && args.len() > 1 && args.iter().any(literal) => {
                 if let ExprKind::Name(n) = &f.kind {
                     let names = self.fn_params(n);
                     self.arg_hints(&names, args);
                 }
             }
-            ExprKind::Method { recv, name, args, .. } if self.opts.params => {
+            ExprKind::Method { recv, name, args, .. } if self.opts.params && args.len() > 1 && args.iter().any(literal) => {
                 let names = self.method_params(recv, name);
                 self.arg_hints(&names, args);
             }
@@ -141,6 +160,7 @@ impl W<'_> {
         match s {
             Stmt::Let(p, x) => {
                 if self.opts.types
+                    && x.ascription().is_none()
                     && !(matches!(p, Pat::Bind(_)) && obvious(x))
                     && let Some(eq) = eq_before(self.src(), x.span.start as usize)
                 {
@@ -151,6 +171,7 @@ impl W<'_> {
             }
             Stmt::Var(n, x) => {
                 if self.opts.types
+                    && x.ascription().is_none()
                     && !obvious(x)
                     && let Some(eq) = eq_before(self.src(), x.span.start as usize)
                     && let Some(at) = self.name_in(n, line_start(self.src(), eq), eq)

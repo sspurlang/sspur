@@ -439,3 +439,17 @@ fn effect_names_in_signatures_survive_linking() {
     w.pkg("bad", "bad", &[], "effect time() -> Int\n\nfn f() -> Int ! time\n= time()\n");
     assert!(w.err("bad", &["check", "lib.ssp"]).contains("E_DUPLICATE effect 'time' is built in"));
 }
+
+/// A public module's names also work qualified, `pkg.module.Name`, as a package's do.
+#[test]
+fn a_public_module_is_named_in_expressions_types_and_patterns() {
+    let w = Ws::new("pubmodq");
+    w.write("lib/sspur.toml", "[package]\nname = \"coins\"\nversion = \"0.1.0\"\n\n[deps]\nmodels = { path = \"models\", public = true }\n");
+    w.write("lib/lib.ssp", "use models.{Money}\n\npub fn twice(m: Money) -> Money\n= Money{cents: m.cents * 2}\n");
+    w.pkg("lib/models", "models", &[], "pub type Money = {cents: Int}\n\npub type Coin = Penny | Dime{n: Int}\n\npub fn of(c: Int) -> Money\n= Money{cents: c}\n");
+    let app = "fn total(m: coins.models.Money) -> Int\n= m.cents\n\nfn value(c: coins.models.Coin) -> Int\n= match c\n  | coins.models.Penny => 1\n  | coins.models.Dime{n} => 10 * n\n\nfn main() -> Unit ! log\n= do\n  m = coins.models.of(21)\n  r = coins.models.Money{cents: 2}\n  log(\"{total(coins.twice(m))} {r.cents} {value(coins.models.Penny) + value(coins.models.Dime{n: 2})}\")\n";
+    w.pkg("app", "app", &[("coins", "{ path = \"../lib\" }")], app);
+    for tier in [&["run", "--interp", "lib.ssp"][..], &["run", "lib.ssp"]] {
+        assert_eq!(w.ok("app", tier), "42 2 21", "{tier:?}");
+    }
+}

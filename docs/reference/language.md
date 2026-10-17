@@ -41,7 +41,7 @@ fn total(items: List[Item]) -> Int
   .sum
 ```
 
-A `|` at the start of a line still begins a match arm, a variant or a rule row, and `=`, `=>`, `do`, `then` and `else` at the end of a line still open an indented block. The canonical text that definitions are hashed and stored as keeps each statement on one line, so it doesn't depend on where the input was broken (ADR 0032). `sspur fmt` writes that text with lines over 100 columns broken (ADR 0040): an `if` chain with each `else` on its own line, a condition after each `and` or `or`, other operators and method chains when the pieces then fit, and otherwise lists, tuples, calls, records, parameter lists and `use` lists with one element per line, a trailing comma and the closing bracket on its own line; `with` updates go one per line after `with`. `if` blocks have `else` under the `if`. Strings are never broken, and `sspur fmt` drops comments.
+A `|` at the start of a line still begins a match arm, a variant or a rule row, and `=`, `=>`, `do`, `then` and `else` at the end of a line still open an indented block. The canonical text that definitions are hashed and stored as keeps each statement on one line, so it doesn't depend on where the input was broken (ADR 0032). `sspur fmt` writes that text with lines over 100 columns broken (ADR 0040): an `if` chain with each `else` on its own line, a condition after each `and` or `or`, other operators and method chains when the pieces then fit, and otherwise lists, tuples, calls, records, parameter lists and `use` lists with one element per line, a trailing comma and the closing bracket on its own line; `with` updates go one per line after `with`. `if` blocks have `else` under the `if`. Strings are never broken. Comments are kept, each next to the code it was written next to (ADR 0042): a comment on its own line stays on its own line before the same code, a comment after code stays after it, and a short list, call or record with a comment inside is broken so the comment can stay. They are not part of the canonical text or the hashes.
 
 ## Types
 
@@ -72,7 +72,7 @@ fn name[A, e](p: A, f: A -> A ! e) -> A ! e
 - The return type is required unless it's `Unit`. Uppercase type parameters are types; lowercase ones are effect rows.
 - The body is one expression, or `do` followed by an indented block. The value of the last statement is the result.
 - `x.f(a)` calls `f(x, a)`. User functions win when the first parameter type fits `x`; otherwise the builtin method is used. `x.f` with no parentheses is a field access if `x` has field `f`, otherwise a zero-argument method call.
-- Lambdas: `x => e`, `(a, b) => e`, `() => e`. A parameter may name its type, in parentheses: `(x: Int) => x + 1`, `(k: Str, v) => ...`; the type must agree with what the context expects, and is the only way to give it where nothing else does, as in `get = (k: Str) => ...`. A body of several statements is `do` and a block, as for a function, indented deeper than the line the lambda starts on; the last line is the value, and the closing `)` follows it (ADR 0028):
+- Lambdas: `x => e`, `(a, b) => e`, `() => e`, and `_` for a parameter the lambda ignores: `(0..n).map(_ => 0)`, `xs.fold(0, (n, _) => n + 1)`. `_` in the body of such a lambda can't be that parameter (`E_PARSE_LAMBDA`). A parameter may name its type, in parentheses: `(x: Int) => x + 1`, `(k: Str, v) => ...`; the type must agree with what the context expects, and is the only way to give it where nothing else does, as in `get = (k: Str) => ...`. A body of several statements is `do` and a block, as for a function, indented deeper than the line the lambda starts on; the last line is the value, and the closing `)` follows it (ADR 0028):
   ```
   ys = xs.map(x => do
     y = x * 2
@@ -139,8 +139,9 @@ test t = Circle{r: 1.0}.describe == "shape: 3.14" and Vec2{x: 1, y: 2} + Vec2{x:
 | Statement | Meaning |
 |---|---|
 | `x = e`, `(a, b) = e`, `Point{x, y} = e` | Immutable binding, with a pattern that can't fail |
+| `x: T = e`, `var x: T = e` | A binding with its type written out: `e` is checked against `T`, and the annotation is kept in the stored form. Useful where nothing else says the type, as for an empty list: `var seen: List[Int] = []` |
 | `p = e else b` | Guard: binds `p` for the rest of the block, or ends the block with the value `b` when `e` doesn't match: `some(u) = find(id) else raise NotFound{id}`, `[first, ..rest] = xs else 0`. A pattern that can fail without `else` is `E_REFUTABLE_LET`; one that can't fail with `else` warns `W_ARM_UNREACHABLE` |
-| `var x = e` | Mutable local |
+| `var x = e` | Mutable local (`var x: T = e` with a type) |
 | `x := e` | Assign to a `var`. Also allowed directly as an `if` branch or match arm body |
 | `for p in list` + indented body | Loop over a `List`, a range `a..b` (which excludes `b`), or a generator (see Generators) |
 | `while cond` + indented body | Loop while `cond` holds. Adds the `div` effect ("may not terminate"), which must be declared |
@@ -152,8 +153,27 @@ test t = Circle{r: 1.0}.describe == "shape: 3.14" and Vec2{x: 1, y: 2} + Vec2{x:
 
 ## Expressions
 
-- Literals: `42`, `-3`, `0xff`, `1_000`, `3.14`, `true`, `"text {expr} more"`, `[1, 2]`, `(a, b)`, `()`, `none`, `some(x)`, `ok(x)`, `err(e)`. Interpolation: `{expr}` inside a string inserts the value. The escapes are `\n`, `\r`, `\t`, `\"`, `\\` and `\{`. `\{` is a literal brace, and so is any `{...}` whose content is empty or is not a valid expression. For example, `"{a}"` interpolates `a`, while `"{}"` and `"([{"` are literal text. The escapes work inside literal braces too: `"{a \\ b}"` is `{a \ b}`, as `"\{a \\ b}"` is. Strings inside an interpolation can use plain or escaped quotes: `"{xs.join(" -> ")}"` and `"{xs.join(\" -> \")}"` are the same.
-- Operators, from lowest to highest precedence: `or`, `and`, `not`, `== != < <= > >=`, `..`, `+ -`, `* / %`, `**`, unary `-`. A pattern test `e is p` takes the whole expression before it (see below). `+` also concatenates `Str` and `List`. Integer overflow and division by zero trap.
+- Literals: `42`, `-3`, `0xff`, `1_000`, `3.14`, `true`, `"text {expr} more"`, `[1, 2]`, `(a, b)`, `()`, `none`, `some(x)`, `ok(x)`, `err(e)`. Strings are written in `"` or `'` and end on their line. The escapes are `\n`, `\r`, `\t`, `\"`, `\'`, `\\`, `\{`, `\}` and `\u{...}` with 1 to 6 hex digits of a Unicode scalar value (`"caf\u{e9}"`, `"\u{1F600}"`); any other is `E_LEX_ESCAPE`.
+- Interpolation: `{expr}` inside a string inserts the value, `"{name} is {age + 1}"`. A `{` starts one when its `{...}` closes on the line and holds an expression that is neither a lone literal nor starts with `{`. So `"{}"`, `"a{3}"`, `"^a{2,3}$"`, `"{{x}}"`, `".cal{display:grid}"` and `"{\"a\": 1}"` are text, with their escapes applied. A brace that is text and has a quote after it ends its string at that quote: `s.contains("{") or s.contains("}")` is two calls, and `"{" + x + "}"` joins three strings. Write `\{` for a brace that would otherwise interpolate, as in a route pattern: `"/users/\{id}"` is the text, `"/users/{id}"` inserts `id`. Strings inside an interpolation can use plain or escaped quotes: `"{xs.join(" -> ")}"` and `"{xs.join(\" -> \")}"` are the same. In `asm` templates and `ep` paths, `{name}` is the operand or path parameter it names, and other braces are text.
+- Operators, from loosest to tightest. Operators on one row are left-associative unless the row says otherwise:
+
+  | Operators | Notes |
+  |---|---|
+  | `x => e`, `if`, `match`, `catch`, `handle`, `do`, `raise e`, `return e` | Take everything after them |
+  | `e is p` | Takes the whole expression before it; `and` and `or` after the pattern take the rest (see below) |
+  | `or` | `\|\|` is accepted as `or` |
+  | `and` | `&&` is accepted as `and` |
+  | `not` | `not a == b` is `not (a == b)` |
+  | `== != < <= > >=` | |
+  | `with` | `p == q with a := 1` is `p == (q with a := 1)`; each update's value takes the rest of the expression, so `p with a := x + 1` adds before updating |
+  | `..` | `0..n + 1` is `0..(n + 1)` |
+  | `+ -` | `+` also concatenates `Str` and `List` |
+  | `* / %` | |
+  | `**` | Right-associative |
+  | unary `-`, `&`, `&mut` | |
+  | `.f`, `.m(a)`, `f(a)`, `xs[i]` | Postfix |
+
+  Integer overflow and division by zero trap.
 - `if c then a else b`. `else` may be omitted only when `a` is `Unit`. Use `then do` or `else do` followed by an indented block for multiple statements.
 - `e is p` is a `Bool`: whether `e` matches the pattern `p`, as in `xs.filter(_ is some(_))`, `ok = r is ok(_)` or `test t = parse("x") is err(_)`. `is` takes the whole expression before it, so `a and b is p` is `E_PARSE_IS`: test first (`b is p and a`) or parenthesize (`a and (b is p)`, `(a and b) is true`). After the pattern, `and` and `or` take everything after them, `e is p and rest`, and the names `p` binds are in scope in `rest` only; a test that binds a name nothing after it can use is `E_IS_BINDS`. The test can't be an operand without parentheses: `(e is p) == x`. A pattern that always matches warns `W_ARM_UNREACHABLE`, and one that can't match the value written there (`none is some(_)`) warns `W_NEVER_MATCHES`.
 - `if e is p then a else b` matches one pattern: the names `p` binds are in scope in `a`, and `and cond` after the pattern is a guard that can use them: `if o is some(v) and v > 0 then v else 0`. Further tests join with `and`, and `a` sees the names of all of them: `if a is Circle{r} and b is Circle{r: r2} then r + r2 else 0.0`. `else` may be omitted when `a` is `Unit`, and it chains: `else if e2 is q then`. `if let p = e then` is accepted and stored as `if e is p then`.
@@ -168,7 +188,7 @@ test t = Circle{r: 1.0}.describe == "shape: 3.14" and Vec2{x: 1, y: 2} + Vec2{x:
   | Rect{w: width, h} => width * h
   | _ => 0.0
   ```
-  Patterns: `_`, a name, literals, tuples `(a, 0)`, `Ctor`, `Ctor{field, field: pat}`, `some(p)`, `none`, `ok(p)`, `err(p)`, lists and or-patterns. A non-exhaustive match is a compile error (`E_NONEXHAUSTIVE` lists the missing cases as patterns, nested ones too: `some(none)`, `[_, _, ..]`), and an arm the arms above already cover is the warning `W_ARM_UNREACHABLE`.
+  Patterns: `_`, a name, literals, tuples `(a, 0)`, `Ctor`, `Ctor{field, field: pat}`, `some(p)`, `none`, `ok(p)`, `err(p)`, lists and or-patterns. A non-exhaustive match is a compile error (`E_NONEXHAUSTIVE` lists the missing cases as patterns, nested ones too: `some(none)`, `[_, _, ..]`), and an arm the arms above already cover is the warning `W_ARM_UNREACHABLE`. A `match` (or `catch`) in an arm's body takes the arms below it, up to the first one indented less than its own: with `| some(x) => match x` and the inner arms indented deeper, the next outer arm ends the inner match; with all arms at one column, they are all the inner match's.
 - Or-patterns: `| Circle{r} | Ring{r} => r` takes either alternative, and nests: `some(0 | 1)`, `(Red | Blue, _)`. Every alternative binds the same names with the same types (`E_PATTERN_OR_BINDS`).
 - List patterns: `[]`, `[x]`, `[x, y]`, `[x, ..rest]`, `[..init, last]`, `[first, .., last]`, `[_, ..]`. Elements are patterns (`[ok(x), ..]`, `[(a, b), ..rest]`, `["GET", path]`), and there is at most one `..`, which matches any number of elements and, when named, binds them as a `List` (a view of the list in native code, no copy). `[]` and `[x, ..rest]` together are exhaustive. `[x, ...rest]` and `[x, *rest]` are accepted and stored as `[x, ..rest]`.
 - `return e` exits the function early (not allowed inside lambdas, except as a lambda's last line, where it means `e`).
@@ -616,7 +636,7 @@ Global: `log(Str)`, `some(x)`, `ok(x)`, `err(e)`, `empty_map()`, `empty_set()`, 
 
 Notes: `first`, `last`, `get`, `min`, `max`, `find`, `index_of`, `find_index`, `binary_search` and `split_once` return `Opt`. `counts` returns `List[(A, Int)]` and `group_by` returns `List[(K, List[A])]`, both in first-seen order. `words` splits on non-alphanumeric characters. `sort_by` takes a key function (a tuple key sorts by several fields; negate a number to sort descending); `sort_with` takes a comparator returning a negative, zero or positive `Int`, and is stable. `binary_search` and `lower_bound` expect a sorted list. `Str` indexes (`index_of`, `pad_left` widths) count characters, and padding repeats `fill` to exactly `n` characters. `to_f64` accepts `[+-]digits[.digits][e[+-]digits]` after trimming. `scan` returns the accumulator after each element. `repeat(n)` is the list `n` times over, and traps when `n < 0`. `Opt.and_then(f)` and `Res.and_then(f)` chain a function that gives an `Opt`, or a `Res` with the same error type. `pop_front` and `pop_back` give `Opt[(x, rest)]`, and `List` doubles as a deque: `push`, `push_front`, `pop_front` and `pop_back` are amortized O(1) in native code. The interpreter appends in place (`push`, `concat`, `StrBuf.add`, `Map.put`, `Set.add`, `remove`) when the receiver is a local variable's last use, as in `xs := xs.push(x)` or a fold's accumulator, so building a list or string one item at a time is linear in both tiers (the playground, which keeps its code small, copies). Random numbers are pure: each call returns `(value, next_seed)`; `rand` is non-negative, `rand_int` is in `lo..hi` (traps unless `lo < hi`), `rand_f64` is in `[0, 1)`. Collections are immutable values. `Set` prints as `{1, 2}` and `Heap` as `heap[1, 2]`. `rand_normal` uses Box-Muller on two draws; `shuffle` is Fisher-Yates; all are pure in the seed.
 
-Format specs are Python's: `[[fill]align][sign][#][0][width][,][.precision][type]` with align `< > ^ =`, sign `+ - space`, `#` for `0x 0o 0b` prefixes, `,` thousands separators, and type `d x X o b` (`Int`), `f e E %` (`F64`; no type and no precision prints like `.str`), `s` (`Str`, where the precision truncates). Widths count characters. `"{n.format("08.3f")}"` works inside interpolation, but `{2}` inside a string literal is interpolation, so write regex counts as `"a\{2}"`. A bad spec traps.
+Format specs are Python's: `[[fill]align][sign][#][0][width][,][.precision][type]` with align `< > ^ =`, sign `+ - space`, `#` for `0x 0o 0b` prefixes, `,` thousands separators, and type `d x X o b` (`Int`), `f e E %` (`F64`; no type and no precision prints like `.str`), `s` (`Str`, where the precision truncates). Widths count characters. `"{n.format("08.3f")}"` works inside interpolation, and a lone number in braces is text, so regex counts need no escape: `"a{2}"`, `"a{2,4}"`. A bad spec traps.
 
 `range(a, b, step)` pipelines (`.map`, `.filter`, `.sum`, `.len`) and `for x in range(...)` run natively without building the list; `for` loops over ranges are lazy in both tiers.
 

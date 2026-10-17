@@ -11,7 +11,11 @@ pub fn parse(src: &str) -> PResult<Module> {
 /// Like `parse`, and also returns one note per foreign spelling the parser accepted
 /// (`&&`, `elif`, `let`, ...); the module holds the canonical form.
 pub fn parse_noted(src: &str) -> PResult<(Module, Vec<String>)> {
-    let toks = lex(src)?;
+    parse_tokens(lex(src)?)
+}
+
+/// `parse_noted` of tokens already lexed.
+pub(crate) fn parse_tokens(toks: Vec<Token>) -> PResult<(Module, Vec<String>)> {
     let mut p = Parser::new(toks);
     let mut m = p.module()?;
     normalize(&mut m);
@@ -137,7 +141,7 @@ impl Parser {
             Tok::Ident(s) => format!("'{s}'"),
             Tok::Int(n) => format!("'{n}'"),
             Tok::Float(n) => format!("'{n}'"),
-            Tok::Str(_) => "string".into(),
+            Tok::Str(_) | Tok::Interp(_) => "string".into(),
             Tok::Hash(h) => format!("'#{h}'"),
             Tok::Kw(k) => format!("'{k}'"),
             Tok::Sym(s) => format!("'{s}'"),
@@ -296,7 +300,7 @@ impl Parser {
     fn use_def(&mut self) -> PResult<Def> {
         let start = self.bump().span;
         if let Tok::Ident(q) = self.peek().clone()
-            && let Some((p, n)) = q.split_once('.') {
+            && let Some((p, n)) = q.rsplit_once('.') {
                 return Err(SyntaxError::new("E_PARSE_USE", format!("write 'use {p}' or 'use {p}.{{{n}}}'"), self.span()));
             }
         let mut pkg = self.expect_ident()?;
@@ -422,7 +426,7 @@ impl Parser {
             let es = self.span();
             self.bump();
             let method = if self.eat_kw("post") { "post".to_string() } else { self.expect_ident()? };
-            let Tok::Str(path) = self.peek().clone() else {
+            let Some(path) = raw_text(self.peek()) else {
                 return self.err("E_PARSE_EP", format!("expected a path string after 'ep {method}', found {}", self.describe()));
             };
             self.bump();
@@ -520,6 +524,15 @@ impl Parser {
         }
         self.expect_sym("]")?;
         Ok(out)
+    }
+
+    /// A `pre` or `post` condition: `_` in it is a placeholder lambda, as in any call argument.
+    fn clause(&mut self) -> PResult<Expr> {
+        let saved = self.in_refine;
+        self.in_refine = false;
+        let e = self.binary(1);
+        self.in_refine = saved;
+        e
     }
 
     fn refine_expr(&mut self) -> PResult<Expr> {
@@ -797,7 +810,7 @@ impl Parser {
         for key in ["from", "as"] {
             if matches!(self.peek(), Tok::Ident(w) if w == key) {
                 self.bump();
-                let Tok::Str(v) = self.peek().clone() else { return self.err("E_PARSE_EXTERN", format!("expected a string after '{key}'")) };
+                let Some(v) = raw_text(self.peek()) else { return self.err("E_PARSE_EXTERN", format!("expected a string after '{key}'")) };
                 self.bump();
                 if key == "from" { ext.lib = Some(v) } else { ext.symbol = v }
             }
@@ -869,15 +882,14 @@ impl Parser {
         let mut trusted = None;
         let mut interrupt = None;
         loop {
-            let unsafe_ahead = |p: &Self, i: usize| matches!(p.peek_at(i), Tok::Ident(u) if u == "unsafe") && matches!(p.peek_at(i + 1), Tok::Str(_));
+            let unsafe_ahead = |p: &Self, i: usize| matches!(p.peek_at(i), Tok::Ident(u) if u == "unsafe") && matches!(p.peek_at(i + 1), Tok::Str(_) | Tok::Interp(_));
             let irq_ahead = |p: &Self, i: usize| matches!(p.peek_at(i), Tok::Ident(u) if u == "interrupt") && matches!(p.peek_at(i + 1), Tok::Int(_) | Tok::Ident(_));
             if self.newline_then(|t| matches!(t, Tok::Ident(w) if matches!(w.as_str(), "pre" | "post" | "ex"))).is_some() || (matches!(self.peek(), Tok::Newline(_)) && (unsafe_ahead(self, 1) || irq_ahead(self, 1))) {
                 self.bump();
             }
             if unsafe_ahead(self, 0) {
                 self.bump();
-                let Tok::Str(r) = self.bump().tok else { unreachable!() };
-                trusted = Some(r);
+                trusted = raw_text(&self.bump().tok);
             } else if irq_ahead(self, 0) {
                 self.bump();
                 interrupt = Some(match self.bump().tok {
@@ -886,9 +898,9 @@ impl Parser {
                     _ => unreachable!(),
                 });
             } else if self.eat_kw("pre") {
-                pres.push(self.refine_expr()?);
+                pres.push(self.clause()?);
             } else if self.eat_kw("post") {
-                posts.push(self.refine_expr()?);
+                posts.push(self.clause()?);
             } else if self.eat_kw("ex") {
                 examples.push(self.binary(1)?);
             } else {
@@ -914,7 +926,7 @@ impl Parser {
 
     fn lambda_ahead(&self) -> bool {
         match self.peek() {
-            Tok::Ident(_) => matches!(self.peek_at(1), Tok::Sym("=>")),
+            Tok::Ident(_) | Tok::Sym("_") => matches!(self.peek_at(1), Tok::Sym("=>")),
             Tok::Sym("(") => {
                 if matches!((self.peek_at(1), self.peek_at(2)), (Tok::Sym(")"), Tok::Sym("=>"))) {
                     return true;
@@ -922,7 +934,7 @@ impl Parser {
                 let mut i = 1;
                 loop {
                     match self.peek_at(i) {
-                        Tok::Ident(_) => {}
+                        Tok::Ident(_) | Tok::Sym("_") => {}
                         _ => return false,
                     }
                     match self.peek_at(i + 1) {
@@ -975,14 +987,14 @@ impl Parser {
                 tys = ts;
             } else if self.eat_sym("(") {
                 while !self.is_sym(")") {
-                    params.push(self.expect_ident()?);
+                    params.push(self.lambda_param()?);
                     if !self.eat_sym(",") {
                         break;
                     }
                 }
                 self.expect_sym(")")?;
             } else {
-                params.push(self.expect_ident()?);
+                params.push(self.lambda_param()?);
             }
             self.expect_sym("=>")?;
             let mut body = if self.is_sym("{") && matches!(self.peek_at(1), Tok::Newline(_)) {
@@ -996,6 +1008,9 @@ impl Parser {
             };
             if tail_return(&mut body) {
                 self.note("return e at the end of a lambda -> e");
+            }
+            if params.iter().any(|p| p == "_") && free_placeholder(&body) {
+                return Err(SyntaxError::new("E_PARSE_LAMBDA", "'_ =>' ignores its argument, so '_' in the body can't be it; name the argument: 'x => ...'".into(), body.span));
             }
             return Ok(Expr::new(ExprKind::Lambda { params, body: Box::new(body), implicit: false, tys }, start.to(self.prev_span())));
         }
@@ -1051,41 +1066,53 @@ impl Parser {
                 if matches!(self.peek(), Tok::Ident(w) if w == "is") {
                     return self.is_test(base, save, start);
                 }
-                if !self.is_kw("with") {
-                    return Ok(base);
-                }
-                self.bump();
-                let mut updates = Vec::new();
-                loop {
-                    let first = self.expect_ident()?;
-                    let mut path = vec![PathSeg::Field(first)];
-                    loop {
-                        if self.eat_sym(".") {
-                            path.push(PathSeg::Field(self.expect_ident()?));
-                        } else if self.eat_sym("[") {
-                            let i = self.expr()?;
-                            self.expect_sym("]")?;
-                            path.push(PathSeg::Index(i));
-                        } else {
-                            break;
-                        }
-                    }
-                    self.expect_sym(":=")?;
-                    let value = self.expr()?;
-                    updates.push((path, value));
-                    if !(self.is_sym(",") && self.path_assign_ahead(1)) {
-                        break;
-                    }
-                    self.bump();
-                }
-                Ok(Expr::new(ExprKind::With(Box::new(base), updates), start.to(self.prev_span())))
+                Ok(base)
             }
         }
     }
 
+    /// `base with a := 1, b.c := 2`: `with` binds tighter than comparisons, so
+    /// `p == q with a := 1` compares `p` with the updated `q`.
+    fn with_updates(&mut self, base: Expr) -> PResult<Expr> {
+        let start = base.span;
+        self.bump();
+        let mut updates = Vec::new();
+        loop {
+            let first = self.expect_ident()?;
+            let mut path = vec![PathSeg::Field(first)];
+            loop {
+                if self.eat_sym(".") {
+                    path.push(PathSeg::Field(self.expect_ident()?));
+                } else if self.eat_sym("[") {
+                    let i = self.expr()?;
+                    self.expect_sym("]")?;
+                    path.push(PathSeg::Index(i));
+                } else {
+                    break;
+                }
+            }
+            self.expect_sym(":=")?;
+            let value = self.expr()?;
+            updates.push((path, value));
+            if !(self.is_sym(",") && self.path_assign_ahead(1)) {
+                break;
+            }
+            self.bump();
+        }
+        Ok(Expr::new(ExprKind::With(Box::new(base), updates), start.to(self.prev_span())))
+    }
+
     /// The condition after `if`: an expression, or `e is p` / `e is p and rest` (and the
     /// foreign `let p = e`).
-    fn if_cond(&mut self) -> PResult<IfCond> {
+/// A lambda's parameter: a name, or `_` for one it ignores.
+    fn lambda_param(&mut self) -> PResult<String> {
+        if self.eat_sym("_") {
+            return Ok("_".into());
+        }
+        self.expect_ident()
+    }
+
+        fn if_cond(&mut self) -> PResult<IfCond> {
         if matches!(self.peek(), Tok::Ident(w) if w == "let") && matches!(self.peek_at(1), Tok::Ident(_) | Tok::Int(_) | Tok::Str(_) | Tok::Kw("true" | "false") | Tok::Sym("(" | "[" | "_" | "-")) {
             self.bump();
             let p = self.pat()?;
@@ -1341,11 +1368,15 @@ impl Parser {
 
     fn arms(&mut self, indent: u32) -> PResult<Vec<Arm>> {
         let mut arms = Vec::new();
+        // A `match` in an arm, with its own arms indented past the outer ones, ends at the first
+        // arm to the left of its own.
+        let mut col = None;
         loop {
             if let Some(c) = self.newline_then(|t| matches!(t, Tok::Sym("|"))) {
-                if c < indent {
+                if c < indent || col.is_some_and(|k| c < k) {
                     break;
                 }
+                col.get_or_insert(c);
                 self.line_indent = c;
                 self.bump();
             }
@@ -1493,8 +1524,10 @@ impl Parser {
                     self.bump();
                     self.note("let mut x = e -> var x = e");
                     let name = self.expect_ident()?;
+                    let ann = if self.eat_sym(":") { Some(self.ty()?) } else { None };
                     self.expect_sym("=")?;
-                    return Ok(vec![Stmt::Var(name, self.expr()?)]);
+                    let v = self.expr()?;
+                    return Ok(vec![Stmt::Var(name, match ann { Some(t) => v.ascribed(t), None => v })]);
                 }
                 self.note("let x = e -> x = e");
             }
@@ -1532,20 +1565,19 @@ impl Parser {
                 return Ok(out);
             }
             let name = self.expect_ident()?;
-            if self.eat_sym(":") {
-                self.ty()?;
-                self.note("var x: T = e -> var x = e");
-            }
+            let ann = if self.eat_sym(":") { Some(self.ty()?) } else { None };
             self.expect_sym("=")?;
-            return Ok(vec![Stmt::Var(name, self.expr()?)]);
+            let v = self.expr()?;
+            return Ok(vec![Stmt::Var(name, match ann { Some(t) => v.ascribed(t), None => v })]);
         }
         if let (Tok::Ident(_), Tok::Sym(":")) = (self.peek().clone(), self.peek_at(1)) {
             let saved = self.pos;
             let name = self.expect_ident()?;
             self.bump();
-            if self.ty().is_ok() && self.eat_sym("=") {
-                self.note("x: T = e -> x = e");
-                return Ok(vec![Stmt::Let(Pat::Bind(name), self.expr()?)]);
+            if let Ok(t) = self.ty()
+                && self.eat_sym("=")
+            {
+                return Ok(vec![Stmt::Let(Pat::Bind(name), self.expr()?.ascribed(t))]);
             }
             self.pos = saved;
         }
@@ -1675,6 +1707,7 @@ impl Parser {
                 self.bump();
                 Ok(Pat::Str(s))
             }
+            Tok::Interp(_) => self.err("E_PARSE_PATTERN", "a string pattern can't interpolate; write '\\{' for a literal brace"),
             Tok::Kw("true") => {
                 self.bump();
                 Ok(Pat::Bool(true))
@@ -1761,7 +1794,11 @@ impl Parser {
 
     fn binary(&mut self, min: u8) -> PResult<Expr> {
         let mut lhs = self.unary()?;
+        let mut tight = true;
         loop {
+            if self.is_kw("with") && min <= 5 && tight {
+                return self.with_updates(lhs);
+            }
             if self.is_sym("..") && min <= 5 {
                 self.bump();
                 let rhs = self.binary(6)?;
@@ -1779,6 +1816,7 @@ impl Parser {
                 self.note(if op == BinOp::And { "&& -> and" } else { "|| -> or" });
             }
             self.bump();
+            tight = prec >= 5;
             let next_min = if op == BinOp::Pow { prec } else { prec + 1 };
             let rhs = self.binary(next_min)?;
             let span = lhs.span.to(rhs.span);
@@ -1910,9 +1948,13 @@ impl Parser {
 
     fn asm(&mut self, start: Span) -> PResult<Expr> {
         let tspan = self.span();
-        let Tok::Str(raw) = self.bump().tok else { unreachable!() };
+        let parts = match self.bump().tok {
+            Tok::Interp(p) => p,
+            Tok::Str(s) => vec![StrPart::Lit(s)],
+            _ => unreachable!(),
+        };
         let mut tmpl = String::new();
-        for part in self.interp(&raw, tspan)? {
+        for part in parts {
             match part {
                 StrPart::Lit(s) => tmpl.push_str(&s),
                 StrPart::Expr(Expr { kind: ExprKind::Name(n), .. }) => tmpl.push_str(&format!("{{{n}}}")),
@@ -1976,7 +2018,11 @@ impl Parser {
             }
             Tok::Str(s) => {
                 self.bump();
-                ExprKind::Str(self.interp(&s, start)?)
+                ExprKind::Str(vec![StrPart::Lit(s)])
+            }
+            Tok::Interp(parts) => {
+                self.bump();
+                ExprKind::Str(parts)
             }
             Tok::Kw("true") => {
                 self.bump();
@@ -2006,7 +2052,7 @@ impl Parser {
                 ExprKind::Par(self.args()?)
             }
             Tok::Kw("if" | "match" | "catch" | "handle" | "do" | "raise" | "return") => return self.expr(),
-            Tok::Ident(name) if name == "asm" && matches!(self.peek_at(1), Tok::Str(_)) => {
+            Tok::Ident(name) if name == "asm" && matches!(self.peek_at(1), Tok::Str(_) | Tok::Interp(_)) => {
                 self.bump();
                 return self.asm(start);
             }
@@ -2015,10 +2061,18 @@ impl Parser {
                 if is_upper(&name) && self.is_sym("{") {
                     let fields = self.record_fields()?;
                     ExprKind::Record { ctor: Some(name), fields }
-                } else if let Some((p, f)) = name.split_once('.') {
-                    // `x.UPPER` is a field access; the resolver turns `pkg.Name` into the package's name.
-                    let ps = Span::new(start.start as usize, start.start as usize + p.len());
-                    ExprKind::Field(Box::new(Expr::new(ExprKind::Name(p.to_string()), ps)), f.to_string())
+                } else if let Some((p, f)) = name.rsplit_once('.') {
+                    // `x.UPPER` is a field access; the resolver turns `pkg.Name` and
+                    // `pkg.module.Name` into the package's name.
+                    let mut segs = p.split('.');
+                    let first = segs.next().unwrap_or_default();
+                    let mut end = start.start as usize + first.len();
+                    let mut x = Expr::new(ExprKind::Name(first.to_string()), Span::new(start.start as usize, end));
+                    for seg in segs {
+                        end += 1 + seg.len();
+                        x = Expr::new(ExprKind::Field(Box::new(x), seg.to_string()), Span::new(start.start as usize, end));
+                    }
+                    ExprKind::Field(Box::new(x), f.to_string())
                 } else {
                     ExprKind::Name(name)
                 }
@@ -2085,91 +2139,33 @@ impl Parser {
         self.expect_sym("}")?;
         Ok(out)
     }
-
-    fn interp(&self, s: &str, span: Span) -> PResult<Vec<StrPart>> {
-        let mut parts = Vec::new();
-        let mut lit = String::new();
-        let mut rest = s;
-        while let Some(i) = rest.find(['{', '\\']) {
-            lit.push_str(&rest[..i]);
-            if rest[i..].starts_with("\\{") {
-                lit.push('{');
-                rest = &rest[i + 2..];
-                continue;
-            }
-            if rest.as_bytes()[i] == b'\\' {
-                lit.push('\\');
-                rest = &rest[i + 1..];
-                continue;
-            }
-            let mut depth = 0;
-            let close = rest[i..].char_indices().find_map(|(j, c)| {
-                match c {
-                    '{' => depth += 1,
-                    '}' => {
-                        depth -= 1;
-                        if depth == 0 {
-                            return Some(j);
-                        }
-                    }
-                    _ => {}
-                }
-                None
-            });
-            let Some(close) = close else {
-                return Err(SyntaxError::new("E_LEX_STRING", "unclosed '{' in string".into(), span));
-            };
-            let inner = &rest[i + 1..i + close];
-            let parsed = if inner.trim().is_empty() { None } else { parse_expr(inner).ok() };
-            let Some(mut e) = parsed else {
-                // Literal braces: the lexer kept their text raw, so their escapes apply here.
-                lit.push_str(&unescape(&rest[i..=i + close]));
-                rest = &rest[i + close + 1..];
-                continue;
-            };
-            let base = span.start + 2 + (s.len() - rest.len() + i) as u32;
-            crate::visit::walk_expr_mut(&mut e, &mut |x| {
-                x.span = Span { start: x.span.start + base, end: x.span.end + base };
-            });
-            if !lit.is_empty() {
-                parts.push(StrPart::Lit(std::mem::take(&mut lit)));
-            }
-            parts.push(StrPart::Expr(e));
-            rest = &rest[i + close + 1..];
-        }
-        lit.push_str(rest);
-        if !lit.is_empty() || parts.is_empty() {
-            parts.push(StrPart::Lit(lit));
-        }
-        Ok(parts)
-    }
 }
 
-fn unescape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut cs = s.chars();
-    while let Some(c) = cs.next() {
-        if c != '\\' {
-            out.push(c);
-            continue;
-        }
-        match cs.next() {
-            Some('n') => out.push('\n'),
-            Some('t') => out.push('\t'),
-            Some('r') => out.push('\r'),
-            Some(c @ ('"' | '\\' | '{')) => out.push(c),
-            Some(c) => {
-                out.push('\\');
-                out.push(c);
-            }
-            None => out.push('\\'),
-        }
+/// The text of a string token as written between its quotes, interpolations included: what a
+/// path or a symbol name means.
+fn raw_text(t: &Tok) -> Option<String> {
+    match t {
+        Tok::Str(s) => Some(s.clone()),
+        Tok::Interp(parts) => Some(parts.iter().map(|p| match p {
+            StrPart::Lit(s) => s.clone(),
+            StrPart::Expr(e) => format!("{{{}}}", crate::printer::expr(e, 0)),
+        }).collect()),
+        _ => None,
     }
-    out
 }
 
 fn pat_binds(p: &Pat, out: &mut Vec<String>) {
     p.binds(out)
+}
+
+/// Whether `e` has a `_` that no implicit lambda inside it binds.
+fn free_placeholder(e: &Expr) -> bool {
+    let mut found = false;
+    crate::visit::walk_expr(e, &mut |x| {
+        found |= matches!(x.kind, ExprKind::Placeholder);
+        !matches!(x.kind, ExprKind::Lambda { implicit: true, .. })
+    });
+    found
 }
 
 pub fn has_placeholder(e: &Expr) -> bool {

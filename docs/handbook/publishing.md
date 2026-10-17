@@ -99,7 +99,7 @@ The package's API is what the root module exports. A module's `pub` definitions 
 {{#include ../snippets/handbook/publish/text/lib.ssp}}
 ```
 
-A module can also be part of the API itself: mark it `public = true` in the root's `sspur.toml`, `models = { path = "models", public = true }`, and dependents import its `pub` definitions with `use pkg.models.{Doc, parse}`. The names are imported, not qualified: `pkg.models.Doc` in an expression is not supported yet, so write the `use`. A module that isn't public stays private to the package (`E_PKG_UNKNOWN` says how to make it public), and older clients, which don't read `public`, build the package as before but can't import the module.
+A module can also be part of the API itself: mark it `public = true` in the root's `sspur.toml`, `models = { path = "models", public = true }`, and dependents import its `pub` definitions with `use pkg.models.{Doc, parse}`. Or name them qualified, as a package's own names: `pkg.models.Doc{title: "x"}`, `d: pkg.models.Doc`, `pkg.models.parse(s)` and `| pkg.models.Draft => ...` work without the `use`. A module that isn't public stays private to the package (`E_PKG_UNKNOWN` says how to make it public), and older clients, which don't read `public`, build the package as before but can't import the module.
 
 So the semver check compares the root's exports and those of its public modules, named `models.Doc`, and the site's API docs list them; each module is tested on its own:
 
@@ -127,7 +127,7 @@ When something fails, the pull request stays open with each failure at its file 
 
 The [standards](https://github.com/sspurlang/sspur-packages/blob/main/CONTRIBUTING.md) list all 37 checks with their reasons and fixes. In short:
 
-- the source parses, typechecks with no warnings, is formatted the way `sspur fmt` prints it (comments aside), and its tests pass natively and in the interpreter;
+- the source parses, typechecks with no warnings, is formatted the way `sspur fmt` prints it (which keeps comments), and its tests pass natively and in the interpreter;
 - the version is new and matches the API change: removing or changing a public signature needs a new major version (a new minor version in 0.x), adding one a new minor version;
 - a capability effect the previous version didn't have (`net`, `fs`, `proc`, `env`, `io`, `db`, `ffi`, `unsafe`, `dev`) is acknowledged in the request, with `sspur publish --ack net` or the request's Effects field;
 - the name follows the rules and isn't reserved; one too close to an existing name gets a warning;

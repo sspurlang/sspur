@@ -113,7 +113,9 @@ fn foreign_spellings_get_exact_hints() {
     assert_eq!(hint("fn f(n: Int) -> Str\n= \"n=\" + n"), "convert with '.str', or interpolate: \"n={n}\"");
     assert_eq!(hint("fn f(n: Int)\n= n + 1"), "declare the return type: 'fn f(..) -> Int'");
     assert_eq!(hint("type E = A{x: Int} | B{y: Int}\nfn f(e: E) -> Int\n= match e\n  | A{x} => x"), "add | B => ?");
-    assert!(hint("fn f(e: Opt[Int], b: Bool) -> Int\n= match e\n  | some(x) => match b\n    | true => x\n    | false => 0\n  | none => 1").contains("helper fn"));
+    assert!(hint("fn f(e: Opt[Int], b: Bool) -> Int\n= match e\n| some(x) => match b\n| true => x\n| false => 0\n| none => 1").contains("indent its arms deeper"));
+    // Arms indented deeper than the outer ones end at the next outer arm.
+    assert!(codes("fn f(e: Opt[Int], b: Bool) -> Int\n= match e\n  | some(x) => match b\n    | true => x\n    | false => 0\n  | none => 1").is_empty());
 }
 
 #[test]
@@ -473,4 +475,14 @@ fn secrets_in_newtypes_compare_only_through_an_impl() {
     assert_eq!(codes(&format!("{base}fn f(a: KB, b: KB) -> Bool\n= a == b")), vec!["E_SECRET_COMPARE"]);
     let with_impl = format!("{base}impl Eq for KB\n  fn eq(a: KB, b: KB) -> Bool\n  = a.raw.check(x => b.raw.check(y => crypto.equal(x, y)))\nfn f(a: KB, b: KB) -> Bool\n= a == b and some(a) == some(b) and [a] == [b]");
     assert!(codes(&with_impl).is_empty(), "{:?}", diags(&with_impl));
+}
+
+/// `x: T = e` checks `e` against `T`, and the annotation gives an empty list its element type.
+#[test]
+fn binding_annotations_are_checked() {
+    assert_eq!(codes("fn f() -> Int\n= do\n  s: Str = 1\n  0\n"), vec!["E_TYPE_MISMATCH"]);
+    assert_eq!(codes("fn f() -> Int\n= do\n  var xs: List[Str] = []\n  xs := xs.push(1)\n  0\n"), vec!["E_TYPE_MISMATCH"]);
+    assert!(codes("fn f() -> Int\n= do\n  var xs: List[Int] = []\n  o: Opt[Str] = none\n  xs.len + o.map(s => s.len).or(0)\n").is_empty());
+    let out = check(&parse("fn f() -> Int\n= do\n  xs: List[Int] = []\n  xs.len\n").unwrap());
+    assert!(out.diags.is_empty() && out.ascribed, "{:?}", out.diags);
 }

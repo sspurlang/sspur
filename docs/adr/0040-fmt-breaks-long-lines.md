@@ -43,6 +43,6 @@ The playground's WebAssembly is 993,474 bytes gzipped, 3,418 smaller than before
 
 ## Not done
 
-- Comments: `sspur fmt` still drops them, so the playground's Reformat does too.
-- A `catch` with arms in the `else` of an `if` inside a match arm prints its arms where the outer match's are, so the canonical text of corpus program t46 doesn't read back as the same program. That is older than this ADR and changing it would change canonical text; it is pinned by the test.
+- Comments: `sspur fmt` still drops them, so the playground's Reformat does too. Done in ADR 0042.
+- A `catch` with arms in the `else` of an `if` inside a match arm prints its arms where the outer match's are, so the canonical text of corpus program t46 doesn't read back as the same program. That is older than this ADR and changing it would change canonical text; it is pinned by the test. Fixed in ADR 0042.
 - A width setting. One width keeps every formatted file the same on every machine.

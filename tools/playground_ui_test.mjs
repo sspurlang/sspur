@@ -95,7 +95,14 @@ async function desktop(page, name, mod) {
   await settle(page, async () => (await ed.text(page)) !== TWO);
   expect((await ed.text(page)) === "fn a(x: Int) -> Int = x+1\n\nfn b(x: Int) -> Int\n= x * 2\n\ntest t = a(1)==2\n", `${name}: a selection reformats the definitions it touches`, await ed.text(page));
 
-  // Code that doesn't parse is left alone, and the reason is shown where it is.
+  // Comments stay where they are, and a short list with one inside is broken around it (ADR 0042).
+  const NOTED = "// The pair.\nfn f(x: Int) -> List[Int]\n= [x, // first\n  x+1] // done\n";
+  await ed.set(page, NOTED, 0);
+  await page.keyboard.press(`${mod}+Alt+KeyL`);
+  await settle(page, async () => (await ed.text(page)) !== NOTED);
+  expect((await ed.text(page)) === "// The pair.\nfn f(x: Int) -> List[Int]\n= [\n  x, // first\n  x + 1,\n] // done\n", `${name}: Reformat keeps comments`, await ed.text(page));
+
+    // Code that doesn't parse is left alone, and the reason is shown where it is.
   const bad = "fn f(x: Int) -> Int = x +\n";
   await ed.set(page, bad, 3);
   await page.keyboard.press(`${mod}+Alt+KeyL`);
@@ -129,8 +136,9 @@ async function phone(page, name) {
   await ed.set(page, LONG, 10);
   await page.locator("#format-fab").click();
   expect(await settle(page, async () => (await ed.text(page)) !== LONG), `${name}: the Format button reformats`);
-  const hidden = await page.evaluate(() => { const r = document.querySelector(".cm-sspur-ruler"); return !r || r.hidden; });
-  expect(hidden, `${name}: no ruler when lines wrap`);
+  // Phones scroll long lines sideways, so the ruler shows; it hides only where lines wrap.
+  const r = await page.evaluate(() => { const r = document.querySelector(".cm-sspur-ruler"); return { hidden: !r || r.hidden, wraps: !!document.querySelector(".cm-lineWrapping") }; });
+  expect(r.hidden === r.wraps, `${name}: the ruler shows unless lines wrap`, r);
 }
 
 for (const [bname, type] of [["chromium", chromium], ["firefox", firefox], ["webkit", webkit]]) {

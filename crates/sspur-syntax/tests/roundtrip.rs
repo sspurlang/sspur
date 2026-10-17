@@ -274,3 +274,84 @@ fn record_shorthand_is_kept() {
     assert!(print_module(&parse("fn h(x: Int) -> R\n= {x, y: x}\n").unwrap()).contains("= {x, y: x}\n"));
     roundtrip(src);
 }
+
+/// A `match` or `catch` that ends an arm's body, other than the last, prints in a block, so its
+/// arms don't take the ones below (corpus program t46).
+#[test]
+fn nested_arms_print_so_they_read_back_the_same() {
+    for src in [
+        "fn f(x: Int, y: Int) -> Int\n= match x\n  | 1 => (match y\n    | 0 => 1\n    | _ => 2)\n  | _ => 3\n",
+        "fn f(x: Int) -> Int ! fail[E]\n= match x\n  | 1 =>\n    if x < 0 then 0\n    else catch g(x)\n      | _ => 5\n  | _ => 2\n",
+        "fn f(x: Int) -> Int\n= match x\n  | 1 => y => match y\n    | 0 => 1\n    | _ => 2\n  | _ => 3\n",
+    ] {
+        let mut a = parse(src).unwrap();
+        strip_spans(&mut a);
+        let printed = print_module(&a);
+        let mut b = parse(&printed).unwrap_or_else(|e| panic!("{printed}\n{e:?}"));
+        strip_spans(&mut b);
+        assert_eq!(a, b, "{printed}");
+        assert_eq!(print_module(&b), printed);
+    }
+}
+
+/// `x: T = e` and `var x: T = e` keep their annotation in the canonical text.
+#[test]
+fn binding_annotations_print_back() {
+    let src = "fn f(n: Int) -> Int\n= do\n  var xs: List[Int] = []\n  s: Opt[Str] = none\n  m: Map[Str, (Int, Bool)] = empty_map()\n  (a, b) = (n, n)\n  xs.len + a + b\n";
+    let m = parse(src).unwrap();
+    assert_eq!(print_module(&m), src);
+    let (m2, notes) = sspur_syntax::parse_noted("fn f(n: Int) -> Int\n= do\n  let mut k: Int = n\n  let j: Int = k\n  j\n").unwrap();
+    assert_eq!(print_module(&m2), "fn f(n: Int) -> Int\n= do\n  var k: Int = n\n  j: Int = k\n  j\n");
+    assert!(notes.iter().all(|n| !n.contains(": T")), "{notes:?}");
+}
+
+/// `_ => e` is a lambda that ignores its argument; `_` in its body is an error, not the argument.
+#[test]
+fn underscore_lambdas_ignore_their_argument() {
+    for (src, want) in [
+        ("xs.map(_ => 0)", "xs.map(_ => 0)"),
+        ("xs.fold(0, (acc, _) => acc + 1)", "xs.fold(0, (acc, _) => acc + 1)"),
+        ("f((_, _) => 1)", "f((_, _) => 1)"),
+        ("xs.map(_ => ys.map(_ + 1))", "xs.map(_ => ys.map(_ + 1))"),
+    ] {
+        let e = sspur_syntax::parse_expr(src).unwrap_or_else(|e| panic!("{src}: {e:?}"));
+        assert_eq!(sspur_syntax::printer::expr(&e, 0), want);
+    }
+    for bad in ["xs.map(_ => _ + 1)", "xs.map(_ => (y => _ + y))"] {
+        assert_eq!(sspur_syntax::parse_expr(bad).unwrap_err().code, "E_PARSE_LAMBDA", "{bad}");
+    }
+}
+
+/// `with` binds tighter than comparisons and looser than arithmetic (the precedence table in
+/// docs/reference/language.md).
+#[test]
+fn with_binds_tighter_than_comparisons() {
+    for (src, want) in [
+        ("p == q with a := 1", "p == (q with a := 1)"),
+        ("p != q with a := 1, b := 2", "p != (q with a := 1, b := 2)"),
+        ("ok and p with a := 1", "ok and (p with a := 1)"),
+        ("p with a := x + 1", "p with a := x + 1"),
+        ("f(p) with a := 1", "f(p) with a := 1"),
+        ("(p == q) with a := 1", "(p == q) with a := 1"),
+    ] {
+        let e = sspur_syntax::parse_expr(src).unwrap_or_else(|e| panic!("{src}: {e:?}"));
+        assert_eq!(sspur_syntax::printer::expr(&e, 0), want, "{src}");
+    }
+}
+
+/// A `match` in an arm whose arms are indented past the outer ones ends at the first arm to
+/// their left, and `_` in a `pre` or `post` condition is a placeholder lambda.
+#[test]
+fn nested_match_ends_at_a_less_indented_arm() {
+    let src = "fn g(o: Opt[Opt[Int]]) -> Int\n= match o\n  | some(x) => match x\n    | some(n) => n\n    | none => 0\n  | none => -1\n";
+    let printed = print_module(&parse(src).unwrap());
+    assert_eq!(printed, "fn g(o: Opt[Opt[Int]]) -> Int\n= match o\n| some(x) => do\n  match x\n  | some(n) => n\n  | none => 0\n| none => -1\n");
+    let same = "fn g(o: Opt[Int], p: Opt[Int]) -> Int\n= match o\n| some(x) => match p\n| some(n) => n\n| none => 0\n";
+    let Def::Fn(f) = &parse(same).unwrap().defs[0] else { panic!() };
+    let ExprKind::Match(_, arms, _) = &f.body.kind else { panic!() };
+    assert_eq!(arms.len(), 1, "arms at the same column still belong to the inner match");
+    let post = "fn sizes(xs: List[List[Int]]) -> List[Int]\n  post r.map(_ + 1).len == xs.len\n= xs.map(x => x.len)\n";
+    assert_eq!(print_module(&parse(post).unwrap()), post);
+    let Def::Fn(f) = &parse(post).unwrap().defs[0] else { panic!() };
+    assert!(!sspur_syntax::parser::has_placeholder(&f.posts[0]));
+}

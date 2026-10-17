@@ -708,6 +708,7 @@ impl<'a> A<'a> {
                 K::Plain
             }
             ExprKind::Name(n) => self.name(n, e.span, u),
+            ExprKind::Method { recv, name, .. } if name == ASCRIBE => self.expr(recv, u),
             ExprKind::Method { recv, args, name, .. } if name == "send" && args.len() == 1 && self.chan_item(recv).is_some() => {
                 self.expr(recv, Use::Read);
                 if let K::Res(t) = self.expr(&args[0], Use::Move)

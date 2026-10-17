@@ -45,3 +45,4 @@ Every change that shapes the language, the compiler or the tools has an architec
 | [0039](0039-scoped-package-names.md) | Scoped package names tied to GitHub owners | Packages |
 | [0040](0040-fmt-breaks-long-lines.md) | `sspur fmt` breaks long lines | Tooling |
 | [0041](0041-cold-native-builds.md) | Cold native builds of big packages | Native |
+| [0042](0042-comments-and-the-last-syntax-fixes.md) | `sspur fmt` keeps comments, and the last syntax fixes before 1.0 | Language |

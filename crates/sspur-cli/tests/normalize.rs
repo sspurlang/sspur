@@ -44,7 +44,7 @@ const CASES: &[(&str, &str, &str)] = &[
     ("fn f(rs: List[Row]) -> List[Row]\n= rs.sort_by((-len(_.name), _.name))\n", "fn f(rs: List[Row]) -> List[Row]\n= rs.sort_by((-_.name.len, _.name))", "len(x) -> x.len"),
     ("fn f(n: Int) -> Int\n= check(n) + 1\n", "fn f(n: Int) -> Int ! fail[E]\n= check(n) + 1", "f now declares fail[E]"),
     ("fn f() -> Unit\n= print(\"x\")\n", "fn f() -> Unit ! log\n= log(\"x\")", "print -> log"),
-    ("fn f(n: Int) -> Int\n= do\n  var a: Int = n\n  b: Int = a + 1\n  b\n", "fn f(n: Int) -> Int\n= do\n  var a = n\n  b = a + 1\n  b", "var x: T = e -> var x = e"),
+    ("fn f(n: Int) -> Int\n= do\n  var a: Int = n\n  b: Int = a + 1\n  b\n", "fn f(n: Int) -> Int\n= do\n  var a: Int = n\n  b: Int = a + 1\n  b", ""),
     ("fn f(xs: List[Int]) -> List[Int]\n= xs.map((x) => {\n  y = x * 2\n  return y + 1\n})\n", "fn f(xs: List[Int]) -> List[Int]\n= xs.map(x => do\n  y = x * 2\n  y + 1)", "x => { block } -> x => do block"),
     ("fn f(o: Opt[Int]) -> Int\n= if let some(x) = o then x else 0\n", "fn f(o: Opt[Int]) -> Int\n= if o is some(x) then x else 0", "if let p = e -> if e is p"),
     ("fn f(xs: List[Int]) -> Int\n= match xs\n  | [x, ...rest] => x + rest.len\n  | [] => 0\n", "fn f(xs: List[Int]) -> Int\n= match xs\n| [x, ..rest] => x + rest.len\n| [] => 0", "...rest -> ..rest"),

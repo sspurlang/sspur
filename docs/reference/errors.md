@@ -9,7 +9,7 @@ This page lists every code the compiler can emit, grouped by area. The test suit
 | Code | Meaning | Fix |
 |---|---|---|
 | `E_LEX_CHAR` | A character that isn't part of the language | Remove it, or put it in a string |
-| `E_LEX_ESCAPE` | An unknown escape such as `\q` in a string | Use `\n \t \\ \" \{` |
+| `E_LEX_ESCAPE` | An unknown escape such as `\q` in a string, or a `\u{...}` that isn't 1 to 6 hex digits of a Unicode scalar value | Use `\n \t \r \\ \" \' \{ \}` or `\u{e9}` |
 | `E_LEX_NUMBER` | A malformed number, such as a bad hex literal | Write `42`, `0xff`, `1_000` or `3.14` |
 | `E_LEX_STRING` | A string that never closes | Add the closing quote on the same line |
 | `E_PARSE_ARMS` | `match`, `catch` or `handle` with no arms | Add `\| pattern => value` lines |
@@ -26,6 +26,7 @@ This page lists every code the compiler can emit, grouped by area. The test suit
 | `E_PARSE_IMPL` | An impl method without a body | `fn m(x: Self) -> T = expr` |
 | `E_PARSE_INDENT` | Indentation that doesn't match any open block | Use 2 spaces per level |
 | `E_PARSE_GUARD` | Swift's `guard let x = e` without `else` | Add what happens when it doesn't match: `some(x) = e else d` |
+| `E_PARSE_LAMBDA` | `_ => _ + 1`: a lambda that ignores its parameter uses `_` in its body | Name the parameter, `x => x + 1` |
 | `E_PARSE_IS` | `a and b is p`: `is` would test the whole condition before it; or a test used as an operand, `e is p == x` | Test the pattern first, `b is p and a`, or parenthesize, `a and (b is p)`, `(e is p) == x` |
 | `E_PARSE_KERNEL` | A `kernel fn` without `@grid` | Add `@grid(threads, group)` after the signature |
 | `E_PARSE_PATTERN` | A pattern was expected, or a list pattern has two `..` | Use `_`, a name, a literal, a tuple, a list or a constructor; keep one `..` per list pattern |

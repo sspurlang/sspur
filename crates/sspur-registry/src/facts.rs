@@ -64,7 +64,7 @@ fn join_continued(a: &mut String, b: &str) {
     if b.starts_with([')', ']', '}']) && a.ends_with(',') {
         a.pop();
     }
-    if !(b.starts_with(['.', ')', ']', '}']) || a.ends_with(['(', '[', '{'])) {
+    if !((b.starts_with(['.', ')', ']', '}']) && !b.starts_with("..")) || a.ends_with(['(', '[', '{'])) {
         a.push(' ');
     }
     a.push_str(b);
@@ -74,29 +74,32 @@ fn indent(l: &str) -> usize {
     l.len() - l.trim_start().len()
 }
 
-/// Whether the source is what `sspur fmt` prints, ignoring comments, blank lines and where
-/// statements are broken. The formatter drops comments, so they can't count against a package.
-/// A statement broken across lines (after an operator, before `.name`, inside brackets with or
-/// without a trailing comma, an `if` chain with each `else` on its own line) reads as the one
-/// line of the canonical text, so both what `sspur fmt` writes since ADR 0040 and the one-line
-/// form of 0.13 pass. And match arms may be indented one level under their `match`
+/// Whether the source is what `sspur fmt` prints, ignoring blank lines and where statements are
+/// broken. A statement broken across lines (after an operator, before `.name`, inside brackets
+/// with or without a trailing comma, an `if` chain with each `else` on its own line) reads as
+/// the one line of the canonical text, so both what `sspur fmt` writes since ADR 0040 and the
+/// one-line form of 0.13 pass. And match arms may be indented one level under their `match`
 /// (with their bodies), as most SSPUR code is written, where the printer puts them at its column.
+/// Comments count since `sspur fmt` keeps them (ADR 0042): each one where `sspur fmt` puts it,
+/// on its own line or after code, in the same order among the statements, at any indent. A
+/// source in the one-line form of 0.13 is compared without its comments.
 pub fn fmt_check(src: &str, module: &Module) -> J {
-    let wrapped = format_module(module);
-    let r = fmt_against(src, &wrapped);
+    let wrapped = format_source(src).unwrap_or_else(|_| format_module(module));
+    let r = fmt_against(src, &wrapped, true);
     if r["clean"] == true {
         return r;
     }
     let canon = print_module(module);
-    if canon != wrapped && fmt_against(src, &canon)["clean"] == true {
+    if canon != format_module(module) && fmt_against(src, &canon, false)["clean"] == true {
         return json!({"clean": true});
     }
     r
 }
 
 /// The statements of `src`, each with its first line number: lines the lexer reads as one
-/// statement joined, comments and blank lines dropped.
-fn statements(src: &str) -> Option<Vec<(usize, String)>> {
+/// statement joined, blank lines dropped, and comments dropped or, with `comments`, each one an
+/// entry of its own after the statement whose line it ends.
+fn statements(src: &str, comments: bool) -> Option<Vec<(usize, String)>> {
     let (ends, cont) = code_ends(src)?;
     let starts: Vec<usize> = std::iter::once(0).chain(src.match_indices('\n').map(|(i, _)| i + 1)).collect();
     let mut have: Vec<(usize, String)> = Vec::new();
@@ -111,12 +114,53 @@ fn statements(src: &str) -> Option<Vec<(usize, String)>> {
             _ => have.push((i + 1, line.to_string())),
         }
     }
-    Some(have)
+    if comments {
+        let (_, cs) = sspur_syntax::lexer::lex_comments(src).ok()?;
+        let mut all: Vec<(usize, u8, String)> = have.into_iter().map(|(l, t)| (l, 0, t)).collect();
+        for c in cs {
+            let line = starts.partition_point(|&x| x <= c.span.start as usize);
+            all.push((line, 1 + u8::from(c.own_line), src[c.span.start as usize..c.span.end as usize].trim_end().to_string()));
+        }
+        all.sort_by_key(|x| (x.0, x.1));
+        have = all.into_iter().map(|x| (x.0, x.2)).collect();
+    }
+    Some(join_variants(have))
 }
 
-fn fmt_against(src: &str, want_text: &str) -> J {
-    let Some(have) = statements(src) else { return json!({"clean": false, "line": 1, "have": "", "want": ""}) };
-    let want: Vec<String> = statements(want_text).unwrap_or_default().into_iter().map(|x| x.1).collect();
+/// A sum type with each variant on its own line after `|` (how `sspur fmt` breaks a long one)
+/// as the one line `type T = A | B`; comments among the variants come after it.
+fn join_variants(st: Vec<(usize, String)>) -> Vec<(usize, String)> {
+    let mut out: Vec<(usize, String)> = Vec::new();
+    let mut it = st.into_iter().peekable();
+    while let Some((line, mut s)) = it.next() {
+        let head = s.trim_start_matches("pub ").trim_start_matches("res ");
+        if !(indent(&s) == 0 && head.starts_with("type ") && s.contains("= | ")) {
+            out.push((line, s));
+            continue;
+        }
+        s = s.replacen("= | ", "= ", 1);
+        let mut notes = Vec::new();
+        while let Some((l, n)) = it.peek() {
+            let t = n.trim_start();
+            if t.starts_with("| ") && indent(n) > 0 {
+                s.push(' ');
+                s.push_str(t);
+            } else if t.starts_with("//") {
+                notes.push((*l, n.clone()));
+            } else {
+                break;
+            }
+            it.next();
+        }
+        out.push((line, s));
+        out.extend(notes);
+    }
+    out
+}
+
+fn fmt_against(src: &str, want_text: &str, comments: bool) -> J {
+    let Some(have) = statements(src, comments) else { return json!({"clean": false, "line": 1, "have": "", "want": ""}) };
+    let want: Vec<String> = statements(want_text, comments).unwrap_or_default().into_iter().map(|x| x.1).collect();
     // The arms indented past where the printer puts them: each one's indent in the source.
     let mut arms: Vec<usize> = Vec::new();
     let mut j = 0;
@@ -124,6 +168,13 @@ fn fmt_against(src: &str, want_text: &str) -> J {
         let Some((line, h)) = have.get(j).cloned() else {
             return json!({"clean": false, "line": have.last().map_or(1, |x| x.0), "have": "", "want": w});
         };
+        if w.trim_start().starts_with("//") || h.trim_start().starts_with("//") {
+            if h.trim_start() != w.trim_start() {
+                return json!({"clean": false, "line": line, "have": h.trim_start(), "want": w.trim_start()});
+            }
+            j += 1;
+            continue;
+        }
         let mut h = h;
         let mut used = 1;
         while h.trim_start() != w.trim_start() {
@@ -568,9 +619,14 @@ mod tests {
     }
 
     #[test]
-    fn fmt_ignores_comments_but_not_layout() {
+    fn fmt_counts_comments_and_layout() {
         let ok = "// a comment\nfn f(x: Int) -> Int\n= x + 1  // why\n\n\n// section\n\ntest t = f(1) == 2\n";
         assert_eq!(fmt_check(ok, &parse(ok).unwrap())["clean"], true);
+        let inside = "fn f() -> List[Int]\n= [\n    1, // one\n    // two next\n    2,\n  ]\n";
+        assert_eq!(fmt_check(inside, &parse(inside).unwrap())["clean"], true);
+        let late = "fn f(x: Int) -> Int\n= x+1 // why\n";
+        let r = fmt_check(late, &parse(late).unwrap());
+        assert_eq!((r["line"].clone(), r["want"].clone()), (json!(2), json!("= x + 1")));
         let bad = "fn f(x: Int) -> Int = x+1\n";
         let r = fmt_check(bad, &parse(bad).unwrap());
         assert_eq!(r["clean"], false);

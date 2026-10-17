@@ -31,12 +31,12 @@
       "endCaptures": { "0": { "name": "punctuation.definition.string.end.sspur" } },
       "name": "string.quoted.double.sspur",
       "patterns": [
-        { "match": "\\\\.", "name": "constant.character.escape.sspur" },
+        { "match": "\\\\(u\\{[0-9a-fA-F]*\\}|.)", "name": "constant.character.escape.sspur" },
         { "include": "#interpolation" }
       ]
     },
     "interpolation": {
-      "begin": "\\{",
+      "begin": "\\{(?=\\s*[A-Za-z_(\\[])",
       "beginCaptures": { "0": { "name": "punctuation.section.interpolation.begin.sspur" } },
       "end": "\\}",
       "endCaptures": { "0": { "name": "punctuation.section.interpolation.end.sspur" } },
