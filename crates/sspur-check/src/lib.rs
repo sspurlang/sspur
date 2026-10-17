@@ -75,6 +75,8 @@ pub struct CheckOutput {
     pub traits: TraitOut,
     /// Networking, config and log-level sites that `elab::lower` rewrites (ADR 0035).
     pub net: BTreeMap<(u32, u32), NetSite>,
+    /// The error type of each `fail[E]` atom in the rows of `expr_types` and `fn_types`.
+    pub fail_types: HashMap<String, Type>,
 }
 
 pub type ExprKey = (u32, u32, u8);
@@ -247,6 +249,10 @@ struct Checker {
     par_word: &'static str,
     std_sum_fields: HashMap<String, SumVariants>,
     svc_params: HashMap<String, Vec<String>>,
+    /// Library sites whose types are resolved when their definition is checked.
+    pending_lib: Vec<(u32, u32)>,
+    /// The type the context expects of the call being inferred, by the call's span.
+    call_exp: Option<((u32, u32), Type)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -381,6 +387,8 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
         par_word: "task",
         std_sum_fields: HashMap::new(),
         svc_params: HashMap::new(),
+        pending_lib: vec![],
+        call_exp: None,
     };
     c.load_builtins();
     if c.sys {
@@ -452,6 +460,8 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
             let r = c.resolve(&t);
             c.bind_types.insert((at, n), r);
         }
+        #[cfg(not(target_family = "wasm"))]
+        c.finish_lib_sites();
     }
     let fn_types = c.fns.iter().map(|(n, s)| (n.clone(), (s.params.clone(), s.ret.clone()))).collect();
     let mut records = HashMap::new();
@@ -523,7 +533,7 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
     let hole_ctx = c.hole_ctx.take().map(|h| HoleCtx { sigs: c.hole_sigs(m), ..h });
     let mut traits_out = std::mem::take(&mut c.tout);
     traits_out.active = !traits_out.sites.is_empty() || !traits_out.insts.is_empty() || !traits_out.units.is_empty() || !traits_out.impls.is_empty() || !traits_out.bounded.is_empty() || m.defs.iter().any(|d| matches!(d, Def::Trait(_) | Def::Impl(_)));
-    (CheckOutput { net: std::mem::take(&mut c.net_sites), traits: traits_out, diags: c.diags, record_types: c.record_types, user_methods: c.user_methods, sigs, expr_types: c.expr_types, bind_types: c.bind_types, fn_types, records, sums, newtypes, local_fn_types: c.local_fn_types, gen_loops: c.gen_loops, clause_effects: c.clause_effects, own: own.info, stores: c.stores, json_types, kernels: c.kernels, body_diags }, hole_ctx)
+    (CheckOutput { net: std::mem::take(&mut c.net_sites), traits: traits_out, diags: c.diags, record_types: c.record_types, user_methods: c.user_methods, sigs, expr_types: c.expr_types, bind_types: c.bind_types, fn_types, records, sums, newtypes, local_fn_types: c.local_fn_types, gen_loops: c.gen_loops, clause_effects: c.clause_effects, own: own.info, stores: c.stores, json_types, kernels: c.kernels, body_diags, fail_types: c.fail_types }, hole_ctx)
 }
 
 fn edit_distance(a: &str, b: &str) -> usize {
@@ -741,6 +751,9 @@ impl Checker {
     fn ueff_atom(&mut self, name: &str, args: &[Type]) -> String {
         let args: Vec<Type> = args.iter().map(|t| self.resolve(t)).collect();
         let atom = format!("{name}[{}]", args.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(", "));
+        if name == "fail" && args.len() == 1 {
+            self.fail_types.entry(atom.clone()).or_insert_with(|| args[0].clone());
+        }
         self.ueff_atoms.entry(atom.clone()).or_insert((name.to_string(), args));
         atom
     }
@@ -1482,9 +1495,11 @@ impl Checker {
         }
     }
 
+    /// Unifies the type arguments of an effect that each row has one instance of, after the
+    /// instances both rows share.
     fn unify_row_args(&mut self, e: &Row, a: &Row) {
-        let inst = |c: &Self, r: &Row| -> Vec<(String, Vec<Type>)> { r.atoms.iter().filter_map(|x| c.ueff_atoms.get(x).cloned()).collect() };
-        let (ei, ai) = (inst(self, e), inst(self, a));
+        let inst = |c: &Self, r: &Row, other: &Row| -> Vec<(String, Vec<Type>)> { r.atoms.iter().filter(|x| !other.atoms.contains(*x)).filter_map(|x| c.ueff_atoms.get(x).cloned()).collect() };
+        let (ei, ai) = (inst(self, e, a), inst(self, a, e));
         for (n, eargs) in &ei {
             let same_e = ei.iter().filter(|(m, _)| m == n).count();
             let found: Vec<&Vec<Type>> = ai.iter().filter(|(m, _)| m == n).map(|(_, x)| x).collect();
@@ -1503,7 +1518,10 @@ impl Checker {
         let extra: BTreeSet<String> = a.atoms.difference(&e.atoms).cloned().collect();
         if !extra.is_empty() {
             match e.var {
-                Some(v) => self.rsubst[v as usize] = Some(Row { atoms: extra, var: a.var.filter(|x| *x != v) }),
+                Some(v) => {
+                    let tail = if a.var == Some(v) { Some(self.fresh_row()) } else { a.var };
+                    self.rsubst[v as usize] = Some(Row { atoms: extra, var: tail });
+                }
                 None => return false,
             }
         } else if let Some(v) = a.var
@@ -1532,9 +1550,7 @@ impl Checker {
     }
 
     fn fail_atom(&mut self, t: &Type) -> String {
-        let atom = format!("fail[{t}]");
-        self.fail_types.entry(atom.clone()).or_insert_with(|| t.clone());
-        atom
+        self.ueff_atom("fail", std::slice::from_ref(t))
     }
 
     fn add_effect(&mut self, atom: String, span: Span, ty: Option<Type>) {
@@ -1572,7 +1588,21 @@ impl Checker {
     }
 
     fn call_scheme(&mut self, s: &Scheme, name: &str, recv: Option<(Type, Span)>, args: &[Expr], span: Span) -> Type {
+        let want = self.call_exp.take().filter(|(k, _)| *k == (span.start, span.end)).map(|(_, t)| t);
         let (params, ret, atoms, rvars, fails, ueffs) = self.instantiate(s);
+        // The expected result types the arguments, as in `xs.fold([], ...)`, when it fits.
+        if let Some(w) = want {
+            let (r, w) = (self.resolve(&ret), self.resolve(&w));
+            let mut in_rows = BTreeSet::new();
+            for p in &params {
+                self.row_vars(p, &mut in_rows);
+            }
+            let mut in_ret = BTreeSet::new();
+            ty_vars(&r, &mut in_ret);
+            if !fn_inside(&r) && !fn_inside(&w) && in_ret.is_disjoint(&in_rows) && self.fits(&r, &w, &mut HashMap::new()) {
+                self.unify(&r, &w);
+            }
+        }
         let given = args.len() + usize::from(recv.is_some());
         if given != params.len() {
             self.err("E_ARITY", span, format!("'{name}' takes {} argument(s), got {given}", params.len()));
@@ -2075,6 +2105,11 @@ impl Checker {
             }
             ExprKind::Method { recv, name, targs, args } if self.is_json_recv(recv) => self.infer_json(name, targs, args, e.span),
             #[cfg(not(target_family = "wasm"))]
+            ExprKind::Method { recv, name, targs, args } if self.is_db_recv(recv) && name == "tx" => {
+                self.db_shadow(e.span);
+                self.infer_tx(targs, args, exp, e.span)
+            }
+            #[cfg(not(target_family = "wasm"))]
             ExprKind::Method { recv, name, targs, args } if self.is_db_recv(recv) && db_op(name).is_none() => self.infer_lib("db", name, targs, args, e.span),
             ExprKind::Method { recv, name, args, .. } if self.is_db_recv(recv) => self.infer_db(name, args, e.span),
             #[cfg(not(target_family = "wasm"))]
@@ -2090,9 +2125,11 @@ impl Checker {
                     self.err("E_UNSUPPORTED", e.span, "explicit type arguments on methods are not supported yet".into());
                 }
                 let rt = self.infer(recv, None);
+                self.call_exp = exp.map(|t| ((e.span.start, e.span.end), t.clone()));
                 self.method(recv, rt, name, args, e.span)
             }
             ExprKind::Call(f, args) => {
+                self.call_exp = exp.map(|t| ((e.span.start, e.span.end), t.clone()));
                 if let ExprKind::Name(n) = &f.kind {
                     if n == "resume"
                         && args.is_empty()
@@ -2198,7 +2235,13 @@ impl Checker {
                 self.push_diag("N_FOREIGN", "error", e.span, format!("this '_' would make a function where {want} is expected, so it binds one call further out"), Some("in 'f(g(_))' the '_' belongs to g; write 'x => f(g(x))'".into()), vec![j]);
                 want
             }
-            ExprKind::Lambda { params, body, .. } => self.infer_lambda(params, body, exp, e.span),
+            ExprKind::Lambda { params, body, tys, .. } => {
+                if tys.iter().any(Option::is_some) {
+                    let exp = self.annotate_lambda(params.len(), tys, exp);
+                    return self.infer_lambda(params, body, Some(&exp), e.span);
+                }
+                self.infer_lambda(params, body, exp, e.span)
+            }
             ExprKind::Binary(op, l, r) => self.infer_binary(*op, l, r, e.span),
             ExprKind::Unary(UnOp::Neg, x) => {
                 let t = self.infer(x, None);
@@ -2258,7 +2301,7 @@ impl Checker {
                 self.check_arms(&st, arms, &out);
                 if arms.last().is_some_and(|a| matches!(a.body.kind, ExprKind::Match(..))) && self.diags[before..].iter().any(Diag::is_error) {
                     let i = self.diags[before..].iter().position(Diag::is_error).unwrap() + before;
-                    self.diags[i].hint = Some("a match inside an arm takes every arm below it; move the inner match into a helper fn".into());
+                    self.diags[i].hint = Some("a match inside an arm takes the arms below it at its column; indent its own arms deeper than the outer ones".into());
                 }
                 let arm_errors = self.diags[before..].iter().any(Diag::is_error);
                 let missing = self.missing_cases(&st, arms);
@@ -2472,6 +2515,49 @@ impl Checker {
         }
     }
 
+    /// The type variables in the effect arguments (`fail[?1]`, `yield[?2]`) of the rows in `t`.
+    fn row_vars(&self, t: &Type, out: &mut BTreeSet<u32>) {
+        match self.resolve(t) {
+            Type::Fn(ps, r, row) => {
+                for a in &row.atoms {
+                    if let Some((_, args)) = self.ueff_atoms.get(a) {
+                        args.iter().for_each(|x| ty_vars(&self.resolve(x), out));
+                    }
+                }
+                ps.iter().for_each(|x| self.row_vars(x, out));
+                self.row_vars(&r, out);
+            }
+            Type::Con(_, a) | Type::Tuple(a) => a.iter().for_each(|x| self.row_vars(x, out)),
+            _ => {}
+        }
+    }
+
+    /// Whether `a` and `b` unify (without function types), without binding anything.
+    fn fits(&self, a: &Type, b: &Type, seen: &mut HashMap<u32, Type>) -> bool {
+        let look = |c: &Self, t: &Type, seen: &HashMap<u32, Type>| -> Type {
+            let mut t = c.resolve(t);
+            while let Type::Var(v) = t {
+                match seen.get(&v) {
+                    Some(x) => t = c.resolve(x),
+                    None => break,
+                }
+            }
+            t
+        };
+        let (a, b) = (look(self, a, seen), look(self, b, seen));
+        match (&a, &b) {
+            (Type::Var(x), Type::Var(y)) if x == y => true,
+            (Type::Var(x), t) | (t, Type::Var(x)) => {
+                seen.insert(*x, t.clone());
+                true
+            }
+            (Type::Con(n1, a1), Type::Con(n2, a2)) => n1 == n2 && a1.len() == a2.len() && a1.iter().zip(a2).all(|(x, y)| self.fits(x, y, seen)),
+            (Type::Tuple(x1), Type::Tuple(x2)) => x1.len() == x2.len() && x1.iter().zip(x2).all(|(x, y)| self.fits(x, y, seen)),
+            (Type::Param(x), Type::Param(y)) => x == y,
+            _ => false,
+        }
+    }
+
     fn type_has_fn(&self, t: &Type) -> bool {
         let mut seen: HashSet<String> = HashSet::new();
         let mut stack = vec![t.clone()];
@@ -2596,6 +2682,27 @@ impl Checker {
         let body = Expr::new(ExprKind::Method { recv: Box::new(name(&params[0])), name: n.to_string(), targs: vec![], args: params[1..].iter().map(name).collect() }, span);
         self.tout.method_values.insert((span.start, span.end, 8), arity);
         Some(self.infer_lambda(&params, &body, exp, span))
+    }
+
+    /// The expected type of a lambda with parameter annotations: the annotations, unified with
+    /// what the context expects.
+    fn annotate_lambda(&mut self, n: usize, tys: &[Option<Ty>], exp: Option<&Type>) -> Type {
+        let ps: Vec<Type> = tys.iter().map(|t| match t {
+            Some(t) => self.conv_ty(t),
+            None => self.fresh(),
+        }).collect();
+        let shape = Type::Fn(ps.clone(), Box::new(self.fresh()), Row { atoms: BTreeSet::new(), var: Some(self.fresh_row()) });
+        match exp.map(|t| self.resolve(t)) {
+            Some(Type::Fn(eps, r, row)) if eps.len() == n => {
+                for (p, e) in ps.iter().zip(&eps) {
+                    if !self.unify(e, p) {
+                        return shape;
+                    }
+                }
+                Type::Fn(ps, r, row)
+            }
+            _ => shape,
+        }
     }
 
     fn infer_lambda(&mut self, params: &[String], body: &Expr, exp: Option<&Type>, span: Span) -> Type {
@@ -2782,11 +2889,13 @@ impl Checker {
             bt = Type::bool();
         }
         let frame = self.frames.pop().unwrap();
+        let frame = self.norm_frame(frame);
         let ctor_ty = arms.iter().find_map(|a| match &a.pat {
             Pat::Ctor { name, .. } => self.ctors.get(name).map(|c| c.ty.clone()),
             Pat::Or(alts) => alts.iter().find_map(|p| if let Pat::Ctor { name, .. } = p { self.ctors.get(name).map(|c| c.ty.clone()) } else { None }),
             _ => None,
         });
+        let mut deferred = false;
         let err_ty = match ctor_ty {
             Some(n) => {
                 let info = self.ctors.values().find(|c| c.ty == n).cloned().unwrap();
@@ -2796,6 +2905,20 @@ impl Checker {
                 let fails: Vec<Type> = frame.values().filter_map(|(_, t)| t.clone()).collect();
                 if fails.len() == 1 {
                     fails[0].clone()
+                } else if fails.len() > 1 && arms.iter().all(|a| matches!(a.pat, Pat::Wild) && a.guard.is_none()) {
+                    self.pending_types.push(((span.start, span.end, 10), Type::Tuple(fails.clone())));
+                    self.check_arms(&fails[0], arms, &bt);
+                    self.report_unreachable(&fails[0], arms, MatchForm::Arms);
+                    self.pending_types.push(((span.start, span.end, 9), fails[0].clone()));
+                    for (a, (s, t)) in frame {
+                        if t.is_none() {
+                            self.add_effect(a, s, t);
+                        }
+                    }
+                    return self.resolve(&bt);
+                } else if fails.len() > 1 {
+                    deferred = true;
+                    self.fresh()
                 } else {
                     self.err("E_CATCH_TYPE", span, "cannot tell which error type this catch handles; match on its constructors".into());
                     self.fresh()
@@ -2804,6 +2927,11 @@ impl Checker {
         };
         let before = self.diags.len();
         self.check_arms(&err_ty, arms, &bt);
+        let unknown = deferred && matches!(self.resolve(&err_ty), Type::Var(_));
+        if unknown {
+            let fails: Vec<String> = frame.values().filter_map(|(_, t)| t.as_ref().map(|t| self.resolve(t).to_string())).collect();
+            self.push_diag("E_CATCH_TYPE", "error", span, format!("cannot tell which error type this catch handles: its body raises {}", fails.join(" and ")), Some("match on the constructors of one type, use '| _ =>' to handle all of them, or pass the error to a function that takes one type".into()), vec![]);
+        }
         if !self.diags[before..].iter().any(Diag::is_error) {
             self.report_unreachable(&err_ty, arms, MatchForm::Arms);
         }
@@ -2811,7 +2939,7 @@ impl Checker {
         let err_ty = self.resolve(&err_ty);
         let atom = format!("fail[{err_ty}]");
         let exhaustive = self.missing_cases(&err_ty, arms).is_empty();
-        if !frame.contains_key(&atom) {
+        if !frame.contains_key(&atom) && !unknown {
             self.push_diag("W_CATCH_UNUSED", "warning", span, format!("body never raises {err_ty}"), None, vec![]);
         }
         for (a, (s, t)) in frame {
@@ -3584,6 +3712,28 @@ fn cell_matches(c: &Cell, name: &str, p: &Point) -> Option<bool> {
             }
             _ => None,
         },
+    }
+}
+
+fn ty_vars(t: &Type, out: &mut BTreeSet<u32>) {
+    match t {
+        Type::Var(v) => {
+            out.insert(*v);
+        }
+        Type::Con(_, a) | Type::Tuple(a) => a.iter().for_each(|x| ty_vars(x, out)),
+        Type::Fn(ps, r, _) => {
+            ps.iter().for_each(|x| ty_vars(x, out));
+            ty_vars(r, out);
+        }
+        Type::Param(_) => {}
+    }
+}
+
+fn fn_inside(t: &Type) -> bool {
+    match t {
+        Type::Fn(..) => true,
+        Type::Con(_, a) | Type::Tuple(a) => a.iter().any(fn_inside),
+        _ => false,
     }
 }
 

@@ -192,9 +192,10 @@ impl Gen<'_> {
     }
 
     /// `db.tx(c, f)`: begin, run `f`, commit; an error `f` raises rolls back and is raised again.
-    pub(crate) fn tx_site(&mut self, ret: &Type, fails: &[Type], atoms: &[String], args: Vec<Expr>) -> Result<ExprKind, String> {
+    pub(crate) fn tx_site(&mut self, ret: &Type, fails: &[Type], atoms: &[String], params: &[String], args: Vec<Expr>) -> Result<ExprKind, String> {
         let base = format!("__dbtx{}", self.wraps);
         self.wraps += 1;
+        let tps = if params.is_empty() { String::new() } else { format!("[{}]", params.join(", ")) };
         let rt = src_ty(ret)?;
         let mut row: Vec<String> = atoms.to_vec();
         row.push("db".into());
@@ -219,12 +220,16 @@ impl Gen<'_> {
                         arms.push_str(&format!("  | {pat} => do\n      __db_txn(c, 2)\n      raise {pat}\n"));
                     }
                 }
-                _ => arms.push_str("  | e => do\n      __db_txn(c, 2)\n      raise e\n"),
+                _ => {
+                    // The typed lambda tells the catch which of the raised types it handles.
+                    let ts = src_ty(t)?;
+                    arms.push_str(&format!("  | e => do\n      x = ((y: {ts}) => y)(e)\n      __db_txn(c, 2)\n      err(x).get\n"));
+                }
             }
-            self.extra.push(format!("fn {name}(c: Db, f: {ft}) -> {rt} ! {effs}\n= catch {cur}\n{arms}"));
+            self.extra.push(format!("fn {name}{tps}(c: Db, f: {ft}) -> {rt} ! {effs}\n= catch {cur}\n{arms}"));
             cur = format!("{name}(c, f)");
         }
-        self.extra.push(format!("fn {base}(c: Db, f: {ft}) -> {rt} ! {effs}\n= do\n  __db_txn(c, 0)\n  v = {cur}\n  __db_txn(c, 1)\n  v"));
+        self.extra.push(format!("fn {base}{tps}(c: Db, f: {ft}) -> {rt} ! {effs}\n= do\n  __db_txn(c, 0)\n  v = {cur}\n  __db_txn(c, 1)\n  v"));
         Ok(call_of(&base, args))
     }
 

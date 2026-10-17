@@ -1278,7 +1278,7 @@ fn hash_value(v: &Value, h: &mut impl std::hash::Hasher, depth: u32) {
 
 /// `_ => body` in the implicit form the parser gives `xs.map(_.f)`.
 fn lambda(body: &Expr, span: Span) -> Expr {
-    mk(ExprKind::Lambda { params: vec!["_".into()], body: Box::new(body.clone()), implicit: true }, span)
+    mk(ExprKind::Lambda { params: vec!["_".into()], body: Box::new(body.clone()), implicit: true, tys: vec![] }, span)
 }
 
 /// The names compositional evaluation binds the argument values to.

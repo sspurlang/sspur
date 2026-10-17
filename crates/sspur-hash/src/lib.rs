@@ -751,9 +751,18 @@ impl<'a> Hasher<'a> {
                 self.expr(enc, a, group);
                 self.expr(enc, i, group);
             }
-            ExprKind::Lambda { params, body, .. } => {
-                enc.tag(b'\\');
+            ExprKind::Lambda { params, body, tys, .. } => {
+                let typed = tys.iter().any(Option::is_some);
+                enc.tag(if typed { b'%' } else { b'\\' });
                 enc.uint(params.len() as u64);
+                if typed {
+                    for t in tys {
+                        match t {
+                            Some(t) => self.ty(enc, t, group),
+                            None => enc.tag(b'_'),
+                        }
+                    }
+                }
                 let n = enc.locals.len();
                 enc.locals.extend(params.iter().cloned());
                 self.expr(enc, body, group);

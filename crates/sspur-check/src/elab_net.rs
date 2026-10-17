@@ -46,7 +46,7 @@ pub(crate) struct Gen<'a> {
 pub(crate) fn src_ty(t: &Type) -> Result<String, String> {
     let s = t.to_string();
     if s.contains('?') {
-        return Err(format!("internal: a networking site has an unresolved type {s}"));
+        return Err(format!("internal: a networking or library call has an unresolved type {s}"));
     }
     Ok(s)
 }
@@ -519,7 +519,7 @@ pub fn lower(m: &Module, out: &CheckOutput) -> Result<Option<Module>, String> {
                 (NetSite::Data(site), ExprKind::Method { args, .. }) => {
                     let r = match site {
                         crate::libs::LibSite::Db(op, t, ps) => g.db_site(op, t, ps, args),
-                        crate::libs::LibSite::Tx(t, fails, atoms) => g.tx_site(t, fails, atoms, args),
+                        crate::libs::LibSite::Tx(t, fails, atoms, ps) => g.tx_site(t, fails, atoms, ps, args),
                         crate::libs::LibSite::Csv(op, t) => g.csv_site(op, t, args),
                     };
                     match r {

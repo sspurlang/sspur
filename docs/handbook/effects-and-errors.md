@@ -30,6 +30,8 @@ An error is a value of a type you declare, usually a sum type. `raise` performs 
 {{#include ../snippets/handbook/errors.ssp:catch}}
 ```
 
+A catch whose only arm is `_` handles any error, even when the expression raises several error types. A catch with constructor arms handles that one type and lets the others through.
+
 A test can catch errors the same way. The arms have the type of the caught expression, so the comparison goes inside:
 
 ```sspur

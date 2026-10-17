@@ -2,7 +2,7 @@
 
 ## Type parameters
 
-A function can take type parameters in square brackets. Uppercase names are types; lowercase ones are effect rows, as in `fn map_all[A, B, e](xs: List[A], f: A -> B ! e) -> List[B] ! e`, which performs whatever `f` performs.
+A function can take type parameters in square brackets. Uppercase names are types; lowercase ones are effect rows, as in `fn map_all[A, B, e](xs: List[A], f: A -> B ! e) -> List[B] ! e`, which performs whatever `f` performs. When several arguments share a row, it is the union of what they perform, and `fail[E]` next to a row (`next: Int -> Int ! fail[E], e`) takes `E` from the argument's error type, so a wrapper that catches it is left with just `e`.
 
 ```sspur
 {{#include ../snippets/handbook/traits.ssp:generic}}

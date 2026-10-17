@@ -25,6 +25,8 @@ A function's effect row, after `!`, lists everything it may do besides return a 
 | `unsafe` | Raw memory (`alloc free load store offset`) and inline `asm`, in `profile sys` and `bare`. Discharge it with an `unsafe "reason"` line |
 | `mmio`, `static` | Hardware registers and module statics in `profile bare` |
 
+A user effect can't take one of these names (`E_DUPLICATE`). A package may still export a function named like one (`pub fn fail`): in an effect row, the name is always the built-in effect.
+
 ## Your own effects
 
 | Form | Meaning |
@@ -33,6 +35,8 @@ A function's effect row, after `!`, lists everything it may do besides return a 
 | `effect state` + indented `get() -> Int`, `put(v: Int)` | Several operations |
 | `effect emit[T](x: T)` | A generic effect: `emit[Int]`, `emit[Str]` |
 | Effect row parameter `e` | `fn map_all[A, B, e](xs: List[A], f: A -> B ! e) -> List[B] ! e` performs what `f` performs |
+| Row parameter shared by arguments | `fn twice[e](a: (Int -> Int ! e) -> (Int -> Int ! e), b: (Int -> Int ! e) -> (Int -> Int ! e), f: Int -> Int ! e)`: `e` is the union of what the arguments perform, so `a` may add `log` and `b` add `time` |
+| `fail[E]` next to a row parameter | `fn rescue[E, e](next: Int -> Int ! fail[E], e) -> (Int -> Int ! e)`: `E` is the argument's error type and `e` the rest of its row, so a wrapper that catches `E` leaves only `e` |
 
 `handle e` with one `| op(x) => arm` per operation, and an optional `| return(r) => arm`, gives operations meaning. `resume(v)` continues at the operation, at most once per arm. An arm that doesn't resume ends the whole `handle`. An arm runs outside its own handler, so effects it performs go to the next one out.
 

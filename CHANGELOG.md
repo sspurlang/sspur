@@ -10,6 +10,15 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 - The Homebrew tap moved to the sspurlang organization: `brew install sspurlang/sspur/sspur`. `packaging/homebrew/core/sspur.rb` is the formula for homebrew-core, so that after 1.0 `brew install sspur` works.
 
 ### Fixed
+- An effect-row parameter shared by several arguments is the union of their effects: `twice(n => add_log(n), n => add_time(n), id)` with `fn twice[e](a: (Int -> Int ! e) -> (Int -> Int ! e), b: ..., f: Int -> Int ! e)` no longer fails with `expected Int -> Int ! log, found Int -> Int ! log, time`, and the same for a list of such lambdas.
+- `fail[E]` in a parameter's row takes `E` from the argument: `fn rescue[E, e](next: Int -> Int ! fail[E], e) -> (Int -> Int ! e)` catching `E` gives a pure `rescue(failing)`; the argument's `fail[X]` used to land in `e`.
+- A `catch` whose only arms are `_` handles every error its body raises, of any type, in both tiers; with two error types it was `E_CATCH_TYPE`.
+- `db.tx` works inside a function generic in its result or error type (`fn txg[A, e](c: Db, f: () -> A ! e) -> A ! db, fail[DbErr], e`), when the lambda ends in `raise`, and when it returns `ok(())` as a `Res` the function's result type names: the expected type now reaches the lambda. A non-sum error type such as `Str` raised in a transaction also rolls back and is raised again; these were internal `E_DEP` errors.
+- A `catch` with a binding arm `| e => f(e)` over a body that raises several error types handles the one `f` takes.
+- `_` placeholder lambdas work in `pre` and `post` clauses: `post r.all(_ > 0)`.
+- A call's expected result type informs its arguments, so `spans.fold([], (acc, s) => match acc | [..init, last] => ...)` knows the accumulator's element type from the function's result type.
+- A `match` nested in an arm ends at the first arm line left of its own arms, so the outer `| none => -1` below an indented inner match belongs to the outer match; `sspur fmt` indents such inner arms. Inner arms at the same column still take the arms below them.
+- Lambda parameters can name their types: `(x: Int) => x + 1`, `(k: Str, v) => ...`.
 - A package whose function takes a function value with one of the package's own effects (`pub fn handled(f: () -> Int ! tick) -> Int`) builds as a dependency; the effect inside the parameter's type was not renamed with the package. A package may also export functions named like a built-in effect (`pub fn fail`, `pub fn log`): its `fail[E]` and `log` rows stay the built-in effects. A user effect can't take a built-in effect's name (`E_DUPLICATE`).
 
 ## [0.14.0] - 2026-10-17

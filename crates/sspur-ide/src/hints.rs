@@ -109,7 +109,7 @@ impl W<'_> {
                     self.pattern(&first.pat, from, to, first.body.span.start);
                 }
             }
-            ExprKind::Lambda { params, body, implicit: false } if self.opts.lambdas => {
+            ExprKind::Lambda { params, body, implicit: false, .. } if self.opts.lambdas => {
                 let key = sspur_check::expr_key(e);
                 if let Some(Type::Fn(ps, _, _)) = self.a.check.expr_types.get(&key) {
                     let (from, to) = (e.span.start as usize, (body.span.start as usize).min(self.src().len()));

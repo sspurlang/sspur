@@ -127,7 +127,7 @@ fn map_kids(e: &Expr, f: &mut dyn FnMut(&Expr) -> Expr) -> Expr {
         ExprKind::Unary(o, x) => ExprKind::Unary(*o, Box::new(f(x))),
         ExprKind::Raise(x) => ExprKind::Raise(Box::new(f(x))),
         ExprKind::Return(x) => ExprKind::Return(Box::new(f(x))),
-        ExprKind::Lambda { params, body, implicit } => ExprKind::Lambda { params: params.clone(), body: Box::new(f(body)), implicit: *implicit },
+        ExprKind::Lambda { params, body, implicit, .. } => ExprKind::Lambda { params: params.clone(), body: Box::new(f(body)), implicit: *implicit, tys: vec![] },
         ExprKind::Call(g, args) => ExprKind::Call(Box::new(f(g)), args.iter().map(&mut *f).collect()),
         ExprKind::Method { recv, name, targs, args } => ExprKind::Method { recv: Box::new(f(recv)), name: name.clone(), targs: targs.clone(), args: args.iter().map(&mut *f).collect() },
         ExprKind::Index(a, b) => ExprKind::Index(Box::new(f(a)), Box::new(f(b))),
@@ -1070,7 +1070,7 @@ impl Opt<'_> {
                 let f = f.as_ref().map(|f| Box::new(self.inline_pass(f, false, stmt_pos)));
                 Expr::new(ExprKind::If(Box::new(c), Box::new(t), f), e.span)
             }
-            ExprKind::Lambda { params, body, implicit } => Expr::new(ExprKind::Lambda { params: params.clone(), body: Box::new(self.inline_pass(body, false, !implicit)), implicit: *implicit }, e.span),
+            ExprKind::Lambda { params, body, implicit, .. } => Expr::new(ExprKind::Lambda { params: params.clone(), body: Box::new(self.inline_pass(body, false, !implicit)), implicit: *implicit, tys: vec![] }, e.span),
             _ => map_kids(e, &mut |c| self.inline_pass(c, false, false)),
         };
         let ExprKind::Call(f, args) = &e.kind else { return e };
@@ -1441,11 +1441,11 @@ impl Opt<'_> {
                 let f2 = f.as_ref().map(|f| Box::new(self.branch_pass(f, &fe)));
                 Expr::new(ExprKind::If(Box::new(c2), Box::new(t2), f2), e.span)
             }
-            ExprKind::Lambda { params, body, implicit } => {
+            ExprKind::Lambda { params, body, implicit, .. } => {
                 let mut inner = env.clone();
                 inner.forget_all(&params.iter().cloned().collect());
                 inner.forget_all(&binders(body));
-                Expr::new(ExprKind::Lambda { params: params.clone(), body: Box::new(self.branch_pass(body, &inner)), implicit: *implicit }, e.span)
+                Expr::new(ExprKind::Lambda { params: params.clone(), body: Box::new(self.branch_pass(body, &inner)), implicit: *implicit, tys: vec![] }, e.span)
             }
             ExprKind::Match(..) | ExprKind::Catch(..) | ExprKind::Handle(..) | ExprKind::Table(_) => {
                 let mut inner = env.clone();
@@ -1544,8 +1544,8 @@ struct Stage {
 impl Opt<'_> {
     fn as_lambda(&mut self, f: &Expr) -> Option<(String, Expr)> {
         match &f.kind {
-            ExprKind::Lambda { params, body, implicit: false } if params.len() == 1 => Some((params[0].clone(), (**body).clone())),
-            ExprKind::Lambda { params, body, implicit: true } if params.len() == 1 => {
+            ExprKind::Lambda { params, body, implicit: false, .. } if params.len() == 1 => Some((params[0].clone(), (**body).clone())),
+            ExprKind::Lambda { params, body, implicit: true, .. } if params.len() == 1 => {
                 let v = self.fresh("x");
                 let r = Expr::new(ExprKind::Name(v.clone()), Span::default());
                 Some((v, replace_ph(body, &r)))
@@ -1656,7 +1656,7 @@ impl Opt<'_> {
             let g_at = subst(&gb, &gp, &Expr::new(ExprKind::Name(y.clone()), Span::default()));
             Expr::new(ExprKind::Block(vec![Stmt::Let(Pat::Bind(y), f_at), Stmt::Expr(g_at)]), Span::default())
         };
-        let lam = Expr::new(ExprKind::Lambda { params: vec![v], body: Box::new(body), implicit: false }, Span::default());
+        let lam = Expr::new(ExprKind::Lambda { params: vec![v], body: Box::new(body), implicit: false, tys: vec![] }, Span::default());
         let out = self.mk(ExprKind::Method { recv: src.clone(), name: "map".into(), targs: vec![], args: vec![lam] }, self.ty(e));
         let how = if by_iv { "intervals" } else { "construction" };
         self.record("map-map", e, &out, format!("{how}: both stages pure; {why} ({})", ts.iter().map(|t| t.0.clone()).collect::<Vec<_>>().join(", ")), format!("saves one intermediate list (~{:.0} instr per element)", ALLOC_ELEM));
@@ -1754,7 +1754,7 @@ impl Opt<'_> {
                 let f = f.as_ref().map(|f| Box::new(self.fuse_pass(f, stmt_pos)));
                 Expr::new(ExprKind::If(Box::new(c), Box::new(t), f), e.span)
             }
-            ExprKind::Lambda { params, body, implicit: false } => Expr::new(ExprKind::Lambda { params: params.clone(), body: Box::new(self.fuse_pass(body, true)), implicit: false }, e.span),
+            ExprKind::Lambda { params, body, implicit: false, .. } => Expr::new(ExprKind::Lambda { params: params.clone(), body: Box::new(self.fuse_pass(body, true)), implicit: false, tys: vec![] }, e.span),
             _ => map_kids(e, &mut |c| self.fuse_pass(c, false)),
         };
         if let Some(x) = self.compose(&e) {

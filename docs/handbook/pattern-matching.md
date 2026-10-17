@@ -88,7 +88,7 @@ A `match` has to cover every case. If it doesn't, the program doesn't compile, a
 
 This is why adding a variant to a sum type is safe: the checker lists every `match` that needs a new arm. The check looks inside nested patterns and lists too, so the missing case can be `some(none)` or `[_]`, and an arm that the arms above already cover gets the warning `W_ARM_UNREACHABLE`.
 
-One thing to watch: an arm's value runs to the end of the arm, so a `match` nested inside an arm would take every arm below it. Put the inner `match` in a helper function.
+A `match` nested inside an arm ends at the first arm line to the left of its own arms, so indent the inner arms deeper than the outer ones. When they are at the same column, the inner `match` takes every arm below it.
 
 ## Decision tables
 

@@ -305,7 +305,7 @@ fn wrap_arg(arg: &mut Expr, span: Span, x: &str) {
     };
     let mut body = body;
     name_placeholders(&mut body, x);
-    arg.kind = ExprKind::Lambda { params: vec![x.to_string()], body: Box::new(body), implicit: false };
+    arg.kind = ExprKind::Lambda { params: vec![x.to_string()], body: Box::new(body), implicit: false, tys: vec![] };
 }
 
 /// Replaces the `_` that belong to this level (not those under another implicit lambda).

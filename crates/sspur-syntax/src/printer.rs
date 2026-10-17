@@ -394,8 +394,18 @@ pub fn expr(e: &Expr, ind: usize) -> String {
         }
         ExprKind::Index(a, i) => format!("{}[{}]", operand(a, 10, ind), expr(i, ind)),
         ExprKind::Lambda { body, implicit: true, .. } => expr(body, ind),
-        ExprKind::Lambda { params, body, .. } => {
-            let ps = if params.len() == 1 { params[0].clone() } else { format!("({})", params.join(", ")) };
+        ExprKind::Lambda { params, body, tys, .. } => {
+            let ps = if tys.iter().any(Option::is_some) {
+                let each: Vec<String> = params.iter().zip(tys).map(|(p, t)| match t {
+                    Some(t) => format!("{p}: {}", ty(t)),
+                    None => p.clone(),
+                }).collect();
+                format!("({})", each.join(", "))
+            } else if params.len() == 1 {
+                params[0].clone()
+            } else {
+                format!("({})", params.join(", "))
+            };
             let b = expr(body, ind);
             if b.contains('\n') && !matches!(body.kind, ExprKind::Block(_) | ExprKind::Match(_, _, MatchForm::LetElse)) {
                 return format!("{ps} => do\n{}{}", pad(ind + 2), expr(body, ind + 2));
@@ -578,14 +588,27 @@ fn list(xs: &[Expr], ind: usize) -> String {
     layout::group(&xs.iter().map(|x| expr(x, ind)).collect::<Vec<_>>())
 }
 
+/// Whether `e` ends in arms of its own (`match`, `catch`, `handle`) that would take the arms
+/// printed after it at the same column.
+fn ends_in_arms(e: &Expr) -> bool {
+    match &e.kind {
+        ExprKind::Match(_, _, MatchForm::Arms) | ExprKind::Catch(..) | ExprKind::Handle(..) => true,
+        ExprKind::If(_, _, Some(f)) => ends_in_arms(f),
+        ExprKind::Lambda { body, implicit: false, .. } => ends_in_arms(body),
+        ExprKind::Raise(x) | ExprKind::Return(x) => ends_in_arms(x),
+        _ => false,
+    }
+}
+
 fn print_arms(arms: &[Arm], ind: usize) -> String {
     let mut s = String::new();
-    for a in arms {
+    for (i, a) in arms.iter().enumerate() {
         s.push_str(&format!("\n{}| {}", pad(ind), pat(&a.pat)));
         if let Some(g) = &a.guard {
             s.push_str(&format!(" if {}{}", expr(g, ind), mark(layout::THEN)));
         }
-        s.push_str(&format!(" => {}", branch(&a.body, ind)));
+        let inner = if i + 1 < arms.len() && ends_in_arms(&a.body) { ind + 2 } else { ind };
+        s.push_str(&format!(" => {}", branch(&a.body, inner)));
     }
     s
 }

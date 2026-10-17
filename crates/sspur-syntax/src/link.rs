@@ -453,7 +453,8 @@ impl R<'_> {
                     e.kind = ExprKind::Call(Box::new(Expr::new(ExprKind::Name(it.mangled), span)), all);
                 }
             }
-            ExprKind::Lambda { params, body, .. } => {
+            ExprKind::Lambda { params, body, tys, .. } => {
+                tys.iter_mut().flatten().for_each(|t| self.ty(t, span));
                 l.push(params.iter().cloned().collect());
                 self.expr(body, l);
                 l.pop();

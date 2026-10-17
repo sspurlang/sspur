@@ -1,0 +1,119 @@
+// inference: effect rows, catches and lambdas
+
+type BadErr = Bad | Worse
+
+type OtherErr = Other
+
+fn failing(x: Int) -> Int ! fail[BadErr]
+= if x > 1 then raise Bad else x
+
+fn noisy(x: Int) -> Int ! log, fail[BadErr]
+= do
+  log("noisy {x}")
+  if x > 8 then raise Worse else failing(x)
+
+fn rescue[E, e](next: Int -> Int ! fail[E], e) -> Int -> Int ! e
+= x => do
+  catch next(x)
+  | _ => 0
+
+fn rescue_with[E, e](on_bad: E -> Int, next: Int -> Int ! fail[E], e) -> Int -> Int ! e
+= x => do
+  catch next(x)
+  | err => on_bad(err)
+
+fn on_bad(b: BadErr) -> Int
+= match b
+| Bad => -1
+| Worse => -2
+
+fn pure_rescue() -> Int
+= rescue(failing)(5) + rescue(failing)(1) + rescue(x => if x > 3 then raise Worse else x)(4)
+
+fn logged_rescue() -> Int ! log
+= rescue(noisy)(5) + rescue_with(on_bad, noisy)(9)
+
+fn add_log[e](next: Int -> Int ! e) -> Int -> Int ! e, log
+= x => do
+  log("in {x}")
+  next(x)
+
+fn add_check[e](next: Int -> Int ! e) -> Int -> Int ! e, fail[OtherErr]
+= x => if x < 0 then raise Other else next(x)
+
+fn twice[e](
+  a: (Int -> Int ! e) -> Int -> Int ! e,
+  b: (Int -> Int ! e) -> Int -> Int ! e,
+  f: Int -> Int ! e,
+) -> Int -> Int ! e
+= a(b(f))
+
+fn compose[e](ws: List[(Int -> Int ! e) -> Int -> Int ! e], f: Int -> Int ! e) -> Int -> Int ! e
+= ws.fold(f, (acc, w) => w(acc))
+
+fn double(x: Int) -> Int
+= x * 2
+
+fn layered(n: Int) -> Int ! log, fail[OtherErr]
+= twice(w => add_log(w), w => add_check(w), double)(n) +
+  compose([w => add_log(w), w => add_check(w)], double)(n)
+
+fn two_errors(n: Int) -> Int ! fail[BadErr], fail[OtherErr]
+= if n == 1 then raise Worse else if n == 2 then raise Other else n
+
+fn any_error(n: Int) -> Int
+= catch two_errors(n)
+| _ => -1
+
+test rescue_removes_the_wrapped_error = pure_rescue() == 1
+
+test rescue_keeps_other_effects = logged_rescue() == -2
+
+fn layered_or(n: Int) -> Int ! log
+= catch layered(n)
+| Other => -1
+
+test rows_from_two_lambdas_join = layered_or(3) == 12 and layered_or(-1) == -1
+
+test catch_all_over_two_error_types = [0, 1, 2, 3].map(any_error) == [0, -1, -1, 3]
+
+fn first_err(n: Int) -> Int ! fail[OtherErr]
+= catch two_errors(n)
+| e => on_bad(e)
+
+test binding_catch_takes_the_type_its_arm_uses = (catch first_err(1)
+| Other => 0) == -2
+
+fn sizes(xs: List[List[Int]]) -> List[Int]
+  pre xs.all(_.len < 10)
+  post r.map(_ + 1).len == xs.len and r.all(_ >= 0)
+= xs.map(x => x.len)
+
+test placeholders_in_contracts = sizes([[1], []]) == [1, 0]
+
+fn merge(spans: List[(Int, Int)]) -> List[(Int, Int)]
+= spans.fold([], (acc, s) => do
+  match acc
+  | [..init, last] if s.0 <= last.1 + 1 => init.push((last.0, max(last.1, s.1)))
+  | _ => acc.push(s))
+
+test fold_takes_the_expected_result_type = merge([(1, 3), (2, 5), (8, 9)]) == [(1, 5), (8, 9)]
+
+fn flatten(o: Opt[Opt[Int]]) -> Int
+= match o
+| some(x) => match x
+  | some(n) => n
+  | none => 0
+| none => -1
+
+test nested_match_ends_at_its_indentation = [some(some(3)), some(none), none].map(flatten) ==
+  [3, 0, -1]
+
+fn typed_lambdas() -> (Int, Int, Opt[Int])
+= do
+  inc = (x: Int) => x + 1
+  add = (a: Int, b) => a + b
+  get = (k: Str) => [("a", 1), ("b", 2)].find(p => p.0 == k).map(p => p.1)
+  (inc(1), add(2, 3), get("b"))
+
+test lambda_parameters_take_types = typed_lambdas() == (2, 5, some(2))

@@ -414,7 +414,7 @@ impl Lower<'_> {
             }
         }
         lets.push(Stmt::Expr(body.clone()));
-        ex(ExprKind::Lambda { params, body: Box::new(single(lets)), implicit: false })
+        ex(ExprKind::Lambda { params, body: Box::new(single(lets)), implicit: false, tys: vec![] })
     }
 
     fn arm_body(&mut self, e: &Expr, ab: &str, k: &str, bound: &[String], post: &mut Option<Post>, used: &mut bool) -> Result<Expr, String> {
@@ -655,7 +655,7 @@ impl Lower<'_> {
             } else {
                 inner.extend(rest);
             }
-            let lam = ex(ExprKind::Lambda { params: vec![acc, t], body: Box::new(ex(ExprKind::Block(inner))), implicit: false });
+            let lam = ex(ExprKind::Lambda { params: vec![acc, t], body: Box::new(ex(ExprKind::Block(inner))), implicit: false, tys: vec![] });
             let rev = ex(ExprKind::Field(Box::new(ex(ExprKind::Name(k))), "reverse".into()));
             stmts.push(Stmt::Expr(ex(ExprKind::Method { recv: Box::new(rev), name: "fold".into(), targs: vec![], args: vec![ex(ExprKind::Name(x)), lam] })));
         } else {
@@ -672,11 +672,11 @@ impl Lower<'_> {
                 Some(Ev::Inline(pats, body)) => self.lambda_of(&pats, &body),
                 Some(Ev::Host) => {
                     let m = self.fresh("m");
-                    ex(ExprKind::Lambda { params: vec![m.clone()], body: Box::new(ex(ExprKind::Call(Box::new(ex(ExprKind::Name(op.clone()))), vec![ex(ExprKind::Name(m))]))), implicit: false })
+                    ex(ExprKind::Lambda { params: vec![m.clone()], body: Box::new(ex(ExprKind::Call(Box::new(ex(ExprKind::Name(op.clone()))), vec![ex(ExprKind::Name(m))]))), implicit: false, tys: vec![] })
                 }
                 None if op == "log" => {
                     let m = self.fresh("m");
-                    ex(ExprKind::Lambda { params: vec![m.clone()], body: Box::new(ex(ExprKind::Call(Box::new(ex(ExprKind::Name(op.clone()))), vec![ex(ExprKind::Name(m))]))), implicit: false })
+                    ex(ExprKind::Lambda { params: vec![m.clone()], body: Box::new(ex(ExprKind::Call(Box::new(ex(ExprKind::Name(op.clone()))), vec![ex(ExprKind::Name(m))]))), implicit: false, tys: vec![] })
                 }
                 None => return Err(format!("no handler for '{op}'")),
             });
@@ -784,7 +784,7 @@ impl Lower<'_> {
                 ExprKind::Method { recv: Box::new(self.tr(recv, sc)?), name: name.clone(), targs: targs.clone(), args: out }
             }
             ExprKind::Index(a, b) => ExprKind::Index(Box::new(self.tr(a, sc)?), Box::new(self.tr(b, sc)?)),
-            ExprKind::Lambda { params, body, implicit } => {
+            ExprKind::Lambda { params, body, implicit, .. } => {
                 let ok = std::mem::take(&mut self.lam_ok);
                 let ty = self.check.expr_types.get(&(e.span.start, e.span.end, 1));
                 if !matches!(ty, Some(Type::Fn(..))) {
@@ -798,7 +798,7 @@ impl Lower<'_> {
                         return Err("has a lambda that logs under a log handler".into());
                     }
                 }
-                ExprKind::Lambda { params: params.clone(), body: Box::new(self.tr(body, sc)?), implicit: *implicit }
+                ExprKind::Lambda { params: params.clone(), body: Box::new(self.tr(body, sc)?), implicit: *implicit, tys: vec![] }
             }
             ExprKind::Binary(op, a, b) => ExprKind::Binary(*op, Box::new(self.tr(a, sc)?), Box::new(self.tr(b, sc)?)),
             ExprKind::Unary(op, a) => ExprKind::Unary(*op, Box::new(self.tr(a, sc)?)),

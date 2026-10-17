@@ -2888,11 +2888,12 @@ impl<'a> Cx<'a> {
             return Ok((name.to_string(), decl_ret));
         }
         let mut map = HashMap::new();
+        let fails = &self.check.fail_types;
         for (d, a) in decl_params.iter().zip(arg_types) {
-            match_types(d, a, &mut map);
+            match_types(d, a, &mut map, fails);
         }
         if let Some(r) = ret {
-            match_types(&decl_ret, r, &mut map);
+            match_types(&decl_ret, r, &mut map, fails);
         }
         let f = self.generics[name].clone();
         let mut key = Vec::new();
@@ -3689,6 +3690,9 @@ impl<'a> Cx<'a> {
     }
 
     fn catch_expr(&mut self, e: &Expr, body: &Expr, arms: &[Arm], t: &Type) -> G {
+        if let Some(Type::Tuple(ets)) = self.check.expr_types.get(&(e.span.start, e.span.end, 10)).cloned() {
+            return self.catch_any(body, &arms[0].body, &ets, t);
+        }
         let et = self
             .check
             .expr_types
@@ -3733,6 +3737,32 @@ impl<'a> Cx<'a> {
         let zero = self.zero(t)?;
         let reraise = self.raise_code(&var, &et, &zero)?;
         Ok(format!("({{ {rc} {res}; {ec} {var}; {res} = {b}; goto {end}; {label}: ; {arms_code}(void)({reraise}); {end}: ; {res}; }})"))
+    }
+
+    /// A catch whose only arm is `_`, over a body that raises several error types.
+    fn catch_any(&mut self, body: &Expr, arm: &Expr, ets: &[Type], t: &Type) -> G {
+        let rc = self.cty(t)?;
+        let (end, res) = (self.fresh("cend"), self.fresh("cr"));
+        let mut decls = String::new();
+        let mut labels = String::new();
+        let depth = self.catch_stack.len();
+        for et in ets {
+            let et = self.subst(et);
+            if has_vars(&et) {
+                self.catch_stack.truncate(depth);
+                return Err("catch of an unresolved error type".into());
+            }
+            let ec = self.cty(&et)?;
+            let (var, label) = (self.fresh("cv"), self.fresh("ch"));
+            write!(decls, "{ec} {var}; (void){var}; ").unwrap();
+            write!(labels, "{label}: ; ").unwrap();
+            self.catch_stack.push((et, label, var));
+        }
+        let b = self.expr(body);
+        self.catch_stack.truncate(depth);
+        let b = b?;
+        let a = self.expr(arm)?;
+        Ok(format!("({{ {rc} {res}; {decls}{res} = {b}; goto {end}; {labels}{res} = {a}; {end}: ; {res}; }})"))
     }
 
     fn table(&mut self, f: &FnDef, rows: &[TableRow], params: &[Type], ret: &Type) -> G {
@@ -5507,16 +5537,22 @@ fn subst_map(t: &Type, m: &HashMap<String, Type>) -> Type {
     }
 }
 
-fn match_types(decl: &Type, actual: &Type, m: &mut HashMap<String, Type>) {
+fn match_types(decl: &Type, actual: &Type, m: &mut HashMap<String, Type>, fails: &HashMap<String, Type>) {
     match (decl, actual) {
         (Type::Param(p), a) => {
             m.entry(p.clone()).or_insert_with(|| a.clone());
         }
-        (Type::Con(_, d), Type::Con(_, a)) => d.iter().zip(a).for_each(|(x, y)| match_types(x, y, m)),
-        (Type::Tuple(d), Type::Tuple(a)) => d.iter().zip(a).for_each(|(x, y)| match_types(x, y, m)),
-        (Type::Fn(dp, dr, _), Type::Fn(ap, ar, _)) => {
-            dp.iter().zip(ap).for_each(|(x, y)| match_types(x, y, m));
-            match_types(dr, ar, m);
+        (Type::Con(_, d), Type::Con(_, a)) => d.iter().zip(a).for_each(|(x, y)| match_types(x, y, m, fails)),
+        (Type::Tuple(d), Type::Tuple(a)) => d.iter().zip(a).for_each(|(x, y)| match_types(x, y, m, fails)),
+        (Type::Fn(dp, dr, drow), Type::Fn(ap, ar, arow)) => {
+            dp.iter().zip(ap).for_each(|(x, y)| match_types(x, y, m, fails));
+            match_types(dr, ar, m, fails);
+            // `fail[E]` in a parameter's row: E is the argument's one other error type.
+            let only = |r: &sspur_check::types::Row, o: &sspur_check::types::Row| -> Vec<Type> { r.atoms.iter().filter(|x| !o.atoms.contains(*x)).filter_map(|x| fails.get(x).cloned()).collect() };
+            let (d, a) = (only(drow, arow), only(arow, drow));
+            if let ([d], [a]) = (d.as_slice(), a.as_slice()) {
+                match_types(d, a, m, fails);
+            }
         }
         _ => {}
     }

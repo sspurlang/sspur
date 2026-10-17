@@ -36,8 +36,9 @@ pub enum LibSite {
     /// `db.exec`, `db.query[T]`, `db.one[T]`, `db.opt[T]`: the operation, the row type (none for
     /// exec) and the parameters.
     Db(String, Option<Type>, Params),
-    /// `db.tx(c, f)`: the result type, the error types `f` can raise and its other effects.
-    Tx(Type, Vec<Type>, Vec<String>),
+    /// `db.tx(c, f)`: the result type, the error types `f` can raise, its other effects, and the
+    /// type and row parameters of the enclosing function these mention.
+    Tx(Type, Vec<Type>, Vec<String>, Vec<String>),
     /// `csv.decode[T]`, `csv.read[T]`, `csv.fold[T]`, `csv.encode(xs)`: the operation and `T`.
     Csv(String, Type),
 }
@@ -162,7 +163,7 @@ impl Checker {
 
     /// A program that defines a constructor with the name of a `DbErr` variant can't use the
     /// database, whose prelude builds and matches them.
-    fn db_shadow(&mut self, span: Span) {
+    pub(crate) fn db_shadow(&mut self, span: Span) {
         if self.diags.iter().any(|d| d.code == "E_DB_SHADOW") {
             return;
         }
@@ -239,9 +240,6 @@ impl Checker {
 
     fn infer_sql(&mut self, name: &str, targs: &[Ty], args: &[Expr], span: Span) -> Type {
         self.db_shadow(span);
-        if name == "tx" {
-            return self.infer_tx(targs, args, span);
-        }
         let typed = name != "exec";
         if typed != (targs.len() == 1) || targs.len() > 1 {
             let want = if typed { format!("db.{name}[T] takes one type argument, the row type") } else { "db.exec takes no type arguments".into() };
@@ -285,7 +283,29 @@ impl Checker {
         }
     }
 
-    fn infer_tx(&mut self, targs: &[Ty], args: &[Expr], span: Span) -> Type {
+    /// Resolves the types of the library sites of the definition just checked; a type nothing
+    /// constrains is `Unit`, as in the trait elaboration.
+    pub(crate) fn finish_lib_sites(&mut self) {
+        for key in std::mem::take(&mut self.pending_lib) {
+            if let Some(NetSite::Data(LibSite::Tx(r, fails, atoms, params))) = self.net_sites.get(&key).cloned() {
+                let r = self.zonk(&r);
+                let fails: Vec<Type> = fails.iter().map(|t| self.zonk(t)).collect();
+                let mut ps = params.clone();
+                let mut free = Vec::new();
+                for t in std::iter::once(&r).chain(&fails) {
+                    crate::elab::free_params(t, &mut free);
+                }
+                for p in free {
+                    if !ps.contains(&p) {
+                        ps.insert(0, p);
+                    }
+                }
+                self.net_sites.insert(key, NetSite::Data(LibSite::Tx(r, fails, atoms, ps)));
+            }
+        }
+    }
+
+    pub(crate) fn infer_tx(&mut self, targs: &[Ty], args: &[Expr], exp: Option<&Type>, span: Span) -> Type {
         if !targs.is_empty() {
             self.err("E_UNSUPPORTED", span, "db.tx takes no type arguments".into());
         }
@@ -300,6 +320,9 @@ impl Checker {
         self.expect(&Type::con("#Db"), &ct, args[0].span);
         let rv = self.fresh_row();
         let ret = self.fresh();
+        if let Some(t) = exp {
+            self.unify(&ret, t);
+        }
         let want = Type::Fn(vec![], Box::new(ret.clone()), Row { atoms: BTreeSet::new(), var: Some(rv) });
         let ft = self.infer(&args[1], Some(&want));
         if !self.unify(&want, &ft) {
@@ -334,7 +357,9 @@ impl Checker {
             fails.push(et);
         }
         let r = self.resolve(&ret);
-        self.lib_site(span, NetSite::Data(LibSite::Tx(r.clone(), fails, atoms)));
+        let rparams: Vec<String> = atoms.iter().filter(|a| self.cur_rparams.contains(a)).cloned().collect();
+        self.lib_site(span, NetSite::Data(LibSite::Tx(r.clone(), fails, atoms, rparams)));
+        self.pending_lib.push((span.start, span.end));
         r
     }
 

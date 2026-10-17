@@ -24,7 +24,7 @@ A signature names every parameter's type and the return type. The return type ca
 
 `x => e` is a function value. Several parameters are written `(a, b) => e` and none `() => e`. A function-typed parameter is written `A -> B`, or `(A, B) -> C`.
 
-`_` inside a call argument is a shorter lambda: `_ * 2` means `x => x * 2`. Every `_` in that argument is the same parameter, so `xs.map(_.price * _.qty)` multiplies two fields of one element.
+A parameter can name its type, `(x: Int) => x + 1`, which helps when nothing else tells the checker what it is, as for a lambda bound to a name. `_` inside a call argument is a shorter lambda: `_ * 2` means `x => x * 2`. Every `_` in that argument is the same parameter, so `xs.map(_.price * _.qty)` multiplies two fields of one element.
 
 ```sspur
 {{#include ../snippets/handbook/functions.ssp:lambda}}

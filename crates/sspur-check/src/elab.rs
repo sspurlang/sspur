@@ -61,7 +61,7 @@ fn lower_traits(m: &Module, out: &CheckOutput) -> Result<Option<(Module, CheckOu
     Ok(Some((m2, c2)))
 }
 
-fn free_params(t: &Type, out: &mut Vec<String>) {
+pub(crate) fn free_params(t: &Type, out: &mut Vec<String>) {
     match t {
         Type::Param(p) => {
             if !out.contains(p) {
@@ -112,6 +112,7 @@ fn subst_fn(f: &mut FnDef, map: &HashMap<String, Ty>) {
     let mut body = std::mem::replace(&mut f.body, Expr::new(ExprKind::Unit, Span::default()));
     visit::walk_expr_mut(&mut body, &mut |e| match &mut e.kind {
         ExprKind::Method { targs, .. } => targs.iter_mut().for_each(|a| subst_ty(a, map)),
+        ExprKind::Lambda { tys, .. } => tys.iter_mut().flatten().for_each(|a| subst_ty(a, map)),
         ExprKind::Block(stmts) => {
             for s in stmts {
                 if let Stmt::Fn(g) = s {
@@ -132,7 +133,7 @@ fn subst_fn(f: &mut FnDef, map: &HashMap<String, Ty>) {
 
 /// `_` lambdas become explicit ones: a rewritten call would otherwise capture the `_`.
 fn explicit(x: &mut Expr, ctr: &mut usize) {
-    let ExprKind::Lambda { params, body, implicit } = &mut x.kind else { return };
+    let ExprKind::Lambda { params, body, implicit, .. } = &mut x.kind else { return };
     if !*implicit {
         return;
     }
@@ -261,7 +262,7 @@ impl Elab<'_> {
             let recv = Box::new(name_expr(&params[0]));
             let mut body = Expr::new(ExprKind::Method { recv, name: n.clone(), targs: vec![], args: params[1..].iter().map(|p| name_expr(p)).collect() }, x.span);
             self.node(&mut body, mono);
-            x.kind = ExprKind::Lambda { params, body: Box::new(body), implicit: false };
+            x.kind = ExprKind::Lambda { params, body: Box::new(body), implicit: false, tys: vec![] };
             return;
         }
         if let Some(targs) = self.t.insts.get(&key).cloned() {

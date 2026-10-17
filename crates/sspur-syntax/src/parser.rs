@@ -886,9 +886,9 @@ impl Parser {
                     _ => unreachable!(),
                 });
             } else if self.eat_kw("pre") {
-                pres.push(self.refine_expr()?);
+                pres.push(self.binary(1)?);
             } else if self.eat_kw("post") {
-                posts.push(self.refine_expr()?);
+                posts.push(self.binary(1)?);
             } else if self.eat_kw("ex") {
                 examples.push(self.binary(1)?);
             } else {
@@ -936,11 +936,44 @@ impl Parser {
         }
     }
 
+    /// `(x: T, y) =>`: the parameters of a lambda with type annotations, or `None` (and nothing
+    /// consumed) when the tokens are not one.
+    fn typed_lambda_params(&mut self) -> Option<(Vec<String>, Vec<Option<Ty>>)> {
+        if !self.is_sym("(") || !matches!((self.peek_at(1), self.peek_at(2)), (Tok::Ident(_), Tok::Sym(":"))) {
+            return None;
+        }
+        let (saved, notes) = (self.pos, self.notes.len());
+        let parse = |p: &mut Self| -> Option<(Vec<String>, Vec<Option<Ty>>)> {
+            p.bump();
+            let (mut params, mut tys) = (Vec::new(), Vec::new());
+            loop {
+                let Tok::Ident(_) = p.peek() else { return None };
+                params.push(p.expect_ident().ok()?);
+                tys.push(if p.eat_sym(":") { Some(p.ty().ok()?) } else { None });
+                if !p.eat_sym(",") {
+                    break;
+                }
+            }
+            (p.eat_sym(")") && p.is_sym("=>")).then_some((params, tys))
+        };
+        let r = parse(self);
+        if r.is_none() {
+            self.pos = saved;
+            self.notes.truncate(notes);
+        }
+        r
+    }
+
     fn expr(&mut self) -> PResult<Expr> {
         let start = self.span();
-        if self.lambda_ahead() {
+        let typed = self.typed_lambda_params();
+        if typed.is_some() || self.lambda_ahead() {
             let mut params = Vec::new();
-            if self.eat_sym("(") {
+            let mut tys = Vec::new();
+            if let Some((ps, ts)) = typed {
+                params = ps;
+                tys = ts;
+            } else if self.eat_sym("(") {
                 while !self.is_sym(")") {
                     params.push(self.expect_ident()?);
                     if !self.eat_sym(",") {
@@ -964,7 +997,7 @@ impl Parser {
             if tail_return(&mut body) {
                 self.note("return e at the end of a lambda -> e");
             }
-            return Ok(Expr::new(ExprKind::Lambda { params, body: Box::new(body), implicit: false }, start.to(self.prev_span())));
+            return Ok(Expr::new(ExprKind::Lambda { params, body: Box::new(body), implicit: false, tys }, start.to(self.prev_span())));
         }
         match self.peek() {
             Tok::Kw("if") => {
@@ -1306,13 +1339,17 @@ impl Parser {
         Ok(Expr::new(ExprKind::Block(vec![Stmt::Assign(name, value, span)]), full))
     }
 
+    /// Arms on their own lines start at one column: a `|` line left of the first one belongs to
+    /// an enclosing `match`, so a nested match ends where its arms' indentation ends.
     fn arms(&mut self, indent: u32) -> PResult<Vec<Arm>> {
         let mut arms = Vec::new();
+        let mut col = None;
         loop {
             if let Some(c) = self.newline_then(|t| matches!(t, Tok::Sym("|"))) {
-                if c < indent {
+                if c < indent || col.is_some_and(|k| c < k) {
                     break;
                 }
+                col.get_or_insert(c);
                 self.line_indent = c;
                 self.bump();
             }
@@ -1808,7 +1845,7 @@ impl Parser {
             return e;
         }
         let span = e.span;
-        Expr::new(ExprKind::Lambda { params: vec!["_".into()], body: Box::new(e), implicit: true }, span)
+        Expr::new(ExprKind::Lambda { params: vec!["_".into()], body: Box::new(e), implicit: true, tys: vec![] }, span)
     }
 
     fn postfix(&mut self, mut e: Expr) -> PResult<Expr> {

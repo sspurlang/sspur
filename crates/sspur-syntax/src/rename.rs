@@ -280,7 +280,8 @@ impl Renamer<'_> {
                 targs.iter_mut().for_each(|t| self.ty(t));
                 args.iter_mut().for_each(|a| self.expr(a, scope));
             }
-            ExprKind::Lambda { params, body, .. } => {
+            ExprKind::Lambda { params, body, tys, .. } => {
+                tys.iter_mut().flatten().for_each(|t| self.ty(t));
                 scope.push(params.iter().cloned().collect());
                 self.expr(body, scope);
                 scope.pop();

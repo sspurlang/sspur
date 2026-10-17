@@ -113,7 +113,7 @@ fn foreign_spellings_get_exact_hints() {
     assert_eq!(hint("fn f(n: Int) -> Str\n= \"n=\" + n"), "convert with '.str', or interpolate: \"n={n}\"");
     assert_eq!(hint("fn f(n: Int)\n= n + 1"), "declare the return type: 'fn f(..) -> Int'");
     assert_eq!(hint("type E = A{x: Int} | B{y: Int}\nfn f(e: E) -> Int\n= match e\n  | A{x} => x"), "add | B => ?");
-    assert!(hint("fn f(e: Opt[Int], b: Bool) -> Int\n= match e\n  | some(x) => match b\n    | true => x\n    | false => 0\n  | none => 1").contains("helper fn"));
+    assert!(hint("fn f(e: Opt[Int], b: Bool) -> Int\n= match e\n  | some(x) => match b\n  | true => x\n  | false => 0\n  | none => 1").contains("indent its own arms deeper"));
 }
 
 #[test]
@@ -433,4 +433,41 @@ fn svc_endpoints_return_any_json_type() {
 fn refined_types_decode_from_json() {
     let src = "type Title = Str where _.len > 0\ntype N = {title: Title, n: Int where _ >= 0}\nfn f(s: Str) -> Res[N, Str]\n= json.decode[N](s)\nfn g(s: Str) -> Res[List[Title], Str]\n= json.decode[List[Title]](s)\nfn add(n: N) -> Int\n= n.n\nsvc api\n  ep post \"/n\" = add\n";
     assert!(codes(src).is_empty(), "{:?}", diags(src));
+}
+
+#[test]
+fn a_fail_row_parameter_takes_the_argument_error() {
+    let base = "type B = Bad\nfn failing(x: Int) -> Int ! fail[B]\n= if x > 1 then raise Bad else x\nfn rescue[E, e](next: Int -> Int ! fail[E], e) -> (Int -> Int ! e)\n= x => catch next(x)\n  | _ => 0\n";
+    let src = format!("{base}fn g() -> Int\n= rescue(failing)(5)\nfn pick(f: Int -> Int ! rand) -> Int ! rand\n= f(1)\nfn h() -> Int ! rand\n= pick(rescue(failing))");
+    assert!(codes(&src).is_empty(), "{:?}", diags(&src));
+    assert_eq!(codes(&format!("{base}fn g() -> Int\n= failing(5)")), vec!["E_EFFECT_MISSING"]);
+}
+
+#[test]
+fn a_row_shared_by_two_lambdas_is_their_union() {
+    let base = "fn add_log[e](next: Int -> Int ! e) -> (Int -> Int ! e, log)\n= x => do\n  log(\"x\")\n  next(x)\nfn add_time[e](next: Int -> Int ! e) -> (Int -> Int ! e, time)\n= x => next(x + now_ms() * 0)\nfn twice[e](a: (Int -> Int ! e) -> (Int -> Int ! e), b: (Int -> Int ! e) -> (Int -> Int ! e), f: Int -> Int ! e) -> (Int -> Int ! e)\n= a(b(f))\nfn id(x: Int) -> Int\n= x\n";
+    let ok = format!("{base}fn g() -> Int ! log, time\n= twice(n => add_log(n), n => add_time(n), id)(1)");
+    assert!(codes(&ok).is_empty(), "{:?}", diags(&ok));
+    assert_eq!(codes(&format!("{base}fn g() -> Int ! log\n= twice(n => add_log(n), n => add_time(n), id)(1)")), vec!["E_EFFECT_MISSING"]);
+    assert!(codes("fn f(g: Int -> Int ! log) -> Int ! log\n= g(1)\nfn h() -> Int ! log, time\n= f(x => x + now_ms())").contains(&"E_EFFECT_NOT_ALLOWED".to_string()));
+}
+
+#[test]
+fn a_wildcard_catch_handles_every_error_type() {
+    let base = "type A = X\ntype B = Y\nfn f(n: Int) -> Int ! fail[A], fail[B]\n= if n == 1 then raise X else if n == 2 then raise Y else n\n";
+    let ok = format!("{base}fn g(n: Int) -> Int\n= catch f(n)\n  | _ => 0");
+    assert!(codes(&ok).is_empty(), "{:?}", diags(&ok));
+    assert_eq!(codes(&format!("{base}fn g(n: Int) -> Int ! fail[B]\n= catch f(n)\n  | X => 0")), Vec::<String>::new());
+    assert!(codes(&format!("{base}fn g(n: Int) -> Int\n= catch f(n)\n  | e => 0")).contains(&"E_CATCH_TYPE".to_string()));
+}
+
+#[test]
+fn lambda_annotations_and_nested_match_layout() {
+    assert!(codes("fn f() -> Int\n= ((x: Int) => x + 1)(2)").is_empty());
+    assert_eq!(codes("fn f() -> List[Int]\n= [1].map((x: Str) => x.len)"), vec!["E_TYPE_MISMATCH"]);
+    let deeper = "fn f(o: Opt[Opt[Int]]) -> Int\n= match o\n  | some(x) => match x\n    | some(n) => n\n    | none => 0\n  | none => -1";
+    assert!(codes(deeper).is_empty(), "{:?}", diags(deeper));
+    let same = "fn f(o: Opt[Opt[Int]]) -> Int\n= match o\n  | some(x) => match x\n  | some(n) => n\n  | none => 0\n  | none => -1";
+    assert!(codes(same).contains(&"E_NONEXHAUSTIVE".to_string()));
+    assert!(codes("fn f(xs: List[Int]) -> List[Int]\n  pre xs.all(_ > 0)\n  post r.all(_ > 0)\n= xs").is_empty());
 }

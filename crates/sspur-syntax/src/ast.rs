@@ -380,7 +380,8 @@ pub enum ExprKind {
     Call(Box<Expr>, Vec<Expr>),
     Method { recv: Box<Expr>, name: String, targs: Vec<Ty>, args: Vec<Expr> },
     Index(Box<Expr>, Box<Expr>),
-    Lambda { params: Vec<String>, body: Box<Expr>, implicit: bool },
+    /// `tys` is empty, or has one optional annotation per parameter: `(x: Int, y) => ..`.
+    Lambda { params: Vec<String>, body: Box<Expr>, implicit: bool, tys: Vec<Option<Ty>> },
     Binary(BinOp, Box<Expr>, Box<Expr>),
     Unary(UnOp, Box<Expr>),
     Range(Box<Expr>, Box<Expr>),
