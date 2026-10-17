@@ -1,6 +1,9 @@
 use crate::ast::*;
 use std::collections::{HashMap, HashSet};
 
+/// Effect names that are built in, so an effect row's `log` or `fail[E]` is never a package's function of that name.
+pub const BUILTIN_EFFECTS: &[&str] = &["log", "fail", "div", "fs", "io", "proc", "time", "env", "net", "db", "rand", "conc", "yield", "ffi", "dev", "unsafe", "mmio", "static"];
+
 pub fn rename_module(m: &mut Module, from: &str, to: &str, user_methods: &HashSet<(u32, u32)>) {
     let map = HashMap::from([(from.to_string(), to.to_string())]);
     rename_defs(&mut m.defs, &map, user_methods);
@@ -38,6 +41,12 @@ impl Renamer<'_> {
     fn hit(&self, n: &mut String) {
         if let Some(t) = self.map.get(n.as_str()) {
             *n = t.clone();
+        }
+    }
+
+    fn hit_effect(&self, n: &mut String) {
+        if !BUILTIN_EFFECTS.contains(&n.as_str()) {
+            self.hit(n);
         }
     }
 
@@ -166,7 +175,7 @@ impl Renamer<'_> {
             self.ty(t);
         }
         for e in &mut f.effects {
-            self.hit(&mut e.name);
+            self.hit_effect(&mut e.name);
         }
         if !shadow {
             for e in &mut f.effects {
@@ -216,7 +225,10 @@ impl Renamer<'_> {
             Ty::Fn { params, ret, effects } => {
                 params.iter_mut().for_each(|a| self.ty(a));
                 self.ty(ret);
-                effects.iter_mut().for_each(|e| e.args.iter_mut().for_each(|a| self.ty(a)));
+                for e in effects {
+                    self.hit_effect(&mut e.name);
+                    e.args.iter_mut().for_each(|a| self.ty(a));
+                }
             }
         }
     }
@@ -337,6 +349,12 @@ impl Renamer<'_> {
                             }
                             if let (Some(t), false) = (&mut f.ret, shadow) {
                                 self.ty(t);
+                            }
+                            for e in &mut f.effects {
+                                self.hit_effect(&mut e.name);
+                                if !shadow {
+                                    e.args.iter_mut().for_each(|t| self.ty(t));
+                                }
                             }
                             scope.push(f.params.iter().map(|p| p.name.clone()).chain(["r".to_string()]).collect());
                             for x in f.pres.iter_mut().chain(f.posts.iter_mut()).chain(f.examples.iter_mut()) {

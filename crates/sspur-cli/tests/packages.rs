@@ -413,3 +413,26 @@ fn a_package_can_make_a_module_public() {
     let out = w.err("app", &["check", "bad.ssp"]);
     assert!(out.contains("coins has no public module 'hidden'"), "{out}");
 }
+
+#[test]
+fn effect_names_in_signatures_survive_linking() {
+    let w = Ws::new("effnames");
+    w.pkg(
+        "lib",
+        "efflib",
+        &[],
+        "pub effect tick() -> Int\n\npub fn handled(f: () -> Int ! tick) -> Int\n= handle f()\n  | tick() => resume(1)\n\npub fn handled2[T, e](f: () -> T ! tick, e) -> T ! e\n= handle f()\n  | tick() => resume(2)\n\npub type E = Bad\n\npub fn fail(x: Int) -> Int\n= x + 1\n\npub fn log(x: Int) -> Int\n= x * 2\n\npub fn check(x: Int) -> Int ! fail[E]\n= if x < 0 then raise Bad else fail(x)\n\ntest t = handled(() => tick() + 1) == 2\n",
+    );
+    w.pkg(
+        "app",
+        "app",
+        &[("efflib", "{ path = \"../lib\" }")],
+        "fn main() -> Unit ! log\n= log(\"{efflib.handled(() => 41)} {efflib.handled(() => efflib.tick() + 1)} {efflib.handled2(() => efflib.tick() * 7)} {efflib.fail(1)} {efflib.log(4)} {catch efflib.check(-1) | efflib.Bad => 0}\")\n",
+    );
+    assert_eq!(w.ok("lib", &["test"]), "1 passed, 0 failed");
+    for args in [&["run", "lib.ssp"][..], &["run", "--interp", "lib.ssp"]] {
+        assert_eq!(w.ok("app", args), "41 2 14 2 8 0");
+    }
+    w.pkg("bad", "bad", &[], "effect time() -> Int\n\nfn f() -> Int ! time\n= time()\n");
+    assert!(w.err("bad", &["check", "lib.ssp"]).contains("E_DUPLICATE effect 'time' is built in"));
+}

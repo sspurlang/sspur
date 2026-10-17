@@ -1017,7 +1017,7 @@ impl Checker {
 
     fn collect_effect(&mut self, e: &EffectDef, fn_names: &HashSet<&str>) {
         self.cur_def = Some(e.name.clone());
-        if self.effects.contains_key(&e.name) || matches!(e.name.as_str(), "fail" | "div") {
+        if self.effects.contains_key(&e.name) || sspur_syntax::rename::BUILTIN_EFFECTS.contains(&e.name.as_str()) {
             self.err("E_DUPLICATE", e.span, format!("effect '{}' is built in", e.name));
             return;
         }
