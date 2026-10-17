@@ -12,7 +12,7 @@ Block lines: `x = e`, `(a, b) = e`, `var x = e`, `x := e`, `for x in xs`, `while
 
 ## Expressions
 - `if c then a else b`; `then do` / `else do` + block.
-- `match e` + arms `| Pat => e`, `| Pat if c => e`. Exhaustive patterns: `_`, name, literal, tuple, `Ctor Ctor{f, g: pat} some(p) none ok(p) err(p)`; bare `Ctor` ignores fields. A nested `match` takes the arms below it; use a helper fn.
+- `match e` + arms `| Pat => e`, `| Pat if c => e`. Exhaustive patterns: `_`, name, literal, tuple, `Ctor Ctor{f, g: pat} some(p) none ok(p) err(p)`; bare `Ctor` ignores fields. A nested `match` takes the arms below it up to the first one indented less than its own.
 - Or-patterns `| A | B{x} | C{x} => e`, nested `some(0 | 1)`; alternatives bind the same names. Lists `[] [x] [x, ..rest] [..init, z] [a, .., z] [_, ..]` (`rest` is a List; `[]` + `[x, ..rest]` is exhaustive). One case: `if e is some(v) and v > 0 then a else b` (not `if let`); tests join with `and`, and `then` sees all their names. `e is p` is a Bool anywhere (`xs.filter(_ is some(_))`) and tests everything before `is`: `b is p and a`, not `a and b is p`. Guard: `some(u) = find(id) else raise NotFound{id}`; the `else` value ends the block. Long lines: end a line with an operator, or start the next, deeper, with `.name` or an operator.
 - `raise Ctor{..}`; `catch e` + arms; arms have the type of `e`, so a test compares inside: `catch f(x) == [] | Missing{sku} => .. | _ => false`. Covering every variant removes `fail[E]`.
 - `effect ask() -> Int` (callers `! ask`); `handle e` + `| ask() => resume(21)` (once; `| return(r) =>`). `yield(x)` (`! yield[T]`) makes a generator for `for`.

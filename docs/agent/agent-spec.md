@@ -18,8 +18,8 @@ test t = catch take([], "a", 1).len == 0
 
 - Effects after `!`: `fail[E]` (`raise` or a failing call), `log`, `div` (`while`).
 - `do` lines: `x = e`, `var x = e` then `x := e`, `for x in xs`, `while c`; the last is the value. `if` without `else` is for `raise`.
-- `match e`/`catch e` + `| Pat => e` arms of e's type; a nested `match` needs a helper fn. `e is some(_)` is a Bool; `some(v) = e else d` binds or ends the block.
-- `_` makes the innermost call argument a lambda. `"{x}"` interpolates; `\{` is a literal `{`. Tuples `(a, b)`, `t.0`, `(a, b) = e`. `x.f(a)` calls `f(x, a)`; `x.f` is a field or a zero-argument call.
+- `match e`/`catch e` + `| Pat => e` arms of e's type; a nested `match` indents its arms deeper. `e is some(_)` is a Bool; `some(v) = e else d` binds or ends the block.
+- `_` makes the innermost call argument a lambda; `_ => e` ignores its argument. `"{x}"` interpolates; `\{` is a literal `{`. Tuples `(a, b)`, `t.0`, `(a, b) = e`. `x.f(a)` calls `f(x, a)`; `x.f` is a field or a zero-argument call.
 - List: `len map filter find fold(init, (acc, x) => e) any all sort sort_by(key) reverse sum push(x) take drop contains index_of unique enumerate join(sep) counts first last`. Str: `len trim split(sep) lower upper chars contains starts_with replace(a, b) take drop to_int`. `find first last index_of to_int` give Opt: `or(d) get is_some ok_or(e)`. Any: `.str`.
 - Rarely needed: `./sspur spec --more` (Map, Set, regex, JSON, `pre`/`post`, traits, patterns, builtins).
 
