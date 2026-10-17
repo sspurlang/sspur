@@ -457,19 +457,10 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
             Def::Effect(_) | Def::Store(_) | Def::Static(_) | Def::Use(_) => {}
             Def::Svc(sv) => c.check_svc(sv, m),
         }
-        // A dependency's warnings and audits belong to its own check, not its users'.
-        let errors_only = |c: &mut Checker| {
-            if !c.own_site {
-                let tail = c.diags.split_off(before);
-                c.diags.extend(tail.into_iter().filter(Diag::is_error));
-            }
-        };
-        errors_only(&mut c);
         if matches!(d, Def::Fn(_) | Def::Test(_)) && !skip.contains(d.name()) {
             body_diags.insert(d.name().to_string(), c.diags[before..].to_vec());
         }
         c.finish_traits_def();
-        errors_only(&mut c);
         for (k, t) in std::mem::take(&mut c.pending_types) {
             let r = c.resolve(&t);
             c.expr_types.insert(k, r);
@@ -2408,9 +2399,6 @@ impl Checker {
                         self.expect(&unit, &last, x.span);
                     }
                     if !is_last {
-                        if let Stmt::Expr(x) = s {
-                            self.discarded(x, &last);
-                        }
                         if let Stmt::Expr(x) = s
                             && matches!(x.kind, ExprKind::Return(_) | ExprKind::Raise(_))
                             && matches!(self.resolve(&last), Type::Var(_))
@@ -2584,31 +2572,6 @@ impl Checker {
                 self.push_diag("E_PAR_SHARE", "error", span, format!("{rt} would carry function values between tasks"), Some("channels carry data; send a value the receiver interprets".into()), vec![]);
             }
         }
-    }
-
-    /// A statement `b.add(s)` whose value, the updated `StrBuf` or collection, is dropped: values
-    /// don't change in place, so the statement does nothing.
-    fn discarded(&mut self, x: &Expr, t: &Type) {
-        let ExprKind::Method { recv, name, .. } = &x.kind else { return };
-        let updates = ["add", "push", "push_front", "insert", "set", "put", "remove", "append", "concat", "clear", "sort", "reverse", "union", "inter", "diff", "flip", "clear_bit"];
-        if !updates.contains(&name.as_str()) || self.user_methods.contains(&(x.span.start, x.span.end)) {
-            return;
-        }
-        let t = self.resolve(t);
-        let Type::Con(c, _) = &t else { return };
-        if !matches!(c.as_str(), "#StrBuf" | "List" | "Map" | "#Set" | "#Heap" | "#HashMap" | "#HashSet" | "#Bits") {
-            return;
-        }
-        let key = expr_key(recv);
-        let Some(rt) = self.pending_types.iter().rev().find(|(k, _)| *k == key).map(|(_, t)| t.clone()) else { return };
-        if self.resolve(&rt) != t {
-            return;
-        }
-        let r = match &recv.kind {
-            ExprKind::Name(n) => n.clone(),
-            _ => "x".to_string(),
-        };
-        self.push_diag("W_DISCARDED", "warning", x.span, format!("'.{name}' returns a new {t} and leaves {r} as it is, so this line does nothing"), Some(format!("keep the result: {r} := {r}.{name}(..)")), vec![]);
     }
 
     /// The type variables in the effect arguments (`fail[?1]`, `yield[?2]`) of the rows in `t`.

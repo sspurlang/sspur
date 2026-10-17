@@ -169,7 +169,7 @@ fn a_tampered_dependency_fails_verification() {
     let (out, ok) = w.run_env("app", &["test", "lib.ssp"], &[("SSPUR_CACHE", fresh)]);
     assert!(!ok && out.contains("E_DEP_HASH"), "{out}");
     assert_eq!(std::fs::read_to_string(w.dir.join("app/sspur.lock")).unwrap(), lock, "the lock is never rewritten by a failed fetch");
-    assert!(w.ok("app", &["test", "lib.ssp"]).starts_with("1 passed, 0 failednote: geo changed since sspur.lock pinned it"), "the locked copy in the cache still builds, with a note");
+    assert_eq!(w.ok("app", &["test", "lib.ssp"]), "1 passed, 0 failed", "the locked copy in the cache still builds");
     assert!(w.ok("app", &["deps", "fetch"]).contains("1 dependencies verified"));
     let hash = lock.lines().find_map(|l| l.strip_prefix("hash = \"")).unwrap().trim_end_matches('"');
     let cached = w.cache.join("pkgs").join(hash).join("src.ssp");
@@ -190,8 +190,7 @@ fn upgrades_show_a_semantic_diff_and_refuse_breaking_changes() {
     assert!(std::fs::read_to_string(w.dir.join("app/sspur.toml")).unwrap().contains("mathx = { path = \"../lib\" }"));
     let h0 = w.ok("app", &["hash", "lib.ssp"]);
     w.write("lib/lib.ssp", "pub fn double(n: Int) -> Int ! log = do\n  log(\"d\")\n  n * 2\n\npub fn half(n: Int) -> Int\n  pre n >= 0\n= n / 2\n\npub fn inc(n: Int) -> Int = 1 + n\n\npub fn fresh(s: Str) -> Str = s\n");
-    let h1 = w.ok("app", &["hash", "lib.ssp"]);
-    assert!(h1.starts_with(&h0) && h1.contains("note: mathx changed since sspur.lock pinned it"), "a changed upstream never changes a locked build: {h1}");
+    assert_eq!(w.ok("app", &["hash", "lib.ssp"]), h0, "a changed upstream never changes a locked build");
     let lock = std::fs::read_to_string(w.dir.join("app/sspur.lock")).unwrap();
     let out = w.err("app", &["deps", "update"]);
     for want in ["~ mathx.double  effects: + log", "+ mathx.fresh  fn mathx.fresh(s: Str) -> Str", "- mathx.gone", "~ mathx.half  contracts: + pre n >= 0", "~ mathx.inc  body", "breaks app:", "f:1:23 E_EFFECT_MISSING performs 'log'", "refused"] {
@@ -387,10 +386,6 @@ fn path_dependencies_inside_the_package_follow_their_source() {
     assert_eq!(w.ok("app", &["run", "lib.ssp"]), "hey store 4 hey app 4");
     w.write("lib/lib.ssp", &TEXT.replace("w * w", "w + w"));
     assert_eq!(w.ok("app", &["run", "lib.ssp"]), "hey store 4 hey app 4", "a dependency outside the package stays pinned");
-    w.pkg("app2", "app2", &[("geo", "{ path = \"../lib\" }")], "fn main() -> Unit ! log = log(geo.area(geo.Box{w: 3}).str)\n");
-    assert_eq!(w.ok("app2", &["run", "lib.ssp"]), "6");
-    w.write("lib/lib.ssp", TEXT);
-    assert_eq!(w.ok("app2", &["run", "lib.ssp"]), "6note: geo changed since sspur.lock pinned it; this build uses the pinned version, and 'sspur deps update geo' takes the new one\n", "a changed path dependency is noted");
 }
 
 #[test]
@@ -440,15 +435,4 @@ fn effect_names_in_signatures_survive_linking() {
     }
     w.pkg("bad", "bad", &[], "effect time() -> Int\n\nfn f() -> Int ! time\n= time()\n");
     assert!(w.err("bad", &["check", "lib.ssp"]).contains("E_DUPLICATE effect 'time' is built in"));
-}
-
-#[test]
-fn a_dependencys_audits_stay_in_its_own_check() {
-    let w = Ws::new("depaudit");
-    w.pkg("lib", "frlib", &[], "// A hash of the key.\npub fn tag(k: Secret[Bytes]) -> Bytes\n= k.map(b => crypto.sha256(b)).expose(\"a digest is public\")\n");
-    w.pkg("app", "app", &[("frlib", "{ path = \"../lib\" }")], "fn main() -> Unit ! log\n= log(\"{frlib.tag(secret(bytes([1]))).len}\")\n");
-    assert!(w.ok("lib", &["check", "lib.ssp"]).contains("A_DECLASSIFY"));
-    for args in [&["run", "lib.ssp"][..], &["run", "--interp", "lib.ssp"]] {
-        assert_eq!(w.ok("app", args), "32");
-    }
 }
