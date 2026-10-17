@@ -4,7 +4,7 @@ Status: accepted, 2026-10-17
 
 ## Problem
 
-A cold native build of a big package was slow. On a synthetic package of 200 modules, 2.55 MB of source and about 8,750 functions (`bench/bigpkg/gen.py`), a cold `sspur test` took 300 to 400 s and a cold `sspur publish --dry-run` about 300 s, against about 10 s and 28 s warm. A dependent's first `sspur run` paid the same again.
+A cold native build of a big package was slow. On a synthetic package of 200 modules, 2.55 MB of source and about 8,750 functions (`bench/bigpkg/gen.py`), a cold `sspur test` took 280 to 400 s and a cold `sspur publish --dry-run` about 290 s, against about 10 s and 28 s warm. A dependent's first `sspur run` paid the same again.
 
 Profiled on Apple M1 Pro (10 cores) with `sample` and `SSPUR_SPLIT_DEBUG=1`, the cold `sspur test` spent:
 
@@ -43,7 +43,7 @@ Measured on the package above (cold `sspur test`, compile phase only): one unit 
 
 ### Jobs
 
-`flags::jobs` runs one clang process per core (`available_parallelism`), but more than 4 only when each gets at least 256 KB of C (about a second of work), and fewer when memory couldn't hold that many compiles of the biggest unit (about 64 MB plus 320 bytes per byte of C each, within half of the available memory on Linux and Windows and a quarter of the physical memory on macOS). `SSPUR_JOBS` sets the number. A build of up to 4 jobs batches its units as before (`ceil(units / (2 * jobs))` per clang process, at most 16), so a small program starts the same processes as in 0.13. A bigger one sorts the units by size, biggest first, and batches them into about a quarter of each job's share of the C, at most 16 units, so no long compile is left for the end. When `sspur publish` tests a package's modules side by side, each run gets its share of the cores.
+`flags::jobs` runs one clang process per core (`available_parallelism`), but more than 4 only when each gets at least 256 KB of C (about a second of work), and fewer when memory couldn't hold that many compiles of the biggest unit (about 64 MB plus 320 bytes per byte of C each, within half of the available memory on Linux and Windows and a quarter of the physical memory on macOS). `SSPUR_JOBS` sets the number. A build of up to 4 jobs batches its units as before (`ceil(units / (2 * jobs))` per clang process, at most 16), so a small program starts the same processes as before. A bigger one sorts the units by size, biggest first, and batches them into about a quarter of each job's share of the C, at most 16 units, so no long compile is left for the end. When `sspur publish` tests a package's modules side by side, each run gets its share of the cores.
 
 `split::units` builds the units on every core and only visits each unit's own items, so splitting the big package takes 0.5 s instead of 24 s.
 
@@ -66,21 +66,21 @@ The SMT cache is now `SSPUR_CACHE/smt2/KEY[..2]/KEY.ANSWER`, empty files whose n
 
 ## Result
 
-Apple M1 Pro, 10 cores, 32 GB, macOS with endpoint security software running, `bench/bigpkg/run.sh` with 0.13.0 and this build taking turns on every step; each cold step starts from an empty `SSPUR_CACHE`. Wall time and the peak of the summed RSS of the process tree (`sspur` and its clang and Z3 processes), sampled every 0.1 s:
+Apple M1 Pro, 10 cores, 32 GB, macOS with endpoint security software running, `bench/bigpkg/run.sh` with 0.14.0 and this build (both `cargo build --release`) taking turns on every step; each cold step starts from an empty `SSPUR_CACHE`. Wall time and the peak of the summed RSS of the process tree (`sspur` and its clang and Z3 processes), sampled every 0.1 s:
 
-| Step | 0.13.0 cold | now cold | 0.13.0 warm | now warm |
+| Step | 0.14.0 cold | now cold | 0.14.0 warm | now warm |
 |---|---|---|---|---|
-| `sspur check` | 5.3 s, 221 MB | 4.4 s, 218 MB | 1.0 s, 219 MB | 1.2 s, 218 MB |
-| `sspur test` (native) | 354 s, 656 MB | 60 s, 1.2 GB | 9.2 s, 390 MB | 5.8 s, 400 MB |
-| `sspur test --interp` | 5.8 s, 226 MB | 5.4 s, 220 MB | 1.3 s, 222 MB | 1.3 s, 223 MB |
-| `sspur publish --dry-run --no-gh` | 298 s, 790 MB | 57 s, 1.6 GB | 27.6 s, 492 MB | 21.9 s, 676 MB |
-| A dependent's first `sspur run` | 251 s, 855 MB | 38 s, 1.2 GB | 8.6 s, 392 MB | 5.0 s, 457 MB |
-| `sspur test` after editing one function of a module | | | 38.2 s, 783 MB | 7.1 s, 562 MB |
-| `sspur test` of `examples/packages/app` (median of 5) | 1.45 s, 190 MB | 1.36 s, 193 MB | 0.02 s | 0.02 s |
-| `sspur run` hello world (median of 15) | 0.88 s | 0.88 s | | |
+| `sspur check` | 5.0 s, 218 MB | 4.7 s, 221 MB | 1.0 s, 223 MB | 1.0 s, 227 MB |
+| `sspur test` (native) | 282 s, 542 MB | 40 s, 1.2 GB | 9.8 s, 459 MB | 4.9 s, 407 MB |
+| `sspur test --interp` | 4.5 s, 228 MB | 4.5 s, 224 MB | 1.0 s, 225 MB | 1.0 s, 222 MB |
+| `sspur publish --dry-run --no-gh` | 291 s, 833 MB | 59 s, 1.3 GB | 27.8 s, 561 MB | 21.3 s, 683 MB |
+| A dependent's first `sspur run` | 251 s, 715 MB | 41 s, 1.2 GB | 8.8 s, 391 MB | 4.9 s, 412 MB |
+| `sspur test` after editing one function of a module | | | 36.0 s, 836 MB | 6.8 s, 610 MB |
+| `sspur test` of `examples/packages/app` (median of 20) | 1.33 s, about 200 MB | 1.33 s, about 200 MB | 0.02 s | 0.02 s |
+| `sspur run` hello world (median of 15) | 0.92 s, 93 MB | 0.91 s, 92 MB | 0.01 s | 0.01 s |
 
-The cold `sspur test` took 40 s in a quieter hour. The cold builds' extra memory is the 10 clang processes at once; clang peaks at about 135 MB on a unit of 400 KB of C, the size of the biggest here. The warm builds gain from the SMT cache; `publish` warm is mostly the registry checks themselves.
+The cold builds' extra memory is the 10 clang processes at once; clang peaks at about 135 MB on a unit of 400 KB of C, the size of the biggest here. The warm builds gain from the SMT cache; `publish` warm is mostly the registry checks themselves.
 
-Programs without big packages compile to the same objects and libraries as in 0.13.0: every program of `bench/native` builds with 0 units compiled from a cache that 0.13.0 filled, and links to the same library names. Best of 5, interleaved (0.13.0, now): `compute_big` 0.916 s, 0.919 s; `typical` 0.148 s, 0.139 s; `strings_big` 0.059 s, 0.059 s; `app` 0.100 s, 0.101 s; `churn` 0.026 s, 0.027 s; `parallel` 0.333 s, 0.344 s; `simd` 0.174 s, 0.173 s; `gpu` 0.322 s, 0.328 s.
+Programs without big packages compile to the same objects and libraries as in 0.14.0: every program of `bench/native` builds with 0 units compiled from a cache that 0.14.0 filled, and links to the same library names. Best of 5, interleaved (0.14.0, now): `compute_big` 0.912 s, 0.916 s; `typical` 0.134 s, 0.149 s (best of 7 again: 0.114 s, 0.113 s); `strings_big` 0.061 s, 0.059 s; `app` 0.108 s, 0.106 s; `churn` 0.029 s, 0.031 s; `parallel` 0.309 s, 0.345 s (best of 7 again: 0.280 s, 0.285 s); `simd` 0.168 s, 0.171 s; `gpu` 0.270 s, 0.275 s.
 
-`sspur run` of hello world from the cache (ADR 0034), 320 interleaved runs: 10.6 ms median for 0.13.0, 11.3 ms for a copy of 0.13.0 signed again (the same code with a new code signature hash) and 11.2 ms for this build, all with a peak RSS of 2.5 MB; both builds retire 26.3 million instructions and about 12 million cycles. The endpoint security software takes about 0.6 ms longer to start a binary it has seen less often, which is the whole difference. The normal path (`--no-cache`, 150 runs): 14.4 ms, 15.2 ms and 15.0 ms, 6.3 to 6.5 MB.
+`sspur run` of hello world from the cache (ADR 0034), 320 interleaved runs: 10.35 ms median for 0.14.0, 10.47 ms for a copy of it signed again and 10.34 ms for this build, with a peak RSS of 2.4 to 2.5 MB. The normal path (`--no-cache`, 150 runs): 13.57 ms, 13.78 ms and 13.59 ms, 6.3 MB. (The endpoint security software takes up to about 0.6 ms longer to start a binary whose code signature it has seen less often, which is why a re-signed copy of the old binary is in the comparison.)
