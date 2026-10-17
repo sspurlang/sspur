@@ -1024,7 +1024,7 @@ pub(crate) fn std_str(name: &str, x: &str, a: Vec<Value>) -> R {
 
 /// An integral `d` as an Int; NaN, the infinities and values outside Int's range trap like Int overflow.
 pub(crate) fn f2i(d: f64) -> R {
-    if d >= -9223372036854775808.0 && d < 9223372036854775808.0 { Ok(Value::Int(d as i64)) } else { trap("integer overflow") }
+    if (-9223372036854775808.0..9223372036854775808.0).contains(&d) { Ok(Value::Int(d as i64)) } else { trap("integer overflow") }
 }
 
 pub(crate) fn std_float(name: &str, x: f64, a: Vec<Value>) -> R {

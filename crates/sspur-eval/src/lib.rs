@@ -2,9 +2,9 @@
 mod builtins;
 #[cfg(feature = "native")]
 mod ffi;
+mod lastuse;
 mod net;
 #[cfg(feature = "native")]
-mod lastuse;
 mod libs;
 pub mod fuzz;
 pub mod progen;

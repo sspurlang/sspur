@@ -286,6 +286,18 @@ impl Checker {
         }
     }
 
+    /// Resolves the types of the definition's `db.tx` sites, now that it has been checked.
+    pub(crate) fn finish_tx(&mut self) {
+        for k in std::mem::take(&mut self.pending_tx) {
+            if let Some(NetSite::Data(LibSite::Tx(r, fails, _, _))) = self.net_sites.get(&k).cloned() {
+                let (r, fails) = (self.resolve(&r), fails.iter().map(|t| self.resolve(t)).collect());
+                if let Some(NetSite::Data(LibSite::Tx(r0, f0, _, _))) = self.net_sites.get_mut(&k) {
+                    (*r0, *f0) = (r, fails);
+                }
+            }
+        }
+    }
+
     fn infer_tx(&mut self, targs: &[Ty], args: &[Expr], span: Span) -> Type {
         if !targs.is_empty() {
             self.err("E_UNSUPPORTED", span, "db.tx takes no type arguments".into());
