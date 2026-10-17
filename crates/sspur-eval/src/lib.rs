@@ -1578,7 +1578,13 @@ impl Interp {
             given.insert(n.as_str(), self.eval(x, env)?);
         }
         for n in &order {
-            let v = given.remove(n.as_str()).map_or_else(|| trap(format!("missing field {n}")), Ok)?;
+            let v = match given.remove(n.as_str()) {
+                Some(v) => v,
+                #[cfg(not(target_family = "wasm"))]
+                None if sspur_check::std_field_default(&owner, n) && n == "data" => Value::bytes(vec![]),
+                None if sspur_check::std_field_default(&owner, n) => Value::str(""),
+                None => return trap(format!("missing field {n}")),
+            };
             vals.push((Rc::<str>::from(n.as_str()), v));
         }
         let fs = self.build_record(&owner, vals)?;

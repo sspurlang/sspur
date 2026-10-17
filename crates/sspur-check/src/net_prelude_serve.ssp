@@ -1,6 +1,12 @@
 // The part of the network prelude that only the generated svc dispatchers call (ADR 0035). The
 // playground, which can't serve, is built without it.
 
+fn __http_out(r: Response) -> (Int, List[(Str, Str)], Str, Bytes)
+= (r.status, r.headers, r.body, r.data)
+
+fn __http_bytes(status: Int, data: Bytes) -> Response
+= Response{status, headers: [("content-type", "application/octet-stream")], body: "", data}
+
 fn __http_segs(r: Request) -> List[Str]
 = do
   p = __http_req_path(r)

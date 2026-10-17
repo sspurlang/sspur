@@ -3440,7 +3440,7 @@ impl<'a> Cx<'a> {
                         temps.insert(fname.clone(), tv);
                     }
                     let rv = self.fresh("rv");
-                    let inits: Vec<String> = decl.iter().map(|(f, _)| format!(".{f} = {}", temps[f])).collect();
+                    let inits: Vec<String> = decl.iter().map(|(f, _)| format!(".{f} = {}", temps.get(f).map_or("str_lit(\"\", 0)", String::as_str))).collect();
                     write!(s, "{rc} {rv} = ({rc}){{{}}}; ", inits.join(", ")).unwrap();
                     let proven = self.proven_fields(e, &owner, fields);
                     s.push_str(&self.record_checks_except(&owner, &rv, ".", &decl, &proven)?);

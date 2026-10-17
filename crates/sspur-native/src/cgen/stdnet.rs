@@ -8,7 +8,7 @@ const GLUE: &str = r#"
 typedef struct { const char* p; int64_t n; } SnStr;
 typedef struct { SnStr name, value; } SnHdr;
 typedef struct { SnStr host; int64_t port, max_body, timeout_ms, max_requests; int32_t gzip, access_log; const SnStr* cors; int64_t ncors; const SnStr* files; int64_t nfiles; SnStr health, cert, key; void (*log)(void*, const char*, int64_t); void* log_ctx; } SnCfg;
-typedef struct { SnStr method, url, body; SnHdr* headers; int64_t nheaders; int64_t timeout_ms; } SnCall;
+typedef struct { SnStr method, url, body; SnHdr* headers; int64_t nheaders; int64_t timeout_ms; SnStr peer; } SnCall;
 typedef struct { SnStr method, url, body; const SnHdr* headers; int64_t nheaders; int64_t timeout_ms, retries, redirects; SnStr download; } SnReq;
 typedef struct { int64_t status, err; char* body; int64_t body_n; SnHdr* headers; int64_t nheaders; char* msg; int64_t msg_n; char* store; } SnResp;
 typedef struct {
@@ -231,10 +231,11 @@ ss_serve(&c_, cf_.f2, {tramp}, &k_, st, depth); free(co_); free(fi_); 0LL; }})",
             self.lambdas,
             "static void {name}(void* clo, SnCall* c, int64_t depth, int64_t limit) {{ struct {m}* k = (struct {m}*)clo; Status st0; memset(&st0, 0, sizeof st0); st0.limit = limit; Status* st = &st0; \
 jmp_buf jb; jmp_buf* saved = sspur_jb; sspur_jb = &jb; if (setjmp(jb)) {{ sspur_jb = saved; ss_srv_failed(c, st, 0); return; }} \
-Str m_ = ss_net_str(c->method.p, c->method.n); Str u_ = ss_net_str(c->url.p, c->url.n); Str b_ = ss_net_str(c->body.p, c->body.n); __auto_type h_ = {hs}; \
-{rr} r_ = k->fn(k->env, m_, u_, h_, b_, c->timeout_ms, st, depth); sspur_jb = saved; if (r_.code) {{ ss_srv_failed(c, st, \"raised an error\"); return; }} \
+Str m_ = ss_net_str(c->method.p, c->method.n); Str u_ = ss_net_str(c->url.p, c->url.n); Str b_ = ss_net_str(c->body.p, c->body.n); __auto_type h_ = {hs}; Str p_ = ss_net_str(c->peer.p, c->peer.n); \
+{rr} r_ = k->fn(k->env, m_, u_, h_, b_, c->timeout_ms, p_, st, depth); sspur_jb = saved; if (r_.code) {{ ss_srv_failed(c, st, \"raised an error\"); return; }} \
 SnHdr* oh_ = (SnHdr*)malloc(sizeof(SnHdr) * (size_t)(r_.v.f1.len + 1)); for (int64_t i_ = 0; i_ < r_.v.f1.len; i_++) {{ oh_[i_].name = (SnStr){{r_.v.f1.data[i_].f0.p, r_.v.f1.data[i_].f0.len}}; oh_[i_].value = (SnStr){{r_.v.f1.data[i_].f1.p, r_.v.f1.data[i_].f1.len}}; }} \
-ss_net_api.reply(c, r_.v.f0, oh_, r_.v.f1.len, r_.v.f2.p, r_.v.f2.len); free(oh_); if (ss_req_end) ss_req_end(); }}"
+Str ob_ = r_.v.f2; char* oc_ = 0; if (r_.v.f3.len) {{ if (!ob_.len) ob_ = r_.v.f3; else {{ oc_ = (char*)malloc((size_t)(ob_.len + r_.v.f3.len)); memcpy(oc_, ob_.p, (size_t)ob_.len); memcpy(oc_ + ob_.len, r_.v.f3.p, (size_t)r_.v.f3.len); ob_ = (Str){{ob_.len + r_.v.f3.len, oc_}}; }} }} \
+ss_net_api.reply(c, r_.v.f0, oh_, r_.v.f1.len, ob_.p, ob_.len); free(oh_); free(oc_); if (ss_req_end) ss_req_end(); }}"
         )
         .unwrap();
         Ok(name)

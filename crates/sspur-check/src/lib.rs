@@ -27,7 +27,7 @@ pub use deploy::{db_op, HTTP_METHODS};
 pub use types::{Row, Type};
 pub use traits::{ImplOut, TraitOut};
 pub use holes::{HoleCtx, HoleSite, Sig, SigKind};
-pub use builtins::{is_std_global, std_globals, std_methods, std_sums, std_types, BARE_NAMES, GLOBALS, METHODS, OPEN_STD_RECORDS, STD_GLOBALS, STD_GLOBAL_NAMES, STD_METHODS, STD_RECORDS, STD_SUMS, STD_TYPES};
+pub use builtins::{is_std_global, std_field_default, std_globals, std_methods, std_sums, std_types, BARE_NAMES, GLOBALS, METHODS, OPEN_STD_RECORDS, STD_GLOBALS, STD_GLOBAL_NAMES, STD_METHODS, STD_RECORDS, STD_SUMS, STD_TYPES};
 pub use net::NetSite;
 
 #[derive(Clone, Debug, Serialize)]
@@ -2758,7 +2758,7 @@ impl Checker {
                         .types
                         .iter()
                         .filter_map(|(n, i)| match &i.kind {
-                            TypeKind::Record(fs) if fs.iter().map(|(f, _)| f.as_str()).collect::<BTreeSet<_>>() == names => Some((n.clone(), i.params.clone(), fs.clone())),
+                            TypeKind::Record(fs) if fs.iter().map(|(f, _)| f.as_str()).collect::<BTreeSet<_>>() == names || fs.iter().filter(|(f, _)| !builtins::std_field_default(n, f)).map(|(f, _)| f.as_str()).collect::<BTreeSet<_>>() == names => Some((n.clone(), i.params.clone(), fs.clone())),
                             _ => None,
                         })
                         .collect();
@@ -2798,6 +2798,7 @@ impl Checker {
                     let t = self.infer(v, Some(&fr));
                     self.expect(fty, &t, v.span);
                 }
+                None if builtins::std_field_default(&name, fname) => {}
                 None => self.err("E_FIELD_MISSING", span, format!("{name} is missing field '{fname}'")),
             }
         }

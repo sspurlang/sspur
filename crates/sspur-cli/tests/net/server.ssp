@@ -52,6 +52,9 @@ fn app(req: Request, hits: Atomic[Int]) -> Response ! log, time, conc
   | "/redirect" => Response{status: 302, headers: [("location", "/items/1")], body: ""}
   | "/trap" => http.text(200, [1, 2][req.body.len + 5].str)
   | "/html" => http.html(200, "<p>hi</p>")
+  | "/peer" => http.text(200, "peer {req.peer}")
+  | "/bytes" => http.bytes(200, bytes([104, 105, 255]))
+  | "/both" => Response{status: 200, headers: [], body: "ab", data: bytes([99, 255])}
   | _ => api(req)
 
 fn main() -> Unit ! net, log, fs, env, time, conc

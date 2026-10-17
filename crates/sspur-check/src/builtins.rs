@@ -120,10 +120,25 @@ pub static METHODS: &[(&str, &str)] = &[
 
 pub static STD_TYPES: &[(&str, &str, usize)] = &[("Set", "#Set", 1), ("Heap", "#Heap", 1), ("StrBuf", "#StrBuf", 0), ("Time", "#Time", 0), ("Duration", "#Duration", 0), ("Bits", "#Bits", 0), ("HashMap", "#HashMap", 2), ("HashSet", "#HashSet", 1), ("BigInt", "#BigInt", 0), ("Dec", "#Dec", 0), ("Regex", "#Regex", 0), ("DevBuf", "#DevBuf", 1), ("Rng", "#Rng", 0), ("Complex", "#Complex", 0), ("FlatMap", "#FlatMap", 2), ("MdSpan", "#MdSpan", 1), ("Zone", "#Zone", 0), ("File", "#File", 0), ("View", "#View", 1), ("Ratio", "#Ratio", 0), ("Locale", "#Locale", 0), ("Request", "#Request", 0), ("Response", "#Response", 0), ("Server", "#Server", 0), ("HttpErr", "#HttpErr", 0)];
 
-pub static STD_RECORDS: &[(&str, &str)] = &[("#Rng", "type Rng = {state: Int, gamma: Int}"), ("#Complex", "type Complex = {re: F64, im: F64}"), ("#FlatMap", "type FlatMap[K, V] = {keys: List[K], values: List[V]}"), ("#MdSpan", "type MdSpan[T] = {data: List[T], offset: Int, shape: List[Int], strides: List[Int]}"), ("#Zone", "type Zone = {name: Str, trans: List[Int], idx: List[Int], offs: List[Int], dst: List[Bool], abbrs: List[Str], tail: List[Int]}"), ("#File", "type File = {fd: Int, path: Str, dev: Int, ino: Int}"), ("#Ratio", "type Ratio = {num: BigInt, den: BigInt}"), ("#Locale", "type Locale = {tag: Str}"), ("#Request", "type Request = {method: Str, url: Str, headers: List[(Str, Str)], body: Str, timeout_ms: Int, retries: Int, redirects: Int}"), ("#Response", "type Response = {status: Int, headers: List[(Str, Str)], body: Str}"), ("#Server", "type Server = {port: Int, host: Str, workers: Int, max_body: Int, timeout_ms: Int, max_requests: Int, cors: List[Str], gzip: Bool, files: List[(Str, Str)], health: Str, cert: Str, key: Str, access_log: Bool}")];
+pub static STD_RECORDS: &[(&str, &str)] = &[("#Rng", "type Rng = {state: Int, gamma: Int}"), ("#Complex", "type Complex = {re: F64, im: F64}"), ("#FlatMap", "type FlatMap[K, V] = {keys: List[K], values: List[V]}"), ("#MdSpan", "type MdSpan[T] = {data: List[T], offset: Int, shape: List[Int], strides: List[Int]}"), ("#Zone", "type Zone = {name: Str, trans: List[Int], idx: List[Int], offs: List[Int], dst: List[Bool], abbrs: List[Str], tail: List[Int]}"), ("#File", "type File = {fd: Int, path: Str, dev: Int, ino: Int}"), ("#Ratio", "type Ratio = {num: BigInt, den: BigInt}"), ("#Locale", "type Locale = {tag: Str}"), ("#Request", "type Request = {method: Str, url: Str, headers: List[(Str, Str)], body: Str, timeout_ms: Int, retries: Int, redirects: Int, peer: Str}"), ("#Response", RESPONSE), ("#Server", "type Server = {port: Int, host: Str, workers: Int, max_body: Int, timeout_ms: Int, max_requests: Int, cors: List[Str], gzip: Bool, files: List[(Str, Str)], health: Str, cert: Str, key: Str, access_log: Bool}")];
 
 /// Std records programs can build with a literal and update with `with`; the others are opaque.
 pub static OPEN_STD_RECORDS: &[&str] = &["#Request", "#Response", "#Server"];
+
+/// A response's body is `body` then `data`, so a handler can send bytes (outside the playground,
+/// which has no `Bytes` and can't serve).
+#[cfg(not(target_family = "wasm"))]
+const RESPONSE: &str = "type Response = {status: Int, headers: List[(Str, Str)], body: Str, data: Bytes}";
+#[cfg(target_family = "wasm")]
+const RESPONSE: &str = "type Response = {status: Int, headers: List[(Str, Str)], body: Str}";
+
+/// Fields of std records that a literal may leave out: `peer` is `""` and `data` is empty.
+pub static STD_FIELD_DEFAULTS: &[(&str, &str)] = &[("#Request", "peer"), ("#Response", "data")];
+
+/// Whether a literal of the std record `rec` may leave out `field`.
+pub fn std_field_default(rec: &str, field: &str) -> bool {
+    STD_FIELD_DEFAULTS.iter().any(|(r, f)| *r == rec && *f == field)
+}
 
 /// Std sum types, by internal name; their constructors are global unless a program defines its own.
 pub static STD_SUMS: &[(&str, &str)] = &[("#HttpErr", "type HttpErr = Dns{msg: Str} | Connect{msg: Str} | Tls{msg: Str} | Timeout{msg: Str} | HttpStatus{code: Int, body: Str} | Io{msg: Str}")];
@@ -230,7 +245,6 @@ mins(n: Int) -> Duration\n\
 hours(n: Int) -> Duration\n\
 days(n: Int) -> Duration\n\
 __net_fetch(method: Str, url: Str, headers: List[(Str, Str)], body: Str, timeout_ms: Int, retries: Int, redirects: Int, path: Str) -> (Int, Int, List[(Str, Str)], Str) ! net\n\
-__net_serve[e](cfg: (Int, Str, Int, Int, Int, Int, List[Str], Bool, List[(Str, Str)], Str, Str, Str, Bool), h: (Str, Str, List[(Str, Str)], Str, Int) -> (Int, List[(Str, Str)], Str) ! e) -> Unit ! net, log, e\n\
 pi() -> F64\n\
 euler() -> F64\n\
 inf() -> F64\n\
@@ -238,7 +252,11 @@ nan() -> F64";
 
 /// `Bytes` and the primitives of the library prelude (ADR 0037), which the playground leaves out.
 #[cfg(not(target_family = "wasm"))]
-pub static LIB_GLOBALS: &str = "bytes(xs: List[Int]) -> Bytes\nfrom_hex(s: Str) -> Opt[Bytes]\nfrom_base64(s: Str) -> Opt[Bytes]\nfrom_base64url(s: Str) -> Opt[Bytes]\nread_bin(path: Str) -> Res[Bytes, Str] ! fs\nwrite_bin(path: Str, b: Bytes) -> Res[Unit, Str] ! fs\n__crypto_hash(alg: Int, data: Bytes) -> Bytes\n__crypto_hmac(alg: Int, key: Bytes, data: Bytes) -> Bytes\n__crypto_random(n: Int) -> Bytes ! rand\n__crypto_same(a: Bytes, b: Bytes) -> Bool\n__crypto_aead(seal: Bool, key: Bytes, nonce: Bytes, ad: Bytes, data: Bytes) -> Opt[Bytes]\n__crypto_argon2(alg: Int, pw: Bytes, salt: Bytes, key: Bytes, ad: Bytes, m: Int, t: Int, p: Int, n: Int) -> Opt[Bytes]\n__crypto_ed_public(seed: Bytes) -> Bytes\n__crypto_ed_sign(seed: Bytes, data: Bytes) -> Bytes\n__crypto_ed_verify(pk: Bytes, data: Bytes, sig: Bytes) -> Bool\n__zip_pack(fmt: Int, level: Int, data: Bytes) -> Bytes\n__zip_unpack(fmt: Int, data: Bytes) -> (Int, Bytes, Str)\n__zip_file(op: Int, src: Str, dst: Str) -> Str ! fs\n__csv_rows(text: Str) -> (Int, Str, List[List[Str]])\n__csv_text(rows: List[List[Str]]) -> Str\n__csv_open(path: Str) -> (Int, Str) ! fs\n__csv_next(h: Int, n: Int) -> (Int, Str, List[List[Str]]) ! fs\n__csv_close(h: Int) -> Unit ! fs\n__db_connect(path: Str) -> (Int, Int, Str) ! db\n__db_disconnect(id: Int) -> Unit ! db\n__db_exec(id: Int, sql: Str, ps: List[(Int, Int, F64, Str, Bytes)], want: Int) -> (Int, Str, List[Str], List[List[(Int, Int, F64, Str, Bytes)]], Int) ! db\n__db_tx(id: Int, op: Int) -> (Int, Str) ! db\n__proc_op(op: Int, id: Int, arg: Str) -> (Int, Str) ! proc";
+pub static LIB_GLOBALS: &str = "bytes(xs: List[Int]) -> Bytes\nfrom_hex(s: Str) -> Opt[Bytes]\nfrom_base64(s: Str) -> Opt[Bytes]\nfrom_base64url(s: Str) -> Opt[Bytes]\nread_bin(path: Str) -> Res[Bytes, Str] ! fs\nwrite_bin(path: Str, b: Bytes) -> Res[Unit, Str] ! fs\n__crypto_hash(alg: Int, data: Bytes) -> Bytes\n__crypto_hmac(alg: Int, key: Bytes, data: Bytes) -> Bytes\n__crypto_random(n: Int) -> Bytes ! rand\n__crypto_same(a: Bytes, b: Bytes) -> Bool\n__crypto_aead(seal: Bool, key: Bytes, nonce: Bytes, ad: Bytes, data: Bytes) -> Opt[Bytes]\n__crypto_argon2(alg: Int, pw: Bytes, salt: Bytes, key: Bytes, ad: Bytes, m: Int, t: Int, p: Int, n: Int) -> Opt[Bytes]\n__crypto_ed_public(seed: Bytes) -> Bytes\n__crypto_ed_sign(seed: Bytes, data: Bytes) -> Bytes\n__crypto_ed_verify(pk: Bytes, data: Bytes, sig: Bytes) -> Bool\n__zip_pack(fmt: Int, level: Int, data: Bytes) -> Bytes\n__zip_unpack(fmt: Int, data: Bytes) -> (Int, Bytes, Str)\n__zip_file(op: Int, src: Str, dst: Str) -> Str ! fs\n__csv_rows(text: Str) -> (Int, Str, List[List[Str]])\n__csv_text(rows: List[List[Str]]) -> Str\n__csv_open(path: Str) -> (Int, Str) ! fs\n__csv_next(h: Int, n: Int) -> (Int, Str, List[List[Str]]) ! fs\n__csv_close(h: Int) -> Unit ! fs\n__db_connect(path: Str) -> (Int, Int, Str) ! db\n__db_disconnect(id: Int) -> Unit ! db\n__db_exec(id: Int, sql: Str, ps: List[(Int, Int, F64, Str, Bytes)], want: Int) -> (Int, Str, List[Str], List[List[(Int, Int, F64, Str, Bytes)]], Int) ! db\n__db_tx(id: Int, op: Int) -> (Int, Str) ! db\n__proc_op(op: Int, id: Int, arg: Str) -> (Int, Str) ! proc\n__net_serve[e](cfg: (Int, Str, Int, Int, Int, Int, List[Str], Bool, List[(Str, Str)], Str, Str, Str, Bool), h: (Str, Str, List[(Str, Str)], Str, Int, Str) -> (Int, List[(Str, Str)], Str, Bytes) ! e) -> Unit ! net, log, e";
+
+/// The playground's `__net_serve`, which only traps: it has no `Bytes`.
+#[cfg(target_family = "wasm")]
+pub static WASM_NET_SERVE: &str = "__net_serve[e](cfg: (Int, Str, Int, Int, Int, Int, List[Str], Bool, List[(Str, Str)], Str, Str, Str, Bool), h: (Str, Str, List[(Str, Str)], Str, Int, Str) -> (Int, List[(Str, Str)], Str, Str) ! e) -> Unit ! net, log, e";
 
 /// `Bytes` (ADR 0037), which the playground leaves out with the libraries that need it.
 #[cfg(not(target_family = "wasm"))]
@@ -684,5 +702,5 @@ pub fn std_globals() -> impl Iterator<Item = &'static str> {
 
 #[cfg(target_family = "wasm")]
 pub fn std_globals() -> impl Iterator<Item = &'static str> {
-    STD_GLOBALS.lines()
+    STD_GLOBALS.lines().chain(WASM_NET_SERVE.lines())
 }

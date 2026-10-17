@@ -114,10 +114,17 @@ impl Interp {
                 Next::Done => break,
                 Next::Idle => continue,
                 Next::Call(call) => {
-                    let args = vec![Value::str(&call.method), Value::str(&call.url), pair_list(&call.headers), Value::str(&call.body), Value::Int(call.timeout_ms)];
+                    let args = vec![Value::str(&call.method), Value::str(&call.url), pair_list(&call.headers), Value::str(&call.body), Value::Int(call.timeout_ms), Value::str(&call.peer)];
                     let line = format!("{} {}", call.method, call.url);
                     let out = self.apply(h, args).and_then(|r| match r {
-                        Value::Tuple(t) if t.len() == 3 => Ok((int(&t[0])?, pairs(&t[1])?, s(&t[2])?.to_string())),
+                        Value::Tuple(t) if t.len() == 4 => {
+                            let mut body = s(&t[2])?.as_bytes().to_vec();
+                            match &t[3] {
+                                Value::Bytes(b) => body.extend_from_slice(&b.0),
+                                v => return trap(format!("expected Bytes, got {v}")),
+                            }
+                            Ok((int(&t[0])?, pairs(&t[1])?, body))
+                        }
                         v => trap(format!("bad handler result {v}")),
                     });
                     sspur_native::rt::db_release_thread();
@@ -125,7 +132,7 @@ impl Interp {
                         Ok((status, headers, body)) => call.reply(status, &headers, &body),
                         Err(e) => {
                             sspur_native::emit_log(&format!("error: {line} failed: {}", crate::describe(e)));
-                            call.reply(500, &[("content-type".into(), "application/json".into())], FAILED);
+                            call.reply(500, &[("content-type".into(), "application/json".into())], FAILED.as_bytes());
                         }
                     }
                 }
