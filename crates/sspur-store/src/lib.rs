@@ -163,7 +163,18 @@ pub struct Loaded {
 impl Loaded {
     /// The program to run: traits elaborated into plain definitions (ADR 0027).
     pub fn executable(self) -> Result<Loaded, Vec<Diag>> {
-        Ok(self.exec_view()?.unwrap_or(self))
+        let Loaded { src, module, check, hashes, partial, own, pkgs, shown, exports, dep_audits } = self;
+        match sspur_check::elab::lower_owned(module, check) {
+            Ok(Err((module, check))) => Ok(Loaded { src, module, check, hashes, partial, own, pkgs, shown, exports, dep_audits }),
+            Ok(Ok((module, check))) => {
+                drop(hashes);
+                let res = Resolution { user_methods: Some(&check.user_methods), record_types: Some(&check.record_types) };
+                let hashes = hash_module_with(&module, &res).into_iter().collect();
+                let own = module.own.unwrap_or(module.defs.len());
+                Ok(Loaded { src, module, check, hashes, partial: false, own, pkgs, shown, exports, dep_audits })
+            }
+            Err(e) => Err(vec![pkg::dep_diag(&e)]),
+        }
     }
 
     /// Like `executable`, or `None` when the program has no traits to elaborate.

@@ -53,26 +53,55 @@ pub fn lower(m: &Module, out: &CheckOutput) -> Result<Option<(Module, CheckOutpu
         return Ok(Some(lower(&plain, &out)?.unwrap_or((plain, out))));
     }
     if let Some(n) = crate::elab_net::lower(m, out)? {
-        let c = check(&n);
-        if let Some(d) = c.diags.iter().find(|d| d.is_error()) {
-            let name = d.def.clone().unwrap_or_default();
-            return Err(format!("internal: the elaborated network program does not check ({name}): {} {}", d.code, d.msg));
-        }
-        return Ok(Some(match lower_traits(&n, &c)? {
-            Some((m2, c2)) => lower_net_again(m2, c2)?,
-            None => (n, c),
-        }));
+        return Ok(Some(after_net(n)?));
     }
-    match lower_traits(m, out)? {
-        Some((m2, c2)) => Ok(Some(lower_net_again(m2, c2)?)),
-        None => Ok(None),
+    if !out.traits.active {
+        return Ok(None);
     }
+    let (m2, c2) = traits_rest(elaborate(m, out)?)?;
+    Ok(Some(lower_net_again(m2, c2)?))
+}
+
+/// `lower` of a program it may consume, which it gives back when there is nothing to lower. Each
+/// stage's input is dropped before the next check, so less is alive at once.
+pub fn lower_owned(m: Module, out: CheckOutput) -> Result<Result<(Module, CheckOutput), (Module, CheckOutput)>, String> {
+    if out.has_errors() || out.ascribed {
+        return Ok(lower(&m, &out)?.ok_or((m, out)));
+    }
+    if let Some(n) = crate::elab_net::lower(&m, &out)? {
+        drop((m, out));
+        return Ok(Ok(after_net(n)?));
+    }
+    if !out.traits.active {
+        return Ok(Err((m, out)));
+    }
+    let m2 = elaborate(&m, &out)?;
+    drop((m, out));
+    let (m2, c2) = traits_rest(m2)?;
+    Ok(Ok(lower_net_again(m2, c2)?))
+}
+
+/// The elaborated network program `n`, checked, with its traits lowered.
+fn after_net(n: Module) -> Result<(Module, CheckOutput), String> {
+    let c = check(&n);
+    if let Some(d) = c.diags.iter().find(|d| d.is_error()) {
+        let name = d.def.clone().unwrap_or_default();
+        return Err(format!("internal: the elaborated network program does not check ({name}): {} {}", d.code, d.msg));
+    }
+    if !c.traits.active || c.has_errors() {
+        return Ok((n, c));
+    }
+    let m2 = elaborate(&n, &c)?;
+    drop((n, c));
+    let (m2, c2) = traits_rest(m2)?;
+    lower_net_again(m2, c2)
 }
 
 /// The library sites of functions specialized per type, which only have concrete types once
 /// the traits are elaborated.
 fn lower_net_again(m: Module, c: CheckOutput) -> Result<(Module, CheckOutput), String> {
     let Some(n) = crate::elab_net::lower_from(&m, &c, m.defs.len())? else { return Ok((m, c)) };
+    drop((m, c));
     let c2 = check(&n);
     if let Some(d) = c2.diags.iter().find(|d| d.is_error()) {
         let name = d.def.clone().unwrap_or_default();
@@ -81,24 +110,23 @@ fn lower_net_again(m: Module, c: CheckOutput) -> Result<(Module, CheckOutput), S
     Ok((n, c2))
 }
 
-fn lower_traits(m: &Module, out: &CheckOutput) -> Result<Option<(Module, CheckOutput)>, String> {
-    if !out.traits.active || out.has_errors() {
-        return Ok(None);
-    }
-    let mut m2 = elaborate(m, out)?;
+/// The once-elaborated program `m2` checked, and elaborated again while traits remain.
+fn traits_rest(mut m2: Module) -> Result<(Module, CheckOutput), String> {
     let mut c2 = check(&m2);
     for _ in 0..2 {
         if !c2.traits.active || c2.has_errors() {
             break;
         }
-        m2 = elaborate(&m2, &c2)?;
+        let m3 = elaborate(&m2, &c2)?;
+        drop(c2);
+        m2 = m3;
         c2 = check(&m2);
     }
     if let Some(d) = c2.diags.iter().find(|d| d.is_error()) {
         let name = d.def.clone().unwrap_or_default();
         return Err(format!("internal: the elaborated program does not check ({name}): {} {}", d.code, d.msg));
     }
-    Ok(Some((m2, c2)))
+    Ok((m2, c2))
 }
 
 pub(crate) fn free_params(t: &Type, out: &mut Vec<String>) {
