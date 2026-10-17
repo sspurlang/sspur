@@ -4,6 +4,9 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+### Added
+- `W_UNUSED_RESULT`: a statement that calls a pure function or method and drops a value that isn't `Unit` is a warning, with the fix in the hint. `b.add(s)` or `xs.push(x)` on a line of its own compiled silently and did nothing, since values never change in place; `_ = f(x)` drops a value on purpose.
+
 ### Changed
 - Cold native builds of big packages are 5 to 7 times faster (ADR 0041). On a generated package of 200 modules and 2.5 MB of source (`bench/bigpkg`), a cold `sspur test` went from 282 s to 40 s, `sspur publish --dry-run` from 291 s to 59 s and a dependent's first `sspur run` from 251 s to 41 s; testing again after editing one function of a module went from 36 s to 7 s. The functions of a package or module with 16 or more functions now share C units of up to about 32 instead of one each, so clang no longer parses and compiles the same declarations and helpers thousands of times; a function of the program itself keeps its own unit, and a dependency's units are the same in every program that uses it, so dependents still share its objects. A build with enough C runs one clang process per core (at most 4 before), fewer when memory is short, and `SSPUR_JOBS` still sets the number; the units are made on every core; and the Z3 questions of a cold build are answered on every core. Programs without such packages compile to the same objects and libraries as before, so run times and the cached `sspur run` are unchanged.
 - The SMT cache is `smt2/` in the cache directory: each answer is an empty file named by the question and the answer, and a build lists a directory once instead of opening a file per question, which takes a warm `sspur test` of the package above from 9.8 s to 4.9 s. Answers in the old `smt/` directory aren't read.

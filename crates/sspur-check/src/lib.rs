@@ -655,6 +655,18 @@ fn never_matches(e: &Expr, p: &Pat) -> bool {
     }
 }
 
+/// A call whose value a statement throws away, named for the warning, or `None`.
+fn discardable_call(x: &Expr) -> Option<String> {
+    match &x.kind {
+        ExprKind::Method { name, .. } => Some(format!("'.{name}'")),
+        ExprKind::Call(f, _) => match &f.kind {
+            ExprKind::Name(n) if n != "resume" => Some(format!("'{n}'")),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn irrefutable(p: &Pat) -> bool {
     match p {
         Pat::Wild | Pat::Bind(_) => true,
@@ -2292,7 +2304,33 @@ impl Checker {
                 for (i, s) in stmts.iter().enumerate() {
                     let is_last = i + 1 == stmts.len();
                     let loop_body = matches!(s, Stmt::Expr(x) if self.while_bodies.contains(&(x.span.start, x.span.end)));
+                    let discarded = match s {
+                        Stmt::Expr(x) if !is_last && !loop_body => discardable_call(x),
+                        _ => None,
+                    };
+                    if discarded.is_some() {
+                        self.frames.push(Frame::new());
+                    }
                     last = self.infer_stmt(s, if is_last { exp } else if loop_body { Some(&unit) } else { None });
+                    if let Some(what) = discarded {
+                        let frame = self.frames.pop().unwrap();
+                        let pure = frame.is_empty();
+                        for (a, (sp, ty)) in frame {
+                            self.add_effect(a, sp, ty);
+                        }
+                        let t = self.resolve(&last);
+                        if pure && !matches!(&t, Type::Var(_)) && t != Type::unit() && let Stmt::Expr(x) = s {
+                            let shown = printer::expr(x, 0);
+                            let hint = if let ExprKind::Method { recv, .. } = &x.kind
+                                && let ExprKind::Name(r) = &recv.kind
+                            {
+                                format!("values don't change in place: '{shown}' returns a new {t}; keep it with '{r} := {shown}' (declare '{r}' with 'var') or 'name = {shown}', or write '_ = {shown}' to drop it on purpose")
+                            } else {
+                                format!("bind it ('name = {shown}') or write '_ = {shown}' to drop it on purpose")
+                            };
+                            self.push_diag("W_UNUSED_RESULT", "warning", x.span, format!("the result of {what} ({t}) is discarded"), Some(hint), vec![]);
+                        }
+                    }
                     if loop_body && let Stmt::Expr(x) = s {
                         self.expect(&unit, &last, x.span);
                     }

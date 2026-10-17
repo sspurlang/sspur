@@ -61,3 +61,16 @@ fn interpreter_recursion_goes_past_twenty_thousand_calls() {
     let src = "fn down(n: Int) -> Int\n= if n == 0 then 0 else 1 + down(n - 1)\n\nfn main() -> Unit ! log\n= log(\"{down(250000)}\")\n";
     assert_eq!(both("deep", "run", src).trim(), "250000");
 }
+
+#[test]
+fn discarding_a_pure_result_warns() {
+    let d = dir("unused");
+    let src = "fn helper(x: Int) -> Int\n= x + 1\n\nfn main() -> Unit ! log, fs\n= do\n  b = str_buf()\n  b.add(\"a\")\n  var c = str_buf()\n  c := c.add(\"b\")\n  _ = helper(1)\n  helper(2)\n  write_file(\"/nonexistent/x\", \"y\")\n  [1].map(x => do\n    log(\"{x}\")\n    x)\n  log(\"{b.str}{c.str}\")\n";
+    std::fs::write(d.join("p.ssp"), src).unwrap();
+    let (out, err, ok) = sspur(&d, &["run", "--interp", "p.ssp"]);
+    assert!(ok, "{out}{err}");
+    let warns: Vec<&str> = err.lines().filter(|l| l.contains("W_UNUSED_RESULT")).collect();
+    assert_eq!(warns, ["p.ssp:7:3 warning W_UNUSED_RESULT the result of '.add' (StrBuf) is discarded", "p.ssp:11:3 warning W_UNUSED_RESULT the result of 'helper' (Int) is discarded"], "{err}");
+    assert!(err.contains("keep it with 'b := b.add(\"a\")' (declare 'b' with 'var')"), "{err}");
+    assert_eq!(out, "1\nb\n");
+}

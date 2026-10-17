@@ -305,6 +305,7 @@ This page lists every code the compiler can emit, grouped by area. The test suit
 | `W_EFFECT_UNUSED` | A declared effect the body never performs | Remove it from the signature |
 | `W_ARM_UNREACHABLE` | A `match` or `catch` arm, or one alternative of an or-pattern, that the arms above already cover; or an `e is p`, `if e is p` or `p = e else b` whose pattern always matches | Remove it or move it up; for `if e is p`, bind with `p = e`; drop the `else` of a guard that can't fail |
 | `W_NEVER_MATCHES` | An `e is p`, `if e is p` or `p = e else b` whose pattern can't match the value written there, `none is some(_)` | Test a pattern the value can have, or remove the test |
+| `W_UNUSED_RESULT` | A statement that calls a pure function or method and throws its value away, such as `b.add(s)` or `xs.push(x)` on a line of its own: values never change in place, so the call does nothing | Keep the result (`b := b.add(s)` with `var b`, or `b2 = b.add(s)`), or write `_ = f(x)` to drop it on purpose |
 | `W_CATCH_UNUSED` | A `catch` around code that never raises that error | Remove the `catch` |
 | `W_HANDLE_UNUSED` | A `handle` around code that never performs that effect | Remove the `handle` |
 | `W_UNSAFE_UNUSED` | An `unsafe` clause with no unsafe operation | Remove the clause |
