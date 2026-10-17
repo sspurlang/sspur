@@ -445,17 +445,44 @@ fn def_names(d: &Def, out: &mut BTreeSet<String>) {
     }
 }
 
+/// A site that decodes a type parameter, in a function that is specialized per type: its copies
+/// are rewritten after the specialization.
+fn generic_site(site: &NetSite, key: (u32, u32), out: &CheckOutput) -> bool {
+    let has = |t: &Type| {
+        let mut ps = Vec::new();
+        crate::elab::free_params(t, &mut ps);
+        !ps.is_empty()
+    };
+    match site {
+        #[cfg(not(target_family = "wasm"))]
+        NetSite::Data(crate::libs::LibSite::Db(_, Some(t), _) | crate::libs::LibSite::Csv(_, t)) => has(t),
+        #[cfg(not(target_family = "wasm"))]
+        NetSite::Decode => out.json_types.get(&key).is_some_and(has),
+        NetSite::Body => out.json_types.get(&key).is_some_and(has),
+        _ => false,
+    }
+}
+
 /// The program with every networking site rewritten, or `None` when it has none.
 pub fn lower(m: &Module, out: &CheckOutput) -> Result<Option<Module>, String> {
+    lower_from(m, out, 0)
+}
+
+/// `lower` for a program that may already hold the prelude and earlier generated code, with
+/// generated wrappers numbered from `wraps`.
+pub(crate) fn lower_from(m: &Module, out: &CheckOutput, wraps: usize) -> Result<Option<Module>, String> {
     if out.net.is_empty() {
         return Ok(None);
     }
-    let mut g = Gen { m, out, extra: vec![], done: HashSet::new(), wraps: 0 };
+    let mut g = Gen { m, out, extra: vec![], done: HashSet::new(), wraps };
     let mut err: Option<String> = None;
     let mut defs = m.defs.clone();
     {
         let mut rw = |e: &mut Expr| {
             let Some(site) = out.net.get(&(e.span.start, e.span.end)) else { return };
+            if generic_site(site, (e.span.start, e.span.end), out) {
+                return;
+            }
             let kind = std::mem::replace(&mut e.kind, ExprKind::Unit);
             let new = match (site, kind) {
                 (NetSite::Call(f), ExprKind::Method { args, .. }) => call_of(f, args),
@@ -588,8 +615,9 @@ pub fn lower(m: &Module, out: &CheckOutput) -> Result<Option<Module>, String> {
     }
     let own = m.own.unwrap_or(m.defs.len());
     let mut all: Vec<Def> = defs;
-    all.extend(prelude.defs.into_iter().filter(|d| keep.contains(d.name())));
-    all.extend(generated.defs);
+    let had: HashSet<String> = all.iter().map(|d| d.name().to_string()).collect();
+    all.extend(prelude.defs.into_iter().filter(|d| keep.contains(d.name()) && !had.contains(d.name())));
+    all.extend(generated.defs.into_iter().filter(|d| !had.contains(d.name())));
     let text = printer::print_module(&Module { profile: m.profile.clone(), defs: all, own: None });
     if std::env::var_os("SSPUR_ELAB_DUMP").is_some() {
         eprintln!("{text}");

@@ -317,6 +317,9 @@ fn strip_expr(e: &mut Expr) {
         if let ExprKind::Method { targs, .. } = &mut x.kind {
             targs.iter_mut().for_each(strip_ty);
         }
+        if let ExprKind::Lambda { tys, .. } = &mut x.kind {
+            tys.iter_mut().flatten().for_each(strip_ty);
+        }
         if let ExprKind::Block(stmts) = &mut x.kind {
             for s in stmts {
                 if let Stmt::Assign(_, _, sp) = s {

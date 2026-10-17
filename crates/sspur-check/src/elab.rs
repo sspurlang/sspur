@@ -48,11 +48,26 @@ pub fn lower(m: &Module, out: &CheckOutput) -> Result<Option<(Module, CheckOutpu
             return Err(format!("internal: the elaborated network program does not check ({name}): {} {}", d.code, d.msg));
         }
         return Ok(Some(match lower_traits(&n, &c)? {
-            Some(x) => x,
+            Some((m2, c2)) => lower_net_again(m2, c2)?,
             None => (n, c),
         }));
     }
-    lower_traits(m, out)
+    match lower_traits(m, out)? {
+        Some((m2, c2)) => Ok(Some(lower_net_again(m2, c2)?)),
+        None => Ok(None),
+    }
+}
+
+/// The library sites of functions specialized per type, which only have concrete types once
+/// the traits are elaborated.
+fn lower_net_again(m: Module, c: CheckOutput) -> Result<(Module, CheckOutput), String> {
+    let Some(n) = crate::elab_net::lower_from(&m, &c, m.defs.len())? else { return Ok((m, c)) };
+    let c2 = check(&n);
+    if let Some(d) = c2.diags.iter().find(|d| d.is_error()) {
+        let name = d.def.clone().unwrap_or_default();
+        return Err(format!("internal: the elaborated network program does not check ({name}): {} {}", d.code, d.msg));
+    }
+    Ok((n, c2))
 }
 
 fn lower_traits(m: &Module, out: &CheckOutput) -> Result<Option<(Module, CheckOutput)>, String> {
@@ -396,6 +411,10 @@ impl Elab<'_> {
                 ExprKind::Name(n) => Some(n.clone()),
                 ExprKind::Call(f, _) => match &f.kind {
                     ExprKind::Name(n) => Some(n.clone()),
+                    ExprKind::Index(g, _) => match &g.kind {
+                        ExprKind::Name(n) => Some(n.clone()),
+                        _ => None,
+                    },
                     _ => None,
                 },
                 ExprKind::Method { name, .. } | ExprKind::Field(_, name) => Some(name.clone()),

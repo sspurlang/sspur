@@ -117,3 +117,29 @@ fn typed_lambdas() -> (Int, Int, Opt[Int])
   (inc(1), add(2, 3), get("b"))
 
 test lambda_parameters_take_types = typed_lambdas() == (2, 5, some(2))
+
+type Pt = {x: Int, y: Int} derive Json
+
+fn decode_as[T](s: Str) -> Res[T, Str]
+= json.decode[T](s)
+
+fn decode_each[T](xs: List[Str]) -> List[Opt[T]]
+= xs.map(s => do
+  match decode_as[T](s)
+  | ok(v) => some(v)
+  | err(_) => none)
+
+fn encode_any[T: Json](x: T) -> Str
+= json.encode(x)
+
+fn round_trip[T: Json](x: T) -> Res[T, Str]
+= decode_as[T](encode_any(x))
+
+fn first_of[T](xs: List[T]) -> Opt[T]
+= xs.first
+
+test json_of_a_type_parameter = decode_as[Pt]("\{\"x\":1,\"y\":2}") == ok(Pt{x: 1, y: 2}) and
+  decode_each[Int](["1", "x"]) == [some(1), none] and
+  round_trip(Pt{x: 3, y: 4}) == ok(Pt{x: 3, y: 4}) and
+  round_trip([1, 2]) == ok([1, 2]) and
+  first_of[Str]([]) == none

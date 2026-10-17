@@ -143,7 +143,7 @@ impl Checker {
                 let st = self.infer(&args[0], Some(&Type::int()));
                 self.expect(&Type::int(), &st, args[0].span);
                 let t = self.infer(&args[1], None);
-                self.json_sites.push(((args[1].span.start, args[1].span.end), t, args[1].span, false));
+                self.json_site((args[1].span.start, args[1].span.end), t, args[1].span, false);
                 self.net_site(span, NetSite::Json);
                 return Type::con("#Response");
             }
@@ -293,7 +293,7 @@ impl Checker {
             self.push_diag("E_JSON", "error", span, format!("json.decode cannot check the refinement of {a}"), Some("decode a type without 'where' and validate it".into()), vec![]);
         }
         let target = self.conv_ty(&targs[0]);
-        self.json_sites.push(((span.start, span.end), target.clone(), span, true));
+        self.json_site((span.start, span.end), target.clone(), span, true);
         self.net_site(span, NetSite::Body);
         Some(Type::app("Res", vec![target, Type::str()]))
     }

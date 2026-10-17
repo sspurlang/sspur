@@ -1864,7 +1864,9 @@ impl Parser {
                 };
                 self.bump();
                 let mut targs = Vec::new();
-                if self.is_sym("[") && matches!(self.peek_at(1), Tok::Ident(s) if is_upper(s)) {
+                // A tuple type argument, `db.query[(Int, Str)](..)`, only before arguments.
+                let tuple = self.is_sym("[") && matches!((self.peek_at(1), self.peek_at(2)), (Tok::Sym("("), Tok::Ident(s)) if is_upper(s));
+                if self.is_sym("[") && (tuple || matches!(self.peek_at(1), Tok::Ident(s) if is_upper(s))) {
                     let saved = self.pos;
                     self.bump();
                     let parsed: PResult<()> = (|| {
@@ -1876,7 +1878,7 @@ impl Parser {
                         }
                         self.expect_sym("]").map(|_| ())
                     })();
-                    if parsed.is_err() {
+                    if parsed.is_err() || (tuple && !self.is_sym("(")) {
                         self.pos = saved;
                         targs.clear();
                     }

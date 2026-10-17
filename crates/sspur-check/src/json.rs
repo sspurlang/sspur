@@ -9,7 +9,7 @@ impl Checker {
         match (name, targs.len(), args.len()) {
             ("encode", 0, 1) => {
                 let t = self.infer(&args[0], None);
-                self.json_sites.push(((span.start, span.end), t, args[0].span, false));
+                self.json_site((span.start, span.end), t, args[0].span, false);
                 Type::str()
             }
             ("decode", 1, 1) => {
@@ -26,7 +26,7 @@ impl Checker {
                 if self.refined_alias_in(&targs[0]).is_some() || (self.json_bad(&target, true, &mut vec![]).is_some() && self.json_bad_r(&target, true, true, &mut vec![]).is_none()) {
                     self.net_sites.insert((span.start, span.end), NetSite::Decode);
                 }
-                self.json_sites.push(((span.start, span.end), target.clone(), span, true));
+                self.json_site((span.start, span.end), target.clone(), span, true);
                 Type::app("Res", vec![target, Type::str()])
             }
             _ => {
@@ -37,6 +37,13 @@ impl Checker {
                 self.fresh()
             }
         }
+    }
+
+    pub(crate) fn json_site(&mut self, key: (u32, u32), t: Type, span: Span, decode: bool) {
+        if !self.bounds.is_empty() {
+            self.json_bounds.insert(key, self.bounds.clone());
+        }
+        self.json_sites.push((key, t, span, decode));
     }
 
     pub(crate) fn refined_alias_in(&self, t: &Ty) -> Option<String> {
@@ -77,7 +84,9 @@ impl Checker {
     pub(crate) fn json_bad_r(&self, t: &Type, decode: bool, refined_ok: bool, seen: &mut Vec<String>) -> Option<String> {
         match t {
             Type::Fn(..) => Some("functions are not data".into()),
-            Type::Param(p) => Some(format!("type parameter {p} is not concrete")),
+            Type::Param(p) if self.bounds.iter().any(|(bp, bt, _)| bp == p && (bt == crate::implicit::DECODE || (!decode && bt == "Json"))) => None,
+            Type::Param(p) if decode => Some(format!("type parameter {p} is not concrete")),
+            Type::Param(p) => Some(format!("type parameter {p} is not concrete; give it a bound, as in [{p}: Json]")),
             Type::Var(_) => Some("its type is not known; add a type annotation".into()),
             Type::Tuple(xs) => xs.iter().find_map(|x| self.json_bad_r(x, decode, refined_ok, seen)),
             Type::Con(n, a) => {
@@ -116,7 +125,9 @@ impl Checker {
     pub(crate) fn finish_json(&mut self, m: &Module) -> HashMap<(u32, u32), Type> {
         let _ = m;
         let mut out = HashMap::new();
+        let saved = std::mem::take(&mut self.bounds);
         for (key, t, span, decode) in std::mem::take(&mut self.json_sites) {
+            self.bounds = self.json_bounds.remove(&key).unwrap_or_default();
             let r = self.resolve(&t);
             #[cfg(not(target_family = "wasm"))]
             let refined_ok = matches!(self.net_sites.get(&key), Some(NetSite::Decode | NetSite::Body));
@@ -127,6 +138,7 @@ impl Checker {
             }
             out.insert(key, r);
         }
+        self.bounds = saved;
         out
     }
 }

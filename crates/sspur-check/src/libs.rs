@@ -177,6 +177,7 @@ impl Checker {
     /// Why `t` can't be a SQL parameter or a column value, if it can't.
     pub(crate) fn sql_bad(&self, t: &Type, opt_ok: bool) -> Option<String> {
         match t {
+            Type::Param(p) if self.bounds.iter().any(|(bp, bt, _)| bp == p && bt == crate::implicit::ROW) => None,
             Type::Con(n, a) if a.is_empty() && matches!(n.as_str(), "Int" | "F64" | "Str" | "Bool" | "#Bytes" | "#Time" | "#Dec") => None,
             Type::Con(n, a) if n == "Opt" && opt_ok => self.sql_bad(&a[0], false),
             Type::Con(n, a) if n == "Opt" => Some(format!("Opt[{}] inside Opt: one level of Opt is NULL", a[0])),
@@ -191,7 +192,7 @@ impl Checker {
 
     /// Why rows can't decode into `t`: a record of column types (by name), a tuple of them (by
     /// position) or one column type.
-    fn row_bad(&self, t: &Type) -> Option<String> {
+    pub(crate) fn row_bad(&self, t: &Type) -> Option<String> {
         match t {
             Type::Tuple(xs) => xs.iter().find_map(|x| self.sql_bad(x, true)),
             Type::Con(n, a) if a.is_empty() && !n.starts_with('#') => match self.types.get(n).map(|i| &i.kind) {
@@ -376,11 +377,12 @@ impl Checker {
         }
     }
 
-    fn csv_bad(&self, t: &Type, raw_ok: bool) -> Option<String> {
+    pub(crate) fn csv_bad(&self, t: &Type, raw_ok: bool) -> Option<String> {
         if raw_ok && *t == Type::list(Type::str()) {
             return None;
         }
         match t {
+            Type::Param(p) if self.bounds.iter().any(|(bp, bt, _)| bp == p && bt == crate::implicit::CSV) => None,
             Type::Con(n, a) if a.is_empty() && !n.starts_with('#') => match self.types.get(n).map(|i| &i.kind) {
                 Some(TypeKind::Record(fs)) => fs.iter().find_map(|(f, ft)| self.cell_bad(ft, true).map(|w| format!("field {f}: {w}"))),
                 _ => Some(format!("{t} is not a record")),

@@ -8,6 +8,7 @@ pub mod net;
 mod pats;
 mod statics;
 mod traits;
+mod implicit;
 pub mod elab;
 mod elab_net;
 #[cfg(not(target_family = "wasm"))]
@@ -226,6 +227,8 @@ struct Checker {
     while_bodies: HashSet<(u32, u32)>,
     stores: BTreeMap<String, (Type, Type)>,
     json_sites: Vec<((u32, u32), Type, Span, bool)>,
+    /// The bounds in scope at the JSON sites of bounded functions.
+    json_bounds: HashMap<(u32, u32), Vec<traits::Bound>>,
     refined_names: HashSet<String>,
     kernel_sigs: HashMap<String, Vec<kernel::KParam>>,
     kernels: BTreeMap<String, kernel::Kernel>,
@@ -253,6 +256,8 @@ struct Checker {
     pending_lib: Vec<(u32, u32)>,
     /// The type the context expects of the call being inferred, by the call's span.
     call_exp: Option<((u32, u32), Type)>,
+    /// The type arguments a call gives explicitly, `f[Int](x)`.
+    explicit_targs: Option<Vec<Type>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -365,6 +370,7 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
         while_bodies: HashSet::new(),
         stores: BTreeMap::new(),
         json_sites: vec![],
+        json_bounds: HashMap::new(),
         refined_names: HashSet::new(),
         kernel_sigs: HashMap::new(),
         kernels: BTreeMap::new(),
@@ -389,6 +395,7 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
         svc_params: HashMap::new(),
         pending_lib: vec![],
         call_exp: None,
+        explicit_targs: None,
     };
     c.load_builtins();
     if c.sys {
@@ -978,6 +985,7 @@ impl Checker {
         }
         self.cur_def = None;
         let fn_names: HashSet<&str> = m.defs.iter().filter_map(|d| if let Def::Fn(f) = d { Some(f.name.as_str()) } else { None }).collect();
+        let implicit = implicit::bounds(m);
         for d in &m.defs {
             if let Def::Effect(e) = d {
                 self.collect_effect(e, &fn_names);
@@ -1022,6 +1030,10 @@ impl Checker {
                     }
                     None => self.scheme_of(f),
                 };
+                let mut s = s;
+                if let Some(bs) = implicit.get(&f.name) {
+                    s.bounds.extend(bs.iter().cloned());
+                }
                 self.fns.insert(f.name.clone(), s);
             }
         }
@@ -1569,7 +1581,8 @@ impl Checker {
     }
 
     fn instantiate(&mut self, s: &Scheme) -> Inst {
-        let map: HashMap<String, Type> = s.tparams.iter().map(|p| (p.clone(), self.fresh())).collect();
+        let mut given = self.explicit_targs.take().unwrap_or_default().into_iter();
+        let map: HashMap<String, Type> = s.tparams.iter().map(|p| (p.clone(), given.next().unwrap_or_else(|| self.fresh()))).collect();
         if self.record_insts && !s.bounds.is_empty() {
             let targs = s.tparams.iter().map(|p| map[p].clone()).collect();
             let span = Span { start: self.site.0, end: self.site.1 };
@@ -2130,6 +2143,16 @@ impl Checker {
             }
             ExprKind::Call(f, args) => {
                 self.call_exp = exp.map(|t| ((e.span.start, e.span.end), t.clone()));
+                let explicit = implicit::explicit_call(f, &|n| self.lookup(n).is_none() && self.fns.get(n).is_some_and(|s| !s.tparams.is_empty())).map(|(n, tys)| (n.to_string(), tys));
+                if let Some((n, tys)) = explicit {
+                    let s = self.fns[&n].clone();
+                    if tys.len() > s.tparams.len() {
+                        self.err("E_ARITY", f.span, format!("'{n}' takes {} type argument(s), got {}", s.tparams.len(), tys.len()));
+                    }
+                    let ts: Vec<Type> = tys.iter().take(s.tparams.len()).map(|t| self.conv_ty(t)).collect();
+                    self.explicit_targs = Some(ts);
+                    return self.call_scheme(&s, &n, None, args, e.span);
+                }
                 if let ExprKind::Name(n) = &f.kind {
                     if n == "resume"
                         && args.is_empty()

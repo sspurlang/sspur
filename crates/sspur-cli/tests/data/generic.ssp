@@ -1,0 +1,75 @@
+// Generic code over SQLite: db.tx in generic functions, rows of a type parameter.
+
+type User = {id: Int, name: Str}
+
+type Undo = Undo{why: Str}
+
+fn setup() -> Db ! db, fail[DbErr]
+= do
+  c = db.open(":memory:")
+  db.exec(c, "create table users (id integer primary key, name text not null)")
+  db.exec(c, "insert into users (name) values (?), (?)", ["ann", "bob"])
+  c
+
+fn rows[T](c: Db, sql: Str) -> List[T] ! db, fail[DbErr]
+= db.query[T](c, sql, [])
+
+fn first[T](c: Db, sql: Str) -> Opt[T] ! db, fail[DbErr]
+= rows[T](c, sql).first
+
+fn txg[A, e](c: Db, f: () -> A ! e) -> A ! db, fail[DbErr], e
+= db.tx(c, f)
+
+fn rolled_back[A, E](c: Db, f: () -> A ! db, fail[DbErr], fail[E]) -> Bool ! db
+= catch do
+  _ = db.tx(c, f)
+  false
+| _ => true
+
+fn count(c: Db) -> Int ! db, fail[DbErr]
+= db.one[Int](c, "select count(*) from users")
+
+fn undo(c: Db) -> Bool ! db, fail[DbErr], fail[Undo]
+= db.tx(c, () => do
+  v = db.exec(c, "insert into users (name) values ('cy')") == 1
+  raise Undo{why: "{v}"})
+
+fn checked(c: Db) -> Res[Unit, Str] ! db, fail[DbErr]
+= db.tx(c, () => ok(()))
+
+fn text_error(c: Db, r: Res[Int, Str]) -> Int ! db, fail[DbErr], fail[Str]
+= db.tx(c, () => db.exec(c, "insert into users (name) values ('dee')") + r.get)
+
+test rows_of_a_type_parameter = do
+  c = setup()
+  rows[User](c, "select id, name from users order by id") ==
+    [User{id: 1, name: "ann"}, User{id: 2, name: "bob"}] and
+    rows[Str](c, "select name from users order by id") == ["ann", "bob"] and
+    first[(Int, Str)](c, "select id, name from users order by id desc") == some((2, "bob"))
+
+test tx_in_generic_functions = do
+  c = setup()
+  txg(c, () => db.exec(c, "insert into users (name) values ('eve')")) == 1 and
+    txg(c, () => "s") == "s" and
+    count(c) == 3
+
+test tx_rolls_back_in_generic_code = do
+  c = setup()
+  rolled_back(c, () => do
+    n = db.exec(c, "insert into users (name) values ('fay')")
+    if n > 0 then raise Undo{why: "test"}
+    n) and count(c) == 2
+
+test tx_lambda_ending_in_raise = do
+  c = setup()
+  (catch undo(c)
+  | Undo{why} => why == "true") and count(c) == 2
+
+test tx_returning_a_res = do
+  c = setup()
+  checked(c) == ok(())
+
+test tx_with_a_text_error = do
+  c = setup()
+  (catch text_error(c, err("no"))
+  | _ => -1) == -1 and count(c) == 2 and text_error(c, ok(1)) == 2 and count(c) == 3

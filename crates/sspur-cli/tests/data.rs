@@ -55,6 +55,11 @@ fn sqlite_in_both_tiers() {
 }
 
 #[test]
+fn generic_sqlite_code_in_both_tiers() {
+    both_tiers("generic");
+}
+
+#[test]
 fn round_trips_hold_under_the_fuzzer() {
     for (file, fns) in [("zip", &["rt_gzip", "rt_deflate", "rt_zstd"][..]), ("csv", &["rt"][..])] {
         let p = dir().join(format!("{file}.ssp"));

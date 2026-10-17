@@ -469,6 +469,9 @@ impl Checker {
 
     /// Built-in impls: the components that must implement the trait too, if `con` has one.
     pub(crate) fn intrinsic(&self, con: &str, args: &[Type], tr: &str) -> Option<Vec<Type>> {
+        if tr == crate::implicit::INST {
+            return Some(vec![]);
+        }
         let user = self.types.contains_key(con) && !con.starts_with('#');
         if tr == "Copy" {
             return (!self.res_types.contains(con)).then(Vec::new);
@@ -512,6 +515,25 @@ impl Checker {
             return Ok(());
         }
         let t = self.resolve(t);
+        if let Some(what) = crate::implicit::describe(tr) {
+            if tr == crate::implicit::INST {
+                return Ok(());
+            }
+            let mut ps = Vec::new();
+            crate::elab::free_params(&t, &mut ps);
+            if let Some(p) = ps.iter().find(|p| !self.bounds.iter().any(|(bp, bt, _)| bp == *p && bt == tr)) {
+                return Err(format!("type parameter {p} is not known to be {what}; pass it on explicitly, as in f[{p}](..)"));
+            }
+            let why = match tr {
+                crate::implicit::DECODE => self.json_bad(&t, true, &mut vec![]),
+                #[cfg(not(target_family = "wasm"))]
+                crate::implicit::ROW => self.row_bad(&t),
+                #[cfg(not(target_family = "wasm"))]
+                crate::implicit::CSV => self.csv_bad(&t, true),
+                _ => None,
+            };
+            return why.map_or(Ok(()), Err);
+        }
         match &t {
             Type::Param(p) => {
                 if tr == "Copy" || self.bounds.iter().any(|(bp, bt, _)| bp == p && bt == tr) {
@@ -734,8 +756,8 @@ impl Checker {
                 if matches!(self.resolve(t), Type::Var(_)) {
                     let mine: Vec<&Bound> = bounds.iter().filter(|(bp, _, _)| bp == p).collect();
                     if !mine.iter().all(|(_, tr, _)| self.intrinsic("Unit", &[], tr).is_some()) {
-                        let need: Vec<&str> = mine.iter().map(|(_, tr, _)| tr.as_str()).collect();
-                        self.push_diag("E_TRAIT_AMBIGUOUS", "error", span, format!("cannot infer {p} of {fname} (it needs {})", need.join(" + ")), Some("give the argument a known type, for example through a typed parameter or a non-empty list".into()), vec![]);
+                        let need: Vec<&str> = mine.iter().filter(|(_, tr, _)| tr != crate::implicit::INST).map(|(_, tr, _)| crate::implicit::describe(tr).unwrap_or(tr.as_str())).collect();
+                        self.push_diag("E_TRAIT_AMBIGUOUS", "error", span, format!("cannot infer {p} of {fname} (it needs {})", need.join(" + ")), Some(format!("give the argument a known type, for example through a typed parameter or a non-empty list, or name it: {}[Int](..)", fname.rsplit("__").next().unwrap_or(&fname))), vec![]);
                         unknown.push(p.clone());
                     }
                 }
@@ -746,6 +768,19 @@ impl Checker {
                 let Some(t) = map.get(p).filter(|_| !unknown.contains(p)) else { continue };
                 if let Err(why) = self.implements(t, tr, 0) {
                     let shown = fname.rsplit("__").next().unwrap_or(&fname).to_string();
+                    if let Some(what) = crate::implicit::describe(tr) {
+                        let code = match tr.as_str() {
+                            crate::implicit::ROW => "E_SQL_ROW",
+                            crate::implicit::CSV => "E_CSV_TYPE",
+                            _ => "E_JSON",
+                        };
+                        let (msg, hint) = match t {
+                            Type::Param(q) => (format!("{shown} needs {p} to be {what}, and {q} is not known to be"), Some(format!("name the type in the call, {shown}[{q}](..), so that this function is specialized per type too"))),
+                            _ => (format!("{shown} needs {p} to be {what}, but {t} is not: {why}"), None),
+                        };
+                        self.push_diag(code, "error", span, msg, hint, vec![]);
+                        continue;
+                    }
                     let hint = self.missing_hint(t, tr);
                     self.push_diag("E_TRAIT_MISSING", "error", span, format!("{shown} needs {p}: {tr}, but {why}"), hint, vec![]);
                 }
