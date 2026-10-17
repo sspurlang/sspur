@@ -71,7 +71,17 @@ const USAGE: &str = "usage:
   sspur sync serve [--port N] | push REMOTE | pull REMOTE | status | resolve ours|theirs [PATH]   replicate by hash (REMOTE: dir or tcp://host:port; ADR 0021)";
 
 fn main() -> ExitCode {
-    std::thread::Builder::new().stack_size(1 << 29).spawn(real_main).unwrap().join().unwrap()
+    // The interpreter recurses on this stack: 2 GB (reserved, not committed) is about a million
+    // calls; a system that won't reserve that much gets 512 MB.
+    for size in [if cfg!(target_pointer_width = "64") { 1usize << 31 } else { 1 << 29 }, 1 << 29] {
+        if let Ok(h) = std::thread::Builder::new().stack_size(size).spawn(move || {
+            sspur_eval::stack_from_here(size - (256 << 10));
+            real_main()
+        }) {
+            return h.join().unwrap();
+        }
+    }
+    real_main()
 }
 
 struct Args {

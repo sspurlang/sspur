@@ -149,6 +149,7 @@ impl Interp {
                 let r = std::thread::Builder::new().stack_size(TASK_STACK).spawn_scoped(sc, move || {
                     let (it, body, slot) = job.get();
                     let (it, body, slot) = unsafe { (&*it, &*body, &*slot) };
+                    crate::stack_from_here(TASK_STACK - (64 << 10));
                     it.wait_turn(id);
                     it.depth.set(depth);
                     let r = body(k);

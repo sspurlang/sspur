@@ -2,8 +2,8 @@
 //! few hundred interpreter calls, and Safari's workers far less. When tools/build_playground.sh
 //! runs Binaryen's asyncify pass, a call made once the current stack segment holds `limit` bytes
 //! of interpreter frames saves the frames under it to memory, runs on an empty browser stack,
-//! then puts the frames back and returns into them. Recursion then goes as deep as it does in
-//! `sspur run --interp`. Without the pass, every call runs in place.
+//! then puts the frames back and returns into them. Recursion then goes 20,000 calls deep, the
+//! interpreter's limit on a stack it didn't set up. Without the pass, every call runs in place.
 use std::cell::Cell;
 use wasm_bindgen::prelude::*;
 

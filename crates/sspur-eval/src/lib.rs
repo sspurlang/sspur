@@ -149,7 +149,42 @@ pub struct Interp {
     record: RefCell<(String, Vec<Vec<Value>>)>,
 }
 
+/// Calls deep on a thread whose stack the interpreter doesn't know (see `stack_from_here`).
 const MAX_DEPTH: u32 = 20_000;
+/// Calls deep on a thread that registered its stack; the stack itself is the real limit.
+#[cfg(not(target_family = "wasm"))]
+const MAX_DEPTH_KNOWN: u32 = 50_000_000;
+/// Stack left for builtins and native code when a call traps for depth.
+#[cfg(not(target_family = "wasm"))]
+const STACK_RESERVE: usize = 8 << 20;
+
+#[cfg(not(target_family = "wasm"))]
+thread_local! {
+    static STACK_FLOOR: Cell<usize> = const { Cell::new(0) };
+}
+
+#[cfg(not(target_family = "wasm"))]
+#[inline(always)]
+fn stack_pointer() -> usize {
+    let here = 0u8;
+    std::hint::black_box(&here) as *const u8 as usize
+}
+
+/// Tells the interpreter that this thread has `size` bytes of stack below the caller's frame,
+/// so calls nest until that is nearly used up instead of stopping at 20,000.
+#[cfg(not(target_family = "wasm"))]
+pub fn stack_from_here(size: usize) {
+    let floor = stack_pointer().saturating_sub(size.saturating_sub(STACK_RESERVE));
+    STACK_FLOOR.with(|f| f.set(floor));
+}
+
+#[cfg(not(target_family = "wasm"))]
+fn too_deep(d: u32) -> bool {
+    match STACK_FLOOR.with(Cell::get) {
+        0 => d > MAX_DEPTH,
+        floor => d > MAX_DEPTH_KNOWN || stack_pointer() < floor,
+    }
+}
 const BARE_NAMES: &[&str] = &["halt", "wait_irq", "irq_enable", "timer_start", "ticks", "tick_hz", "arch", "start_core", "core_id"];
 pub const OUT_OF_FUEL: &str = "evaluation step budget exhausted";
 
@@ -819,7 +854,7 @@ impl Interp {
         #[cfg(target_family = "wasm")]
         let too_deep = d > MAX_DEPTH || hop::stack_low();
         #[cfg(not(target_family = "wasm"))]
-        let too_deep = d > MAX_DEPTH;
+        let too_deep = too_deep(d);
         if too_deep {
             return trap(format!("stack overflow in {}", f.name));
         }

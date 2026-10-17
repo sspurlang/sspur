@@ -81,6 +81,7 @@ fn name[A, e](p: A, f: A -> A ! e) -> A ! e
   A block lambda captures, performs effects and fuses like a one-line one. A `)` on its own line, `x =>` with no `do`, and `x => {` + block + `}` are accepted and stored in the form above. `return` is not allowed inside a lambda (`E_RETURN_IN_LAMBDA`), except as its last line, where `return e` is stored as `e`.
 - `_` inside a call argument or a list element makes a one-parameter lambda. Every `_` in that argument or element is the same parameter: `xs.map(_.price * _.qty)` means `xs.map(x => x.price * x.qty)`, and `[_ + 1, _ * 2]` is a list of two functions. Tuples are not boundaries: `sort_by((-_.1, _.0))` is one lambda returning a tuple.
 - A function name can be passed as a value: `xs.map(fizzbuzz)`, `xs.fold(Leaf, insert)`. So can a trait method where the parameter type is known, `xs.map(area)`, `xs.fold(0, add)`: it resolves to the impl for that type (see Traits).
+- Recursion traps with `stack overflow in f` instead of crashing: natively after about a million nested calls, in `sspur run --interp` and `sspur test --interp` when the 2 GB interpreter stack is nearly used (about a million simple calls), and at 20,000 calls when the interpreter runs on a thread it didn't start, such as in the playground.
 - There's no overloading and there are no default arguments. Uppercase type parameters can have trait bounds, `[T: Ord + Show]` (see Traits).
 
 ## Traits

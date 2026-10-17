@@ -55,3 +55,9 @@ fn interpreter_appends_are_linear() {
     assert_eq!(out.trim(), "200000 200000 400000 200000");
     assert!(t.elapsed().as_secs() < 30, "quadratic appends: {:?}", t.elapsed());
 }
+
+#[test]
+fn interpreter_recursion_goes_past_twenty_thousand_calls() {
+    let src = "fn down(n: Int) -> Int\n= if n == 0 then 0 else 1 + down(n - 1)\n\nfn main() -> Unit ! log\n= log(\"{down(250000)}\")\n";
+    assert_eq!(both("deep", "run", src).trim(), "250000");
+}
