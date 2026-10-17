@@ -293,3 +293,14 @@ fn nested_arms_print_so_they_read_back_the_same() {
         assert_eq!(print_module(&b), printed);
     }
 }
+
+/// `x: T = e` and `var x: T = e` keep their annotation in the canonical text.
+#[test]
+fn binding_annotations_print_back() {
+    let src = "fn f(n: Int) -> Int\n= do\n  var xs: List[Int] = []\n  s: Opt[Str] = none\n  m: Map[Str, (Int, Bool)] = empty_map()\n  (a, b) = (n, n)\n  xs.len + a + b\n";
+    let m = parse(src).unwrap();
+    assert_eq!(print_module(&m), src);
+    let (m2, notes) = sspur_syntax::parse_noted("fn f(n: Int) -> Int\n= do\n  let mut k: Int = n\n  let j: Int = k\n  j\n").unwrap();
+    assert_eq!(print_module(&m2), "fn f(n: Int) -> Int\n= do\n  var k: Int = n\n  j: Int = k\n  j\n");
+    assert!(notes.iter().all(|n| !n.contains(": T")), "{notes:?}");
+}

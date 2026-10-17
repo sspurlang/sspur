@@ -516,6 +516,27 @@ pub enum MatchForm {
     LetElse,
 }
 
+/// A binding's type annotation, `x: T = e` and `var x: T = e`, is stored as the method call
+/// `e.#ty[T]()` on the value: the checker checks `e` against `T`, and `elab::lower` takes the
+/// call out before anything runs.
+pub const ASCRIBE: &str = "#ty";
+
+impl Expr {
+    /// `e` with the annotation `t`.
+    pub fn ascribed(self, t: Ty) -> Expr {
+        let span = self.span;
+        Expr::new(ExprKind::Method { recv: Box::new(self), name: ASCRIBE.into(), targs: vec![t], args: vec![] }, span)
+    }
+
+    /// The value and the type of an annotated binding's value.
+    pub fn ascription(&self) -> Option<(&Expr, &Ty)> {
+        match &self.kind {
+            ExprKind::Method { recv, name, targs, .. } if name == ASCRIBE && targs.len() == 1 => Some((recv, &targs[0])),
+            _ => None,
+        }
+    }
+}
+
 /// The name an `IfChain` binds the then-branch's value to.
 pub const CHAIN_VALUE: &str = "it";
 

@@ -141,6 +141,7 @@ impl W<'_> {
         match s {
             Stmt::Let(p, x) => {
                 if self.opts.types
+                    && x.ascription().is_none()
                     && !(matches!(p, Pat::Bind(_)) && obvious(x))
                     && let Some(eq) = eq_before(self.src(), x.span.start as usize)
                 {
@@ -151,6 +152,7 @@ impl W<'_> {
             }
             Stmt::Var(n, x) => {
                 if self.opts.types
+                    && x.ascription().is_none()
                     && !obvious(x)
                     && let Some(eq) = eq_before(self.src(), x.span.start as usize)
                     && let Some(at) = self.name_in(n, line_start(self.src(), eq), eq)

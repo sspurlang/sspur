@@ -50,7 +50,7 @@ impl Diag {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct CheckOutput {
     pub diags: Vec<Diag>,
     pub record_types: HashMap<(u32, u32), String>,
@@ -75,6 +75,8 @@ pub struct CheckOutput {
     pub traits: TraitOut,
     /// Networking, config and log-level sites that `elab::lower` rewrites (ADR 0035).
     pub net: BTreeMap<(u32, u32), NetSite>,
+    /// Whether a binding has a type annotation, which `elab::lower` takes out.
+    pub ascribed: bool,
 }
 
 pub type ExprKey = (u32, u32, u8);
@@ -242,6 +244,7 @@ struct Checker {
     impl_self: HashMap<String, Type>,
     hole_ctx: Option<HoleCtx>,
     net_sites: BTreeMap<(u32, u32), NetSite>,
+    ascribed: bool,
     svcs: HashMap<String, SvcDef>,
     /// What E_PAR_RACE and E_PAR_SHARE call the code that runs concurrently.
     par_word: &'static str,
@@ -377,6 +380,7 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
         impl_self: HashMap::new(),
         hole_ctx: capture.then(HoleCtx::default),
         net_sites: BTreeMap::new(),
+        ascribed: false,
         svcs: HashMap::new(),
         par_word: "task",
         std_sum_fields: HashMap::new(),
@@ -523,7 +527,7 @@ fn check_inner(m: &Module, skip: &HashSet<String>, capture: bool) -> (CheckOutpu
     let hole_ctx = c.hole_ctx.take().map(|h| HoleCtx { sigs: c.hole_sigs(m), ..h });
     let mut traits_out = std::mem::take(&mut c.tout);
     traits_out.active = !traits_out.sites.is_empty() || !traits_out.insts.is_empty() || !traits_out.units.is_empty() || !traits_out.impls.is_empty() || !traits_out.bounded.is_empty() || m.defs.iter().any(|d| matches!(d, Def::Trait(_) | Def::Impl(_)));
-    (CheckOutput { net: std::mem::take(&mut c.net_sites), traits: traits_out, diags: c.diags, record_types: c.record_types, user_methods: c.user_methods, sigs, expr_types: c.expr_types, bind_types: c.bind_types, fn_types, records, sums, newtypes, local_fn_types: c.local_fn_types, gen_loops: c.gen_loops, clause_effects: c.clause_effects, own: own.info, stores: c.stores, json_types, kernels: c.kernels, body_diags }, hole_ctx)
+    (CheckOutput { ascribed: c.ascribed, net: std::mem::take(&mut c.net_sites), traits: traits_out, diags: c.diags, record_types: c.record_types, user_methods: c.user_methods, sigs, expr_types: c.expr_types, bind_types: c.bind_types, fn_types, records, sums, newtypes, local_fn_types: c.local_fn_types, gen_loops: c.gen_loops, clause_effects: c.clause_effects, own: own.info, stores: c.stores, json_types, kernels: c.kernels, body_diags }, hole_ctx)
 }
 
 fn edit_distance(a: &str, b: &str) -> usize {
@@ -2017,6 +2021,13 @@ impl Checker {
             ExprKind::Name(n) => self.infer_name(n, e.span),
             ExprKind::Field(x, f) if matches!(&x.kind, ExprKind::Name(n) if self.is_static(n)) => self.infer_static(x, f, &[], e.span),
             ExprKind::Method { recv, name, args, .. } if matches!(&recv.kind, ExprKind::Name(n) if self.is_static(n)) => self.infer_static(recv, name, args, e.span),
+            ExprKind::Method { recv, name, targs, .. } if name == ASCRIBE && targs.len() == 1 => {
+                self.ascribed = true;
+                let want = self.conv_ty(&targs[0]);
+                let t = self.infer(recv, Some(&want));
+                self.expect(&want, &t, recv.span);
+                want
+            }
             ExprKind::Method { recv, name, targs, .. } if name == "#array" && targs.len() == 1 => {
                 if !self.sys {
                     self.push_diag("E_PROFILE", "error", e.span, "fixed arrays need 'profile sys' or 'profile bare'".into(), Some("add 'profile bare' or 'profile sys' as the first line".into()), vec![]);

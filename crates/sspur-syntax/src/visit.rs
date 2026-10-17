@@ -185,6 +185,33 @@ pub fn walk_expr_mut(e: &mut Expr, f: &mut impl FnMut(&mut Expr)) {
     }
 }
 
+/// The program with its binding annotations taken out (see `ASCRIBE`).
+pub fn erase_ascriptions(m: &mut Module) {
+    let mut erase = |e: &mut Expr| {
+        walk_expr_mut(e, &mut |x| {
+            if let ExprKind::Method { recv, name, .. } = &mut x.kind
+                && name == ASCRIBE
+            {
+                let v = std::mem::replace(&mut **recv, Expr::new(ExprKind::Unit, Span::default()));
+                *x = v;
+            }
+        })
+    };
+    let fns = |f: &mut FnDef, erase: &mut dyn FnMut(&mut Expr)| {
+        f.pres.iter_mut().chain(f.posts.iter_mut()).chain(f.examples.iter_mut()).chain(std::iter::once(&mut f.body)).for_each(erase);
+    };
+    for d in &mut m.defs {
+        match d {
+            Def::Fn(f) => fns(f, &mut erase),
+            Def::Impl(i) => i.fns.iter_mut().for_each(|f| fns(f, &mut erase)),
+            Def::Trait(t) => t.methods.iter_mut().for_each(|x| fns(&mut x.sig, &mut erase)),
+            Def::Test(t) => erase(&mut t.body),
+            Def::Static(s) => erase(&mut s.init),
+            _ => {}
+        }
+    }
+}
+
 pub fn strip_spans(m: &mut Module) {
     let z = Span::default();
     for d in &mut m.defs {

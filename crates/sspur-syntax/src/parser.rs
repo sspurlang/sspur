@@ -296,7 +296,7 @@ impl Parser {
     fn use_def(&mut self) -> PResult<Def> {
         let start = self.bump().span;
         if let Tok::Ident(q) = self.peek().clone()
-            && let Some((p, n)) = q.split_once('.') {
+            && let Some((p, n)) = q.rsplit_once('.') {
                 return Err(SyntaxError::new("E_PARSE_USE", format!("write 'use {p}' or 'use {p}.{{{n}}}'"), self.span()));
             }
         let mut pkg = self.expect_ident()?;
@@ -1459,8 +1459,10 @@ impl Parser {
                     self.bump();
                     self.note("let mut x = e -> var x = e");
                     let name = self.expect_ident()?;
+                    let ann = if self.eat_sym(":") { Some(self.ty()?) } else { None };
                     self.expect_sym("=")?;
-                    return Ok(vec![Stmt::Var(name, self.expr()?)]);
+                    let v = self.expr()?;
+                    return Ok(vec![Stmt::Var(name, match ann { Some(t) => v.ascribed(t), None => v })]);
                 }
                 self.note("let x = e -> x = e");
             }
@@ -1498,20 +1500,19 @@ impl Parser {
                 return Ok(out);
             }
             let name = self.expect_ident()?;
-            if self.eat_sym(":") {
-                self.ty()?;
-                self.note("var x: T = e -> var x = e");
-            }
+            let ann = if self.eat_sym(":") { Some(self.ty()?) } else { None };
             self.expect_sym("=")?;
-            return Ok(vec![Stmt::Var(name, self.expr()?)]);
+            let v = self.expr()?;
+            return Ok(vec![Stmt::Var(name, match ann { Some(t) => v.ascribed(t), None => v })]);
         }
         if let (Tok::Ident(_), Tok::Sym(":")) = (self.peek().clone(), self.peek_at(1)) {
             let saved = self.pos;
             let name = self.expect_ident()?;
             self.bump();
-            if self.ty().is_ok() && self.eat_sym("=") {
-                self.note("x: T = e -> x = e");
-                return Ok(vec![Stmt::Let(Pat::Bind(name), self.expr()?)]);
+            if let Ok(t) = self.ty()
+                && self.eat_sym("=")
+            {
+                return Ok(vec![Stmt::Let(Pat::Bind(name), self.expr()?.ascribed(t))]);
             }
             self.pos = saved;
         }
@@ -1988,10 +1989,18 @@ impl Parser {
                 if is_upper(&name) && self.is_sym("{") {
                     let fields = self.record_fields()?;
                     ExprKind::Record { ctor: Some(name), fields }
-                } else if let Some((p, f)) = name.split_once('.') {
-                    // `x.UPPER` is a field access; the resolver turns `pkg.Name` into the package's name.
-                    let ps = Span::new(start.start as usize, start.start as usize + p.len());
-                    ExprKind::Field(Box::new(Expr::new(ExprKind::Name(p.to_string()), ps)), f.to_string())
+                } else if let Some((p, f)) = name.rsplit_once('.') {
+                    // `x.UPPER` is a field access; the resolver turns `pkg.Name` and
+                    // `pkg.module.Name` into the package's name.
+                    let mut segs = p.split('.');
+                    let first = segs.next().unwrap_or_default();
+                    let mut end = start.start as usize + first.len();
+                    let mut x = Expr::new(ExprKind::Name(first.to_string()), Span::new(start.start as usize, end));
+                    for seg in segs {
+                        end += 1 + seg.len();
+                        x = Expr::new(ExprKind::Field(Box::new(x), seg.to_string()), Span::new(start.start as usize, end));
+                    }
+                    ExprKind::Field(Box::new(x), f.to_string())
                 } else {
                     ExprKind::Name(name)
                 }

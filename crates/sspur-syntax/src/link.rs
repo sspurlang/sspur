@@ -177,7 +177,9 @@ fn bound(l: &Locals, n: &str) -> bool {
 
 impl R<'_> {
     fn qual(&mut self, n: &mut String, span: Span, kinds: &[Kind]) {
-        if let Some((p, x)) = n.split_once('.') {
+        // A public module's name: `pkg.models.Doc`.
+        let module = n.rsplit_once('.').filter(|(p, _)| p.contains('.') && self.s.pkgs.contains_key(*p));
+        if let Some((p, x)) = module.or_else(|| n.split_once('.')) {
             if !self.s.pkgs.contains_key(p) && !x.starts_with(|c: char| c.is_ascii_uppercase()) {
                 return;
             }
@@ -390,6 +392,10 @@ impl R<'_> {
     fn pkg_of(&mut self, e: &Expr, l: &Locals) -> Option<String> {
         match &e.kind {
             ExprKind::Name(p) if self.s.pkgs.contains_key(p) && !bound(l, p) => Some(p.clone()),
+            ExprKind::Field(x, m) if matches!(&x.kind, ExprKind::Name(p) if self.s.pkgs.contains_key(&format!("{p}.{m}")) && !bound(l, p)) => {
+                let ExprKind::Name(p) = &x.kind else { return None };
+                Some(format!("{p}.{m}"))
+            }
             ExprKind::Name(p) if self.s.indirect.contains(p) && !bound(l, p) => {
                 self.errs.push(SyntaxError::new("E_PKG_UNKNOWN", format!("no dependency '{p}': it is only a dependency of a dependency; add it with 'sspur add' to use it here"), e.span));
                 None

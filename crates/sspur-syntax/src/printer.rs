@@ -364,6 +364,7 @@ pub fn expr(e: &Expr, ind: usize) -> String {
             format!("mmio[{}]({}{rest})", ty(&targs[0]), expr(recv, ind))
         }
         ExprKind::Method { recv, name, targs, .. } if name == "#array" && targs.len() == 1 => format!("[{}; {}]", expr(recv, ind), ty(&targs[0])),
+        ExprKind::Method { recv, name, .. } if name == ASCRIBE => expr(recv, ind),
         ExprKind::Method { recv, name, targs, args } if name == "asm" && args.len() == 3 => {
             let tmpl = match &recv.kind {
                 ExprKind::Str(p) => p.iter().map(|x| if let StrPart::Lit(s) = x { s.as_str() } else { "" }).collect::<String>(),
@@ -615,8 +616,14 @@ fn print_arms(arms: &[Arm], ind: usize) -> String {
 
 fn stmt(s: &Stmt, ind: usize) -> String {
     match s {
-        Stmt::Let(p, e) => format!("{} = {}", pat(p), expr(e, ind)),
-        Stmt::Var(n, e) => format!("var {} = {}", n, expr(e, ind)),
+        Stmt::Let(p, e) => match e.ascription() {
+            Some((v, t)) => format!("{}: {} = {}", pat(p), ty(t), expr(v, ind)),
+            None => format!("{} = {}", pat(p), expr(e, ind)),
+        },
+        Stmt::Var(n, e) => match e.ascription() {
+            Some((v, t)) => format!("var {n}: {} = {}", ty(t), expr(v, ind)),
+            None => format!("var {} = {}", n, expr(e, ind)),
+        },
         Stmt::Assign(n, e, _) => match &e.kind {
             ExprKind::With(base, ups) if matches!(&base.kind, ExprKind::Name(b) if b == n) && ups.len() == 1 && !ups[0].0.is_empty() => {
                 let mut p = n.clone();

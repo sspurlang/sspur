@@ -1234,6 +1234,10 @@ impl Interp {
                 ExprKind::Field(x, f) if self.is_static(x, env) => self.static_op(x, f, &[], env),
                 ExprKind::Method { recv, name, args, .. } if self.is_static(recv, env) => self.static_op(recv, name, args, env),
                 ExprKind::Method { recv, name, targs, .. } if name == "#array" && targs.len() == 1 => self.eval_array(recv, targs, env),
+                ExprKind::Method { recv, name, .. } if name == sspur_syntax::ASCRIBE => {
+                    e = recv;
+                    continue;
+                }
                 ExprKind::Int(n) => Ok(Value::Int(*n)),
                 ExprKind::Float(x) => Ok(Value::Float(*x)),
                 ExprKind::Bool(b) => Ok(Value::Bool(*b)),

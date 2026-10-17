@@ -165,15 +165,21 @@ fn lex_into(src: &str, mut comments: Option<&mut Vec<Comment>>) -> Result<Vec<To
                 while i < bytes.len() && (bytes[i] == b'_' || bytes[i].is_ascii_alphanumeric()) {
                     i += 1;
                 }
-                if bytes[start].is_ascii_lowercase()
-                    && bytes.get(i) == Some(&b'.')
-                    && bytes.get(i + 1).is_some_and(u8::is_ascii_uppercase)
-                    && (start == 0 || bytes[start - 1] != b'.')
-                    && !KEYWORDS.contains(&&src[start..i])
-                {
-                    i += 1;
-                    while i < bytes.len() && (bytes[i] == b'_' || bytes[i].is_ascii_alphanumeric()) {
-                        i += 1;
+                // `pkg.Name` and `pkg.module.Name` are one name: a package's (or one of its
+                // public modules') type or constructor.
+                if bytes[start].is_ascii_lowercase() && (start == 0 || bytes[start - 1] != b'.') && !KEYWORDS.contains(&&src[start..i]) {
+                    let word = |mut j: usize| {
+                        while j < bytes.len() && (bytes[j] == b'_' || bytes[j].is_ascii_alphanumeric()) {
+                            j += 1;
+                        }
+                        j
+                    };
+                    let mut j = i;
+                    while bytes.get(j) == Some(&b'.') && bytes.get(j + 1).is_some_and(|c| c.is_ascii_lowercase()) {
+                        j = word(j + 1);
+                    }
+                    if bytes.get(j) == Some(&b'.') && bytes.get(j + 1).is_some_and(u8::is_ascii_uppercase) {
+                        i = word(j + 1);
                     }
                 }
                 let word = &src[start..i];
