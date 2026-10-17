@@ -4,10 +4,27 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+### Added
+- `sspur fmt` keeps comments (ADR 0042), and so do the language server's formatting, the playground's Reformat and the wasm `fmt`. A comment on its own line stays on its own line before the same code, a comment after code stays after it, comments between definitions keep their blank lines, and a short list, call, record, parameter list, pattern or sum type with a comment inside is written one element per line so the comment stays next to its element. Comments are still not part of the canonical text or any hash. A property test formats every `.ssp` file in the repository and every corpus program at 40 and 100 columns and checks that every comment comes back once, in order, with the same code before it, and that the canonical text, the hashes and idempotency hold.
+- Binding annotations: `x: T = e` and `var x: T = e` are checked (`e` against `T`) and kept in the canonical text, so `var seen: List[Int] = []` survives `sspur fmt` and `build.fmt`. They used to be accepted and dropped.
+- `\u{...}` escapes in strings (1 to 6 hex digits, `"caf\u{e9}"`), and `\}` for a literal `}`.
+- `_ => e` and `(acc, _) => e`: lambdas that ignore a parameter.
+- `pkg.models.Doc` names a public module's definition in expressions, types, record literals and patterns, without a `use`.
+
 ### Changed
 - Cold native builds of big packages are 5 to 7 times faster (ADR 0041). On a generated package of 200 modules and 2.5 MB of source (`bench/bigpkg`), a cold `sspur test` went from 282 s to 40 s, `sspur publish --dry-run` from 291 s to 59 s and a dependent's first `sspur run` from 251 s to 41 s; testing again after editing one function of a module went from 36 s to 7 s. The functions of a package or module with 16 or more functions now share C units of up to about 32 instead of one each, so clang no longer parses and compiles the same declarations and helpers thousands of times; a function of the program itself keeps its own unit, and a dependency's units are the same in every program that uses it, so dependents still share its objects. A build with enough C runs one clang process per core (at most 4 before), fewer when memory is short, and `SSPUR_JOBS` still sets the number; the units are made on every core; and the Z3 questions of a cold build are answered on every core. Programs without such packages compile to the same objects and libraries as before, so run times and the cached `sspur run` are unchanged.
 - The SMT cache is `smt2/` in the cache directory: each answer is an empty file named by the question and the answer, and a build lists a directory once instead of opening a file per question, which takes a warm `sspur test` of the package above from 9.8 s to 4.9 s. Answers in the old `smt/` directory aren't read.
 - The Homebrew tap moved to the sspurlang organization: `brew install sspurlang/sspur/sspur`. `packaging/homebrew/core/sspur.rb` is the formula for homebrew-core, so that after 1.0 `brew install sspur` works.
+- A `{` in a string interpolates only an expression that is not a lone literal and doesn't start with `{`: `"a{3}"`, `"^a{2,4}$"` and `"{{x}}"` are text, as `"{}"` and CSS braces already were. A brace that is text no longer swallows the code after it: `s.contains("{") or s.contains("}")` is two calls and `"{" + x + "}"` three strings (they were one string). No program in the repository or the corpus changes meaning.
+- `with` binds tighter than comparisons: `p == q with a := 1` is `p == (q with a := 1)` (it updated the `Bool`, an error). The reference lists the precedence of every operator.
+- A `match` in a match arm ends at the first arm indented less than its own, so `| some(x) => match x` with its arms indented deeper no longer takes the outer `| none`. Arms at the same column still belong to the inner match.
+- `build.fmt` counts comments now that `sspur fmt` keeps them: each one where `sspur fmt` puts it (indent and blank lines don't count). It also reads a long sum type broken one variant per line and a broken list pattern with `..`.
+
+### Fixed
+- `"\\{x}"` is a backslash and the value of `x` (it was the text `\{x}`).
+- The canonical text of corpus program t46, a `catch` ending a match arm, read back as a different program; a `match`, `catch` or `handle` that ends an arm other than the last now prints inside `do` on its own line. Its content hash is unchanged.
+- `_` in a `pre` or `post` condition is a placeholder lambda, as in any call argument: `post r.map(_ + 1).len == xs.len` checks (it was `E_PLACEHOLDER`).
+- Error spans of names interpolated after an escaped quote point at the name.
 
 ## [0.14.0] - 2026-10-17
 

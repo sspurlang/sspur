@@ -33,15 +33,17 @@ const sspur = StreamLanguage.define({
     const top = last(state.stack);
     if (stream.sol() && !top) state.effects = false;
     if (top && top.t === "str") {
-      if (stream.match(/^\\./)) return "escape";
+      if (stream.match(/^\\(u\{[0-9a-fA-F]*\}|.)/)) return "escape";
       if (stream.eat('"')) {
         state.stack.pop();
         return "string";
       }
-      if (stream.eat("{")) {
+      // `{` interpolates when an expression follows; `{}`, `{3}` and `{{` are text.
+      if (stream.match(/^\{(?=\s*[A-Za-z_(\[])/)) {
         state.stack.push({ t: "interp", depth: 0 });
         return "interp";
       }
+      if (stream.eat("{")) return "string";
       stream.match(/^[^"\\{]+/);
       return "string";
     }

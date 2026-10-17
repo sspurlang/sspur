@@ -50,7 +50,7 @@ impl Diag {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct CheckOutput {
     pub diags: Vec<Diag>,
     pub record_types: HashMap<(u32, u32), String>,

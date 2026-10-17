@@ -27,11 +27,12 @@ pub fn lower(m: &Module, out: &CheckOutput) -> Result<Option<(Module, CheckOutpu
     if out.has_errors() {
         return Ok(None);
     }
-    // Binding annotations have done their work: the checker's facts are about the values.
+    // Binding annotations have done their work: the checker's facts, which are by span, are the
+    // annotated program's, and they hold for the values once the annotations are taken out.
     if out.ascribed {
         let mut plain = m.clone();
         sspur_syntax::visit::erase_ascriptions(&mut plain);
-        let mut out = out.clone();
+        let mut out = check(m);
         out.ascribed = false;
         return Ok(Some(lower(&plain, &out)?.unwrap_or((plain, out))));
     }

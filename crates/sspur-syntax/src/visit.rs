@@ -89,15 +89,25 @@ pub fn children(e: &Expr) -> Vec<&Expr> {
     out
 }
 
+// The walks call `f` through a `dyn` reference, so there is one copy of each for every caller
+// rather than one per closure (two dozen in the playground's WebAssembly).
 pub fn walk_expr(e: &Expr, f: &mut impl FnMut(&Expr) -> bool) {
+    walk(e, f)
+}
+
+fn walk(e: &Expr, f: &mut dyn FnMut(&Expr) -> bool) {
     if f(e) {
         for c in children(e) {
-            walk_expr(c, f);
+            walk(c, f);
         }
     }
 }
 
 pub fn walk_expr_mut(e: &mut Expr, f: &mut impl FnMut(&mut Expr)) {
+    walk_mut(e, f)
+}
+
+fn walk_mut(e: &mut Expr, f: &mut dyn FnMut(&mut Expr)) {
     f(e);
     match &mut e.kind {
         ExprKind::Int(_)
@@ -110,76 +120,76 @@ pub fn walk_expr_mut(e: &mut Expr, f: &mut impl FnMut(&mut Expr)) {
         ExprKind::Str(parts) => {
             for p in parts {
                 if let StrPart::Expr(x) = p {
-                    walk_expr_mut(x, f);
+                    walk_mut(x, f);
                 }
             }
         }
-        ExprKind::Field(x, _) | ExprKind::Unary(_, x) | ExprKind::Raise(x) | ExprKind::Return(x) => walk_expr_mut(x, f),
-        ExprKind::Lambda { body, .. } => walk_expr_mut(body, f),
+        ExprKind::Field(x, _) | ExprKind::Unary(_, x) | ExprKind::Raise(x) | ExprKind::Return(x) => walk_mut(x, f),
+        ExprKind::Lambda { body, .. } => walk_mut(body, f),
         ExprKind::Call(g, args) => {
-            walk_expr_mut(g, f);
-            args.iter_mut().for_each(|a| walk_expr_mut(a, f));
+            walk_mut(g, f);
+            args.iter_mut().for_each(|a| walk_mut(a, f));
         }
         ExprKind::Method { recv, args, .. } => {
-            walk_expr_mut(recv, f);
-            args.iter_mut().for_each(|a| walk_expr_mut(a, f));
+            walk_mut(recv, f);
+            args.iter_mut().for_each(|a| walk_mut(a, f));
         }
         ExprKind::Index(a, b) | ExprKind::Binary(_, a, b) | ExprKind::Range(a, b) => {
-            walk_expr_mut(a, f);
-            walk_expr_mut(b, f);
+            walk_mut(a, f);
+            walk_mut(b, f);
         }
         ExprKind::If(c, t, e2) => {
-            walk_expr_mut(c, f);
-            walk_expr_mut(t, f);
+            walk_mut(c, f);
+            walk_mut(t, f);
             if let Some(x) = e2 {
-                walk_expr_mut(x, f);
+                walk_mut(x, f);
             }
         }
         ExprKind::Match(s, arms, _) | ExprKind::Catch(s, arms) | ExprKind::Handle(s, arms) => {
-            walk_expr_mut(s, f);
+            walk_mut(s, f);
             for a in arms {
                 if let Some(g) = &mut a.guard {
-                    walk_expr_mut(g, f);
+                    walk_mut(g, f);
                 }
-                walk_expr_mut(&mut a.body, f);
+                walk_mut(&mut a.body, f);
             }
         }
         ExprKind::Block(stmts) => {
             for s in stmts {
                 match s {
-                    Stmt::Let(_, x) | Stmt::Var(_, x) | Stmt::Assign(_, x, _) | Stmt::Expr(x) => walk_expr_mut(x, f),
+                    Stmt::Let(_, x) | Stmt::Var(_, x) | Stmt::Assign(_, x, _) | Stmt::Expr(x) => walk_mut(x, f),
                     Stmt::For(_, a, b) | Stmt::While(a, b) => {
-                        walk_expr_mut(a, f);
-                        walk_expr_mut(b, f);
+                        walk_mut(a, f);
+                        walk_mut(b, f);
                     }
                     Stmt::Fn(d) => {
-                        d.pres.iter_mut().chain(d.posts.iter_mut()).chain(d.examples.iter_mut()).for_each(|x| walk_expr_mut(x, f));
-                        walk_expr_mut(&mut d.body, f);
+                        d.pres.iter_mut().chain(d.posts.iter_mut()).chain(d.examples.iter_mut()).for_each(|x| walk_mut(x, f));
+                        walk_mut(&mut d.body, f);
                     }
                 }
             }
         }
-        ExprKind::Record { fields, .. } => fields.iter_mut().for_each(|(_, x)| walk_expr_mut(x, f)),
-        ExprKind::List(xs) | ExprKind::Tuple(xs) | ExprKind::Par(xs) => xs.iter_mut().for_each(|x| walk_expr_mut(x, f)),
+        ExprKind::Record { fields, .. } => fields.iter_mut().for_each(|(_, x)| walk_mut(x, f)),
+        ExprKind::List(xs) | ExprKind::Tuple(xs) | ExprKind::Par(xs) => xs.iter_mut().for_each(|x| walk_mut(x, f)),
         ExprKind::Table(rows) => {
             for r in rows {
                 for c in &mut r.cells {
                     if let Cell::Cond(e) = c {
-                        walk_expr_mut(e, f);
+                        walk_mut(e, f);
                     }
                 }
-                walk_expr_mut(&mut r.out, f);
+                walk_mut(&mut r.out, f);
             }
         }
         ExprKind::With(base, ups) => {
-            walk_expr_mut(base, f);
+            walk_mut(base, f);
             for (p, v) in ups {
                 for seg in p {
                     if let PathSeg::Index(i) = seg {
-                        walk_expr_mut(i, f);
+                        walk_mut(i, f);
                     }
                 }
-                walk_expr_mut(v, f);
+                walk_mut(v, f);
             }
         }
     }

@@ -11,7 +11,11 @@ pub fn parse(src: &str) -> PResult<Module> {
 /// Like `parse`, and also returns one note per foreign spelling the parser accepted
 /// (`&&`, `elif`, `let`, ...); the module holds the canonical form.
 pub fn parse_noted(src: &str) -> PResult<(Module, Vec<String>)> {
-    let toks = lex(src)?;
+    parse_tokens(lex(src)?)
+}
+
+/// `parse_noted` of tokens already lexed.
+pub(crate) fn parse_tokens(toks: Vec<Token>) -> PResult<(Module, Vec<String>)> {
     let mut p = Parser::new(toks);
     let mut m = p.module()?;
     normalize(&mut m);

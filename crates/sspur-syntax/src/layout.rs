@@ -154,13 +154,13 @@ impl Inner<'_> {
 }
 
 pub(crate) fn format_def_in(d: &Def, width: usize, cm: Option<&Inner>) -> String {
+    let cm = cm.filter(|c| !c.cs.is_empty());
     let canon = crate::printer::print_def(d);
     let b = canon.as_bytes();
+    // Comments where nothing can place them go before the definition.
+    let before = |c: &Inner| c.cs.iter().map(|x| format!("{}\n", x.2)).collect::<String>() + &canon;
     if (0..b.len()).any(|i| mk(b, i).is_some()) {
-        return match cm {
-            Some(c) => c.cs.iter().map(|x| format!("{}\n", x.2)).collect::<String>() + &canon,
-            None => canon,
-        };
+        return cm.map_or(canon.clone(), before);
     }
     let placed = cm.and_then(|c| place(&canon, c));
     let long = canon.lines().any(|l| width_of(l) > width);
@@ -198,7 +198,7 @@ pub(crate) fn format_def_in(d: &Def, width: usize, cm: Option<&Inner>) -> String
     }
     match (cm, placed) {
         (Some(c), Some(p)) => render(&p.lines().map(str::to_string).collect::<Vec<_>>(), &c.texts()),
-        (Some(c), None) => c.cs.iter().map(|x| format!("{}\n", x.2)).collect::<String>() + &canon,
+        (Some(c), None) => before(c),
         _ => canon,
     }
 }

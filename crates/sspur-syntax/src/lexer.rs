@@ -362,18 +362,13 @@ fn escape(src: &str, at: usize, out: &mut String, in_group: bool) -> Result<usiz
         '"' | '\'' | '\\' | '{' | '}' => c,
         'u' if src[at + 2..].starts_with('{') => {
             let body = &src[at + 3..];
-            let close = body.find('}').filter(|&n| (1..=6).contains(&n) && body[..n].bytes().all(|b| b.is_ascii_hexdigit()));
-            let ch = close.and_then(|n| u32::from_str_radix(&body[..n], 16).ok()).and_then(char::from_u32);
-            match (ch, close) {
-                (Some(ch), Some(n)) => {
-                    out.push(ch);
-                    return Ok(at + 3 + n + 1);
-                }
-                _ => {
-                    let end = at + 3 + body.find(['}', '"', '\n']).unwrap_or(0);
-                    return Err(SyntaxError::new("E_LEX_ESCAPE", "a '\\u{...}' escape takes 1 to 6 hex digits of a Unicode scalar value, such as '\\u{e9}'".into(), Span::new(at, end + 1)));
-                }
-            }
+            let n = body.find('}').unwrap_or(0);
+            let ch = (n <= 6).then(|| u32::from_str_radix(&body[..n], 16).ok()).flatten().and_then(char::from_u32);
+            let Some(ch) = ch.filter(|_| body.as_bytes()[..n].iter().all(u8::is_ascii_hexdigit)) else {
+                return Err(SyntaxError::new("E_LEX_ESCAPE", "a '\\u{...}' escape takes 1 to 6 hex digits of a Unicode scalar value, such as '\\u{e9}'".into(), Span::new(at, at + 4 + n)));
+            };
+            out.push(ch);
+            return Ok(at + 4 + n);
         }
         '\n' => return Err(SyntaxError::new("E_LEX_STRING", "unterminated string".into(), Span::new(at, at + 1))),
         c if in_group => {
@@ -391,11 +386,11 @@ fn escape(src: &str, at: usize, out: &mut String, in_group: bool) -> Result<usiz
 /// bracket, a comma, an operator or `and`, `or`, `is`, `with`, `then`, `else`, `do`, `in`.
 pub(crate) fn code_follows(rest: &str) -> bool {
     let r = rest.trim_start_matches([' ', '\t']);
-    let word: String = r.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect();
-    match r.chars().next() {
-        None | Some('\n' | '\r' | ')' | ']' | '}' | ',' | '.' | '+' | '-' | '*' | '/' | '%' | '=' | '!' | '<' | '>' | '&' | '|' | ';' | ':' | '[') => true,
-        Some(c) if c.is_ascii_alphabetic() || c == '_' => matches!(word.as_str(), "and" | "or" | "is" | "with" | "then" | "else" | "do" | "in"),
-        _ => false,
+    let n = r.bytes().take_while(|c| c.is_ascii_alphanumeric() || *c == b'_').count();
+    match r.bytes().next() {
+        None => true,
+        Some(c) if n > 0 => !c.is_ascii_digit() && ["and", "or", "is", "with", "then", "else", "do", "in"].contains(&&r[..n]),
+        Some(c) => b"\n\r)]},.+-*/%=!<>&|;:[".contains(&c),
     }
 }
 

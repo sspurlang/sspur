@@ -1,0 +1,59 @@
+# ADR 0042: `sspur fmt` keeps comments, and the last syntax fixes before 1.0
+
+Status: accepted, 2026-10-17
+
+## Problem
+
+`sspur fmt` printed each definition from its syntax tree, and comments are not in the tree, so formatting a file deleted every comment in it: the doc comment above a function, a note on a tricky line, the comments between the arms of a `match`. The language server's formatting, the playground's Reformat and the wasm `fmt` used the same code. Package authors kept their comments only by not running the formatter: the conventions of the utility packages said "No comments inside bodies (sspur fmt drops them)", a helper script put the comments above definitions back after `sspur fmt`, and the registry's `build.fmt` check had to ignore comments, since asking for what `sspur fmt` writes would have asked people to delete them. A formatter that deletes comments can't ship in a 1.0 toolchain.
+
+The same review of the friction logs found seven smaller syntax problems that 1.0 would freeze: `x: Int = 1` was accepted and silently dropped by `sspur fmt`; a string such as `"{"` could swallow the code after it (`s.contains("{") or s.contains("}")` was one string); `"\\{x}"` was the text `\{x}`; there was no `\u{...}` escape; corpus program t46's canonical text read back as a different program; `pkg.models.Doc` didn't work in expressions; `with` bound looser than `==` and the reference didn't say so; and `_ => e` was a parse error.
+
+## Comments
+
+```
+// Prices, in cents.
+type Item = {
+  sku: Str, // as printed on the box
+  cents: Int,
+}
+
+fn total(items: List[Item]) -> Int
+= do
+  // Free items still count as lines.
+  items
+    .filter(_.cents >= 0) // refunds are separate
+    .map(_.cents)
+    .sum
+```
+
+| # | Decision | Why |
+|---|---|---|
+| 1 | Comments stay out of the syntax tree, the canonical text and the hashes. `sspur fmt` reads them with the tokens, formats the definitions as before, and puts each comment back in the output | Comments are documentation, not the program: two agents that write the same code with different notes get the same definitions, hashes and store entries, and a comment edit doesn't change a package's export hash or force a rebuild. Keeping trivia in the tree, as Roslyn and rust-analyzer do, would have meant changing every pass that builds or rewrites trees, in every tier, for text no pass reads |
+| 2 | A comment is placed by the code next to it. The formatted definition is lexed again, its tokens are paired with the source's in order (resynchronising after the few the printer drops or adds: `let`, `x: x`, a trailing comma, parentheses), and a comment alone on its line goes before the printed token that is the first source token after it, a comment after code goes after the printed token that is the last source token before it | Order among the tokens is what a reader means by "where the comment was", and it survives every layout the printer and the line breaker choose. Pairing tokens is linear, needs no second printer, and is done only for definitions that have comments inside them |
+| 3 | An own-line comment is written on its own line before that code, indented like the line it ends up on; a trailing comment goes at the end of the code's line, after one space. Comments between definitions stay between them, with a blank line where the source had one (several blank lines become one), so a comment directly above a definition stays attached to it and a file header stays apart. An indented comment right after a definition's last line stays with that definition, and one at the end of the file stays at the end | These are the layouts gofmt, rustfmt and Prettier keep, and they need no new rule to learn: the output has the comments where the input had them. The indent of a comment line is the code's, so moving code moves its notes with it |
+| 4 | A line that has a comment in its middle is broken so the comment can stay: the printer marks the comment's place the way it marks break points (ADR 0040, decision 7), and a line with a mark inside code is broken like one that is too long, at the group, the operators, the chain, the `else`s or the variants next to the comment. A list, call, record, record type, parameter list or pattern with a comment inside is written one element per line; a sum type, one variant per line after `\|` | `[1, // one` + `2]` must not become `[1, 2] // one`: the comment is about the `1`. These are the breaks the line breaker already makes and checks, so the result is again kept only if it parses back to the same canonical text; and the next run sees the same comments in the same places, so formatting stays idempotent |
+| 5 | Where no break can free a comment (inside a type argument, an index or a string interpolation), it goes before the line (own-line) or at its end (trailing). Every comment is kept, exactly once, in order | Deleting or reordering text the author wrote is never acceptable, and these places are rare enough that a nearby line is the right answer: none of the 1,000 comments in the repository and the corpus needs it |
+| 6 | Inserting a comment line or a trailing comment never changes how the code reads: the lexer skips a comment line wherever it is, including inside brackets and continued statements, and a line ends at a comment as it ends at a line break. The formatted text is still parsed back and compared with the canonical text | The safety of ADR 0040 holds with comments in: a test runs `sspur fmt` over every `.ssp` file in the repository and every corpus program at 40 and 100 columns, and checks that the canonical text and the hashes are unchanged, that formatting again gives the same text, that the comments are the same texts in the same order, and that each comment has the same names and literals before it as in the source |
+| 7 | `build.fmt` now counts comments: each one has to be where `sspur fmt` puts it, on its own line or after code, in the same order among the statements; their indent and the blank lines around them don't count. A source in the one-line form of 0.13 is compared without its comments | The check asks for what `sspur fmt` writes, and that now includes the comments, so `sspur fmt --write` is always the fix. Every comment in the published packages sits where `sspur fmt` leaves it, so no package fails because of a comment |
+
+## Syntax settled for 1.0
+
+| # | Decision | Why |
+|---|---|---|
+| 8 | `x: T = e` and `var x: T = e` keep their annotation: it is checked (`e` against `T`) and is part of the canonical text and the hash. In the tree it is a method call `e.#ty[T]()` on the value, which `elab::lower` takes out before anything runs, so the interpreter and native code never see it | It was accepted, ignored and dropped by `sspur fmt`, so `build.fmt` rejected the annotated line; it is the only way to give an empty list its element type up front. As a call on the value it needs no new statement shape in the tree, which every tier matches on, and erasing it keeps the checker's facts (types by span) valid for the program that runs |
+| 9 | A `{` in a string interpolates when its `{...}` closes on the line and holds an expression that is neither a lone literal nor starts with `{`. Otherwise it is text: the whole group when it has no quote in it (`"{}"`, `"a{3}"`, `"^a{2,4}$"`, `"{{x}}"`, CSS such as `".a{display:grid}"`, JSON written with `\"`), else the `{` alone, so a quote right after it ends the string when code could follow (`"{" or ...`, `"{")`, `"{",`). `\{` and now `\}` are always braces | A lone `{` in a literal was a trap: `"{") or s.contains("}"` read as one string whose interpolation was a string, and the program silently computed something else. Interpolating a number or a string literal is never meant, and regex counts and Mustache templates are common. Groups that weren't expressions were already text (the reference said so, and Pulse's CSS relies on it), so no program in the repository or the corpus changes meaning. `"/users/{id}"` still interpolates `id`: that is what `{name}` means, and writing `\{id}` says otherwise |
+| 10 | The lexer applies escapes while it reads a string, so `"\\{x}"` is a backslash and the value of `x`, and adds `\u{...}` (1 to 6 hex digits of a Unicode scalar value). The printer writes control characters and the private-use characters the formatter uses as `\u{...}` | The lexer used to hand the parser text with escaped braces marked as `\{`, and an escaped backslash followed by `{` looked the same. Rust, Swift and JavaScript spell the escape `\u{...}` |
+| 11 | A `match`, `catch` or `handle` that ends an arm's body, other than the last, prints inside `do` on its own line, and a `match` in an arm ends at the first arm indented less than its own | Its arms printed where the outer match's were, so they took the outer arms below them: corpus program t46's canonical text read back as a different program, and the formatter had to keep it. Its canonical text changes, which is acceptable because the old text was a different program; its content hash doesn't. Reading the indent fixes the trap the friction logs hit three times (`\| some(x) => match x` with deeper arms took the outer `\| none`) |
+| 12 | `pkg.models.Doc` names a public module's definition in expressions, types, record literals and patterns, as `pkg.Doc` names a package's | ADR 0039 left it for later; the lexer already read `pkg.Doc` as one name, and now reads `pkg.models.Doc` the same way |
+| 13 | `with` binds tighter than comparisons and looser than `..` and arithmetic: `p == q with a := 1` compares `p` with the updated `q`. The reference has the full precedence table | It bound looser than `or`, so the update applied to a `Bool` (`E_WITH_PATH`). Every program it changes was an error, since the base of a `with` that bound looser than a comparison was a `Bool` |
+| 14 | `_ => e` and `(acc, _) => e` are lambdas that ignore a parameter. `_` in the body of such a lambda is `E_PARSE_LAMBDA` rather than the parameter | `_` alone already means "a placeholder", and every other language with lambdas has a way to say "unused". Naming it `k` worked but read as if `k` mattered |
+
+## Measurements
+
+Of the 443 sources in the repository and the corpus, 95 have comments (about 760 of them); every one comes back from `sspur fmt` in the same place. Formatting a file without comments is unchanged; one with comments in its bodies is lexed and paired once more per definition, a few percent of the time `sspur fmt` spends printing and checking the layouts. The only canonical text that changed is t46's (decision 11). Content hashes of every source are unchanged, and the 0.13 golden of the corpus's canonical text moved only for t46.
+
+## Not done
+
+- Comments in the store: `sspur edit` and the store keep definitions as canonical text, so a comment written in a change file is not stored. The store is the agents' view; the files people edit keep their comments.
+- Comments inside a string interpolation, a type's arguments or an index stay next to their line, not inside it (decision 5).
+- The Zed extension's tree-sitter grammar still highlights every `{` in a string as an interpolation; the playground and VS Code highlight the new rule's common cases.

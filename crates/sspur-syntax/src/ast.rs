@@ -177,11 +177,23 @@ pub struct Variant {
     pub fields: Option<Vec<Field>>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Ty {
     Named { name: String, args: Vec<Ty>, span: Span },
     Tuple(Vec<Ty>),
     Fn { params: Vec<Ty>, ret: Box<Ty>, effects: Vec<Effect> },
+}
+
+// The clones of the syntax tree are not inlined (see `Expr`).
+impl Clone for Ty {
+    #[inline(never)]
+    fn clone(&self) -> Self {
+        match self {
+            Ty::Named { name, args, span } => Ty::Named { name: name.clone(), args: args.clone(), span: *span },
+            Ty::Tuple(xs) => Ty::Tuple(xs.clone()),
+            Ty::Fn { params, ret, effects } => Ty::Fn { params: params.clone(), ret: ret.clone(), effects: effects.clone() },
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -198,7 +210,7 @@ pub struct Param {
     pub refine: Option<Expr>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct FnDef {
     pub name: String,
     pub tparams: Vec<TParam>,
@@ -216,6 +228,30 @@ pub struct FnDef {
     pub ext: Option<Extern>,
     pub kernel: Option<Box<KernelSpec>>,
     pub public: bool,
+}
+
+impl Clone for FnDef {
+    #[inline(never)]
+    fn clone(&self) -> Self {
+        FnDef {
+            name: self.name.clone(),
+            tparams: self.tparams.clone(),
+            params: self.params.clone(),
+            ret: self.ret.clone(),
+            effects: self.effects.clone(),
+            pres: self.pres.clone(),
+            posts: self.posts.clone(),
+            examples: self.examples.clone(),
+            trusted: self.trusted.clone(),
+            interrupt: self.interrupt.clone(),
+            body: self.body.clone(),
+            span: self.span,
+            sig_span: self.sig_span,
+            ext: self.ext.clone(),
+            kernel: self.kernel.clone(),
+            public: self.public,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -360,10 +396,19 @@ pub enum StrPart {
     Expr(Expr),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Expr {
     pub kind: ExprKind,
     pub span: Span,
+}
+
+// Not inlined: a derived clone inlines the clone of every nested expression into the clone of
+// `ExprKind`, which made it the largest function of the playground's WebAssembly.
+impl Clone for Expr {
+    #[inline(never)]
+    fn clone(&self) -> Self {
+        Expr { kind: self.kind.clone(), span: self.span }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -436,7 +481,7 @@ pub enum Stmt {
     Fn(Box<FnDef>),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Pat {
     Wild,
     Bind(String),
@@ -450,6 +495,23 @@ pub enum Pat {
     /// `[a, b]`, `[a, ..rest]`, `[..init, z]`, `[a, .., z]`: `head` elements, then with `rest` any
     /// number of elements (bound as a list when named), then `tail` elements.
     List { head: Vec<Pat>, rest: Option<Option<String>>, tail: Vec<Pat> },
+}
+
+impl Clone for Pat {
+    #[inline(never)]
+    fn clone(&self) -> Self {
+        match self {
+            Pat::Wild => Pat::Wild,
+            Pat::Bind(n) => Pat::Bind(n.clone()),
+            Pat::Int(n) => Pat::Int(*n),
+            Pat::Str(t) => Pat::Str(t.clone()),
+            Pat::Bool(b) => Pat::Bool(*b),
+            Pat::Tuple(xs) => Pat::Tuple(xs.clone()),
+            Pat::Ctor { name, args } => Pat::Ctor { name: name.clone(), args: args.clone() },
+            Pat::Or(xs) => Pat::Or(xs.clone()),
+            Pat::List { head, rest, tail } => Pat::List { head: head.clone(), rest: rest.clone(), tail: tail.clone() },
+        }
+    }
 }
 
 impl Pat {

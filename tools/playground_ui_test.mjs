@@ -95,7 +95,14 @@ async function desktop(page, name, mod) {
   await settle(page, async () => (await ed.text(page)) !== TWO);
   expect((await ed.text(page)) === "fn a(x: Int) -> Int = x+1\n\nfn b(x: Int) -> Int\n= x * 2\n\ntest t = a(1)==2\n", `${name}: a selection reformats the definitions it touches`, await ed.text(page));
 
-  // Code that doesn't parse is left alone, and the reason is shown where it is.
+  // Comments stay where they are, and a short list with one inside is broken around it (ADR 0042).
+  const NOTED = "// The pair.\nfn f(x: Int) -> List[Int]\n= [x, // first\n  x+1] // done\n";
+  await ed.set(page, NOTED, 0);
+  await page.keyboard.press(`${mod}+Alt+KeyL`);
+  await settle(page, async () => (await ed.text(page)) !== NOTED);
+  expect((await ed.text(page)) === "// The pair.\nfn f(x: Int) -> List[Int]\n= [\n  x, // first\n  x + 1,\n] // done\n", `${name}: Reformat keeps comments`, await ed.text(page));
+
+    // Code that doesn't parse is left alone, and the reason is shown where it is.
   const bad = "fn f(x: Int) -> Int = x +\n";
   await ed.set(page, bad, 3);
   await page.keyboard.press(`${mod}+Alt+KeyL`);
