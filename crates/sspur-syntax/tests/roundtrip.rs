@@ -338,3 +338,20 @@ fn with_binds_tighter_than_comparisons() {
         assert_eq!(sspur_syntax::printer::expr(&e, 0), want, "{src}");
     }
 }
+
+/// A `match` in an arm whose arms are indented past the outer ones ends at the first arm to
+/// their left, and `_` in a `pre` or `post` condition is a placeholder lambda.
+#[test]
+fn nested_match_ends_at_a_less_indented_arm() {
+    let src = "fn g(o: Opt[Opt[Int]]) -> Int\n= match o\n  | some(x) => match x\n    | some(n) => n\n    | none => 0\n  | none => -1\n";
+    let printed = print_module(&parse(src).unwrap());
+    assert_eq!(printed, "fn g(o: Opt[Opt[Int]]) -> Int\n= match o\n| some(x) => do\n  match x\n  | some(n) => n\n  | none => 0\n| none => -1\n");
+    let same = "fn g(o: Opt[Int], p: Opt[Int]) -> Int\n= match o\n| some(x) => match p\n| some(n) => n\n| none => 0\n";
+    let Def::Fn(f) = &parse(same).unwrap().defs[0] else { panic!() };
+    let ExprKind::Match(_, arms, _) = &f.body.kind else { panic!() };
+    assert_eq!(arms.len(), 1, "arms at the same column still belong to the inner match");
+    let post = "fn sizes(xs: List[List[Int]]) -> List[Int]\n  post r.map(_ + 1).len == xs.len\n= xs.map(x => x.len)\n";
+    assert_eq!(print_module(&parse(post).unwrap()), post);
+    let Def::Fn(f) = &parse(post).unwrap().defs[0] else { panic!() };
+    assert!(!sspur_syntax::parser::has_placeholder(&f.posts[0]));
+}

@@ -522,6 +522,15 @@ impl Parser {
         Ok(out)
     }
 
+    /// A `pre` or `post` condition: `_` in it is a placeholder lambda, as in any call argument.
+    fn clause(&mut self) -> PResult<Expr> {
+        let saved = self.in_refine;
+        self.in_refine = false;
+        let e = self.binary(1);
+        self.in_refine = saved;
+        e
+    }
+
     fn refine_expr(&mut self) -> PResult<Expr> {
         let saved = self.in_refine;
         self.in_refine = true;
@@ -885,9 +894,9 @@ impl Parser {
                     _ => unreachable!(),
                 });
             } else if self.eat_kw("pre") {
-                pres.push(self.refine_expr()?);
+                pres.push(self.clause()?);
             } else if self.eat_kw("post") {
-                posts.push(self.refine_expr()?);
+                posts.push(self.clause()?);
             } else if self.eat_kw("ex") {
                 examples.push(self.binary(1)?);
             } else {
@@ -1322,11 +1331,15 @@ impl Parser {
 
     fn arms(&mut self, indent: u32) -> PResult<Vec<Arm>> {
         let mut arms = Vec::new();
+        // A `match` in an arm, with its own arms indented past the outer ones, ends at the first
+        // arm to the left of its own.
+        let mut col = None;
         loop {
             if let Some(c) = self.newline_then(|t| matches!(t, Tok::Sym("|"))) {
-                if c < indent {
+                if c < indent || col.is_some_and(|k| c < k) {
                     break;
                 }
+                col.get_or_insert(c);
                 self.line_indent = c;
                 self.bump();
             }
