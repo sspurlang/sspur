@@ -913,7 +913,7 @@ impl Parser {
 
     fn lambda_ahead(&self) -> bool {
         match self.peek() {
-            Tok::Ident(_) => matches!(self.peek_at(1), Tok::Sym("=>")),
+            Tok::Ident(_) | Tok::Sym("_") => matches!(self.peek_at(1), Tok::Sym("=>")),
             Tok::Sym("(") => {
                 if matches!((self.peek_at(1), self.peek_at(2)), (Tok::Sym(")"), Tok::Sym("=>"))) {
                     return true;
@@ -921,7 +921,7 @@ impl Parser {
                 let mut i = 1;
                 loop {
                     match self.peek_at(i) {
-                        Tok::Ident(_) => {}
+                        Tok::Ident(_) | Tok::Sym("_") => {}
                         _ => return false,
                     }
                     match self.peek_at(i + 1) {
@@ -941,14 +941,14 @@ impl Parser {
             let mut params = Vec::new();
             if self.eat_sym("(") {
                 while !self.is_sym(")") {
-                    params.push(self.expect_ident()?);
+                    params.push(self.lambda_param()?);
                     if !self.eat_sym(",") {
                         break;
                     }
                 }
                 self.expect_sym(")")?;
             } else {
-                params.push(self.expect_ident()?);
+                params.push(self.lambda_param()?);
             }
             self.expect_sym("=>")?;
             let mut body = if self.is_sym("{") && matches!(self.peek_at(1), Tok::Newline(_)) {
@@ -962,6 +962,9 @@ impl Parser {
             };
             if tail_return(&mut body) {
                 self.note("return e at the end of a lambda -> e");
+            }
+            if params.iter().any(|p| p == "_") && free_placeholder(&body) {
+                return Err(SyntaxError::new("E_PARSE_LAMBDA", "'_ =>' ignores its argument, so '_' in the body can't be it; name the argument: 'x => ...'".into(), body.span));
             }
             return Ok(Expr::new(ExprKind::Lambda { params, body: Box::new(body), implicit: false }, start.to(self.prev_span())));
         }
@@ -1017,41 +1020,53 @@ impl Parser {
                 if matches!(self.peek(), Tok::Ident(w) if w == "is") {
                     return self.is_test(base, save, start);
                 }
-                if !self.is_kw("with") {
-                    return Ok(base);
-                }
-                self.bump();
-                let mut updates = Vec::new();
-                loop {
-                    let first = self.expect_ident()?;
-                    let mut path = vec![PathSeg::Field(first)];
-                    loop {
-                        if self.eat_sym(".") {
-                            path.push(PathSeg::Field(self.expect_ident()?));
-                        } else if self.eat_sym("[") {
-                            let i = self.expr()?;
-                            self.expect_sym("]")?;
-                            path.push(PathSeg::Index(i));
-                        } else {
-                            break;
-                        }
-                    }
-                    self.expect_sym(":=")?;
-                    let value = self.expr()?;
-                    updates.push((path, value));
-                    if !(self.is_sym(",") && self.path_assign_ahead(1)) {
-                        break;
-                    }
-                    self.bump();
-                }
-                Ok(Expr::new(ExprKind::With(Box::new(base), updates), start.to(self.prev_span())))
+                Ok(base)
             }
         }
     }
 
+    /// `base with a := 1, b.c := 2`: `with` binds tighter than comparisons, so
+    /// `p == q with a := 1` compares `p` with the updated `q`.
+    fn with_updates(&mut self, base: Expr) -> PResult<Expr> {
+        let start = base.span;
+        self.bump();
+        let mut updates = Vec::new();
+        loop {
+            let first = self.expect_ident()?;
+            let mut path = vec![PathSeg::Field(first)];
+            loop {
+                if self.eat_sym(".") {
+                    path.push(PathSeg::Field(self.expect_ident()?));
+                } else if self.eat_sym("[") {
+                    let i = self.expr()?;
+                    self.expect_sym("]")?;
+                    path.push(PathSeg::Index(i));
+                } else {
+                    break;
+                }
+            }
+            self.expect_sym(":=")?;
+            let value = self.expr()?;
+            updates.push((path, value));
+            if !(self.is_sym(",") && self.path_assign_ahead(1)) {
+                break;
+            }
+            self.bump();
+        }
+        Ok(Expr::new(ExprKind::With(Box::new(base), updates), start.to(self.prev_span())))
+    }
+
     /// The condition after `if`: an expression, or `e is p` / `e is p and rest` (and the
     /// foreign `let p = e`).
-    fn if_cond(&mut self) -> PResult<IfCond> {
+/// A lambda's parameter: a name, or `_` for one it ignores.
+    fn lambda_param(&mut self) -> PResult<String> {
+        if self.eat_sym("_") {
+            return Ok("_".into());
+        }
+        self.expect_ident()
+    }
+
+        fn if_cond(&mut self) -> PResult<IfCond> {
         if matches!(self.peek(), Tok::Ident(w) if w == "let") && matches!(self.peek_at(1), Tok::Ident(_) | Tok::Int(_) | Tok::Str(_) | Tok::Kw("true" | "false") | Tok::Sym("(" | "[" | "_" | "-")) {
             self.bump();
             let p = self.pat()?;
@@ -1729,7 +1744,11 @@ impl Parser {
 
     fn binary(&mut self, min: u8) -> PResult<Expr> {
         let mut lhs = self.unary()?;
+        let mut tight = true;
         loop {
+            if self.is_kw("with") && min <= 5 && tight {
+                return self.with_updates(lhs);
+            }
             if self.is_sym("..") && min <= 5 {
                 self.bump();
                 let rhs = self.binary(6)?;
@@ -1747,6 +1766,7 @@ impl Parser {
                 self.note(if op == BinOp::And { "&& -> and" } else { "|| -> or" });
             }
             self.bump();
+            tight = prec >= 5;
             let next_min = if op == BinOp::Pow { prec } else { prec + 1 };
             let rhs = self.binary(next_min)?;
             let span = lhs.span.to(rhs.span);
@@ -2084,6 +2104,16 @@ fn raw_text(t: &Tok) -> Option<String> {
 
 fn pat_binds(p: &Pat, out: &mut Vec<String>) {
     p.binds(out)
+}
+
+/// Whether `e` has a `_` that no implicit lambda inside it binds.
+fn free_placeholder(e: &Expr) -> bool {
+    let mut found = false;
+    crate::visit::walk_expr(e, &mut |x| {
+        found |= matches!(x.kind, ExprKind::Placeholder);
+        !matches!(x.kind, ExprKind::Lambda { implicit: true, .. })
+    });
+    found
 }
 
 pub fn has_placeholder(e: &Expr) -> bool {

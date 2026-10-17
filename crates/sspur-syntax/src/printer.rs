@@ -477,7 +477,7 @@ pub fn expr(e: &Expr, ind: usize) -> String {
         ExprKind::Table(_) => "<rule table>".into(),
         ExprKind::With(base, ups) => {
             let items: Vec<String> = ups.iter().map(|(p, v)| format!("{} := {}", path(p, ind), expr(v, ind))).collect();
-            format!("{} with {}", operand(base, 1, ind), layout::updates(&items))
+            format!("{} with {}", operand(base, 5, ind), layout::updates(&items))
         }
     }
 }

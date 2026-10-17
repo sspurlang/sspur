@@ -304,3 +304,37 @@ fn binding_annotations_print_back() {
     assert_eq!(print_module(&m2), "fn f(n: Int) -> Int\n= do\n  var k: Int = n\n  j: Int = k\n  j\n");
     assert!(notes.iter().all(|n| !n.contains(": T")), "{notes:?}");
 }
+
+/// `_ => e` is a lambda that ignores its argument; `_` in its body is an error, not the argument.
+#[test]
+fn underscore_lambdas_ignore_their_argument() {
+    for (src, want) in [
+        ("xs.map(_ => 0)", "xs.map(_ => 0)"),
+        ("xs.fold(0, (acc, _) => acc + 1)", "xs.fold(0, (acc, _) => acc + 1)"),
+        ("f((_, _) => 1)", "f((_, _) => 1)"),
+        ("xs.map(_ => ys.map(_ + 1))", "xs.map(_ => ys.map(_ + 1))"),
+    ] {
+        let e = sspur_syntax::parse_expr(src).unwrap_or_else(|e| panic!("{src}: {e:?}"));
+        assert_eq!(sspur_syntax::printer::expr(&e, 0), want);
+    }
+    for bad in ["xs.map(_ => _ + 1)", "xs.map(_ => (y => _ + y))"] {
+        assert_eq!(sspur_syntax::parse_expr(bad).unwrap_err().code, "E_PARSE_LAMBDA", "{bad}");
+    }
+}
+
+/// `with` binds tighter than comparisons and looser than arithmetic (the precedence table in
+/// docs/reference/language.md).
+#[test]
+fn with_binds_tighter_than_comparisons() {
+    for (src, want) in [
+        ("p == q with a := 1", "p == (q with a := 1)"),
+        ("p != q with a := 1, b := 2", "p != (q with a := 1, b := 2)"),
+        ("ok and p with a := 1", "ok and (p with a := 1)"),
+        ("p with a := x + 1", "p with a := x + 1"),
+        ("f(p) with a := 1", "f(p) with a := 1"),
+        ("(p == q) with a := 1", "(p == q) with a := 1"),
+    ] {
+        let e = sspur_syntax::parse_expr(src).unwrap_or_else(|e| panic!("{src}: {e:?}"));
+        assert_eq!(sspur_syntax::printer::expr(&e, 0), want, "{src}");
+    }
+}
