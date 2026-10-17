@@ -590,6 +590,7 @@ impl Env {
         let members = changed_members(root, &lock);
         if members.is_none()
             && let Some(env) = Env::from_lock(&m, &lock) {
+                stale_paths(root, &m, &lock);
                 return Ok(Some(env));
             }
         for (n, s) in &m.deps {
@@ -656,6 +657,24 @@ fn changed_members(root: &Path, lock: &Lock) -> Option<BTreeSet<String>> {
         }
     }
     changed.then_some(members)
+}
+
+/// Notes each direct path dependency outside the package whose source changed since the lock
+/// pinned it: the build keeps using the pinned version.
+fn stale_paths(root: &Path, m: &Manifest, lock: &Lock) {
+    let Ok(base) = root.canonicalize() else { return };
+    for (n, s) in &m.deps {
+        let Some(e) = lock.entries.get(s.target(n)) else { continue };
+        let Some(p) = e.source.strip_prefix("path+") else { continue };
+        let Ok(dir) = root.join(p).canonicalize() else { continue };
+        if dir.starts_with(&base) {
+            continue;
+        }
+        let now = Manifest::read(&dir).ok().flatten().and_then(|m| Some((read_src(&dir, &m).ok()?, m.text)));
+        if now.is_some() && now != cached_source(&e.hash) {
+            eprintln!("note: {} changed since sspur.lock pinned it; this build uses the pinned version, and 'sspur deps update {}' takes the new one", e.name, e.name);
+        }
+    }
 }
 
 pub struct Linked {
