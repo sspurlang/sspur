@@ -160,9 +160,11 @@ fn hot_swap_under_concurrent_requests_drops_nothing() {
 
     local.dynamo.delay_ms.store(400, Ordering::Relaxed);
     let slow = std::thread::spawn(move || version(port, "GET", "/items/seed", None));
-    std::thread::sleep(Duration::from_millis(150));
-    local.dynamo.delay_ms.store(0, Ordering::Relaxed);
+    while local.status()["stable"]["inflight"] != 1 {
+        std::thread::sleep(Duration::from_millis(5));
+    }
     local.swap(&v2, &b2, 100).unwrap();
+    local.dynamo.delay_ms.store(0, Ordering::Relaxed);
     let (s, v, b) = slow.join().unwrap();
     assert_eq!((s, v.as_str()), (200, v1.hash.as_str()), "an in-flight request finishes on the old version");
     assert!(b.get("note").is_none());

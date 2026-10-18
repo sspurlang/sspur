@@ -2,13 +2,13 @@ use crate::{iam, migrate, Service, Store};
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{Shutdown, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub type Sink = Arc<dyn Fn(&str) + Send + Sync>;
 
@@ -110,6 +110,8 @@ fn serve(l: TcpListener, h: Handle) {
                     let resp = h(req);
                     let _ = write_resp(&mut s, &resp);
                 }
+                // a child spawned between accept and FD_CLOEXEC holds a copy of the socket, so closing alone may never send FIN
+                let _ = s.shutdown(Shutdown::Both);
             });
         }
     });
@@ -303,16 +305,18 @@ struct Fun {
     inflight: Mutex<HashMap<String, Reply>>,
     current: Mutex<Option<String>>,
     init_error: Mutex<Option<String>>,
+    polled: AtomicBool,
 }
 
 impl Fun {
     fn new(name: &str) -> Fun {
-        Fun { name: name.to_string(), queue: Mutex::new(VecDeque::new()), ready: Condvar::new(), inflight: Mutex::new(HashMap::new()), current: Mutex::new(None), init_error: Mutex::new(None) }
+        Fun { name: name.to_string(), queue: Mutex::new(VecDeque::new()), ready: Condvar::new(), inflight: Mutex::new(HashMap::new()), current: Mutex::new(None), init_error: Mutex::new(None), polled: AtomicBool::new(false) }
     }
 
     fn handle(&self, req: Req) -> Resp {
         let p = req.path.trim_start_matches("/2018-06-01/runtime/");
         if req.method == "GET" && p == "invocation/next" {
+            self.polled.store(true, Ordering::SeqCst);
             let mut q = self.queue.lock().unwrap();
             let (id, ev, tx) = loop {
                 if let Some(x) = q.pop_front() {
@@ -478,6 +482,7 @@ impl Inner {
         let mut funs = HashMap::new();
         let mut backfills = BTreeMap::new();
         let mut children = Vec::new();
+        let mut started = Vec::new();
         let backfill_names: BTreeSet<&str> = svc.backfills.iter().map(|b| b.name.as_str()).collect();
         for h in svc.handlers.iter().chain(&svc.backfills) {
             let f = Arc::new(Fun::new(&h.name));
@@ -526,11 +531,19 @@ impl Inner {
                 });
             }
             children.push(child);
+            started.push(f.clone());
             if backfill {
                 backfills.insert(h.name.trim_start_matches("backfill_").to_string(), f);
             } else {
                 funs.insert(h.name.clone(), f);
             }
+        }
+        // route traffic only once every bootstrap is up (or has failed), as Lambda does after a cold start
+        let deadline = Instant::now() + Duration::from_secs(120);
+        while Instant::now() < deadline
+            && started.iter().zip(&mut children).any(|(f, c)| !f.polled.load(Ordering::SeqCst) && f.init_error.lock().unwrap().is_none() && matches!(c.try_wait(), Ok(None)))
+        {
+            std::thread::sleep(Duration::from_millis(2));
         }
         let routes = svc.routes.iter().map(|r| (r.method.to_uppercase(), r.path.clone(), r.handler.clone())).collect();
         Ok(Arc::new(Version { hash: svc.hash.clone(), stores: svc.stores.clone(), routes, funs, backfills, children: Mutex::new(children), inflight: AtomicUsize::new(0) }))
