@@ -31,6 +31,7 @@ None of these are needed for normal use. They exist for CI, for pinning toolchai
 | `SSPUR_CFLAGS` | Extra C compiler flags for native builds, part of the cache key. `-fsanitize=address,undefined` builds native code under the sanitizers; on macOS run with `DYLD_INSERT_LIBRARIES` set to clang's `libclang_rt.asan_osx_dynamic.dylib` |
 | `SSPUR_PROFDATA` | The `llvm-profdata` to use for `--pgo` |
 | `SSPUR_LLVM_CC` | The clang for `--backend llvm` |
+| `SSPUR_Z3` | The `z3` that `sspur verify` and native builds use (default `z3` on `PATH`); `off` or `0` means none |
 
 ## Running programs
 
@@ -45,6 +46,7 @@ None of these are needed for normal use. They exist for CI, for pinning toolchai
 | `SSPUR_MEM` | `gc` turns off freeing at last use (no drops compiled, nothing freed early; the 0.8.1 behavior). `check` poisons freed blocks instead of reusing them and stops on a double free, for finding memory bugs (ADR 0033) |
 | `SSPUR_GC_MIN_MB`, `SSPUR_GC_FACTOR` | Collect after max(`MIN` MB, `FACTOR` x live) of allocation (defaults 256 and 4). Lower values trade speed for memory |
 | `SSPUR_GC_STRESS` | Collect every N bytes, for testing the collector |
+| `SSPUR_DB_POOL` | Connections per SQLite database, 1 to 64 (default 8; always 1 for a memory database) |
 
 ## Targets and tools
 
@@ -60,3 +62,31 @@ None of these are needed for normal use. They exist for CI, for pinning toolchai
 |---|---|
 | `SSPUR_VERSION` | The release `install.sh` installs, such as `0.15.0` (default: the latest) |
 | `SSPUR_INSTALL_DIR` | Where `install.sh` puts the binary (default `~/.local/bin`) |
+| `SSPUR_DOWNLOAD_BASE` | A mirror with the release archives and `SHA256SUMS` for `install.sh` and `install.ps1` to download from, instead of the GitHub release |
+
+## Deployed services
+
+`sspur deploy plan` writes these into each function's configuration, and `sspur deploy local` sets them for the processes it starts; the generated bootstrap reads them.
+
+| Variable | Effect |
+|---|---|
+| `SSPUR_HANDLER` | The handler this function runs |
+| `SSPUR_BACKFILL` | The store a backfill function migrates, instead of a handler |
+| `SSPUR_TABLE_<Store>` | The DynamoDB table of the store `Store`, for each store the handler's effect row grants |
+
+## Working on SSPUR
+
+These are for debugging the compiler and its tests, and print to stderr unless noted.
+
+| Variable | Effect |
+|---|---|
+| `SSPUR_BIN` | The `sspur` that `tools/corpus_diff.py` and `tools/playground_test.mjs` compare against |
+| `SSPUR_ELAB_DUMP` | Print the elaborated program before it is checked again |
+| `SSPUR_LOWER_DEBUG` | Print why the native lowering gave up on a function |
+| `SSPUR_SPLIT` | `1` builds native code per definition, `0` as one unit (default: per definition except at `-O3` without `--debug`) |
+| `SSPUR_SPLIT_DEBUG` | Print how long each native build stage took |
+| `SSPUR_C_TARGET=windows` | Generate the Windows flavor of the native C on another OS |
+| `SSPUR_FUZZ_TRACE` | Print each native call `sspur fuzz` makes |
+| `SSPUR_SYNTH_TRACE` | Print what hole filling probed: tests, inputs and time |
+| `SSPUR_CRASH_AT` | Abort at the named crash point in the codebase store, to test that a crash leaves it consistent |
+| `SSPUR_PGO_GEN` | Set by `--pgo` for its training run: the directory the instrumented build writes its profile to |

@@ -25,6 +25,22 @@ Everything SSPUR does goes through one binary, `sspur`. This is its usage text, 
 | Services | `sspur deploy plan`, `local`, `migrate`, `replay`, `swap`, `promote`, `rollback`, `backfill`, `status` |
 | Many agents and replicas | `sspur sync serve`, `push`, `pull`, `status`, `resolve` |
 
+## Flags the usage text leaves out
+
+These are for working on SSPUR itself or for scripts, so the usage text doesn't list them:
+
+| Flag | Does |
+|---|---|
+| `sspur native --emit-c FILE` | Prints the generated C instead of building it |
+| `sspur native --release FILE` | Builds each definition at `-O2` and prints which functions are native and which were skipped, and why |
+| `sspur export-c --keep-c FILE` | Keeps the generated `.c` file next to the library |
+| `sspur q list --tests` | Lists the tests only |
+| `sspur fuzz --gen N --from K` | Starts the generated programs at index `K` (to rerun a range) |
+| `sspur fuzz --reduce FILE` | Shrinks a program while it still typechecks and still shows the behavior: a mismatch between `--modes`, `--want-skip TEXT` (a native skip reason), `--want-build TEXT` (a build error) or `--want-hang "ARGS FILE"` (a child `sspur ARGS` that crashes or hangs) |
+| `sspur sync serve --max N` | Stops after `N` requests |
+| `sspur sync push\|pull REMOTE --agent NAME` | Records `NAME` as the agent of the merge (default `sync`) |
+| `sspur publish --tests-json` | Runs the package's tests in both tiers and prints them as JSON, for the registry's test job |
+
 ## Starting a project
 
 `sspur new web-app NAME` writes a new directory `NAME` (which must not exist or be empty; its last component is the package name, so `notes` or `my_notes`) with SSPUR's reference application, a notes service with accounts: `main.ssp` with the routes and handlers, module packages for the data types, SQLite storage, accounts and HTML views, three reusable packages, tests that `sspur run tests/run.ssp` runs in both tiers, a backup tool, a systemd unit and a Caddyfile, and a README that covers running, testing, debugging, configuring, backups and deploying. The template is built into `sspur`, so nothing is downloaded. `sspur new --list` lists the templates.

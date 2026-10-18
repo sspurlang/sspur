@@ -434,3 +434,45 @@ fn error_codes_are_documented() {
     assert!(missing.is_empty(), "codes the compiler emits but docs/reference/errors.md does not list: {missing:?}");
     assert!(extra.is_empty(), "codes docs/reference/errors.md lists but the compiler never emits: {extra:?}");
 }
+
+fn env_names(text: &str, out: &mut std::collections::BTreeSet<String>) {
+    for part in text.split("SSPUR_").skip(1) {
+        let name: String = part.chars().take_while(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || *c == '_').collect();
+        if !name.is_empty() {
+            out.insert(format!("SSPUR_{name}"));
+        }
+    }
+}
+
+// docs/config/environment.md lists every SSPUR_ variable the code, the tools and the installers
+// read, and no others. A prefix such as SSPUR_TABLE_ stands for SSPUR_TABLE_<Store>.
+#[test]
+fn environment_variables_are_documented() {
+    // A name a test tool reads because it is never set.
+    const NOT_READ: &[&str] = &["SSPUR_PLAY_UNSET"];
+    let mut read = std::collections::BTreeSet::new();
+    let mut all = Vec::new();
+    for c in std::fs::read_dir(root().join("crates")).unwrap() {
+        let src = c.unwrap().path().join("src");
+        if src.is_dir() {
+            files(&src, &mut all);
+        }
+    }
+    files(&root().join("tools"), &mut all);
+    all.extend(["install.sh", "install.ps1"].map(|f| root().join(f)));
+    for f in &all {
+        if let Ok(text) = std::fs::read_to_string(f) {
+            env_names(&text, &mut read);
+        }
+    }
+    for n in NOT_READ {
+        read.remove(*n);
+    }
+    assert!(read.len() > 40, "{}", read.len());
+    let mut documented = std::collections::BTreeSet::new();
+    env_names(&std::fs::read_to_string(root().join("docs/config/environment.md")).unwrap(), &mut documented);
+    let missing: Vec<_> = read.difference(&documented).collect();
+    let extra: Vec<_> = documented.difference(&read).collect();
+    assert!(missing.is_empty(), "variables the code reads but docs/config/environment.md does not list: {missing:?}");
+    assert!(extra.is_empty(), "variables docs/config/environment.md lists but nothing reads: {extra:?}");
+}
