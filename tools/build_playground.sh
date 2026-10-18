@@ -108,7 +108,7 @@ if [ "$editor" = 1 ]; then
     --bundle --minify --format=esm --log-level=warning --outfile="$out/editor.bundle.js"
 fi
 
-for f in index.html play.css main.js worker.js share.js; do
+for f in index.html play.css main.js worker.js share.js display-logo.woff2 display-OFL.txt; do
   [ "$root/docs/play/$f" -ef "$out/$f" ] || cp "docs/play/$f" "$out/$f"
 done
 

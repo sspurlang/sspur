@@ -14,7 +14,7 @@ Home: **[sspurlang.github.io](https://sspurlang.github.io/)** · Packages: **[ss
 
 **[SSPUR Pulse](https://sspurlang.github.io/sspur/pulse/)** is a live dashboard of the world today, recomputed every 6 hours by SSPUR programs ([how it works](https://sspurlang.github.io/sspur/pulse-how-it-works.html)).
 
-<p align="center"><a href="https://sspurlang.github.io/sspur/play/"><img src="docs/assets/playground.gif" width="720" alt="Typing a small SSPUR program in the playground, then running its test and main"></a></p>
+**[Try it in the playground](https://sspurlang.github.io/sspur/play/)**: write, check, run and test SSPUR in the browser, with nothing to install.
 
 SSPUR is a statically typed, effect-tracked language whose primary users are AI coding agents rather than people. Programs are stored as a typed, content-addressed graph of definitions. Agents change code through atomic, typechecked operations instead of text diffs, and the compiler treats contracts, effects, and tests as first-class data. The surface syntax is designed to spend as few tokens as possible while still compiling to native code that outperforms idiomatic C++.
 
@@ -38,6 +38,8 @@ total: 24
 $ sspur test cart.ssp
 1 passed, 0 failed
 ```
+
+[Run this example in the playground](https://sspurlang.github.io/sspur/play/#code=XZBPb4JAEMXv-yleOUGDRNqeSOBO4s14MoRs7VY3un-EMYYYvrvDSrTpbbPz3u-9GRq8Qk3KoMTNSqMKrKlL4Tu943dtCdeD6hRaVCWWKc40_PvGchTi14IcyVOsmdUXWOmethO3SbCoJoMoEWaZkT5usxCAd7QZE5Osv5gAMVLbOFg2VhPecHJ7dv44AexkR1wzYOeukVc2erb9nOt9jSn-ir6dO75U-ccsy8eGqRwQR6F7gdtjhykoGaNECFI9QRlPAwc_hlveqORTiDs).
 
 ## Why SSPUR
 

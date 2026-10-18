@@ -62,11 +62,32 @@ class Engine {
 }
 
 function prefersDark() {
-  const own = store.get(THEME);
+  const own = store.get(THEME) || store.get("sspur-theme");
   if (own) return own === "dark";
   const book = store.get("mdbook-theme");
   if (book) return ["coal", "navy", "ayu"].includes(book.replace(/"/g, ""));
   return matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+// The first time every test passes, a few logos fly out of the button.
+let celebrated = false;
+function celebrate(from) {
+  if (celebrated || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  celebrated = true;
+  const r = from.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+  for (let i = 0; i < 14; i++) {
+    const img = el("img", "burst");
+    img.src = "../assets/logo/sspur.svg";
+    img.alt = "";
+    img.style.left = x - 11 + "px";
+    img.style.top = y - 11 + "px";
+    document.body.appendChild(img);
+    const a = Math.PI * (0.15 + 0.7 * Math.random()), d = 70 + Math.random() * 110;
+    img.animate([
+      { transform: "translate(0,0) scale(.4)", opacity: 1 },
+      { transform: `translate(${Math.cos(a) * d * (i % 2 ? 1 : -1)}px,${Math.sin(a) * d}px) scale(${0.6 + Math.random() * 0.5}) rotate(${Math.random() * 480 - 240}deg)`, opacity: 0 },
+    ], { duration: 800 + Math.random() * 400, easing: "cubic-bezier(.2,.8,.2,1)" }).onfinish = () => img.remove();
+  }
 }
 
 function el(tag, cls, text) {
@@ -76,16 +97,61 @@ function el(tag, cls, text) {
   return e;
 }
 
-async function main() {
-  let dark = prefersDark();
+let dark = prefersDark();
+let editor = null;
+const acts = {};
+const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+
+// Focus rings for the keyboard only, also when a tap moves focus from script (opening the menu).
+addEventListener("pointerdown", () => { document.documentElement.dataset.input = "pointer"; }, true);
+addEventListener("keydown", () => { delete document.documentElement.dataset.input; }, true);
+
+// The header works while the rest loads: the theme and the menu don't wait for the editor.
+function setTheme(d) {
+  dark = d;
   document.documentElement.classList.toggle("dark", dark);
+  if (editor) editor.setDark(dark);
+}
+$("theme").onclick = () => {
+  setTheme(!dark);
+  store.set(THEME, dark ? "dark" : "light");
+};
+setTheme(dark);
+
+const bar = document.querySelector(".bar"), menu = $("menu");
+let scrim = null;
+function openMenu(on) {
+  bar.classList.toggle("open", on);
+  menu.setAttribute("aria-expanded", String(on));
+  menu.setAttribute("aria-label", on ? "Close the menu" : "Menu");
+  if (on && !scrim) {
+    scrim = el("div", "scrim");
+    scrim.id = "scrim";
+    scrim.onclick = () => openMenu(false);
+    document.body.appendChild(scrim);
+    bar.querySelector(".nav a").focus({ preventScroll: true });
+  } else if (!on && scrim) {
+    scrim.remove();
+    scrim = null;
+  }
+}
+menu.onclick = () => openMenu(!bar.classList.contains("open"));
+document.addEventListener("pointerdown", (e) => {
+  if (bar.classList.contains("open") && !$("sheet").contains(e.target) && !menu.contains(e.target) && e.target !== scrim) openMenu(false);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && bar.classList.contains("open")) { openMenu(false); menu.focus(); }
+});
+for (const a of bar.querySelectorAll(".nav a")) a.addEventListener("click", () => openMenu(false));
+matchMedia("(min-width: 1181px)").addEventListener("change", () => openMenu(false));
+for (const b of $("sheet").querySelectorAll("[data-act]")) b.onclick = () => { openMenu(false); acts[b.dataset.act](); };
+
+async function main() {
   const wasm = WebAssembly.compileStreaming(fetch("pkg/sspur_wasm_bg.wasm"));
   const [{ createEditor }, examples, module] = await Promise.all([import("./editor.bundle.js"), fetch("examples.json").then((r) => r.json()), wasm]);
   const ide = new Engine(module, true);
   const runner = new Engine(module);
   const builtins = await ide.call("builtins");
-  $("engine").textContent = "Ready";
-  $("engine").classList.add("ready");
 
   const pick = $("pick"), list = $("pick-list");
   examples.forEach((ex, i) => {
@@ -127,7 +193,7 @@ async function main() {
     signature: (src, pos) => ide.call("signature", { src, pos }).catch(() => null),
     keywords: () => builtins.keywords,
   };
-  const editor = createEditor({
+  editor = createEditor({
     parent: $("editor"),
     doc: initial,
     dark,
@@ -234,6 +300,7 @@ async function main() {
           box.appendChild(row);
         }
         if (asked === "run") box.appendChild(el("div", "line quiet", "No main, so Run ran the tests."));
+        if (!r.failed && r.passed) celebrate($(asked));
         box.appendChild(el("div", "line " + (r.failed ? "err" : "quiet"), `${r.passed} passed, ${r.failed} failed (${ms} ms)`));
       }
     } catch (e) {
@@ -252,14 +319,14 @@ async function main() {
   let fmtOnRun = store.get(FMT_ON_RUN) === "on";
   const showFmtOnRun = () => {
     $("fmtrun").setAttribute("aria-pressed", String(fmtOnRun));
-    $("fmtrun-item").textContent = fmtOnRun ? "Don't format on run" : "Format on run";
+    $("fmtrun-sw").setAttribute("aria-checked", String(fmtOnRun));
   };
   const toggleFmtOnRun = () => {
     fmtOnRun = !fmtOnRun;
     store.set(FMT_ON_RUN, fmtOnRun ? "on" : "off");
     showFmtOnRun();
   };
-  $("fmtrun").onclick = toggleFmtOnRun;
+  $("fmtrun").onclick = $("fmtrun-sw").onclick = toggleFmtOnRun;
   showFmtOnRun();
 
   async function share() {
@@ -310,8 +377,7 @@ async function main() {
   $("run").onclick = () => go("run");
   $("test").onclick = () => go("test");
   $("stop").onclick = () => runner.stop();
-  $("format").onclick = $("format-fab").onclick = format;
-  $("editor").appendChild($("format-fab"));
+  $("format").onclick = format;
   $("share").onclick = share;
   let hot = 0;
   const highlight = (i) => {
@@ -345,15 +411,6 @@ async function main() {
     e.preventDefault();
   };
   document.addEventListener("pointerdown", (e) => { if (!list.hidden && !$("picker").contains(e.target)) openList(false); });
-  const toggleTheme = () => {
-    dark = !dark;
-    store.set(THEME, dark ? "dark" : "light");
-    document.documentElement.classList.toggle("dark", dark);
-    editor.setDark(dark);
-    $("theme-item").textContent = dark ? "Light mode" : "Dark mode";
-  };
-  $("theme").onclick = toggleTheme;
-  $("theme-item").textContent = dark ? "Light mode" : "Dark mode";
 
   const split = $("split"), ed = $("editor");
   split.onpointerdown = (e) => {
@@ -369,7 +426,7 @@ async function main() {
 
   const showHints = () => {
     $("hints").setAttribute("aria-pressed", String(hintsOn));
-    $("hints-item").textContent = hintsOn ? "Hide inlay hints" : "Show inlay hints";
+    $("hints-sw").setAttribute("aria-checked", String(hintsOn));
   };
   const toggleHints = () => {
     hintsOn = !hintsOn;
@@ -377,29 +434,38 @@ async function main() {
     showHints();
     check(editor.text());
   };
-  $("hints").onclick = toggleHints;
+  $("hints").onclick = $("hints-sw").onclick = toggleHints;
   showHints();
 
-  const sheet = $("sheet"), scrim = $("scrim"), menu = $("menu");
-  const openMenu = (on) => {
-    sheet.hidden = scrim.hidden = !on;
-    menu.setAttribute("aria-expanded", String(on));
-    if (on) $("close").focus();
-  };
-  menu.onclick = () => openMenu(true);
-  $("close").onclick = scrim.onclick = () => openMenu(false);
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !sheet.hidden) openMenu(false); });
-  const acts = { format, fmtrun: toggleFmtOnRun, theme: toggleTheme, hints: toggleHints, about: () => tab("about") };
-  for (const b of sheet.querySelectorAll("[data-act]")) b.onclick = () => { openMenu(false); acts[b.dataset.act](); };
+  Object.assign(acts, { format, about: () => { tab("about"); expand(true); } });
   window.addEventListener("hashchange", async () => {
     const src = await fromHash(location.hash).catch(() => null);
     if (src !== null && src !== editor.text()) editor.setText(src);
     if (src !== null) setInput((await inputFromHash(location.hash).catch(() => null)) ?? "");
   });
+  const skel = document.querySelector("#editor .skel");
+  skel.classList.add("out");
+  setTimeout(() => skel.remove(), 250);
+  const empty = el("div", "empty");
+  empty.innerHTML = '<span class="glyph" aria-hidden="true"><svg class="i"><use href="#i-play"/></svg></span>';
+  empty.append("Run the program to see its output here");
+  const keys = el("span", "keys");
+  for (const k of mac ? ["\u2318", "\u21b5"] : ["Ctrl", "Enter"]) keys.appendChild(el("kbd", null, k));
+  empty.appendChild(keys);
+  $("output").replaceChildren(empty);
+  for (const b of document.querySelectorAll(".wait, [disabled]")) {
+    b.disabled = false;
+    b.classList.remove("wait");
+  }
+  document.querySelector("main").removeAttribute("aria-busy");
+  $("engine").textContent = "Ready";
+  $("engine").classList.add("ready");
   check(editor.text());
   cursor();
 }
 
 main().catch((e) => {
   $("engine").textContent = "The playground failed to load: " + e.message;
+  for (const s of document.querySelectorAll(".skel")) s.remove();
+  for (const b of document.querySelectorAll(".wait")) b.classList.remove("wait");
 });
