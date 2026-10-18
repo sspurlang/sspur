@@ -103,7 +103,9 @@ struct Call<'a> {
 
 #[derive(Default)]
 struct Scan<'a> {
-    convs: Vec<(Conv<'a>, Option<usize>)>,
+    /// Each conversion, its unit and the index of its definition.
+    convs: Vec<(Conv<'a>, Option<usize>, usize)>,
+    cur: usize,
     calls: Vec<Call<'a>>,
     /// Own functions used other than by calling them.
     values: HashSet<&'a str>,
@@ -112,7 +114,7 @@ struct Scan<'a> {
 impl<'a> Scan<'a> {
     fn walk(&mut self, x: &'a Expr, def: &str, unit: Option<usize>, check: &CheckOutput, fns: &HashSet<&str>) {
         if let Some((recv, method)) = conv_of(x, check) {
-            self.convs.push((Conv { def: def.to_string(), e: x, recv, method }, unit));
+            self.convs.push((Conv { def: def.to_string(), e: x, recv, method }, unit, self.cur));
         }
         let span = (x.span.start, x.span.end);
         match &x.kind {
@@ -142,11 +144,39 @@ pub fn warnings(m: &Module, check: &CheckOutput, own: usize) -> Report {
     if !defs.iter().any(|d| def_exprs(d).into_iter().any(|x| has_conv(x, check))) {
         return Report::default();
     }
+    report(outcomes(m, check, own, None))
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Outcome {
+    Proved,
+    /// A warning; whether the value is at least proved finite.
+    Warn(bool),
+    Unchecked,
+}
+
+fn report(os: Vec<(usize, Conv, Outcome)>) -> Report {
+    let mut out = Report::default();
+    for (_, c, o) in os {
+        match o {
+            Outcome::Proved => {}
+            Outcome::Warn(finite) => out.diags.push(diag(&c, finite)),
+            Outcome::Unchecked => out.unchecked += 1,
+        }
+    }
+    out
+}
+
+/// Every conversion of the definitions `only` lets through (all without it), with its definition's
+/// index and what the proof found.
+fn outcomes<'a>(m: &'a Module, check: &CheckOutput, own: usize, only: Option<&[bool]>) -> Vec<(usize, Conv<'a>, Outcome)> {
+    let defs = &m.defs[..own.min(m.defs.len())];
     let fns: HashSet<&str> = defs.iter().filter_map(|d| if let Def::Fn(f) = d { Some(f.name.as_str()) } else { None }).collect();
     let mut units = Vec::new();
     let mut sc = Scan::default();
     let mut open: HashSet<String> = ["main", "core_main", "on_trap"].map(String::from).into();
-    for d in defs {
+    for (di, d) in defs.iter().enumerate() {
+        sc.cur = di;
         match d {
             Def::Fn(f) => {
                 let u = units.len();
@@ -178,11 +208,14 @@ pub fn warnings(m: &Module, check: &CheckOutput, own: usize) -> Report {
             _ => {}
         }
     }
+    if let Some(o) = only {
+        sc.convs.retain(|c| o[c.2]);
+    }
     if sc.convs.is_empty() {
-        return Report::default();
+        return vec![];
     }
     if matches!(std::env::var("SSPUR_SMT").as_deref(), Ok("off" | "0")) {
-        return Report { diags: vec![], unchecked: sc.convs.len() };
+        return sc.convs.into_iter().map(|(c, _, d)| (d, c, Outcome::Unchecked)).collect();
     }
     let fn_of = |u: Option<usize>| match u.map(|u| &units[u]) {
         Some(Unit::Fn(f)) => Some(*f),
@@ -201,7 +234,7 @@ pub fn warnings(m: &Module, check: &CheckOutput, own: usize) -> Report {
     }
     let mut need: Vec<bool> = vec![false; units.len()];
     let mut frontier: Vec<&FnDef> = vec![];
-    for (_, u) in &sc.convs {
+    for (_, u, _) in &sc.convs {
         if let Some(u) = *u {
             need[u] = true;
             frontier.extend(fn_of(Some(u)));
@@ -240,20 +273,18 @@ pub fn warnings(m: &Module, check: &CheckOutput, own: usize) -> Report {
     let qs = an.sites.iter().filter(|(k, _)| k.2.starts_with("conv") && !k.2.starts_with("conv-")).flat_map(|(_, s)| s.queries.iter().flatten());
     solve_new(&mut solver, qs.map(|q| an.script(q)));
     let call_unit: HashMap<(u32, u32), Option<usize>> = sc.calls.iter().map(|c| (c.span, c.unit)).collect();
-    let mut out = Report::default();
     let mut z3 = None;
-    for (c, u) in &sc.convs {
+    let mut out = Vec::new();
+    for (c, u, d) in &sc.convs {
         let mut cov = Cover { solver: &mut solver, scripts: &scripts, closed: &closed, callers: &callers, call_unit: &call_unit, fn_of: &fn_of };
-        if cov.safe(c.e.span, &mut vec![], fn_of(*u), 0) {
-            continue;
-        }
-        let ss = scripts(c.e.span, "conv");
-        if ss.iter().flatten().any(|s| !solver.is_cached(s)) && !*z3.get_or_insert_with(|| solver.available()) {
-            out.unchecked += 1;
-            continue;
-        }
-        let finite = all_unsat(&mut solver, &scripts(c.e.span, "conv-finite"));
-        out.diags.push(diag(c, finite));
+        let o = if cov.safe(c.e.span, &mut vec![], fn_of(*u), 0) {
+            Outcome::Proved
+        } else if scripts(c.e.span, "conv").iter().flatten().any(|s| !solver.is_cached(s)) && !*z3.get_or_insert_with(|| solver.available()) {
+            Outcome::Unchecked
+        } else {
+            Outcome::Warn(all_unsat(&mut solver, &scripts(c.e.span, "conv-finite")))
+        };
+        out.push((*d, Conv { def: c.def.clone(), e: c.e, recv: c.recv, method: c.method }, o));
     }
     out
 }
@@ -332,4 +363,89 @@ fn solve_new(solver: &mut Solver, scripts: impl Iterator<Item = String>) {
     if !put_off.is_empty() {
         solve_all(&put_off, std::thread::available_parallelism().map_or(4, |n| n.get()));
     }
+}
+
+/// Bumped whenever the encoding or the proof changes what it can prove.
+const PROOF_VERSION: &str = "1";
+
+fn is_ident(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
+}
+
+/// Whether `src` has `.round`, `.floor`, `.ceil` or `.trunc` (space after the dot allowed).
+fn conv_text(src: &str) -> bool {
+    let b = src.as_bytes();
+    src.match_indices('.').any(|(at, _)| {
+        let mut j = at + 1;
+        while j < b.len() && b[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        let r = &b[j..];
+        float::CONV.iter().any(|n| r.starts_with(n.as_bytes()) && r.get(n.len()).is_none_or(|&c| !is_ident(c)))
+    })
+}
+
+fn esc(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('\t', "\\t").replace('\n', "\\n")
+}
+
+fn unesc(s: &str) -> String {
+    let mut out = String::new();
+    let mut it = s.chars();
+    while let Some(c) = it.next() {
+        match (c, c == '\\') {
+            (_, true) => match it.next() {
+                Some('t') => out.push('\t'),
+                Some('n') => out.push('\n'),
+                Some(x) => out.push(x),
+                None => {}
+            },
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+fn read_program(path: &std::path::Path) -> Option<Vec<Diag>> {
+    let text = std::fs::read_to_string(path).ok()?;
+    text.lines()
+        .map(|l| {
+            let f: Vec<&str> = l.split('\t').collect();
+            let [def, a, b, msg, hint] = f.as_slice() else { return None };
+            Some(Diag { code: "W_CONVERSION_MAY_TRAP".into(), severity: "warning", def: Some(unesc(def)), span: [a.parse().ok()?, b.parse().ok()?], msg: unesc(msg), hint: Some(unesc(hint)), fix: vec![] })
+        })
+        .collect()
+}
+
+/// `sspur check`'s conversion warnings, cached for the whole program under `conv/prog/` by a hash
+/// of its linked source (which holds every dependency's): a program checked before costs one hash
+/// of its text and one file read, with no encoding and no Z3.
+pub fn check_program(m: &Module, check: &CheckOutput, own: usize, src: &str) -> Report {
+    let defs = &m.defs[..own.min(m.defs.len())];
+    let end = defs.iter().map(|d| d.span().end as usize).filter(|&e| e <= src.len()).max().unwrap_or(0);
+    let spans_ok = defs.iter().all(|d| d.span().end as usize <= src.len());
+    if src.is_empty() || (spans_ok && !conv_text(&src[..end])) {
+        return if src.is_empty() { warnings(m, check, own) } else { Report::default() };
+    }
+    let Some(dir) = sspur_syntax::cache_root().map(|c| c.join("conv").join("prog")) else { return warnings(m, check, own) };
+    let mut h = blake3::Hasher::new();
+    for t in [PROOF_VERSION, env!("CARGO_PKG_VERSION"), &std::env::var("SSPUR_SMT_TIMEOUT").unwrap_or_default(), &own.to_string()] {
+        h.update(t.as_bytes());
+        h.update(b"\n");
+    }
+    h.update(src.as_bytes());
+    let key = h.finalize().to_hex()[..32].to_string();
+    let path = dir.join(&key[..2]).join(&key);
+    if let Some(diags) = read_program(&path) {
+        return Report { diags, unchecked: 0 };
+    }
+    let r = warnings(m, check, own);
+    if r.unchecked == 0 && std::fs::create_dir_all(path.parent().unwrap()).is_ok() {
+        let text: String = r.diags.iter().map(|d| format!("{}\t{}\t{}\t{}\t{}\n", esc(d.def.as_deref().unwrap_or("")), d.span[0], d.span[1], esc(&d.msg), esc(d.hint.as_deref().unwrap_or("")))).collect();
+        let tmp = path.with_extension(format!("{}.tmp", std::process::id()));
+        if std::fs::write(&tmp, text).is_ok() {
+            let _ = std::fs::rename(&tmp, &path);
+        }
+    }
+    r
 }

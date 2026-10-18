@@ -207,15 +207,10 @@ pub fn verify(l: &Loaded, label_path: &str, json: bool) -> ExitCode {
 /// Adds `W_CONVERSION_MAY_TRAP` to `diags` (ADR 0044), unless there are errors; returns how many
 /// conversions went unchecked for want of Z3.
 pub fn conversions(l: &Loaded, diags: &mut Vec<sspur_check::Diag>) -> usize {
-    if diags.iter().any(sspur_check::Diag::is_error) || (!l.src.is_empty() && !["round", "floor", "ceil", "trunc"].iter().any(|m| method_in(&l.src, m))) {
+    if diags.iter().any(sspur_check::Diag::is_error) {
         return 0;
     }
-    let r = sspur_smt::conv::warnings(&l.module, &l.check, l.own);
+    let r = sspur_smt::conv::check_program(&l.module, &l.check, l.own, &l.src);
     diags.extend(r.diags);
     r.unchecked
-}
-
-/// Whether `src` has `.name`, possibly with space after the dot: a cheap test before the walk.
-fn method_in(src: &str, name: &str) -> bool {
-    src.match_indices(name).any(|(i, _)| src[..i].trim_end().ends_with('.'))
 }

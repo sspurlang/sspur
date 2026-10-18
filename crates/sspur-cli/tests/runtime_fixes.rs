@@ -198,3 +198,35 @@ fn check_warns_about_conversions_it_cannot_prove() {
     let err = String::from_utf8_lossy(&o.stderr);
     assert!(!err.contains("warning W_CONVERSION") && err.contains("note: 2 F64 to Int conversions are not checked for W_CONVERSION_MAY_TRAP: z3 not found"), "{err}");
 }
+
+#[test]
+fn conversion_proofs_are_cached_and_follow_their_inputs() {
+    if !(Command::new("z3").arg("--version").output().is_ok() || std::path::Path::new("/opt/homebrew/bin/z3").exists()) {
+        return;
+    }
+    let d = dir("convcache");
+    let v1 = "fn helper(t: F64, k: List[Int]) -> Int\n= t.floor\n\nfn caller(x: F64) -> Int\n= if x.abs < 100.0 then helper(x, []) else 0\n\nfn g(x: F64) -> F64\n= if x.abs < 10.0 then x else 0.0\n\nfn guarded(x: F64) -> Int\n= g(x).floor\n";
+    let check = |src: &str, z3: bool| {
+        std::fs::write(d.join("p.ssp"), src).unwrap();
+        let mut c = Command::new(env!("CARGO_BIN_EXE_sspur"));
+        c.args(["check", "p.ssp"]).current_dir(&d).env("SSPUR_CACHE", d.join("cache"));
+        if !z3 {
+            c.env("SSPUR_Z3", "off");
+        }
+        let o = c.output().unwrap();
+        let err = String::from_utf8_lossy(&o.stderr).to_string();
+        assert!(!err.contains("note:"), "a cached result needs no Z3: {err}");
+        let mut defs: Vec<String> = err.lines().filter(|l| l.contains("W_CONVERSION_MAY_TRAP")).map(|l| l.split(':').nth(1).unwrap().to_string()).collect();
+        defs.sort();
+        defs
+    };
+    assert!(check(v1, true).is_empty());
+    assert!(check(v1, false).is_empty(), "the second check answers from the cache");
+    let callee = v1.replace("if x.abs < 10.0 then x else 0.0", "x");
+    assert_eq!(check(&callee, true), ["11"], "a callee's guard is part of its caller's key");
+    let caller = v1.replace("x.abs < 100.0", "x.abs < 1.0e300 or x.is_nan");
+    assert_eq!(check(&caller, true), ["2"], "a caller's guard is part of a private helper's key");
+    assert!(check(v1, false).is_empty());
+    assert_eq!(check(&callee, false), ["11"]);
+    assert_eq!(check(&caller, false), ["2"]);
+}
