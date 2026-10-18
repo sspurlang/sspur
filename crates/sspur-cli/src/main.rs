@@ -36,7 +36,7 @@ const USAGE: &str = "usage:
   sspur deps fetch | update [NAME...] [--force] | tree   verify and fetch locked deps; upgrade with a semantic diff (refused if it breaks the build); show the graph
   sspur update [NAME...] [--force]      the same as deps update: newest matching versions, with the semantic diff
   sspur search [QUERY] [--json]         published packages; sspur source NAME[@VERSION] [DIR] downloads one, verified, without running it
-  sspur publish [--dry-run] [--ack net,fs] [--ref TAG] [--no-tests]   run the registry checks here, then open the publish request
+  sspur publish [--dry-run] [--ack net,fs] [--ref TAG] [--no-tests]   run the registry checks here, then open the publish request; sspur archive [--rev REV] [-o FILE] builds the source snapshot the registry stores
   sspur yank NAME@VERSION [--undo] [--deprecate MSG]   request a yank (or deprecation); sspur api [--json] shows the public API and the facts the checks use
   sspur edit [file|-] [-e SRC] [--test] replace or add definitions by name (also 'rename A B', 'remove A' lines)
   sspur apply [tx.json|-] [-e JSON] [--test] apply a transaction of ops
@@ -68,7 +68,7 @@ const USAGE: &str = "usage:
   sspur debug-init [--install]          write the lldb and gdb formatters for Str, List, Opt, Bool and sums; --install loads them from ~/.lldbinit and ~/.gdbinit
   sspur gpu file.ssp [--emit metal|opencl|spirv|ptx] [-o out]  (experimental) emit the kernel fns as Metal, OpenCL C, SPIR-V or PTX (ADR 0020)
   sspur deploy plan|local|migrate|replay|swap|promote|rollback|backfill|status   (experimental; sspur deploy for details; ADR 0016, 0019; never calls AWS)
-  sspur sync serve [--port N] | push REMOTE | pull REMOTE | status | resolve ours|theirs [PATH]   (experimental) replicate by hash (REMOTE: dir or tcp://host:port; ADR 0021)";
+  sspur sync serve [--port N] [--max N] | push|pull REMOTE [--agent NAME] | status | resolve ours|theirs [PATH]   (experimental) replicate by hash (REMOTE: dir or tcp://host:port; ADR 0021)";
 
 fn main() -> ExitCode {
     // Native code and the interpreter run on this thread, which keeps the 512 MB native code
