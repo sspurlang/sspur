@@ -86,3 +86,4 @@
     }
   });
 })();
+(function(){var t=document.querySelector(".top"),b=t&&t.querySelector(".menu-btn");if(!b)return;var s=null;function set(o){t.classList.toggle("open",o);b.setAttribute("aria-expanded",o?"true":"false");b.setAttribute("aria-label",o?"Close the menu":"Menu");if(o&&!s){s=document.createElement("div");s.className="scrim";s.addEventListener("click",function(){set(false)});document.body.appendChild(s);var f=t.querySelector(".nav a");if(f)f.focus({preventScroll:true})}else if(!o&&s){s.remove();s=null}}b.addEventListener("click",function(){set(!t.classList.contains("open"))});document.addEventListener("keydown",function(e){if(e.key==="Escape"&&t.classList.contains("open")){set(false);b.focus()}});t.querySelectorAll(".nav a").forEach(function(a){a.addEventListener("click",function(){set(false)})});var m=matchMedia("(min-width:761px)");(m.addEventListener?m.addEventListener("change",function(){set(false)}):m.addListener(function(){set(false)}))})();
