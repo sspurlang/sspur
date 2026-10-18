@@ -163,7 +163,12 @@ fn fix_is_a_no_op_on_the_repository_and_the_corpus() {
         std::fs::write(d.join(format!("{i:03}.ssp")), v["src"].as_str().unwrap()).unwrap();
     }
     let r = root();
-    let (out, err, ok) = sspur(&r, &["fix", "--check", ".", d.to_str().unwrap()]);
+    // The sources, not the built site under docs/book.
+    let mut args = vec!["fix", "--check"];
+    let dirs = ["bench", "crates", "docs/snippets", "examples", "packaging", "pulse", "registry", "templates", "tests", "tools"];
+    args.extend(dirs.iter().filter(|x| r.join(x).is_dir()));
+    args.push(d.to_str().unwrap());
+    let (out, err, ok) = sspur(&r, &args);
     let rewrites: Vec<&str> = out.lines().filter(|l| l.contains("would fix")).filter(|l| !l.contains("tests/fix/") && !l.contains("get-started/migrating/")).collect();
     assert!(rewrites.is_empty(), "{rewrites:#?}");
     assert!(!ok && err.contains(" in 7 of "), "{err}");
