@@ -169,7 +169,8 @@ fn fix_is_a_no_op_on_the_repository_and_the_corpus() {
     args.extend(dirs.iter().filter(|x| r.join(x).is_dir()));
     args.push(d.to_str().unwrap());
     let (out, err, ok) = sspur(&r, &args);
-    let rewrites: Vec<&str> = out.lines().filter(|l| l.contains("would fix")).filter(|l| !l.contains("tests/fix/") && !l.contains("get-started/migrating/")).collect();
+    // tests/compat holds 1.0 code that 0.14 could also lex, so fix offers 0.14's reading there.
+    let rewrites: Vec<&str> = out.lines().filter(|l| l.contains("would fix")).filter(|l| !l.contains("tests/fix/") && !l.contains("get-started/migrating/") && !l.contains("tests/compat/")).collect();
     assert!(rewrites.is_empty(), "{rewrites:#?}");
-    assert!(!ok && err.contains(" in 7 of "), "{err}");
+    assert!(!ok && err.contains(" in 8 of "), "{err}");
 }
