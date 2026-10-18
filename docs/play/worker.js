@@ -27,6 +27,12 @@ self.onmessage = async (e) => {
     ready = init({ module_or_path: m.module });
     await ready;
     self.postMessage({ id: m.id, result: true });
+    // Hover and completion docs, which the wasm doesn't carry: after start-up, off its path.
+    if (m.docs)
+      fetch(new URL("pkg/docs.txt", import.meta.url))
+        .then((r) => (r.ok ? r.text() : ""))
+        .then((t) => t && sspur.set_docs(t))
+        .catch(() => {});
     return;
   }
   await ready;

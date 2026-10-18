@@ -206,6 +206,13 @@ pub fn builtins() -> String {
     ide::builtins_json().to_string()
 }
 
+/// Installs the doc text of hover and completion: docs.txt, which the playground fetches after
+/// the wasm starts, since the wasm doesn't carry it. Until then they show signatures only.
+#[wasm_bindgen]
+pub fn set_docs(text: &str) {
+    ide::set_docs(text);
+}
+
 fn start() {
     #[cfg(target_family = "wasm")]
     {

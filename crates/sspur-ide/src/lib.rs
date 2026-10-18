@@ -370,16 +370,8 @@ struct Docs {
     effects: BTreeMap<String, String>,
 }
 
-#[cfg(target_family = "wasm")]
-const DOC_SOURCES: &[&str] = &[
-    include_str!(concat!(env!("OUT_DIR"), "/collections.md")),
-    include_str!(concat!(env!("OUT_DIR"), "/text.md")),
-    include_str!(concat!(env!("OUT_DIR"), "/numbers.md")),
-    include_str!(concat!(env!("OUT_DIR"), "/time.md")),
-    include_str!(concat!(env!("OUT_DIR"), "/data.md")),
-    include_str!(concat!(env!("OUT_DIR"), "/system.md")),
-];
-/// The native build also documents `Bytes` and the data libraries (ADR 0037).
+/// The native build also documents `Bytes` and the data libraries (ADR 0037). The wasm build
+/// gets its rows from `set_docs`.
 #[cfg(not(target_family = "wasm"))]
 const DOC_SOURCES: &[&str] = &[
     include_str!(concat!(env!("OUT_DIR"), "/collections.md")),
@@ -391,6 +383,7 @@ const DOC_SOURCES: &[&str] = &[
     include_str!(concat!(env!("OUT_DIR"), "/system-spawn.md")),
     include_str!(concat!(env!("OUT_DIR"), "/data-libs.md")),
 ];
+#[cfg(not(target_family = "wasm"))]
 const EFFECT_DOCS: &str = include_str!(concat!(env!("OUT_DIR"), "/effects.md"));
 
 fn unmark(s: &str) -> String {
@@ -458,48 +451,73 @@ fn last_word(s: &str) -> &str {
     w.split('(').next().unwrap_or(w)
 }
 
+#[cfg(target_family = "wasm")]
+static DOCS_TEXT: OnceLock<String> = OnceLock::new();
+
+/// Installs the docs rows that the wasm build doesn't embed: docs.txt from build.rs, the rows of
+/// each stdlib page and then, after a `# effects` line, the effects page's. Until then hover and
+/// completion have no doc text. The native build embeds them, so this does nothing there.
+pub fn set_docs(text: &str) {
+    #[cfg(target_family = "wasm")]
+    let _ = DOCS_TEXT.set(text.to_string());
+    #[cfg(not(target_family = "wasm"))]
+    let _ = text;
+}
+
 fn docs() -> &'static Docs {
     static D: OnceLock<Docs> = OnceLock::new();
-    D.get_or_init(|| {
-        let mut d = Docs { by_name: BTreeMap::new(), by_method: BTreeMap::new(), effects: BTreeMap::new() };
-        for src in DOC_SOURCES {
-            for line in src.lines() {
-                let Some((head, body)) = cells(line) else { continue };
-                let heads = ticked(head);
-                let Some(first) = heads.first() else { continue };
-                if first.contains('(') {
-                    for h in heads {
-                        let name = h.split('(').next().unwrap_or(h);
-                        d.by_name.insert(name.to_string(), unmark(body));
-                    }
-                } else if first.chars().next().is_some_and(char::is_uppercase) {
-                    let recv = first.split('[').next().unwrap_or(first).to_string();
-                    for t in ticked(body) {
-                        for w in t.split_whitespace() {
-                            let m = w.split('(').next().unwrap_or(w);
-                            if m.is_empty() || !m.bytes().all(is_ident) {
-                                continue;
-                            }
-                            let notes = notes_for(body, m);
-                            if !notes.is_empty() {
-                                d.by_method.insert((recv.clone(), m.to_string()), notes.join("; "));
-                            }
+    #[cfg(target_family = "wasm")]
+    {
+        static NONE: Docs = Docs { by_name: BTreeMap::new(), by_method: BTreeMap::new(), effects: BTreeMap::new() };
+        let Some(text) = DOCS_TEXT.get() else { return &NONE };
+        D.get_or_init(|| {
+            let (rows, effects) = text.split_once("# effects\n").unwrap_or((text, ""));
+            parse_docs(&[rows], effects)
+        })
+    }
+    #[cfg(not(target_family = "wasm"))]
+    D.get_or_init(|| parse_docs(DOC_SOURCES, EFFECT_DOCS))
+}
+
+fn parse_docs(sources: &[&str], effects: &str) -> Docs {
+    let mut d = Docs { by_name: BTreeMap::new(), by_method: BTreeMap::new(), effects: BTreeMap::new() };
+    for src in sources {
+        for line in src.lines() {
+            let Some((head, body)) = cells(line) else { continue };
+            let heads = ticked(head);
+            let Some(first) = heads.first() else { continue };
+            if first.contains('(') {
+                for h in heads {
+                    let name = h.split('(').next().unwrap_or(h);
+                    d.by_name.insert(name.to_string(), unmark(body));
+                }
+            } else if first.chars().next().is_some_and(char::is_uppercase) {
+                let recv = first.split('[').next().unwrap_or(first).to_string();
+                for t in ticked(body) {
+                    for w in t.split_whitespace() {
+                        let m = w.split('(').next().unwrap_or(w);
+                        if m.is_empty() || !m.bytes().all(is_ident) {
+                            continue;
+                        }
+                        let notes = notes_for(body, m);
+                        if !notes.is_empty() {
+                            d.by_method.insert((recv.clone(), m.to_string()), notes.join("; "));
                         }
                     }
                 }
             }
         }
-        for line in EFFECT_DOCS.lines() {
-            let Some((head, body)) = cells(line) else { continue };
-            for h in ticked(head) {
-                let name = h.split('[').next().unwrap_or(h);
-                if name.bytes().all(|c| is_ident(c) || c == b'.') && !name.is_empty() {
-                    d.effects.entry(name.to_string()).or_insert_with(|| unmark(body));
-                }
+    }
+    for line in effects.lines() {
+        let Some((head, body)) = cells(line) else { continue };
+        for h in ticked(head) {
+            let name = h.split('[').next().unwrap_or(h);
+            if name.bytes().all(|c| is_ident(c) || c == b'.') && !name.is_empty() {
+                d.effects.entry(name.to_string()).or_insert_with(|| unmark(body));
             }
         }
-        d
-    })
+    }
+    d
 }
 
 /// The receiver name a method table uses for a type: `List`, `Str`, `#Set`.

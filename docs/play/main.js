@@ -27,8 +27,9 @@ const store = {
 
 // A worker that answers requests in order and can be replaced when it hangs or crashes.
 class Engine {
-  constructor(module) {
+  constructor(module, docs = false) {
     this.module = module;
+    this.docs = docs;
     this.next = 0;
     this.waiting = new Map();
     this.worker = null;
@@ -42,7 +43,7 @@ class Engine {
       if (dead) this.stop();
       if (w) error ? w.reject(new Error(error)) : w.resolve(result);
     };
-    this.ready = this.call("init", { module: this.module });
+    this.ready = this.call("init", { module: this.module, docs: this.docs });
   }
   call(op, args = {}) {
     if (!this.worker) this.start();
@@ -80,7 +81,7 @@ async function main() {
   document.documentElement.classList.toggle("dark", dark);
   const wasm = WebAssembly.compileStreaming(fetch("pkg/sspur_wasm_bg.wasm"));
   const [{ createEditor }, examples, module] = await Promise.all([import("./editor.bundle.js"), fetch("examples.json").then((r) => r.json()), wasm]);
-  const ide = new Engine(module);
+  const ide = new Engine(module, true);
   const runner = new Engine(module);
   const builtins = await ide.call("builtins");
   $("engine").textContent = "Ready";

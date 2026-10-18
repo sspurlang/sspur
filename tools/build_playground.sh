@@ -58,15 +58,26 @@ fi
 # is built for size, since it runs once per edit, not per call; so are the editor features
 # (sspur-ide) and the runtime helpers shared with native code (sspur-native: JSON, big integers,
 # time), while the interpreter, where the time goes, is unchanged (ADR 0042).
+msgs="$(mktemp)"
 CARGO_PROFILE_RELEASE_OPT_LEVEL=2 \
 CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS="-C link-arg=-zstack-size=33554432" \
   cargo build --release -p sspur-wasm --target wasm32-unknown-unknown \
     --config 'profile.release.package.sspur-check.opt-level="s"' \
-    --config 'profile.release.package.sspur-ide.opt-level="z"' --config 'profile.release.package.sspur-native.opt-level="z"'
+    --config 'profile.release.package.sspur-ide.opt-level="z"' --config 'profile.release.package.sspur-native.opt-level="z"' \
+    --message-format=json-render-diagnostics > "$msgs"
 
 rm -rf "$out/pkg"
 wasm-bindgen --target web --no-typescript --out-dir "$out/pkg" "${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/release/sspur_wasm.wasm"
 wasm="$out/pkg/sspur_wasm_bg.wasm"
+# The docs rows of hover and completion, which the wasm doesn't carry (crates/sspur-ide/build.rs);
+# the worker fetches them after it starts and hands them to set_docs.
+python3 - "$msgs" "$out/pkg/docs.txt" <<'EOF0'
+import json, re, shutil, sys
+ms = [json.loads(l) for l in open(sys.argv[1])]
+dirs = [m["out_dir"] for m in ms if m.get("reason") == "build-script-executed" and re.search(r"(^|/)sspur-ide[ #@]", m["package_id"])]
+shutil.copy(dirs[-1] + "/docs.txt", sys.argv[2])
+EOF0
+rm "$msgs"
 if command -v wasm-opt >/dev/null; then
   # The asyncify pass lets an interpreter call move the frames under it off the browser's small
   # stack (crates/sspur-eval/src/hop.rs). Only sspur_hop unwinds, and never through an indirect
@@ -132,4 +143,5 @@ EOF2
 
 raw=$(wc -c < "$wasm" | tr -d ' ')
 gz=$(gzip -9 -c "$wasm" | wc -c | tr -d ' ')
-echo "playground in $out: wasm $((raw / 1024)) KiB, $((gz / 1024)) KiB gzipped"
+dgz=$(gzip -9 -c "$out/pkg/docs.txt" | wc -c | tr -d ' ')
+echo "playground in $out: wasm $((raw / 1024)) KiB, $((gz / 1024)) KiB gzipped; docs $((dgz / 1024)) KiB gzipped"

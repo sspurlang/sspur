@@ -133,6 +133,20 @@ for (const s of [...examples.map((e) => e.source), "", "fn main() -> Unit ! log\
   same("share: from the fragment", await fromHash("#code=" + code), s);
 }
 
+// Docs, which the wasm doesn't carry: until the page hands it pkg/docs.txt, hover shows just
+// the signature.
+const docSrc = "fn f(p: Str) -> Res[Str, Str] ! fs\n= read_file(p)\n";
+const docAt = docSrc.indexOf("read_file") + 1;
+let bare;
+try {
+  bare = call("hover", docSrc, docAt);
+} catch (e) {
+  bare = String(e);
+}
+same("hover: before set_docs, the signature without docs", bare && [bare.text, bare.doc], ["read_file(path: Str) -> Res[Str, Str] ! fs", null]);
+wasm.set_docs(readFileSync(join(dir, "pkg/docs.txt"), "utf8"));
+same("hover: after set_docs, the docs", call("hover", docSrc, docAt)?.doc, "Res[Str, Str] ! fs");
+
 // Editor support: completions, hover and quick fixes.
 const shapes = examples.find((e) => e.name === "shapes")?.source || examples[0].source;
 const at = (src, needle, off = 0) => {
