@@ -191,8 +191,8 @@ fn fix_code(code: &str) -> String {
 /// Whether the literal at `start..end` is a pattern: after an arm's or a row's `|` or `is`, or
 /// before `=>`, `|` or a guard.
 fn in_pattern(src: &str, start: usize, end: usize) -> bool {
-    let before = src[..start].trim_end_matches([' ', '\t']);
-    let after = src[end..].trim_start_matches([' ', '\t']);
+    let before = sto(src, start).trim_end_matches([' ', '\t']);
+    let after = sfrom(src, end).trim_start_matches([' ', '\t']);
     (before.ends_with('|') && !before.ends_with("||"))
         || before.strip_suffix("is").is_some_and(|b| b.ends_with([' ', '\t']))
         || after.starts_with("=>")
@@ -262,12 +262,26 @@ fn apply(src: &str, edits: &[&Edit]) -> String {
     let mut out = String::with_capacity(src.len());
     let mut at = 0;
     for e in edits {
-        out.push_str(&src[at..e.start]);
+        out.push_str(sub(src, at, e.start));
         out.push_str(&e.new);
         at = e.end;
     }
-    out.push_str(&src[at..]);
+    out.push_str(sfrom(src, at));
     out
+}
+
+// Slices that can't panic: the offsets come from the lexer and the parser, so they are in
+// range, and a slice that can panic adds a location to the data every command loads.
+fn sub(s: &str, a: usize, b: usize) -> &str {
+    s.get(a..b).unwrap_or("")
+}
+
+fn sfrom(s: &str, a: usize) -> &str {
+    s.get(a..).unwrap_or("")
+}
+
+fn sto(s: &str, b: usize) -> &str {
+    s.get(..b).unwrap_or("")
 }
 
 fn short(s: &str) -> String {
@@ -286,16 +300,16 @@ fn string_edits(src: &str) -> (Vec<Edit>, Vec<(usize, String)>) {
     for (start, end, raw) in lits {
         let pattern = in_pattern(src, start, end);
         if pattern && raw.contains("\\{") {
-            notes.push((start, format!("0.14 matched the pattern {} with a backslash before each '{{'; 1.0 matches the brace alone", short(&src[start..end]))));
+            notes.push((start, format!("0.14 matched the pattern {} with a backslash before each '{{'; 1.0 matches the brace alone", short(sub(src, start, end)))));
         }
         let Some(want) = meaning14(&raw, pattern) else { return Default::default() };
         let tok = toks.get(&start);
         if tok.is_some_and(|(e, t)| *e == end && meaning15(t).is_some_and(|m| same(&m, &want))) {
             continue;
         }
-        let eol = src[end..].find('\n').map_or(src.len(), |i| end + i);
-        let old = &src[start..end];
-        let Some(new) = [false, true].into_iter().map(|esc| render(&want, src.as_bytes()[start], esc || pattern)).find(|c| reads_as(c, &src[end..eol], &want)) else {
+        let eol = sfrom(src, end).find('\n').map_or(src.len(), |i| end + i);
+        let old = sub(src, start, end);
+        let Some(new) = [false, true].into_iter().map(|esc| render(&want, src.as_bytes()[start], esc || pattern)).find(|c| reads_as(c, sub(src, end, eol), &want)) else {
             notes.push((start, format!("0.14 read the string {} differently from 1.0, and no literal reads the same in both; rewrite it by hand", short(old))));
             continue;
         };
@@ -336,7 +350,7 @@ fn fix_strings(out: &mut String, env: &pkg::Env, items: &mut Vec<Item>) {
             edits.retain(|e| {
                 let keep = !bad.contains(&i);
                 if !keep {
-                    items.push(item(out, e.start, false, format!("0.14 read the string {} differently from 1.0, and no literal reads the same in both; rewrite it by hand", short(&out[e.start..e.end]))));
+                    items.push(item(out, e.start, false, format!("0.14 read the string {} differently from 1.0, and no literal reads the same in both; rewrite it by hand", short(sub(out, e.start, e.end)))));
                 }
                 i += 1;
                 keep
@@ -359,6 +373,8 @@ fn fix_strings(out: &mut String, env: &pkg::Env, items: &mut Vec<Item>) {
 
 /// 0.14's reading of strings, as its lexer and parser had it.
 mod v14 {
+    use super::{sfrom, sto, sub};
+
     pub enum Part {
         Lit(String),
         Expr(String),
@@ -388,8 +404,8 @@ mod v14 {
     /// `\{` and a `{...}` group stays as written, and the offset after the closing quote.
     fn lex_string(src: &str, start: usize) -> Option<(String, usize)> {
         let mut out = String::new();
-        let quote = src[start..].chars().next()?;
-        let mut chars = src[start + 1..].char_indices();
+        let quote = sfrom(src, start).chars().next()?;
+        let mut chars = sfrom(src, start + 1).char_indices();
         let mut skip_to = 0;
         while let Some((off, ch)) = chars.next() {
             let pos = start + 1 + off;
@@ -399,7 +415,7 @@ mod v14 {
             match ch {
                 '{' => match interp_end(src, pos) {
                     Some(end) => {
-                        let inner = &src[pos..=end];
+                        let inner = sub(src, pos, end + 1);
                         let escaped_only = inner.contains("\\\"") && !inner.replace("\\\"", "").contains('"');
                         out.push_str(&if escaped_only { inner.replace("\\\"", "\"") } else { inner.to_string() });
                         skip_to = end + 1;
@@ -442,8 +458,8 @@ mod v14 {
                     continue;
                 }
                 b'\\' if depth > 0 && bytes.get(i + 1) == Some(&b'"') => {
-                    let close = src[i + 2..].find("\\\"")?;
-                    if src[i + 2..i + 2 + close].contains('\n') {
+                    let close = sfrom(src, i + 2).find("\\\"")?;
+                    if sub(src, i + 2, i + 2 + close).contains('\n') {
                         return None;
                     }
                     i += 2 + close + 2;
@@ -464,19 +480,19 @@ mod v14 {
         let mut lit = String::new();
         let mut rest = s;
         while let Some(i) = rest.find(['{', '\\']) {
-            lit.push_str(&rest[..i]);
-            if rest[i..].starts_with("\\{") {
+            lit.push_str(sto(rest, i));
+            if sfrom(rest, i).starts_with("\\{") {
                 lit.push('{');
-                rest = &rest[i + 2..];
+                rest = sfrom(rest, i + 2);
                 continue;
             }
             if rest.as_bytes()[i] == b'\\' {
                 lit.push('\\');
-                rest = &rest[i + 1..];
+                rest = sfrom(rest, i + 1);
                 continue;
             }
             let mut depth = 0;
-            let close = rest[i..].char_indices().find_map(|(j, c)| {
+            let close = sfrom(rest, i).char_indices().find_map(|(j, c)| {
                 match c {
                     '{' => depth += 1,
                     '}' => {
@@ -489,16 +505,16 @@ mod v14 {
                 }
                 None
             })?;
-            let inner = &rest[i + 1..i + close];
+            let inner = sub(rest, i + 1, i + close);
             if inner.trim().is_empty() || !parses(inner) {
-                lit.push_str(&unescape(&rest[i..=i + close]));
+                lit.push_str(&unescape(sub(rest, i, i + close + 1)));
             } else {
                 if !lit.is_empty() {
                     parts.push(Part::Lit(std::mem::take(&mut lit)));
                 }
                 parts.push(Part::Expr(inner.to_string()));
             }
-            rest = &rest[i + close + 1..];
+            rest = sfrom(rest, i + close + 1);
         }
         lit.push_str(rest);
         if !lit.is_empty() || parts.is_empty() {
@@ -558,17 +574,17 @@ fn each(m: &Module, f: &mut impl FnMut(&Expr)) {
 }
 
 fn line_start(src: &str, at: usize) -> usize {
-    src[..at].rfind('\n').map_or(0, |i| i + 1)
+    sto(src, at).rfind('\n').map_or(0, |i| i + 1)
 }
 
 fn indent(src: &str, at: usize) -> usize {
-    src[line_start(src, at)..].bytes().take_while(|b| *b == b' ' || *b == b'\t').count()
+    sfrom(src, line_start(src, at)).bytes().take_while(|b| *b == b' ' || *b == b'\t').count()
 }
 
 /// The column of `at` when only blanks come before it on its line.
 fn first_on_line(src: &str, at: usize) -> Option<usize> {
     let ls = line_start(src, at);
-    src[ls..at].bytes().all(|b| b == b' ' || b == b'\t').then_some(at - ls)
+    sub(src, ls, at).bytes().all(|b| b == b' ' || b == b'\t').then_some(at - ls)
 }
 
 // ---- Nested matches ----
@@ -661,17 +677,17 @@ fn shifts(src: &str, m: &Module) -> Vec<Shift> {
 
 fn shifted(src: &str, s: &Shift) -> String {
     let from = line_start(src, s.bar);
-    let to = src[s.end..].find('\n').map_or(src.len(), |i| s.end + i);
+    let to = sfrom(src, s.end).find('\n').map_or(src.len(), |i| s.end + i);
     let pad = " ".repeat(s.by);
     let mut out = String::with_capacity(src.len() + 64);
-    out.push_str(&src[..from]);
-    for l in src[from..to].split_inclusive('\n') {
+    out.push_str(sto(src, from));
+    for l in sub(src, from, to).split_inclusive('\n') {
         if !l.trim().is_empty() {
             out.push_str(&pad);
         }
         out.push_str(l);
     }
-    out.push_str(&src[to..]);
+    out.push_str(sfrom(src, to));
     out
 }
 
@@ -714,17 +730,17 @@ fn fix_matches(out: &mut String, env: &pkg::Env, items: &mut Vec<Item>) {
 
 /// The span of `: T` in `x: T = e` or `var x: T = e`, for the value starting at `v`.
 fn annotation(src: &str, v: usize) -> Option<(usize, usize)> {
-    let before = src[..v].trim_end();
+    let before = sto(src, v).trim_end();
     let eq = before.len().checked_sub(1).filter(|_| before.ends_with('=') && !before.ends_with("=="))?;
     let ls = line_start(src, eq);
-    let line = &src[ls..eq];
+    let line = sub(src, ls, eq);
     let mut i = line.len() - line.trim_start().len();
-    if line[i..].starts_with("var ") {
+    if sfrom(line, i).starts_with("var ") {
         i += 4;
-        i += line[i..].len() - line[i..].trim_start().len();
+        i += sfrom(line, i).len() - sfrom(line, i).trim_start().len();
     }
-    let n = line[i..].bytes().take_while(|b| *b == b'_' || b.is_ascii_alphanumeric()).count();
-    (n > 0 && line[i + n..].trim_start().starts_with(':')).then_some((ls + i + n, eq))
+    let n = sfrom(line, i).bytes().take_while(|b| *b == b'_' || b.is_ascii_alphanumeric()).count();
+    (n > 0 && sfrom(line, i + n).trim_start().starts_with(':')).then_some((ls + i + n, eq))
 }
 
 fn fix_annotations(out: &mut String, env: &pkg::Env, items: &mut Vec<Item>) {
@@ -749,9 +765,9 @@ fn fix_annotations(out: &mut String, env: &pkg::Env, items: &mut Vec<Item>) {
         // The first annotation on a line with an error: removing it may clear the errors after it.
         let Some(&(start, end)) = spans.iter().find(|(s, _)| bad.contains(&line_col(out, *s as u32).0) && !tried.contains(&line_col(out, *s as u32).0)) else { return };
         tried.insert(line_col(out, start as u32).0);
-        let new = format!("{} {}", &out[..start], &out[end..]);
+        let new = format!("{} {}", sto(out, start), sfrom(out, end));
         if matches!((errors(out, env), errors(&new, env)), (Some(b), Some(a)) if a < b) {
-            items.push(item(out, start, true, format!("0.14 ignored the annotation '{}', which doesn't hold; removed it, as 1.0 checks it", out[start..end].trim().trim_start_matches(':').trim())));
+            items.push(item(out, start, true, format!("0.14 ignored the annotation '{}', which doesn't hold; removed it, as 1.0 checks it", sub(out, start, end).trim().trim_start_matches(':').trim())));
             *out = new;
         }
     }
@@ -819,7 +835,7 @@ fn notes(src: &str, env: &pkg::Env, items: &mut Vec<Item>) {
             let t = ty(recv);
             if t.is_none_or(|t| *t == Type::con("F64")) {
                 let unsure = if t.is_none() { " (if the value is an F64)" } else { "" };
-                let at = recv.span.end as usize + src[recv.span.end as usize..].find('.').unwrap_or(0);
+                let at = recv.span.end as usize + sfrom(src, recv.span.end as usize).find('.').unwrap_or(0);
                 items.push(item(src, at, false, format!(".{name}{unsure} traps on NaN, an infinity or a result outside Int, where 0.14 gave 0 or the Int limit; if the value can be one, check the range first (x.abs < 9.2e18) or use .checked_{name}, which gives Opt[Int]")));
             }
         }
@@ -830,7 +846,7 @@ fn notes(src: &str, env: &pkg::Env, items: &mut Vec<Item>) {
                 _ => None,
             };
             if let Some(h) = hit {
-                let at = l.span.end as usize + src[l.span.end as usize..].find(op.symbol()).unwrap_or(0);
+                let at = l.span.end as usize + sfrom(src, l.span.end as usize).find(op.symbol()).unwrap_or(0);
                 items.push(item(src, at, false, format!("{} {h}, where 0.14 compared it structurally", op.symbol())));
             }
         }
@@ -848,7 +864,7 @@ fn notes(src: &str, env: &pkg::Env, items: &mut Vec<Item>) {
         if let ExprKind::Binary(op @ (BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge), l, r) = &e.kind
             && (zero(l) || zero(r))
         {
-            at.push((l.span.end as usize + src[l.span.end as usize..].find(op.symbol()).unwrap_or(0), op.symbol()));
+            at.push((l.span.end as usize + sfrom(src, l.span.end as usize).find(op.symbol()).unwrap_or(0), op.symbol()));
         }
     });
     if let Ok(ts) = lex(src) {
