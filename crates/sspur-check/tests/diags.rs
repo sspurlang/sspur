@@ -10,6 +10,24 @@ fn diags(src: &str) -> Vec<sspur_check::Diag> {
     check(&parse(src).unwrap()).diags
 }
 
+/// CPU time of this thread, so a loaded machine does not fail a speed bound (wall-clock elsewhere).
+fn cpu_now() -> std::time::Duration {
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        unsafe extern "C" {
+            fn clock_gettime(clock: i32, ts: *mut [i64; 2]) -> i32;
+        }
+        let mut ts = [0i64; 2];
+        assert_eq!(unsafe { clock_gettime(if cfg!(target_os = "macos") { 16 } else { 3 }, &mut ts) }, 0);
+        std::time::Duration::new(ts[0] as u64, ts[1] as u32)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        static T0: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+        T0.get_or_init(std::time::Instant::now).elapsed()
+    }
+}
+
 #[test]
 fn clean_program_has_no_diags() {
     let src = "type E = Bad\nfn f(x: Int) -> Int ! fail[E], log\n= do\n  log(\"x\")\n  if x < 0 then raise Bad\n  x * 2";
@@ -222,18 +240,18 @@ fn deep_constructor_nesting_checks_fast() {
     for i in 0..12 {
         e = format!("{}{{a: {e}, b: Var{{name: \"x\"}}}}", ["Add", "Sub", "Mul", "Div"][i % 4]);
     }
-    let start = std::time::Instant::now();
+    let start = cpu_now();
     assert!(codes(&format!("{ty}test t = id({e}) == Var{{name: \"x\"}}")).is_empty());
-    assert!(start.elapsed() < std::time::Duration::from_secs(1), "{:?}", start.elapsed());
+    assert!(cpu_now() - start < std::time::Duration::from_secs(1), "{:?}", cpu_now() - start);
     let deep = "type L9 = {s: Secret[Str]}\ntype L8 = A8{x: L9} | B8{x: Expr}\ntype L7 = {x: L8}\ntype W = W{x: L7, e: Expr}\n";
     assert_eq!(codes(&format!("{ty}{deep}fn f(a: W, b: W) -> Bool\n= a == b")), vec!["E_SECRET_COMPARE"]);
 }
 
 #[test]
 fn branching_alias_cycle_is_reported() {
-    let start = std::time::Instant::now();
+    let start = cpu_now();
     assert!(codes("type A = (A, A)\nfn f(x: A) -> Int\n= 1").contains(&"E_TYPE_CYCLE".to_string()));
-    assert!(start.elapsed() < std::time::Duration::from_secs(1));
+    assert!(cpu_now() - start < std::time::Duration::from_secs(1));
 }
 
 #[test]

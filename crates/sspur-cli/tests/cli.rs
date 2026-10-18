@@ -1,3 +1,5 @@
+mod common;
+
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -308,12 +310,11 @@ test d1 = twice(3) == 8
 #[test]
 fn fill_honors_its_budget() {
     let d = hole_dir("fill_budget", SHOP);
-    let t0 = std::time::Instant::now();
-    let (out, _) = sspur(&d, &["fill", "h.ssp", "?total", "--json", "--fill-ms", "20"], "");
-    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let (o, cpu) = common::run_timed(Command::new(env!("CARGO_BIN_EXE_sspur")).args(["fill", "h.ssp", "?total", "--json", "--fill-ms", "20"]).current_dir(&d));
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
     let ms = v["holes"][0]["ms"].as_f64().unwrap();
-    assert!(ms < 60.0, "a 20 ms budget took {ms} ms");
-    assert!(t0.elapsed().as_secs_f64() < 5.0);
+    // the budget is wall-clock, so a loaded machine stretches `ms`; CPU time shows whether the search stopped (unbounded it takes about 600 ms)
+    assert!(ms < 60.0 || cpu.as_millis() < 150, "a 20 ms budget took {ms} ms and {cpu:?} of CPU");
     let (out, ok) = sspur(&d, &["check", "h.ssp", "--no-fill"], "");
     assert!(ok && !out.contains("  ?total:"), "{out}");
     let _ = std::fs::remove_dir_all(&d);
@@ -443,14 +444,13 @@ fn native_json_decode_of_a_large_array_stays_linear() {
     assert!(js.len() > 3_000_000);
     std::fs::write(d.join("big.json"), &js).unwrap();
     std::fs::write(d.join("b.ssp"), "type R = {name: Str, id: Int, x: F64, tags: List[Str]}\n\nfn main() -> Unit ! log, fs\n= do\n  s = read_file(\"big.json\").or(\"\")\n  log(\"{json.decode[List[R]](s).map(rs => (rs.len, rs.map(_.id).sum, rs[n - 1].tags[1]))}\")\n".replace("n - 1", &(n - 1).to_string())).unwrap();
-    let t0 = std::time::Instant::now();
-    let o = Command::new(env!("CARGO_BIN_EXE_sspur")).args(["run", "--strict-native", "b.ssp"]).env("SSPUR_GC_STATS", "1").current_dir(&d).output().unwrap();
+    let (o, cpu) = common::run_timed(Command::new(env!("CARGO_BIN_EXE_sspur")).args(["run", "--strict-native", "b.ssp"]).env("SSPUR_GC_STATS", "1").current_dir(&d));
     let (out, err) = (String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
     assert!(o.status.success(), "{out}{err}");
     assert_eq!(out.trim(), format!("ok(({n}, {}, \"b\\\"c\"))", n * (n - 1) / 2));
     let mb: u64 = err.split("high water ").nth(1).and_then(|s| s.split(' ').next()).and_then(|s| s.parse().ok()).unwrap_or_else(|| panic!("{err}"));
     assert!(mb < 120, "decoding {} bytes peaked at {mb} MB", js.len());
-    assert!(t0.elapsed().as_secs() < 60);
+    assert!(cpu.as_secs() < 60, "{cpu:?} of CPU");
     let _ = std::fs::remove_dir_all(&d);
 }
 

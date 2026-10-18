@@ -1,3 +1,5 @@
+mod common;
+
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -49,11 +51,11 @@ fn interpreter_appends_are_linear() {
     let d = dir("appends");
     let src = "fn pushes(n: Int) -> Int\n= do\n  var xs = []\n  for i in 0..n\n    xs := xs.push(i)\n  xs.len\n\nfn folds(n: Int) -> Int\n= (0..n).fold([], (acc, i) => acc.push(i)).len\n\nfn bufs(n: Int) -> Int\n= do\n  var b = str_buf()\n  for i in 0..n\n    b := b.add(\"ab\")\n  b.byte_len\n\nfn puts(n: Int) -> Int\n= do\n  var m = empty_map()\n  for i in 0..n\n    m := m.put(i, i)\n  m.len\n\nfn main() -> Unit ! log\n= log(\"{pushes(200000)} {folds(200000)} {bufs(200000)} {puts(200000)}\")\n";
     std::fs::write(d.join("p.ssp"), src).unwrap();
-    let t = std::time::Instant::now();
-    let (out, err, ok) = sspur(&d, &["run", "--interp", "p.ssp"]);
-    assert!(ok, "{out}{err}");
+    let (o, cpu) = common::run_timed(Command::new(env!("CARGO_BIN_EXE_sspur")).args(["run", "--interp", "p.ssp"]).current_dir(&d).env("SSPUR_CACHE", d.join("cache")).env_remove("SSPUR_STRICT_NATIVE"));
+    let (out, err) = (String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    assert!(o.status.success(), "{out}{err}");
     assert_eq!(out.trim(), "200000 200000 400000 200000");
-    assert!(t.elapsed().as_secs() < 30, "quadratic appends: {:?}", t.elapsed());
+    assert!(cpu.as_secs() < 30, "quadratic appends: {cpu:?} of CPU");
 }
 
 #[test]
