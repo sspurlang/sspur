@@ -2,7 +2,8 @@
 # Install a prebuilt sspur binary from GitHub releases.
 #   curl -fsSL https://raw.githubusercontent.com/sspurlang/sspur/main/install.sh | sh
 # Environment: SSPUR_VERSION (default: latest), SSPUR_INSTALL_DIR (default: ~/.local/bin),
-#   SSPUR_DOWNLOAD_BASE (a mirror holding the release tarballs and SHA256SUMS)
+#   SSPUR_DOWNLOAD_BASE (a mirror holding the release tarballs and SHA256SUMS),
+#   SSPUR_SKIP_ATTESTATION (set to skip the gh attestation check)
 set -eu
 
 repo="sspurlang/sspur"
@@ -55,6 +56,32 @@ else
 fi
 [ "$want" = "$got" ] || die "checksum mismatch for $name.tar.gz (expected $want, got $got)"
 say "checksum ok"
+
+# Releases after 0.15 have GitHub build provenance; a signed-in gh checks it, and without gh the checksum is all.
+attested() {
+  v="${version#v}"
+  major="${v%%.*}"
+  minor="${v#*.}"
+  minor="${minor%%.*}"
+  case "$major.$minor" in *[!0-9.]* | .* | *.) return 0 ;; esac
+  [ "$major" -gt 0 ] || [ "$minor" -gt 15 ]
+}
+if [ -n "${SSPUR_SKIP_ATTESTATION:-}" ]; then
+  say "attestation check skipped (SSPUR_SKIP_ATTESTATION is set)"
+elif ! attested; then
+  say "$version predates attestations; checked the checksum only"
+elif ! command -v gh >/dev/null 2>&1; then
+  say "gh not found; checked the checksum only"
+elif ! gh auth status >/dev/null 2>&1; then
+  say "gh is not signed in; checked the checksum only"
+elif ! gh attestation verify --help 2>/dev/null | grep -q -e --source-ref; then
+  say "this gh is too old to check attestations (needs 2.68 or newer); checked the checksum only"
+else
+  gh attestation verify "$tmp/$name.tar.gz" --repo "$repo" --signer-workflow "$repo/.github/workflows/release.yml" \
+    --source-ref "refs/tags/$version" >/dev/null 2>&1 ||
+    die "attestation check failed for $name.tar.gz; run 'gh attestation verify' on it to see why, or set SSPUR_SKIP_ATTESTATION=1 to rely on the checksum alone"
+  say "attestation ok"
+fi
 
 tar -xzf "$tmp/$name.tar.gz" -C "$tmp"
 mkdir -p "$dest"

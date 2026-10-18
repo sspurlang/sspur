@@ -18,6 +18,19 @@ SSPUR is pre-1.0. Fixes go into the latest release only.
 | 0.15.x | Yes |
 | < 0.15 | No |
 
+## Verifying release files
+
+Every file attached to a release after 0.15 has a build provenance attestation from the release workflow, and each `sspur` archive also has an SBOM attestation for the release's `sspur-vX.Y.Z.cdx.json` (CycloneDX, every Rust crate in the binary). Both are signed through Sigstore with the workflow's GitHub identity, so no key is involved. Check a file with the GitHub CLI (2.68 or newer, signed in):
+
+```console
+gh attestation verify sspur-v1.0.0-aarch64-apple-darwin.tar.gz --repo sspurlang/sspur \
+  --signer-workflow sspurlang/sspur/.github/workflows/release.yml --source-ref refs/tags/v1.0.0
+gh attestation verify sspur-v1.0.0-aarch64-apple-darwin.tar.gz --repo sspurlang/sspur \
+  --predicate-type https://cyclonedx.org/bom
+```
+
+`install.sh` runs the first check itself when `gh` is installed and signed in, and refuses to install on a failure (`SSPUR_SKIP_ATTESTATION=1` turns it off); without `gh` it checks `SHA256SUMS` only. `install.ps1` checks `SHA256SUMS` only. [Installation](https://sspurlang.github.io/sspur/get-started/installation.html#verifying-a-release) has the details. A file that fails these checks is worth a report.
+
 ## Scope
 
 Things I'd especially like to hear about:

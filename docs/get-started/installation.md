@@ -8,7 +8,7 @@ SSPUR runs on macOS (arm64, x86_64), Linux (x86_64, aarch64) and Windows (x86_64
 {{#include ../snippets/get-started/install.sh}}
 ```
 
-The install script downloads the release tarball for your platform, checks its SHA-256 checksum and puts `sspur` in `~/.local/bin`. Set `SSPUR_VERSION` to pin a version or `SSPUR_INSTALL_DIR` to install somewhere else.
+The install script downloads the release tarball for your platform, checks its SHA-256 checksum and puts `sspur` in `~/.local/bin`. If the GitHub CLI `gh` is installed and signed in, it also checks the tarball's build attestation (see [Verifying a release](#verifying-a-release)) and stops if that fails; without `gh` it relies on the checksum. Set `SSPUR_VERSION` to pin a version or `SSPUR_INSTALL_DIR` to install somewhere else.
 
 ## Windows
 
@@ -33,6 +33,18 @@ Each [release](https://github.com/sspurlang/sspur/releases) has tarballs for `aa
 ```console
 {{#include ../snippets/get-started/install-other.sh:binary}}
 ```
+
+## Verifying a release
+
+`SHA256SUMS` catches a damaged download, but it comes from the same place as the file. Releases after 0.15 also carry GitHub artifact attestations, signed through Sigstore by the release workflow: a build provenance attestation for every file attached to the release (archives, editor extensions, `SHA256SUMS`, the Homebrew formula, the Scoop manifest, `install.sh` and `install.ps1`), and an SBOM attestation for each `sspur` archive, which points at the release's `sspur-vX.Y.Z.cdx.json` (the CycloneDX list of every Rust crate in the binary). With the GitHub CLI (2.68 or newer, signed in with `gh auth login`):
+
+```console
+{{#include ../snippets/get-started/install-other.sh:verify}}
+```
+
+A good file prints `Verification succeeded!` and exits with status 0. An error (no attestation for the file's digest, or one from another workflow or ref) means the file did not come from that release's build, so don't run it.
+
+`install.sh` runs the first check itself when `gh` is installed and signed in, and refuses to install if it fails; set `SSPUR_SKIP_ATTESTATION=1` to install with the checksum alone. Without `gh`, with a `gh` that isn't signed in or is older than 2.68, or for 0.15 and older, it checks the checksum only and says so. `install.ps1` checks the checksum only; run `gh attestation verify` on the zip yourself.
 
 ## From source
 

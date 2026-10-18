@@ -160,6 +160,20 @@ jobs:
           tar -C "$RUNNER_TEMP/registry-web" -czf "dist/sspur-registry-web-${GITHUB_REF_NAME}.tar.gz" checker
           (cd dist && sha256sum "sspur-registry-web-${GITHUB_REF_NAME}.tar.gz" >> SHA256SUMS && sha256sum -c SHA256SUMS)
 
+      - name: SBOM of the Rust dependencies
+        run: |
+          cargo install --locked cargo-cyclonedx@0.5.9
+          sbom="sspur-${GITHUB_REF_NAME}.cdx.json"
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" cargo cyclonedx -q --manifest-path crates/sspur-cli/Cargo.toml \
+            --format json --spec-version 1.5 --target all --override-filename sspur-sbom
+          # attest needs a serialNumber; derive it from the tag and commit so a rerun gives the same file
+          h="$(printf '%s %s %s' "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" "$GITHUB_SHA" | sha256sum | cut -c1-32)"
+          serial="urn:uuid:${h:0:8}-${h:8:4}-5${h:13:3}-$(printf '%x' $(( (0x${h:16:1} & 3) | 8 )))${h:17:3}-${h:20:12}"
+          jq --arg s "$serial" '{bomFormat, specVersion, serialNumber: $s} + .' crates/sspur-cli/sspur-sbom.json > "dist/$sbom"
+          find crates -name sspur-sbom.json -delete
+          jq -e --arg v "${GITHUB_REF_NAME#v}" '.bomFormat == "CycloneDX" and .metadata.component.name == "sspur-cli" and .metadata.component.version == $v and (.serialNumber | test("^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")) and (.components | length) > 50' "dist/$sbom"
+          (cd dist && sha256sum "$sbom" >> SHA256SUMS && sha256sum -c SHA256SUMS)
+
       - name: Release notes
         run: |
           awk -v v="${GITHUB_REF_NAME#v}" '
@@ -175,4 +189,63 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
             --title "SSPUR ${GITHUB_REF_NAME}" --notes-file notes.md \
-            dist/*.tar.gz dist/*.zip dist/*.vsix dist/SHA256SUMS dist/sspur.rb dist/sspur.json install.sh install.ps1
+            dist/*.tar.gz dist/*.zip dist/*.vsix dist/*.cdx.json dist/SHA256SUMS dist/sspur.rb dist/sspur.json install.sh install.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.vsix
+            dist/*.cdx.json
+            dist/SHA256SUMS
+            dist/sspur.rb
+            dist/sspur.json
+            install.sh
+            install.ps1
+          if-no-files-found: error
+
+  # Signs the exact files attached to the draft. The only job that can mint an OIDC token.
+  attest:
+    name: Attestations
+    needs: release
+    runs-on: ubuntu-24.04
+    permissions:
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: assets
+
+      - name: Build provenance for every release file
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            assets/dist/*
+            assets/install.sh
+            assets/install.ps1
+
+      - name: SBOM attestation for the binary archives
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            assets/dist/sspur-v*.tar.gz
+            assets/dist/sspur-v*.zip
+          sbom-path: assets/dist/sspur-${{ github.ref_name }}.cdx.json
+
+      - name: Check the attestations as a user would
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=(--repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" --source-ref "$GITHUB_REF")
+          for f in assets/dist/* assets/install.sh assets/install.ps1; do
+            gh attestation verify "$f" "${flags[@]}" > /dev/null
+            echo "provenance ok: ${f##*/}"
+          done
+          for f in assets/dist/sspur-v*.tar.gz assets/dist/sspur-v*.zip; do
+            gh attestation verify "$f" "${flags[@]}" --predicate-type https://cyclonedx.org/bom > /dev/null
+            echo "sbom ok: ${f##*/}"
+          done

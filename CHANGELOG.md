@@ -6,6 +6,7 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ### Added
 - The 1.x stability and deprecation policy, `docs/reference/stability.md`: what 1.0 freezes, what stays experimental (marked `(experimental)` in `sspur --help`), and the `W_DEPRECATED` warning a feature gets before 2.0 can remove it. A compatibility suite in `cargo test` (`tests/compat`) checks frozen programs and packages against their recorded hashes, diagnostics, `run` and `test` output in both tiers and `sspur fmt` output.
+- Release files carry GitHub artifact attestations: build provenance for every file attached to a release and a CycloneDX SBOM (`sspur-vX.Y.Z.cdx.json`, also attached) for each `sspur` archive, checked with `gh attestation verify --repo sspurlang/sspur`; `install.sh` checks the provenance when `gh` is installed and signed in, and `SSPUR_SKIP_ATTESTATION=1` turns that off.
 ### Changed
 - The playground's WebAssembly is 5 KB smaller gzipped (941 KiB): the standard library's hover and completion docs are a separate 6 KB file that the page fetches after the engine starts.
 
