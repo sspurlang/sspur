@@ -503,7 +503,7 @@ core::ptr::drop_glue::<sspur_store::Loaded>
 core::ptr::drop_glue::<[sspur_syntax::ast::Def]>
 core::ptr::drop_glue::<sspur_check::CheckOutput>
 std::sys::thread_local::native::eager::destroy::<core::cell::RefCell<core::option::Option<sspur_eval::Ctrl>>>
-# check: 269
+# check: 162
 <hashbrown::map::HashMap<alloc::string::String, sspur_check::TypeInfo, std::hash::random::RandomState>>::get_mut::<alloc::string::String>
 <sspur_check::TypeKind as core::clone::Clone>::clone
 core::ptr::drop_glue::<sspur_check::TypeInfo>
@@ -643,22 +643,147 @@ sspur::fill::budget
 <sspur::Args>::num
 sspur::fill::enrich
 sspur::verify::conversions
+<core::iter::adapters::GenericShunt<core::iter::adapters::map::Map<core::str::iter::Lines, sspur_smt::conv::read_program::{closure#0}>, core::option::Option<core::convert::Infallible>> as core::iter::traits::iterator::Iterator>::next
+<sspur_syntax::ast::Def as core::clone::Clone>::clone
+<sspur_syntax::ast::Pat as core::clone::Clone>::clone
+<alloc::vec::Vec<(alloc::string::String, sspur_syntax::ast::Expr)> as core::clone::Clone>::clone
+<alloc::vec::Vec<sspur_syntax::ast::Arm> as core::clone::Clone>::clone
+sspur_syntax::visit::walk_mut::<sspur_check::elab_net::lower_from::{closure#0}>
+sspur_check::elab_net::lower_from::{closure#0}
+sspur_check::elab::call
+sspur_check::elab_net::def_names
+sspur_check::elab_net::words
+sspur_check::elab_net::fn_names
+sspur_syntax::visit::walk::<sspur_check::elab_net::names_in::{closure#0}>
+<hashbrown::raw::RawTable<(&str, &sspur_syntax::ast::Def)>>::reserve_rehash::<hashbrown::map::make_hasher<&str, &sspur_syntax::ast::Def, std::hash::random::RandomState>::{closure#0}>
+<core::iter::adapters::filter::Filter<alloc::collections::btree::set::IntoIter<alloc::string::String>, sspur_check::elab_net::lower_from::{closure#4}> as core::iter::traits::iterator::Iterator>::next
+sspur_syntax::printer::print_module
+core::ptr::drop_glue::<(alloc::vec::Vec<alloc::string::String>, alloc::vec::Vec<(alloc::string::String, sspur_check::types::Type)>)>
+core::ptr::drop_glue::<sspur_check::net::NetSite>
+sspur_check::elab::after_net
+<sspur_check::CtorInfo as core::clone::Clone>::clone
+<sspur_check::Checker>::ctor_type
+<core::iter::adapters::chain::Chain<core::slice::iter::Iter<(&str, &str, usize)>, core::slice::iter::Iter<(&str, &str, usize)>> as core::iter::traits::iterator::Iterator>::find::<<sspur_check::Checker>::infer_record::{closure#4}>
+<sspur_check::Checker>::infer_record::{closure#4}
+<sspur_check::types::Type>::con
+# lsp: 216
+sspur::lsp::serve
+<alloc::ffi::c_str::CString>::_from_vec_unchecked
+sspur::lsp::run
+<std::sys::pal::unix::time::Timespec>::now
+<std::thread::lifecycle::spawn_unchecked<lsp_server::stdio::stdio_transport::{closure#2}, core::result::Result<(), core::io::error::Error>>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+<crossbeam_channel::flavors::zero::Channel<lsp_server::msg::Message>>::recv
+<std::thread::lifecycle::spawn_unchecked<lsp_server::stdio::stdio_transport::{closure#0}, core::result::Result<(), core::io::error::Error>>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+<std::thread::lifecycle::spawn_unchecked<lsp_server::stdio::stdio_transport::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+std::sys::backtrace::__rust_begin_short_backtrace::<lsp_server::stdio::stdio_transport::{closure#2}, core::result::Result<(), core::io::error::Error>>
+std::sys::backtrace::__rust_begin_short_backtrace::<lsp_server::stdio::stdio_transport::{closure#0}, core::result::Result<(), core::io::error::Error>>
+std::sys::backtrace::__rust_begin_short_backtrace::<lsp_server::stdio::stdio_transport::{closure#1}, ()>
+<std::sync::once_lock::OnceLock<std::sync::poison::mutex::Mutex<alloc::io::buffered::bufreader::BufReader<std::io::stdio::StdinRaw>>>>::initialize::<<std::sync::once_lock::OnceLock<std::sync::poison::mutex::Mutex<alloc::io::buffered::bufreader::BufReader<std::io::stdio::StdinRaw>>>>::get_or_init<std::io::stdio::stdin::{closure#0}>::{closure#0}, !>
+<std::sys::thread_local::native::lazy::Storage<core::cell::Cell<core::option::Option<crossbeam_channel::context::Context>>, ()>>::get_or_init_slow::<<crossbeam_channel::context::Context>::with::CONTEXT::__rust_std_internal_init_fn>
+<crossbeam_channel::channel::Receiver<lsp_server::msg::Message>>::recv
+<crossbeam_channel::context::Context>::new
+<crossbeam_channel::flavors::zero::Channel<lsp_server::msg::Message>>::recv::{closure#1}
+<alloc::raw_vec::RawVec<crossbeam_channel::waker::Entry>>::grow_one
+<std::sync::once::Once>::call_once_force::<<std::sync::once_lock::OnceLock<std::sync::poison::mutex::Mutex<alloc::io::buffered::bufreader::BufReader<std::io::stdio::StdinRaw>>>>::initialize<<std::sync::once_lock::OnceLock<std::sync::poison::mutex::Mutex<alloc::io::buffered::bufreader::BufReader<std::io::stdio::StdinRaw>>>>::get_or_init<std::io::stdio::stdin::{closure#0}>::{closure#0}, !>::{closure#0}>::{closure#0}
+<lsp_server::msg::Message>::_read
+std::thread::functions::park_timeout
+<std::io::stdio::StdinLock as alloc::io::buf_read::BufRead>::read_line
 <core::str::pattern::StrSearcher>::new
-<core::str::pattern::StrSearcher as core::str::pattern::Searcher>::next_match
+<core::str::iter::SplitInternal<&str>>::next
+<&mut serde_json::de::Deserializer<serde_json::read::StrRead> as serde_core::de::Deserializer>::__deserialize_content_v1::<serde::private::de::content::ContentVisitor>
+<serde_json::read::StrRead as serde_json::read::Read>::parse_str
+<serde_json::read::SliceRead>::skip_to_escape
+<alloc::raw_vec::RawVec<core::option::Option<(serde_core::private::content::Content, serde_core::private::content::Content)>>>::grow_one
+<serde_json::de::Deserializer<serde_json::read::StrRead>>::parse_integer
+<serde_json::de::Deserializer<serde_json::read::StrRead>>::parse_number
+<core::marker::PhantomData<lsp_server::msg::RequestId> as serde_core::de::DeserializeSeed>::deserialize::<serde::private::de::content::ContentRefDeserializer<serde_json::error::Error>>
+serde::private::de::content::content_clone
+core::ptr::drop_glue::<serde_core::private::content::Content>
+<serde::private::de::content::ContentRefDeserializer<serde_json::error::Error> as serde_core::de::Deserializer>::deserialize_str::<serde_core::de::impls::StringVisitor>
+<serde::private::de::content::ContentRefDeserializer<serde_json::error::Error> as serde_core::de::Deserializer>::deserialize_any::<<serde_json::value::Value as serde_core::de::Deserialize>::deserialize::ValueVisitor>
+<serde::private::de::content::MapRefDeserializer<serde_json::error::Error> as serde_core::de::MapAccess>::next_value::<serde_json::value::Value>
+<alloc::collections::btree::map::BTreeMap<alloc::string::String, serde_json::value::Value>>::insert
+<crossbeam_channel::channel::Sender<lsp_server::msg::Message>>::send
+<std::sys::thread_local::native::lazy::Storage<std::thread::id::ThreadId, !>>::get_or_init_slow::<crossbeam_channel::waker::current_thread_id::THREAD_ID::__rust_std_internal_init_fn>
+<serde_json::error::Error as serde_core::de::Error>::custom::<core::fmt::Arguments>
+<serde_json::value::Value as serde_core::ser::Serialize>::serialize::<serde_json::value::ser::Serializer>
+<serde_json::value::ser::Serializer as serde_core::ser::Serializer>::collect_seq::<&alloc::vec::Vec<serde_json::value::Value>>
+core::ptr::drop_glue::<serde_json::value::Value>
+core::ptr::drop_glue::<alloc::collections::btree::map::IntoIter<alloc::string::String, serde_json::value::Value>>
+<alloc::collections::btree::map::IntoIter<alloc::string::String, serde_json::value::Value>>::dying_next
+<<alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Dying, _, _, _>, alloc::collections::btree::node::marker::KV>>::drop_key_val::Dropper<serde_json::value::Value> as core::ops::drop::Drop>::drop
+serde_json::error::make_error
+<alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Dying, alloc::string::String, serde_json::value::Value, alloc::collections::btree::node::marker::LeafOrInternal>, alloc::collections::btree::node::marker::KV>>::drop_key_val
+<crossbeam_channel::flavors::zero::Channel<lsp_server::msg::Message>>::send::{closure#0}
+core::ptr::drop_glue::<alloc::collections::btree::map::BTreeMap<alloc::string::String, serde_json::value::Value>>
+core::ptr::drop_glue::<lsp_server::msg::Message>
+<&mut serde_json::ser::Serializer<&mut alloc::vec::Vec<u8>> as serde_core::ser::Serializer>::serialize_str
+<serde_json::ser::Compound<&mut alloc::vec::Vec<u8>, serde_json::ser::CompactFormatter> as serde_core::ser::SerializeMap>::serialize_entry::<str, lsp_server::msg::RequestId>
+<sspur_ide::hints::Opts>::from_json
+<u32 as itoa::Unsigned>::fmt
+<serde_json::value::Value as serde_core::ser::Serialize>::serialize::<&mut serde_json::ser::Serializer<&mut alloc::vec::Vec<u8>>>
+<u64 as itoa::Unsigned>::fmt
+serde_json::read::parse_escape::<serde_json::read::SliceRead>
+<std::thread::lifecycle::spawn_unchecked<sspur::lsp::run::{closure#2}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+serde_json::read::parse_unicode_escape::<serde_json::read::SliceRead>
+std::sys::backtrace::__rust_begin_short_backtrace::<sspur::lsp::run::{closure#2}, ()>
+<std::thread::lifecycle::spawn_unchecked<sspur::lsp::run::{closure#4}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+<std::sync::mpmc::list::Channel<alloc::string::String>>::recv
+std::sys::backtrace::__rust_begin_short_backtrace::<sspur::lsp::run::{closure#4}, ()>
+<std::sys::thread_local::native::lazy::Storage<core::cell::Cell<core::option::Option<std::sync::mpmc::context::Context>>, ()>>::get_or_init_slow::<<std::sync::mpmc::context::Context>::with::CONTEXT::__rust_std_internal_init_fn>
+<serde_json::read::SliceRead>::skip_to_escape_slow
+<std::sync::mpmc::context::Context>::new
+<std::sync::mpmc::list::Channel<lsp_server::msg::Request>>::recv::{closure#1}
+<std::sync::mpmc::waker::SyncWaker>::register
+<str as serde_json::value::index::Index>::index_into
+<alloc::raw_vec::RawVec<sspur_smt::conv::Unit>>::grow_one
+<std::sys::pal::unix::sync::mutex::Mutex>::lock
+<hashbrown::raw::RawTable<(alloc::string::String, sspur::lsp::Doc)>>::reserve_rehash::<hashbrown::map::make_hasher<alloc::string::String, sspur::lsp::Doc, std::hash::random::RandomState>::{closure#0}>
+<std::sync::mpmc::waker::SyncWaker>::notify
+<alloc::collections::btree::set::BTreeSet<alloc::string::String> as core::convert::From<[alloc::string::String; 1]>>::from
+sspur::lsp::handle
+<sspur::lsp::State>::doc
+core::ptr::drop_glue::<lsp_server::msg::Notification>
+core::ptr::drop_glue::<crossbeam_channel::channel::Sender<lsp_server::msg::Message>>
+<std::sync::mpmc::waker::SyncWaker>::disconnect
+<crossbeam_channel::flavors::zero::Channel<lsp_server::msg::Message>>::disconnect
+<sspur::lsp::State>::env
+<std::sync::mpmc::waker::SyncWaker>::unregister
+core::ptr::drop_glue::<crossbeam_channel::waker::Waker>
+sspur::lsp::load_doc
+<std::thread::lifecycle::JoinInner<core::result::Result<(), core::io::error::Error>>>::join
+std::sys::thread_local::native::lazy::destroy::<core::cell::Cell<core::option::Option<crossbeam_channel::context::Context>>>
+<alloc::sync::Arc<crossbeam_channel::context::Inner>>::drop_slow
+<alloc::sync::Arc<std::thread::lifecycle::Packet<core::result::Result<(), core::io::error::Error>>>>::drop_slow
+sspur::lsp::exports
+<sspur::lsp::Lines>::new
+<sspur::lsp::Lines>::byte
+sspur_ide::u16_of
+sspur_ide::hover
+sspur::lsp::shown
+core::ptr::drop_glue::<sspur_ide::Ctx>
+core::ptr::drop_glue::<sspur_store::pkg::Env>
+core::ptr::drop_glue::<std::sync::mpsc::Receiver<lsp_server::msg::Request>>
+core::ptr::drop_glue::<alloc::boxed::Box<std::sync::mpmc::counter::Counter<std::sync::mpmc::list::Channel<lsp_server::msg::Request>>>>
+<alloc::sync::Arc<std::thread::lifecycle::Packet<()>>>::drop_slow
+sspur_ide::diags_json
+<hashbrown::raw::RawTable<(alloc::string::String, alloc::sync::Arc<sspur_ide::Analysis>)>>::reserve_rehash::<hashbrown::map::make_hasher<alloc::string::String, alloc::sync::Arc<sspur_ide::Analysis>, std::hash::random::RandomState>::{closure#0}>
+sspur::lsp::publish
+core::ptr::drop_glue::<alloc::vec::Vec<serde_json::value::Value>>
+<hashbrown::map::HashMap<alloc::string::String, sspur::lsp::Checked, std::hash::random::RandomState>>::insert
 sspur_smt::conv::warnings
 sspur_smt::conv::def_exprs
 <core::iter::adapters::chain::Chain<core::iter::adapters::chain::Chain<core::iter::adapters::chain::Chain<core::iter::adapters::filter_map::FilterMap<core::slice::iter::Iter<sspur_syntax::ast::Param>, sspur_smt::conv::fn_exprs::{closure#0}>, core::slice::iter::Iter<sspur_syntax::ast::Expr>>, core::slice::iter::Iter<sspur_syntax::ast::Expr>>, core::array::iter::IntoIter<&sspur_syntax::ast::Expr, 1>> as core::iter::traits::iterator::Iterator>::size_hint
 sspur_syntax::visit::walk::<sspur_smt::conv::has_conv::{closure#0}>
 sspur_smt::conv::conv_of
+sspur_smt::conv::outcomes
 <std::collections::hash::set::HashSet<alloc::string::String> as core::iter::traits::collect::FromIterator<alloc::string::String>>::from_iter::<[alloc::string::String; 3]>
-<alloc::raw_vec::RawVec<sspur_smt::conv::Unit>>::grow_one
 <sspur_smt::conv::Scan>::walk
 <alloc::raw_vec::RawVec<sspur_smt::Goal>>::grow_one
-<alloc::raw_vec::RawVec<sspur_smt::Obj>>::grow_one
+<alloc::raw_vec::RawVec<core::option::Option<sspur_smt::Query>>>::grow_one
 <hashbrown::raw::RawTable<(&str, alloc::vec::Vec<&sspur_smt::conv::Call>)>>::reserve_rehash::<hashbrown::map::make_hasher<&str, alloc::vec::Vec<&sspur_smt::conv::Call>, std::hash::random::RandomState>::{closure#0}>
 <alloc::raw_vec::RawVec<&sspur_smt::conv::Call>>::grow_one
-__rustc::__rust_alloc_zeroed
-sspur_smt::conv::warnings::{closure#10}
+sspur_smt::conv::outcomes::{closure#11}
 sspur_smt::encoder
 <hashbrown::raw::RawTable<(&str, &sspur_syntax::ast::Expr)>>::reserve_rehash::<hashbrown::map::make_hasher<&str, &sspur_syntax::ast::Expr, std::hash::random::RandomState>::{closure#0}>
 <hashbrown::raw::RawTable<(alloc::string::String, std::collections::hash::map::HashMap<alloc::string::String, alloc::vec::Vec<&sspur_syntax::ast::Expr>>)>>::reserve_rehash::<hashbrown::map::make_hasher<alloc::string::String, std::collections::hash::map::HashMap<alloc::string::String, alloc::vec::Vec<&sspur_syntax::ast::Expr>>, std::hash::random::RandomState>::{closure#0}>
@@ -671,6 +796,7 @@ sspur_smt::encoder
 <sspur_smt::Val as core::clone::Clone>::clone
 <hashbrown::map::HashMap<alloc::string::String, sspur_smt::Bind, std::hash::random::RandomState>>::insert
 <hashbrown::raw::RawTable<(alloc::string::String, sspur_smt::Bind)>>::reserve_rehash::<hashbrown::map::make_hasher<alloc::string::String, sspur_smt::Bind, std::hash::random::RandomState>::{closure#0}>
+<alloc::raw_vec::RawVec<sspur_smt::Obj>>::grow_one
 <alloc::raw_vec::RawVec<std::collections::hash::map::HashMap<alloc::string::String, alloc::vec::Vec<usize>>>>::grow_one
 <sspur_smt::Enc>::ex
 <sspur_smt::Enc>::block
@@ -701,7 +827,6 @@ sspur_smt::lit
 <hashbrown::map::HashMap<(u32, u32, alloc::string::String), sspur_smt::Site, std::hash::random::RandomState>>::rustc_entry
 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&(u32, u32, alloc::string::String)>
 <hashbrown::raw::RawTable<((u32, u32, alloc::string::String), sspur_smt::Site)>>::reserve_rehash::<hashbrown::map::make_hasher<(u32, u32, alloc::string::String), sspur_smt::Site, std::hash::random::RandomState>::{closure#0}>
-<alloc::raw_vec::RawVec<core::option::Option<sspur_smt::Query>>>::grow_one
 <sspur_smt::Enc>::assume
 sspur_smt::and
 sspur_smt::int_lit
@@ -715,7 +840,7 @@ sspur_syntax::visit::walk::<sspur_smt::count_returns::{closure#0}>
 <alloc::string::String as core::fmt::Write>::write_char
 <&sspur_smt::Val as core::fmt::Debug>::fmt
 <str as core::fmt::Debug>::fmt
-<alloc::raw_vec::RawVec<(alloc::string::String, alloc::string::String, bool)>>::grow_one
+<alloc::raw_vec::RawVec<sspur::fix::Shift>>::grow_one
 <sspur_smt::Enc>::bound
 <hashbrown::map::HashMap<&str, &sspur_syntax::ast::FnDef, std::hash::random::RandomState>>::get::<str>
 <alloc::vec::Vec<sspur_smt::Val> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<sspur_smt::Val, core::iter::adapters::map::Map<core::slice::iter::Iter<sspur_syntax::ast::Expr>, <sspur_smt::Enc>::call_expr::{closure#0}>>>::from_iter
@@ -732,8 +857,8 @@ sspur_smt::is_ty
 core::ptr::drop_glue::<alloc::vec::Vec<sspur_smt::Val>>
 <sspur_smt::z3::Solver>::new
 sspur_smt::z3::binary
-<core::iter::adapters::filter::Filter<core::iter::adapters::map::Map<core::iter::adapters::flatten::FlatMap<core::iter::adapters::filter::Filter<std::collections::hash::map::Iter<(u32, u32, alloc::string::String), sspur_smt::Site>, sspur_smt::conv::warnings::{closure#14}>, core::iter::adapters::flatten::Flatten<core::slice::iter::Iter<core::option::Option<sspur_smt::Query>>>, sspur_smt::conv::warnings::{closure#15}>, sspur_smt::conv::warnings::{closure#16}>, sspur_smt::conv::solve_new<core::iter::adapters::map::Map<core::iter::adapters::flatten::FlatMap<core::iter::adapters::filter::Filter<std::collections::hash::map::Iter<(u32, u32, alloc::string::String), sspur_smt::Site>, sspur_smt::conv::warnings::{closure#14}>, core::iter::adapters::flatten::Flatten<core::slice::iter::Iter<core::option::Option<sspur_smt::Query>>>, sspur_smt::conv::warnings::{closure#15}>, sspur_smt::conv::warnings::{closure#16}>>::{closure#0}> as core::iter::traits::iterator::Iterator>::next
-<core::iter::adapters::flatten::FlattenCompat<_, _> as core::iter::traits::iterator::Iterator>::try_fold::flatten::<core::iter::adapters::flatten::Flatten<core::slice::iter::Iter<core::option::Option<sspur_smt::Query>>>, (), core::ops::control_flow::ControlFlow<alloc::string::String>, core::iter::adapters::map::map_try_fold<&sspur_smt::Query, alloc::string::String, (), core::ops::control_flow::ControlFlow<alloc::string::String>, sspur_smt::conv::warnings::{closure#16}, core::iter::traits::iterator::Iterator::find::check<alloc::string::String, &mut sspur_smt::conv::solve_new<core::iter::adapters::map::Map<core::iter::adapters::flatten::FlatMap<core::iter::adapters::filter::Filter<std::collections::hash::map::Iter<(u32, u32, alloc::string::String), sspur_smt::Site>, sspur_smt::conv::warnings::{closure#14}>, core::iter::adapters::flatten::Flatten<core::slice::iter::Iter<core::option::Option<sspur_smt::Query>>>, sspur_smt::conv::warnings::{closure#15}>, sspur_smt::conv::warnings::{closure#16}>>::{closure#0}>::{closure#0}>::{closure#0}>::{closure#0}
+<core::iter::adapters::filter::Filter<core::iter::adapters::map::Map<core::iter::adapters::flatten::FlatMap<core::iter::adapters::filter::Filter<std::collections::hash::map::Iter<(u32, u32, alloc::string::String), sspur_smt::Site>, sspur_smt::conv::outcomes::{closure#15}>, core::iter::adapters::flatten::Flatten<core::slice::iter::Iter<core::option::Option<sspur_smt::Query>>>, sspur_smt::conv::outcomes::{closure#16}>, sspur_smt::conv::outcomes::{closure#17}>, sspur_smt::conv::solve_new<core::iter::adapters::map::Map<core::iter::adapters::flatten::FlatMap<core::iter::adapters::filter::Filter<std::collections::hash::map::Iter<(u32, u32, alloc::string::String), sspur_smt::Site>, sspur_smt::conv::outcomes::{closure#15}>, core::iter::adapters::flatten::Flatten<core::slice::iter::Iter<core::option::Option<sspur_smt::Query>>>, sspur_smt::conv::outcomes::{closure#16}>, sspur_smt::conv::outcomes::{closure#17}>>::{closure#0}> as core::iter::traits::iterator::Iterator>::next
+<core::iter::adapters::flatten::FlattenCompat<_, _> as core::iter::traits::iterator::Iterator>::try_fold::flatten::<core::iter::adapters::flatten::Flatten<core::slice::iter::Iter<core::option::Option<sspur_smt::Query>>>, (), core::ops::control_flow::ControlFlow<alloc::string::String>, core::iter::adapters::map::map_try_fold<&sspur_smt::Query, alloc::string::String, (), core::ops::control_flow::ControlFlow<alloc::string::String>, sspur_smt::conv::outcomes::{closure#17}, core::iter::traits::iterator::Iterator::find::check<alloc::string::String, &mut sspur_smt::conv::solve_new<core::iter::adapters::map::Map<core::iter::adapters::flatten::FlatMap<core::iter::adapters::filter::Filter<std::collections::hash::map::Iter<(u32, u32, alloc::string::String), sspur_smt::Site>, sspur_smt::conv::outcomes::{closure#15}>, core::iter::adapters::flatten::Flatten<core::slice::iter::Iter<core::option::Option<sspur_smt::Query>>>, sspur_smt::conv::outcomes::{closure#16}>, sspur_smt::conv::outcomes::{closure#17}>>::{closure#0}>::{closure#0}>::{closure#0}>::{closure#0}
 <sspur_smt::Analysis>::script
 <sspur_smt::z3::Solver>::cache_key
 sspur_smt::z3::known
@@ -742,7 +867,7 @@ sspur_smt::z3::known
 <hashbrown::raw::RawTable<(std::path::PathBuf, core::option::Option<&str>)>>::reserve_rehash::<hashbrown::map::make_hasher<std::path::PathBuf, core::option::Option<&str>, std::hash::random::RandomState>::{closure#0}>
 <hashbrown::raw::RawTable<((u32, u32), core::option::Option<usize>)>>::reserve_rehash::<hashbrown::map::make_hasher<(u32, u32), core::option::Option<usize>, std::hash::random::RandomState>::{closure#0}>
 <sspur_smt::conv::Cover>::safe
-sspur_smt::conv::warnings::{closure#13}
+sspur_smt::conv::outcomes::{closure#14}
 sspur_smt::conv::all_unsat
 <sspur_smt::z3::Solver>::check
 <std::path::PathBuf as core::cmp::PartialEq>::eq
@@ -751,138 +876,14 @@ core::ptr::drop_glue::<alloc::vec::Vec<core::option::Option<sspur_smt::Query>>>
 core::ptr::drop_glue::<std::collections::hash::map::HashMap<alloc::string::String, std::collections::hash::map::HashMap<alloc::string::String, alloc::vec::Vec<&sspur_syntax::ast::Expr>>>>
 core::ptr::drop_glue::<std::collections::hash::map::HashMap<alloc::string::String, alloc::vec::Vec<&sspur_syntax::ast::Expr>>>
 core::ptr::drop_glue::<std::collections::hash::map::HashMap<alloc::string::String, sspur_smt::Val>>
-<sspur_syntax::ast::Def as core::clone::Clone>::clone
-<sspur_syntax::ast::Pat as core::clone::Clone>::clone
-<alloc::vec::Vec<(alloc::string::String, sspur_syntax::ast::Expr)> as core::clone::Clone>::clone
-<alloc::vec::Vec<sspur_syntax::ast::Arm> as core::clone::Clone>::clone
-sspur_syntax::visit::walk_mut::<sspur_check::elab_net::lower_from::{closure#0}>
-sspur_check::elab_net::lower_from::{closure#0}
-sspur_check::elab::call
-sspur_check::elab_net::def_names
-sspur_check::elab_net::words
-sspur_check::elab_net::fn_names
-sspur_syntax::visit::walk::<sspur_check::elab_net::names_in::{closure#0}>
-<hashbrown::raw::RawTable<(&str, &sspur_syntax::ast::Def)>>::reserve_rehash::<hashbrown::map::make_hasher<&str, &sspur_syntax::ast::Def, std::hash::random::RandomState>::{closure#0}>
-<core::iter::adapters::filter::Filter<alloc::collections::btree::set::IntoIter<alloc::string::String>, sspur_check::elab_net::lower_from::{closure#4}> as core::iter::traits::iterator::Iterator>::next
-sspur_syntax::printer::print_module
-core::ptr::drop_glue::<(alloc::vec::Vec<alloc::string::String>, alloc::vec::Vec<(alloc::string::String, sspur_check::types::Type)>)>
-core::ptr::drop_glue::<sspur_check::net::NetSite>
-sspur_check::elab::after_net
-<sspur_check::CtorInfo as core::clone::Clone>::clone
-<sspur_check::Checker>::ctor_type
-<core::iter::adapters::chain::Chain<core::slice::iter::Iter<(&str, &str, usize)>, core::slice::iter::Iter<(&str, &str, usize)>> as core::iter::traits::iterator::Iterator>::find::<<sspur_check::Checker>::infer_record::{closure#4}>
-<sspur_check::Checker>::infer_record::{closure#4}
-<sspur_check::types::Type>::con
-# lsp: 108
-sspur::lsp::serve
-<alloc::ffi::c_str::CString>::_from_vec_unchecked
-sspur::lsp::run
-<std::sys::pal::unix::time::Timespec>::now
-<std::thread::lifecycle::spawn_unchecked<lsp_server::stdio::stdio_transport::{closure#0}, core::result::Result<(), core::io::error::Error>>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
-<std::thread::lifecycle::spawn_unchecked<lsp_server::stdio::stdio_transport::{closure#1}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
-<crossbeam_channel::flavors::zero::Channel<lsp_server::msg::Message>>::recv
-std::sys::backtrace::__rust_begin_short_backtrace::<lsp_server::stdio::stdio_transport::{closure#0}, core::result::Result<(), core::io::error::Error>>
-std::sys::backtrace::__rust_begin_short_backtrace::<lsp_server::stdio::stdio_transport::{closure#1}, ()>
-<crossbeam_channel::channel::Receiver<lsp_server::msg::Message>>::recv
-<std::thread::lifecycle::spawn_unchecked<lsp_server::stdio::stdio_transport::{closure#2}, core::result::Result<(), core::io::error::Error>>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
-<std::sys::thread_local::native::lazy::Storage<core::cell::Cell<core::option::Option<crossbeam_channel::context::Context>>, ()>>::get_or_init_slow::<<crossbeam_channel::context::Context>::with::CONTEXT::__rust_std_internal_init_fn>
-std::sys::backtrace::__rust_begin_short_backtrace::<lsp_server::stdio::stdio_transport::{closure#2}, core::result::Result<(), core::io::error::Error>>
-<crossbeam_channel::context::Context>::new
-<std::sync::once_lock::OnceLock<std::sync::poison::mutex::Mutex<alloc::io::buffered::bufreader::BufReader<std::io::stdio::StdinRaw>>>>::initialize::<<std::sync::once_lock::OnceLock<std::sync::poison::mutex::Mutex<alloc::io::buffered::bufreader::BufReader<std::io::stdio::StdinRaw>>>>::get_or_init<std::io::stdio::stdin::{closure#0}>::{closure#0}, !>
-<crossbeam_channel::flavors::zero::Channel<lsp_server::msg::Message>>::recv::{closure#1}
-<alloc::raw_vec::RawVec<crossbeam_channel::waker::Entry>>::grow_one
-<std::sync::once::Once>::call_once_force::<<std::sync::once_lock::OnceLock<std::sync::poison::mutex::Mutex<alloc::io::buffered::bufreader::BufReader<std::io::stdio::StdinRaw>>>>::initialize<<std::sync::once_lock::OnceLock<std::sync::poison::mutex::Mutex<alloc::io::buffered::bufreader::BufReader<std::io::stdio::StdinRaw>>>>::get_or_init<std::io::stdio::stdin::{closure#0}>::{closure#0}, !>::{closure#0}>::{closure#0}
-std::thread::functions::park_timeout
-<lsp_server::msg::Message>::_read
-<std::io::stdio::StdinLock as alloc::io::buf_read::BufRead>::read_line
-<core::str::iter::SplitInternal<&str>>::next
-<&mut serde_json::de::Deserializer<serde_json::read::StrRead> as serde_core::de::Deserializer>::__deserialize_content_v1::<serde::private::de::content::ContentVisitor>
-<serde_json::read::StrRead as serde_json::read::Read>::parse_str
-<serde_json::read::SliceRead>::skip_to_escape
-<alloc::raw_vec::RawVec<core::option::Option<(serde_core::private::content::Content, serde_core::private::content::Content)>>>::grow_one
-<serde_json::de::Deserializer<serde_json::read::StrRead>>::parse_integer
-<serde_json::de::Deserializer<serde_json::read::StrRead>>::parse_number
-<core::marker::PhantomData<lsp_server::msg::RequestId> as serde_core::de::DeserializeSeed>::deserialize::<serde::private::de::content::ContentRefDeserializer<serde_json::error::Error>>
-serde::private::de::content::content_clone
-core::ptr::drop_glue::<serde_core::private::content::Content>
-<serde::private::de::content::ContentRefDeserializer<serde_json::error::Error> as serde_core::de::Deserializer>::deserialize_str::<serde_core::de::impls::StringVisitor>
-<serde::private::de::content::ContentRefDeserializer<serde_json::error::Error> as serde_core::de::Deserializer>::deserialize_any::<<serde_json::value::Value as serde_core::de::Deserialize>::deserialize::ValueVisitor>
-<serde::private::de::content::MapRefDeserializer<serde_json::error::Error> as serde_core::de::MapAccess>::next_value::<serde_json::value::Value>
-<alloc::collections::btree::map::BTreeMap<alloc::string::String, serde_json::value::Value>>::insert
-<crossbeam_channel::channel::Sender<lsp_server::msg::Message>>::send
-<std::sys::thread_local::native::lazy::Storage<std::thread::id::ThreadId, !>>::get_or_init_slow::<crossbeam_channel::waker::current_thread_id::THREAD_ID::__rust_std_internal_init_fn>
-<serde_json::error::Error as serde_core::de::Error>::custom::<core::fmt::Arguments>
-<serde_json::value::Value as serde_core::ser::Serialize>::serialize::<serde_json::value::ser::Serializer>
-<serde_json::value::ser::Serializer as serde_core::ser::Serializer>::collect_seq::<&alloc::vec::Vec<serde_json::value::Value>>
-core::ptr::drop_glue::<serde_json::value::Value>
-core::ptr::drop_glue::<alloc::collections::btree::map::IntoIter<alloc::string::String, serde_json::value::Value>>
-<alloc::collections::btree::map::IntoIter<alloc::string::String, serde_json::value::Value>>::dying_next
-serde_json::error::make_error
-<<alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Dying, _, _, _>, alloc::collections::btree::node::marker::KV>>::drop_key_val::Dropper<serde_json::value::Value> as core::ops::drop::Drop>::drop
-<crossbeam_channel::flavors::zero::Channel<lsp_server::msg::Message>>::send::{closure#0}
-<alloc::collections::btree::node::Handle<alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Dying, alloc::string::String, serde_json::value::Value, alloc::collections::btree::node::marker::LeafOrInternal>, alloc::collections::btree::node::marker::KV>>::drop_key_val
-core::ptr::drop_glue::<alloc::collections::btree::map::BTreeMap<alloc::string::String, serde_json::value::Value>>
-core::ptr::drop_glue::<lsp_server::msg::Message>
-<&mut serde_json::ser::Serializer<&mut alloc::vec::Vec<u8>> as serde_core::ser::Serializer>::serialize_str
-<serde_json::ser::Compound<&mut alloc::vec::Vec<u8>, serde_json::ser::CompactFormatter> as serde_core::ser::SerializeMap>::serialize_entry::<str, lsp_server::msg::RequestId>
-<sspur_ide::hints::Opts>::from_json
-<u32 as itoa::Unsigned>::fmt
-<serde_json::value::Value as serde_core::ser::Serialize>::serialize::<&mut serde_json::ser::Serializer<&mut alloc::vec::Vec<u8>>>
-<u64 as itoa::Unsigned>::fmt
-serde_json::read::parse_escape::<serde_json::read::SliceRead>
-<std::thread::lifecycle::spawn_unchecked<sspur::lsp::run::{closure#2}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
-std::sys::backtrace::__rust_begin_short_backtrace::<sspur::lsp::run::{closure#2}, ()>
-<std::thread::lifecycle::spawn_unchecked<sspur::lsp::run::{closure#4}, ()>::{closure#1} as core::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
-serde_json::read::parse_unicode_escape::<serde_json::read::SliceRead>
-<std::sync::mpmc::list::Channel<alloc::string::String>>::recv
-std::sys::backtrace::__rust_begin_short_backtrace::<sspur::lsp::run::{closure#4}, ()>
-<std::sys::thread_local::native::lazy::Storage<core::cell::Cell<core::option::Option<std::sync::mpmc::context::Context>>, ()>>::get_or_init_slow::<<std::sync::mpmc::context::Context>::with::CONTEXT::__rust_std_internal_init_fn>
-<std::sync::mpmc::context::Context>::new
-<std::sync::mpmc::list::Channel<lsp_server::msg::Request>>::recv::{closure#1}
-<std::sync::mpmc::waker::SyncWaker>::register
-<serde_json::read::SliceRead>::skip_to_escape_slow
-<str as serde_json::value::index::Index>::index_into
-<std::sys::pal::unix::sync::mutex::Mutex>::lock
-<hashbrown::raw::RawTable<(alloc::string::String, sspur::lsp::Doc)>>::reserve_rehash::<hashbrown::map::make_hasher<alloc::string::String, sspur::lsp::Doc, std::hash::random::RandomState>::{closure#0}>
-<std::sync::mpmc::waker::SyncWaker>::notify
-<alloc::collections::btree::set::BTreeSet<alloc::string::String> as core::convert::From<[alloc::string::String; 1]>>::from
-sspur::lsp::handle
-<sspur::lsp::State>::doc
-core::ptr::drop_glue::<lsp_server::msg::Notification>
-core::ptr::drop_glue::<crossbeam_channel::channel::Sender<lsp_server::msg::Message>>
-<std::sync::mpmc::waker::SyncWaker>::disconnect
-<crossbeam_channel::flavors::zero::Channel<lsp_server::msg::Message>>::disconnect
-<sspur::lsp::State>::env
-<std::sync::mpmc::waker::SyncWaker>::unregister
-core::ptr::drop_glue::<crossbeam_channel::waker::Waker>
-sspur::lsp::load_doc
-<std::thread::lifecycle::JoinInner<core::result::Result<(), core::io::error::Error>>>::join
-std::sys::thread_local::native::lazy::destroy::<core::cell::Cell<core::option::Option<crossbeam_channel::context::Context>>>
-<alloc::sync::Arc<crossbeam_channel::context::Inner>>::drop_slow
-<alloc::sync::Arc<std::thread::lifecycle::Packet<core::result::Result<(), core::io::error::Error>>>>::drop_slow
-sspur::lsp::exports
-<sspur::lsp::Lines>::new
-<sspur::lsp::Lines>::byte
-sspur_ide::u16_of
-sspur_ide::hover
-sspur::lsp::shown
-core::ptr::drop_glue::<sspur_ide::Ctx>
-core::ptr::drop_glue::<sspur_store::pkg::Env>
-core::ptr::drop_glue::<alloc::boxed::Box<std::sync::mpmc::counter::Counter<std::sync::mpmc::list::Channel<lsp_server::msg::Request>>>>
-<alloc::sync::Arc<std::thread::lifecycle::Packet<()>>>::drop_slow
-sspur_ide::diags_json
-<hashbrown::raw::RawTable<(alloc::string::String, alloc::sync::Arc<sspur_ide::Analysis>)>>::reserve_rehash::<hashbrown::map::make_hasher<alloc::string::String, alloc::sync::Arc<sspur_ide::Analysis>, std::hash::random::RandomState>::{closure#0}>
-sspur::lsp::publish
-core::ptr::drop_glue::<alloc::vec::Vec<serde_json::value::Value>>
-<hashbrown::map::HashMap<alloc::string::String, sspur::lsp::Checked, std::hash::random::RandomState>>::insert
 <alloc::sync::Arc<sspur::lsp::State>>::drop_slow
 <alloc::sync::Arc<sspur_ide::Analysis>>::drop_slow
 core::ptr::drop_glue::<alloc::vec::Vec<sspur_check::Diag>>
 core::ptr::drop_glue::<alloc::collections::btree::set::BTreeSet<alloc::string::String>>
-core::ptr::drop_glue::<std::sync::mpsc::Receiver<alloc::string::String>>
 core::ptr::drop_glue::<crossbeam_channel::channel::Receiver<lsp_server::msg::Message>>
+core::ptr::drop_glue::<std::sync::mpsc::Receiver<alloc::string::String>>
 core::ptr::drop_glue::<alloc::boxed::Box<std::sync::mpmc::counter::Counter<std::sync::mpmc::list::Channel<alloc::string::String>>>>
-# test: 566
+# test: 567
 sspur::native_interp
 <alloc::raw_vec::RawVec<sspur_syntax::ast::TestDef>>::grow_one
 <hashbrown::map::HashMap<(u32, u32), (), std::hash::random::RandomState>>::insert
@@ -907,9 +908,9 @@ sspur_native::cgen::opt::profile_path
 std::sys::io::error::unix::is_interrupted
 <sspur_native::cgen::opt::Opt>::methodize
 <sspur_syntax::ast::ExprKind as core::clone::Clone>::clone
+<sspur_native::cgen::opt::Opt>::ty
 sspur_native::cgen::opt::map_stmt
 <sspur_native::cgen::opt::Opt>::methodize::{closure#0}
-<sspur_native::cgen::opt::Opt>::ty
 <hashbrown::map::HashMap<(u32, u32, u8), sspur_check::types::Type, std::hash::random::RandomState>>::insert
 sspur_syntax::visit::walk::<sspur_native::cgen::opt::any_node::{closure#0}>
 sspur_native::cgen::opt::eligible_fn::{closure#0}
@@ -1044,32 +1045,32 @@ sspur_syntax::visit::walk::<sspur_native::cgen::drops::has_return::{closure#0}>
 <hashbrown::raw::RawTable<((alloc::string::String, usize), ())>>::reserve_rehash::<hashbrown::map::make_hasher<(alloc::string::String, usize), (), std::hash::random::RandomState>::{closure#0}>
 <std::hash::random::RandomState as core::hash::BuildHasher>::hash_one::<&(alloc::string::String, usize)>
 <sspur_native::cgen::Cx>::rc_fresh
+sspur_native::cgen::drops::bind_names
+<sspur_native::cgen::Cx>::global_fn
+<sspur_native::cgen::Cx>::lookup
+<sspur_native::cgen::Cx>::fn_def
 <sspur_native::cgen::Cx>::rc_reads
 sspur_syntax::visit::walk::<sspur_native::cgen::stmt_mentions::{closure#0}>
+<alloc::vec::Vec<&sspur_syntax::ast::Expr> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<&sspur_syntax::ast::Expr, core::slice::iter::Iter<sspur_syntax::ast::Expr>>>::from_iter
+<sspur_native::cgen::Cx>::call_reads
+<hashbrown::map::HashMap<(alloc::string::String, usize), (), std::hash::random::RandomState>>::contains_key::<(alloc::string::String, usize)>
 sspur_syntax::visit::walk::<sspur_native::cgen::drops::assigns::{closure#0}>
-<sspur_native::cgen::Cx>::rc_reads::{closure#7}
 <sspur_native::cgen::Cx>::fresh_method
 <sspur_native::cgen::Cx>::ty
 sspur_native::cgen::subst_map
 sspur_native::cgen::has_vars
-sspur_native::cgen::drops::bind_names
 <sspur_native::cgen::Cx>::rc_reads_stmts
+<sspur_native::cgen::Cx>::builtin_reader
+sspur_native::cgen::elem
+<sspur_native::cgen::Cx>::user_call
 <sspur_native::cgen::Cx>::rc_reads::{closure#4}
 <core::slice::iter::Iter<sspur_syntax::ast::Expr> as core::iter::traits::iterator::Iterator>::try_fold::<(), <core::iter::adapters::enumerate::Enumerate<_> as core::iter::traits::iterator::Iterator>::try_fold::enumerate<&sspur_syntax::ast::Expr, (), core::ops::control_flow::ControlFlow<()>, core::iter::traits::iterator::Iterator::all::check<(usize, &sspur_syntax::ast::Expr), <sspur_native::cgen::Cx>::rc_reads::{closure#6}>::{closure#0}>::{closure#0}, core::ops::control_flow::ControlFlow<()>>
-<sspur_native::cgen::Cx>::global_fn
-<sspur_native::cgen::Cx>::lookup
-<sspur_native::cgen::Cx>::fn_def
-<alloc::vec::Vec<&sspur_syntax::ast::Expr> as alloc::vec::spec_from_iter_nested::SpecFromIterNested<&sspur_syntax::ast::Expr, core::slice::iter::Iter<sspur_syntax::ast::Expr>>>::from_iter
-<sspur_native::cgen::Cx>::call_reads
-<hashbrown::map::HashMap<(alloc::string::String, usize), (), std::hash::random::RandomState>>::contains_key::<(alloc::string::String, usize)>
-<sspur_native::cgen::Cx>::user_call
-sspur_native::cgen::elem
-<sspur_check::types::Type as core::fmt::Display>::fmt
-<&sspur_check::types::Type as core::fmt::Display>::fmt
-<sspur_native::cgen::Cx>::builtin_reader
+<sspur_native::cgen::Cx>::rc_reads::{closure#7}
 <sspur_native::nval::Layouts>::record_fields
 core::ptr::drop_glue::<core::option::Option<alloc::vec::Vec<(alloc::string::String, sspur_check::types::Type)>>>
 core::ptr::drop_glue::<core::result::Result<sspur_check::types::Type, alloc::string::String>>
+<sspur_check::types::Type as core::fmt::Display>::fmt
+<&sspur_check::types::Type as core::fmt::Display>::fmt
 <core::slice::iter::Iter<sspur_syntax::ast::Stmt> as core::iter::traits::iterator::Iterator>::rposition::<<sspur_native::cgen::Cx>::rc_fresh::{closure#1}>
 <sspur_native::cgen::Cx>::rc_plan_in
 <sspur_native::cgen::Cx>::snapshot
@@ -1185,6 +1186,7 @@ sspur_native::cgen::prove::plain_var
 <sspur_native::cgen::Cx>::rc_temp
 <hashbrown::map::HashMap<usize, alloc::string::String, std::hash::random::RandomState>>::contains_key::<usize>
 <sspur_native::cgen::Cx>::std
+<core::str::pattern::StrSearcher as core::str::pattern::Searcher>::next_match
 sspur_native::cgen::stdlib::is_std
 <sspur_native::cgen::Cx>::list_of_len
 <sspur_native::cgen::Cx>::str_method
@@ -1403,8 +1405,8 @@ sspur_eval::pat_rebinds
 <sspur_eval::Interp>::is_last_use
 <sspur_eval::lastuse::LastUse>::func
 sspur_eval::lastuse::nested
-sspur_eval::lastuse::scan
 sspur_eval::lastuse::stmt_exprs
+sspur_eval::lastuse::scan
 <alloc::raw_vec::RawVec<(alloc::vec::Vec<alloc::string::String>, &sspur_syntax::ast::Expr, bool)>>::grow_one
 <sspur_eval::lastuse::Fx>::reads
 <sspur_eval::lastuse::Fx>::expr
