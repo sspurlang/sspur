@@ -1,0 +1,12 @@
+fn f(a: Int, b: Int) -> Str
+= match a
+  | 0 => "zero"
+  | n => match b
+      | 0 => "b0" // b is zero
+  | _ => "rest"
+
+fn main() -> Unit ! log
+= do
+  log(f(0, 0))
+  log(f(1, 0))
+  log(f(1, 1))

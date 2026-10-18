@@ -24,6 +24,7 @@ Everything SSPUR does goes through one binary, `sspur`. This is its usage text, 
 | Bare metal and GPU | `sspur build --target riscv64-qemu\|aarch64-qemu\|thumbv7em-mps2 FILE`, `sspur gpu FILE --emit metal\|opencl\|spirv\|ptx` |
 | Services | `sspur deploy plan`, `local`, `migrate`, `replay`, `swap`, `promote`, `rollback`, `backfill`, `status` |
 | Many agents and replicas | `sspur sync serve`, `push`, `pull`, `status`, `resolve` |
+| Move code from 0.14 to 1.0 | `sspur fix [FILE\|DIR...] [--check]` (see [Migrating to 1.0](../get-started/migrating-to-1.0.md)) |
 
 ## Flags the usage text leaves out
 
@@ -44,6 +45,10 @@ These are for working on SSPUR itself or for scripts, so the usage text doesn't 
 ## Starting a project
 
 `sspur new web-app NAME` writes a new directory `NAME` (which must not exist or be empty; its last component is the package name, so `notes` or `my_notes`) with SSPUR's reference application, a notes service with accounts: `main.ssp` with the routes and handlers, module packages for the data types, SQLite storage, accounts and HTML views, three reusable packages, tests that `sspur run tests/run.ssp` runs in both tiers, a backup tool, a systemd unit and a Caddyfile, and a README that covers running, testing, debugging, configuring, backups and deploying. The template is built into `sspur`, so nothing is downloaded. `sspur new --list` lists the templates.
+
+## Migrating from 0.14
+
+`sspur fix` takes files or directories (all the `.ssp` files under them; with none, the package the current directory is in) and rewrites code written for 0.14 so that 1.0 reads it as 0.14 did: string literals whose braces or escapes changed meaning, arms that 0.14 gave to a nested `match` or `catch`, and binding annotations that 0.14 ignored and that don't hold. It edits only those spans, so comments and layout stay, and running it again changes nothing. It also lists, as `check:` lines, the places whose meaning changed and that it can't rewrite: `==` through a hand-written `Eq` inside an `Opt`, `List`, `Res`, tuple or derived type, `round floor ceil trunc` on an `F64`, and comparisons with `0.0`. `--check` writes nothing and exits with 1 if it would rewrite something. [Migrating to 1.0](../get-started/migrating-to-1.0.md) has each change.
 
 ## Execution tiers
 

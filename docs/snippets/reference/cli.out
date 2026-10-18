@@ -20,6 +20,7 @@ usage:
   sspur export-c file.ssp [-o libfoo] [--shared] [--prefix P]  build a C library and header from the C-compatible functions
   add --json for machine output (apply, edit, q, check)
   sspur check|run|test|fuzz|verify|hash|fmt|native [file.ssp] [--json] [--cases N] [--seed N] [--edge] [--write] [--full]
+  sspur fix [file.ssp|dir...] [--check]  rewrite code written for 0.14 so 1.0 reads it the same, and list what to check (--check writes nothing, exit 1 if it would rewrite)
   check also lists up to 3 candidates for each typed hole, run against the tests and contracts (--fill-ms N per hole, default 400; --no-fill skips them)
   sspur fill [file.ssp] [?hole|fn] [--apply] [--all] [--json] [--fill-ms N]  the best expression for each typed hole; --apply writes it in
   sspur suggest [file.ssp] [fn] [--apply] [--json] [--cases N]  pre and post clauses that held on every test-derived and fuzzed run; --apply adds them

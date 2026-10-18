@@ -1,0 +1,13 @@
+type E = | A | B
+
+fn g(n: Int) -> Str ! fail[E]
+= if n == 0 then raise A else if n == 1 then raise B else n.str
+
+fn h(n: Int) -> Str ! fail[E]
+= catch g(n)
+  | A => catch g(n + 1)
+      | A => "inner A"
+  | B => "B"
+
+fn main() -> Unit ! log
+= log(catch h(0) | _ => "escaped")

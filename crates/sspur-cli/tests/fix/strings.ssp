@@ -1,0 +1,28 @@
+fn kind(s: Str) -> Str
+= match s
+  | "a{x}" => "braces"
+  | _ => "other"
+
+fn main() -> Unit ! log
+= do
+  x = 5
+  log("a{3}")
+  log("^a{2,4}$")
+  log("\\{x}")
+  log("{}")
+  log("p{-3}q")
+  log("f{1.5}g")
+  log("e{1.0e3}g")
+  log("s{"lit"}t")
+  log("v{x}w")
+  log("c{ x }d")
+  log(".a{display:grid}")
+  log("{\"k\": 1}")
+  log("tab\there{x}")
+  s = "a{b"
+  log("{" + "z" + "}")
+  log("{true}")
+  log("q{"a\"b"}")
+  t = ") or t.contains("
+  log((t.contains("{") or t.contains("}")).str)
+  log(kind("a{x}"))

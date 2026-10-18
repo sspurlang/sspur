@@ -1,0 +1,10 @@
+fn main() -> Unit ! log
+= do
+  // 0.14 dropped these annotations without checking them.
+  x: I32 = 2147483647
+  log((x + 1).str)
+  var total: F64 = 3
+  total := total + 1
+  log(total.str)
+  ok: List[Int] = [1, 2]
+  log(ok.str)

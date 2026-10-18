@@ -3,6 +3,7 @@ mod bind;
 mod debugger;
 mod deploy;
 mod fill;
+mod fix;
 mod genfuzz;
 #[cfg(feature = "lsp")]
 mod lsp;
@@ -50,6 +51,7 @@ const USAGE: &str = "usage:
   sspur export-c file.ssp [-o libfoo] [--shared] [--prefix P]  build a C library and header from the C-compatible functions
   add --json for machine output (apply, edit, q, check)
   sspur check|run|test|fuzz|verify|hash|fmt|native [file.ssp] [--json] [--cases N] [--seed N] [--edge] [--write] [--full]
+  sspur fix [file.ssp|dir...] [--check]  rewrite code written for 0.14 so 1.0 reads it the same, and list what to check (--check writes nothing, exit 1 if it would rewrite)
   check also lists up to 3 candidates for each typed hole, run against the tests and contracts (--fill-ms N per hole, default 400; --no-fill skips them)
   sspur fill [file.ssp] [?hole|fn] [--apply] [--all] [--json] [--fill-ms N]  the best expression for each typed hole; --apply writes it in
   sspur suggest [file.ssp] [fn] [--apply] [--json] [--cases N]  pre and post clauses that held on every test-derived and fuzzed run; --apply adds them
@@ -248,6 +250,7 @@ fn real_main() -> ExitCode {
         }
         "debug-init" => debugger::init(args.has("--install")),
         "fill" => fill::fill_cmd(&args),
+        "fix" => fix::run(&args.pos[1..], args.has("--check")),
         "suggest" => fill::suggest_cmd(&args),
         "deploy" => deploy::run(&args.pos[1..], &args.flags),
         "sync" => sync::run(&args.pos[1..], args.val("--port").map(String::as_str), args.val("--max").and_then(|m| m.parse().ok()), args.val("--agent").map_or("sync", String::as_str), args.has("--json")),

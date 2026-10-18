@@ -11,6 +11,7 @@
 - [SSPUR for AI agents](get-started/agents.md)
 - [Installation](get-started/installation.md)
 - [Editor setup](get-started/editors.md)
+- [Migrating to 1.0](get-started/migrating-to-1.0.md)
 
 # Handbook
 

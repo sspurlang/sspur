@@ -1,0 +1,7 @@
+fn as_int(f: F64) -> Opt[Int]
+= if f == f.floor.to_f64 and f.abs < 9.2e18 then some(f.floor) else none
+
+fn main() -> Unit ! log
+= do
+  z = -1.0 * 0.0
+  log("{as_int(3.0)} {as_int(1.0e300)} {z < 0.0}")

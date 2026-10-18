@@ -1,0 +1,60 @@
+// ANCHOR: check
+$ sspur fix --check strings.ssp catch.ssp annotations.ssp eq.ssp floats.ssp
+strings.ssp:4:7 would fix: string kept as 0.14 read it: "a{3}" -> "a{(3)}"
+strings.ssp:6:19 would fix: string kept as 0.14 read it: "{") or s.contains("}" -> "{(") or s.contains(")}"; 1.0 ends the string at column 21, 0.14 ran it on, which was probably not meant
+catch.ssp:10:3 would fix: in 0.14 this arm and the ones after it belonged to the match on line 8; indented them under its arms, so 1.0 reads them the same
+annotations.ssp:3:4 would fix: 0.14 ignored the annotation 'I32', which doesn't hold; removed it, as 1.0 checks it
+eq.ssp:10:26 check: == on Opt[Key] compares the Key inside with its impl Eq, where 0.14 compared it structurally
+eq.ssp:10:43 check: == on List[Key] compares the Key inside with its impl Eq, where 0.14 compared it structurally
+floats.ssp:2:12 check: .floor traps on NaN, an infinity or a result outside Int, where 0.14 gave 0 or the Int limit; if the value can be one, check the range first (x.abs < 9.2e18) or use .checked_floor, which gives Opt[Int]
+floats.ssp:2:56 check: .floor traps on NaN, an infinity or a result outside Int, where 0.14 gave 0 or the Int limit; if the value can be one, check the range first (x.abs < 9.2e18) or use .checked_floor, which gives Opt[Int]
+floats.ssp:7:43 check: '<' with a zero: 1.0 has -0.0 == 0.0, so -0.0 < 0.0 is false and -0.0 >= 0.0 true, the other way from 0.14; check this if the value can be -0.0
+fix: would rewrite 4 places in 3 of 5 files; 5 places to check
+// ANCHOR_END: check
+// ANCHOR: fix
+$ sspur fix strings.ssp catch.ssp annotations.ssp eq.ssp floats.ssp
+...
+fix: rewrote 4 places in 3 of 5 files; 5 places to check
+// ANCHOR_END: fix
+$ cat strings.ssp
+// ANCHOR: strings
+fn main() -> Unit ! log
+= do
+  s = "a{b"
+  log("a{(3)}")
+  log("/users/{s}")
+  log((s.contains("{(") or s.contains(")}")).str)
+// ANCHOR_END: strings
+$ cat catch.ssp
+// ANCHOR: catch
+type E = | A | B
+
+fn g(n: Int) -> Str ! fail[E]
+= if n == 0 then raise A else if n == 1 then raise B else n.str
+
+fn h(n: Int) -> Str ! fail[E]
+= catch g(n)
+  | A => catch g(n + 1)
+      | A => "inner A"
+      | B => "B"
+
+fn main() -> Unit ! log
+= log(catch h(0) | _ => "escaped")
+// ANCHOR_END: catch
+$ cat annotations.ssp
+// ANCHOR: annotations
+fn main() -> Unit ! log
+= do
+  x = 2147483647 // 0.14 ignored the annotation
+  log((x + 1).str)
+// ANCHOR_END: annotations
+$ sspur run strings.ssp
+a3
+/users/a{b
+false
+$ sspur run catch.ssp
+B
+$ sspur run annotations.ssp
+2147483648
+$ sspur run floats_fixed.ssp
+some(3) none

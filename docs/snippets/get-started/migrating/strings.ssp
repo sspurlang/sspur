@@ -1,0 +1,6 @@
+fn main() -> Unit ! log
+= do
+  s = "a{b"
+  log("a{3}")
+  log("/users/{s}")
+  log((s.contains("{") or s.contains("}")).str)

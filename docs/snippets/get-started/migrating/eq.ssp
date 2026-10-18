@@ -1,0 +1,10 @@
+type Key = {id: Int, note: Str}
+
+impl Eq for Key
+  fn eq(a: Self, b: Self) -> Bool = a.id == b.id
+
+fn main() -> Unit ! log
+= do
+  a = Key{id: 1, note: "x"}
+  b = Key{id: 1, note: "y"}
+  log("{a == b} {some(a) == some(b)} {[a] == [b]}")
