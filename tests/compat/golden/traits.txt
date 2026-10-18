@@ -1,0 +1,162 @@
+# programs/traits.ssp: frozen by the 1.x compatibility promise (docs/reference/stability.md)
+== canonical
+blake3 5c80d64bf5698bf8929ad4e391052b75fed6929dbc17a1a63210fa5867b19c55
+== hashes
+#oln7henh7mxbidxcxuokh5pmulm6zq54uotaw7d6xsbvhj73vzaq  Shape
+#k2zlp6wzrjcbwudria334egb6lebxnf7oydiyoouzct5y7lliegq  Announce
+#bs5a6mkt7i345tpwepjusqwatvnvvzdgfrloxbl6ezbgwkcsqaga  Circle
+#asy7hlusq4j6u5ppce4i3avvx57xvcbkyprc52fho77o34el2zmq  Rect
+#fmzgnbakmul3cfyrwfea3wcykm55sjnrarejhjkschuu7u6bmgqq  Box
+#fyvbzapzj6bp4kqhcjnzx7k3rl5hzvg5wnqrssyn6zw2ngkkr4lq  Cell
+#kbt6e6ehtawqs2vzjrrlu7jwa73xbtrqaii2ifkclzsuacg7icfq  impl Shape for Circle
+#ddu7zgq3ijbcdjfpjhx2g6diy7f3hic3by3kxyt4rnjxt2scbpjq  impl Shape for Rect
+#et6o2v3vpvx5ov2vjorefnq7cyagha5uf2lngsuhc2f5fye7kuxa  impl Announce for Rect
+#o752yjtfs4eapauj263fg5znrenlmrjirmgs2tkp44og6aontpxq  impl Show for Box
+#remdrl7esedazbkigzzllxc5cup443v6clwujdsaadrrvipumbca  impl Show for Cell
+#xunsz3p6zidr6elbdr2m5ryvb4aystsbgrmmqjy52egb4hpjoasa  grid
+#h523prchkxfkvnln4nyu6n5f2vvh3hxtbl3n6jttnzgf7whuqb3q  loud
+#jz7pvkio2cqpczoj4ouoenjdp4e3mpuhuvzlds3qkw2dz5qdkhzq  areas
+#e3754pw757a2addxwjgumsmee4sierkziwuczdyfrigqjidxq43q  default_method
+#n6l5aj2m67zfxu4f34jwvaknlcggwyfycg6zuzqgjrn4wfr6ib7q  overridden_default
+#tgxsvs7qb3in7mcvjs7miltxnbmbht3fcnqdsk5vn4kxrxcppvma  call_form
+#zl55vlngxpcfeplnsoo6if3a7gresgaei35ipjtqfd5wkozfnvnq  generic_impl
+#opxeliqklgatxrpx3pny6d4w72phfsvkalwmetppswshlqdkg3ea  builtin_show
+#5whcb24tholyoseczu3cytxa4fiygms67cv2rhrnz5b4ba7w4t2q  sum_impl
+#76lftt6bvtlesuzflxj3jf7wpcjn3rhbtqrzaguo44nwiprw4fja  effectful_method
+#s6chyvssxbvsqeac6qto5m3p3xlqxcecjehqcdwcnwd73y2cmmxa  zero_arg_field_form
+#oik3g5odiknauphjlbzarhobnti55zezvaerbmska37wne6aue7a  method_values
+#nmu4pbvj7xs2dqvf3sxmgjgcnli6ff5syfqg2xpgfmjxaddmfdoq  Score
+#q22g3bteuu3tbht3kg5ekessl56viriceggkvobff454ankxznba  Player
+#wg6p2bubrmigk2jb22pwwb663ng4ysuxzho2amswr6yjfzffr2dq  Team
+#d734elmgpz6a3ix65csyzf5j6j3d7cidibivqisgdph7nt6u2yzq  impl Score for Player
+#7dedye66au5ie2lrub6itlhqkqycyrqxs5w4s6nfs2i42z3r42rq  impl Score for Team
+#xaaagtirgabdq2tlcqay6tea2okaqfgmbh7ebfrsodd7kzgtsvxq  max_of
+#2ld2iwnyp6uj45gucpovwpjp7yuct63imcenzzut62j27rq5bwla  best
+#ng7lfhyozpn4b5g5g3eijzromjm5envfthrfxkaqb3aqbndjad7a  label
+#fmi37b2z2snfc4xfvktzmf6pxuiasy5rbypsn3jb4chhqp4vnqcq  all_shown
+#wfkq5w5kxdvv3tj3jmurzzgcucgb5o3e6pk7clr33l5zrrxdpjeq  each_score
+#fitogpw3qmyzql3qzk7bj7uulujzvf55mi3bjnccmfbpwjisoa7a  counted
+#wsqdrgw227lz2lr3ykks5wdg7aubz5ck263lb7w3i6bn3wferhnq  show_it
+#kifi2nczwboigtt4pt25zr6khxnntmrosuj3o6227ghj3hwdo3iq  shout
+#vyb2rj4lwih4xzq5vpblo7pfkckb6afr4g7hgigdwhdyv5lrycka  run_scores
+#5ot4cbm5xiolutw5gwlz3wfgunvxnio7dcn7agaoykdmg3qphcfa  best_player
+#yrmr2oyjf2xxmnljwcej466avjcphj2maofsesnawoy6wmssr32a  best_team
+#a76z5r5t5oqxyqwzgiydmckx2pacjcwsmpk7ra4bk4bw66uf5aza  multiple_bounds
+#5fjxaz7ux2i36plvnn2i47d3ounnys3c2hjk4atkefgkzy6imgga  lambda_in_generic
+#bdxkz2wzefy75yt7uazioazeci4jq5oawnkpzu6sjx4cjmvtbjdq  as_value
+#umgtyd55krjs76xod5gvfm5bm43ajnrluk4pvzk75vevxbfyov3a  method_sugar
+#mso4hf67g2yhxtnapim3kpp2b2acois3rxcwmrznpgvkefp2ltrq  empty_list_defaults
+#pufdittcemswlxqetpngsz5kj37lo7yiy5ctglm2z6cdjr3xseca  nested
+#yppxb7vsxj3cz56ve2vm53w34yasf5eolr3mmlcx2jndjppn5dwq  tuples
+#gaikpotnejxrmvnxncwnba7yikuthcsafl5cm22s2rrj7chvtisq  eq_bound
+#qcmu5oepw5prlitjwhgemiejnj3v473nsjossvymhwzfr436lgma  effect_row
+#ipsnjxeu7li7tvzv5vvicrk3eyj777u6b7dyinkxc3rbmcaiqe3q  Vec2
+#ga2oo2t5x7icislwa4656lzsjvzslicjy45tpz6ykuxfwf6mys7a  Money
+#oxrwvwrecseay44tsuchwsr7o63btfrrhcssglpz6ytozmhib36a  Frac
+#nhlwxgpykfkqvmp6xdwcrkbltjppat2avii4cxzd7nw4alrw4fea  Row
+#wvpz54y5g7t3t4blw3jl6dzx5z3y7ugevmzxsarvvjnkrfl2mg3a  impl Add for Vec2
+#d2s42xfstmue4uvdjph6kn3jthumd5kbve53spxzb6dpp4cembha  impl Sub for Vec2
+#3augvnfkoxvsam2hyjyum5z6bhdwayvcsi6reudy3xydtwtnl5za  impl Mul for Vec2
+#2ncgjnl7qlose53b2giubqqnfwjnydnidz6erdbwc2wvacfdlmza  impl Neg for Vec2
+#u7uwqol4q23plqdpwjdzdhn2wd2gxw6vndrqmkrprdnhwwkrmbba  impl Add for Money
+#kn3q57tlpo4xvymio7wwvxmvsdjtma6ydvhws6bf4qvxeqdrfgya  impl Div for Money
+#pn7rwwycnl2nstf357zyevrabz2yjolb643qk76wxt2fhgu6x6cq  impl Eq for Frac
+#fa7f7b7yim7x67jusmald4rfbj6r27zmvvi5iawrr6gnos3arapq  impl Ord for Frac
+#h6tgfisnvvzi53z2l7b2dg3ev4awkcfu6hiodv3fv7dxvbf34wcq  impl Mul for Frac
+#cldqm54sgegl2yfec7xhcvd2nhdfepxqttws2ktxm7d3cvi2wwea  impl Index for Row
+#mvou4q6lmd5vpupdskhce2cnzilzun6fdidtdiypsbdunqs5r54a  sum_all
+#pciwwaxjuawbyqn2xytvfzz5d4s7at4deeobeoszhw3uogn3bcea  smallest
+#efgmqrc65mfvsnh6gd2jpdhn2g2s76bfmbqys7vkpkc7w6eg46oq  same_all
+#37i7aqis5gb26kj3i67negjragprlm4f6cjkayscg2zici6avfza  at
+#tjytbxqff4zjqh3rlzej5irwqiqwm74vhhmsfsbtkcb5sqztlpvq  negate_all
+#nxv4khx5b4g3airhgptkooe5nesh34pbd4giafyita6biqgyf5tq  third
+#dxbexwz6heln2eqkog3yfbjn7r67e7dce5sltqbtddkgewdrbf3a  vec_ops
+#j3nbmck7s5jgcifjn3yjd3ueqq3j7u3pdqrmum6ac2ss65crooda  vec_mul
+#6nyljzx5qik5kjzbrjnqdkxjwt3gp3x25wjv66aip2lysevfgyga  vec_neg
+#fh5hcrpnx3d3jc755a5igvb5drvkorqo5wxbxguook5fyp5fuo5q  money_sum
+#ypl7qij43gvkwc5wqghxtzrkczf3oea5mgrnmmf2lftrvqb6g4ba  money_div
+#lhuampdtosk77dja6gnjum4jctbluygqv73czt6zda6cfegnqgaq  int_sum
+#inlel73vh3aaz4ebq3cxenithtfixgafdt446fy7rfopsowutrza  frac_eq
+#mlmjpopwbzp3mvfdw2uut6cl557kx2q4dxeba3dbagotzulrz5sq  frac_ord
+#3nugzrpc7m4qfhqch47vqjcztwtqdejyay5e6gckfi3jp7ypfuea  frac_min
+#xrawwlvwxzh5yxbnmyaqubzykofthgjflaljqif23ufhz4lncuea  frac_mul
+#ra6oxrtn7wxu4ptwpfjedago5fwaxhjvporsu6i5nffc5w4m5baa  generic_eq_uses_impl
+#usnbe7csybsdalmuxxm6f2oauliphab32s2vvmwoylecyywaqbhq  generic_eq_builtin
+#vs6nky6zjcqac63ukkxguk37cclsyuwmnqvprzvk5yhh53us336a  index_impl
+#j6eiegflehawstih4jds727mgfs4dsqv5hmqqjescunczir2f7eq  neg_generic
+#zdkgtpsiswkve6ibnmpdzn5cvhdfrqhmnbvjp7qrrubbafypvvoa  builtin_list_eq_uses_the_element_impl
+#5xernrewyyyclrgfdob3zr63jdi2klkepvexqxsaoglikqfr2kgq  Point
+#zz46amqmn7k4f2i4qcpypflxqbbwnnzcsbb7jl2ke33lkwkfuj6q  Suit
+#guyhz2b3hedzlflvcuem53nj62zhyrumf3f7q7qomw3l27pzfi6a  Pair
+#fskinkrtyo33hoqeymthdqbtsiu4r3yrrmun52g63264tmgybqna  Id
+#bdad6lwwgbjdmkidc564xehhupay5gegjqxts5nyytzqx5neqrta  largest
+#opsccr7bbkkk7tng3x5fzlm62f3jo7tt73hnbibnjggdhsu3oarq  distinct_hashes
+#5u7i2ifr7iz2a3burbdmpmugnqswjnsb3seumc6hve5z3a45zc2a  dump
+#ngvcs44mnwrb3wyo7hgdz7p33foydt7h26gxpmxa2gd3opnlyrcq  render
+#osxtli4iilf34l2chxf2x5kl5pbrfhapcijs5gyfw52ypafcsmla  ordered
+#ttj3lwxitxc4xcew6geeipweuhi7dcvuu4dcbtvllghvxnxpj7sa  record_ord
+#dqeviekf5mfnbakiiwyaccow3zsa6jbtlo2ft2cp5gjgge4p7zfq  record_max
+#5dicgdya7xm7kbs3wezxjejnhurokt7bk36wuih3p7q2grv3kb4q  record_show
+#qoqbksvwgkvwkjpv4vtn3gwz25eaouz253cnugwmj4pf3xishlva  record_hash
+#wrc5m7ssxb6fhuk5xe6q3hzydu6btwrws4xzk3rkoah3c5alrrpa  record_json
+#7nhy7lrxz27wgplc6fev6fgzizcb7az2i23beyl5h36qiaj5spdq  sum_compare
+#h5xl5qcdzzr7zi4dbysdw6k4iai6c34y2ogvpnxtvqimomhz6cyq  sum_show
+#pgrsuqi672mlkxl46pddrkkd5fig3sk7vnnsxvlyaonu3nst4nra  generic_derive
+#af6wrsusny6fg55e4cuqw5duyrvlm5j43suyj53b3ydwr77z6djq  generic_json
+#kcnvjdph3mvke2vthl6qllkn7dgkle45fainie7gytv66ytndeiq  newtype_derive
+#6jayvnpk7cayhkgcqq5yztkn5a454vwer5kikxepl22khpqnnswa  structural_eq_unchanged
+== check
+== test interp
+pass  default_method
+pass  overridden_default
+pass  call_form
+pass  generic_impl
+pass  builtin_show
+pass  sum_impl
+pass  effectful_method
+pass  zero_arg_field_form
+pass  method_values
+pass  max_of.ex1
+pass  max_of.ex2
+pass  best_player
+pass  best_team
+pass  multiple_bounds
+pass  lambda_in_generic
+pass  as_value
+pass  method_sugar
+pass  empty_list_defaults
+pass  nested
+pass  tuples
+pass  eq_bound
+pass  effect_row
+pass  vec_ops
+pass  vec_mul
+pass  vec_neg
+pass  money_sum
+pass  money_div
+pass  int_sum
+pass  frac_eq
+pass  frac_ord
+pass  frac_min
+pass  frac_mul
+pass  generic_eq_uses_impl
+pass  generic_eq_builtin
+pass  index_impl
+pass  neg_generic
+pass  builtin_list_eq_uses_the_element_impl
+pass  record_ord
+pass  record_max
+pass  record_show
+pass  record_hash
+pass  record_json
+pass  sum_compare
+pass  sum_show
+pass  generic_derive
+pass  generic_json
+pass  newtype_derive
+pass  structural_eq_unchanged
+48 passed, 0 failed
+== test native
+(same as test interp)
+== fmt
+(the source, unchanged)

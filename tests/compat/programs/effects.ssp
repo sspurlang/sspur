@@ -1,0 +1,384 @@
+// effects
+
+type Order = {sku: Str, qty: Int}
+
+type StockErr = OutOfStock{sku: Str}
+
+effect config(key: Str) -> Int
+
+effect inventory
+  stock(sku: Str) -> Int
+  reserve(sku: Str, qty: Int)
+
+effect audit(msg: Str)
+
+fn place(o: Order) -> Int ! inventory, audit, fail[StockErr]
+= do
+  have = stock(o.sku)
+  if have < o.qty then raise OutOfStock{sku: o.sku}
+  reserve(o.sku, o.qty)
+  audit("reserved {o.qty} {o.sku}")
+  have - o.qty
+
+fn place_all(os: List[Order]) -> Int ! inventory, audit, fail[StockErr]
+= os.fold(0, (acc, o) => acc + place(o))
+
+fn in_memory(os: List[Order], start: Int) -> (Int, Int, List[Str]) ! fail[StockErr]
+= do
+  var level = start
+  var notes = []
+  left = handle do
+    handle place_all(os)
+    | stock(_) => resume(level)
+    | reserve(_, qty) => do
+      level := level - qty
+      resume()
+  | audit(m) => do
+    notes := notes.push(m)
+    resume()
+  (left, level, notes)
+
+fn checked(os: List[Order], start: Int) -> Str
+= catch "left {in_memory(os, start).1}"
+| OutOfStock{sku} => "out of {sku}"
+
+fn limit() -> Int ! config
+= config("limit") * 2 + config("floor")
+
+fn with_config(base: Int) -> Int
+= handle limit()
+| config(key) => resume(if key == "limit" then base else 1)
+
+fn first_over(xs: List[Int], cap: Int) -> Opt[Int]
+= handle do
+  for x in xs
+    audit("{x}")
+  none
+| audit(m) => if m.to_int.or(0) > cap then m.to_int else resume()
+
+fn traced(n: Int) -> Int ! log
+= handle do
+  audit("a")
+  audit("b")
+  n
+| audit(m) => do
+  log("enter {m}")
+  r = resume()
+  log("leave {m} with {r}")
+  r + 1
+| return(v) => v * 10
+
+fn noisy(x: Int) -> Int ! log
+= do
+  log("noisy {x}")
+  x * 2
+
+fn quiet(x: Int) -> (Int, List[Str])
+= do
+  var seen = []
+  r = handle noisy(x) + traced(x)
+  | log(m) => do
+    seen := seen.push(m)
+    resume()
+  (r, seen)
+
+fn stocked(os: List[Order]) -> Int ! audit, fail[StockErr]
+= handle place_all(os)
+| stock(_) => resume(100)
+| reserve(_, _) => resume()
+
+fn audit_fails(os: List[Order]) -> Int ! fail[StockErr]
+= handle stocked(os)
+| audit(m) => raise OutOfStock{sku: m}
+
+fn audit_raises(os: List[Order]) -> Str
+= catch "{audit_fails(os)}"
+| OutOfStock{sku} => sku
+
+fn main() -> Unit ! log
+= do
+  orders = [Order{sku: "a", qty: 3}, Order{sku: "b", qty: 4}]
+  log(checked(orders, 10))
+  log(checked(orders, 5))
+  log("config {with_config(20)}")
+  log("first {first_over([1, 5, 9, 12], 8)}")
+  log("traced {traced(4)}")
+  log("quiet {quiet(2)}")
+
+test mem = in_memory([Order{sku: "a", qty: 3}], 10) == (7, 7, ["reserved 3 a"])
+
+test fold_state = in_memory([Order{sku: "a", qty: 3}, Order{sku: "b", qty: 4}], 10) ==
+  (10, 3, ["reserved 3 a", "reserved 4 b"])
+
+test stock_out = checked([Order{sku: "a", qty: 3}, Order{sku: "b", qty: 4}], 5) == "out of b"
+
+test stock_ok = checked([Order{sku: "a", qty: 1}], 5) == "left 4"
+
+test config_reader = with_config(20) == 41
+
+test abort_early = first_over([1, 5, 9, 12], 8) == some(9)
+
+test abort_never = first_over([1, 2], 8) == none
+
+test after_resume = traced(4) == 42
+
+test log_captured = quiet(2) ==
+  (26, ["noisy 2", "enter a", "enter b", "leave b with 20", "leave a with 21"])
+
+test clause_error_escapes = audit_raises([Order{sku: "z", qty: 1}]) == "reserved 1 z"
+
+// handlers
+
+type Tree = Leaf | Node{left: Tree, value: Int, right: Tree}
+
+effect ask() -> Int
+
+effect tell(k: Str, v: Int)
+
+effect pick(a: Int, b: Int) -> Int
+
+fn walk(t: Tree) -> Unit ! yield[Int]
+= match t
+| Leaf => ()
+| Node{left, value, right} => do
+  walk(left)
+  yield(value)
+  walk(right)
+
+fn each[T](xs: List[T]) -> Unit ! yield[T]
+= do
+  for x in xs
+    yield(x)
+
+fn evens_of(t: Tree) -> Unit ! yield[Int]
+= do
+  for v in walk(t)
+    if v % 2 == 0 then yield(v * 10)
+
+fn build(xs: List[Int]) -> Tree
+= xs.fold(Leaf, (t, x) => Node{left: t, value: x, right: Leaf})
+
+fn sum_evens(xs: List[Int]) -> Int
+= do
+  var s = 0
+  for v in evens_of(build(xs))
+    s := s + v
+  s
+
+fn pairs(xs: List[Int]) -> List[(Int, Str)]
+= do
+  var out = []
+  for (i, s) in each(xs.enumerate.map(p => (p.0, "s{p.1}")))
+    out := out.push((i, s))
+  out
+
+fn somes(xs: List[Opt[Int]]) -> Int
+= do
+  var n = 0
+  for some(x) in each(xs)
+    n := n + x
+  n
+
+fn asker(n: Int) -> Int ! ask, tell
+= do
+  a = ask()
+  tell("a", a)
+  b = ask() * n
+  tell("b", b)
+  a + b
+
+fn layered(n: Int) -> (Int, List[Str])
+= do
+  var log2 = []
+  var k = 0
+  r = handle do
+    handle asker(n) + ask()
+    | ask() => do
+      k := k + 1
+      resume(k * 100 + ask())
+  | ask() => resume(7)
+  | tell(key, v) => do
+    log2 := log2.push("{key}={v}")
+    resume()
+  (r, log2)
+
+fn args_order() -> Int
+= handle pick(1, 2) * 10 + pick(3, 4)
+| pick(b, a) => resume(a - b)
+
+fn with_ret(n: Int) -> Str
+= handle asker(n)
+| ask() => resume(n)
+| tell(_, _) => resume()
+| return(r) => "got {r}"
+
+fn inner_gen(n: Int) -> Int
+= do
+  var total = 0
+  for x in each([1, 2, 3])
+    for y in each([10, 20])
+      total := total + x * y + n
+  total
+
+fn local_gen() -> List[Int]
+= do
+  var out = []
+  for x in do
+      yield(1)
+      yield(2)
+      for z in each([3, 4])
+        yield(z * 2)
+    out := out.push(x)
+  out
+
+fn shadow(n: Int) -> Int
+= do
+  x = 5
+  handle do
+    x = 100
+    ask() + x
+  | ask() => resume(x + n)
+
+test a = sum_evens([1, 2, 3, 4]) == 60
+
+test b = pairs([7, 8]) == [(0, "s7"), (1, "s8")]
+
+test c = somes([some(1), none, some(5)]) == 6
+
+test d = layered(2) == (828, ["a=107", "b=414"])
+
+test e = args_order() == 11
+
+test f = with_ret(3) == "got 12"
+
+test g = inner_gen(1) == 186
+
+test h = local_gen() == [1, 2, 6, 8]
+
+test i = shadow(1) == 106
+
+// generators
+
+type TreeGenerators =
+  | LeafGenerators
+  | NodeGenerators{left: TreeGenerators, value: Int, right: TreeGenerators}
+
+type ParseErr = BadNum{text: Str}
+
+fn insert(t: TreeGenerators, v: Int) -> TreeGenerators
+= match t
+| LeafGenerators => NodeGenerators{left: LeafGenerators, value: v, right: LeafGenerators}
+| NodeGenerators{left, value, right} => if v <
+  value then NodeGenerators{left: insert(left, v), value, right}
+  else NodeGenerators{left, value, right: insert(right, v)}
+
+fn walk_generators(t: TreeGenerators) -> Unit ! yield[Int]
+= match t
+| LeafGenerators => ()
+| NodeGenerators{left, value, right} => do
+  walk_generators(left)
+  yield(value)
+  walk_generators(right)
+
+fn each_generators[T](xs: List[T]) -> Unit ! yield[T]
+= do
+  for x in xs
+    yield(x)
+
+fn naturals() -> Unit ! yield[Int], div
+= do
+  var i = 0
+  while true
+    yield(i)
+    i := i + 1
+
+fn fib_upto(limit: Int) -> Unit ! yield[Int], div
+= do
+  (a, b) = (0, 1)
+  var a = a
+  var b = b
+  while a <= limit
+    yield(a)
+    (a2, b2) = (b, a + b)
+    a := a2
+    b := b2
+
+fn squares_of_odds(xs: List[Int]) -> Unit ! yield[Int]
+= do
+  for x in each_generators(xs)
+    if x % 2 == 1 then yield(x * x)
+
+fn sorted(xs: List[Int]) -> List[Int]
+= do
+  var out = []
+  for v in walk_generators(xs.fold(LeafGenerators, insert))
+    out := out.push(v)
+  out
+
+fn first_square_over(n: Int) -> Int ! div
+= do
+  for i in naturals()
+    if i * i > n then return i
+  -1
+
+fn take[T, e](n: Int, gen: () -> Unit ! yield[T], e) -> List[T] ! e
+= do
+  var out = []
+  handle gen()
+  | yield(x) => do
+    out := out.push(x)
+    if out.len >= n then () else resume()
+  out
+
+fn parse_all(xs: List[Str]) -> Unit ! yield[Int], fail[ParseErr]
+= do
+  for s in xs
+    match s.to_int
+    | some(n) => yield(n)
+    | none => raise BadNum{text: s}
+
+fn total(xs: List[Str]) -> Str
+= do
+  var sum = 0
+  r = catch do
+    for n in parse_all(xs)
+      sum := sum + n
+    "sum {sum}"
+  | BadNum{text} => "bad {text} after {sum}"
+  r
+
+fn traced_count(xs: List[Int]) -> Int ! log
+= do
+  var n = 0
+  for x in each_generators(xs)
+    log("got {x}")
+    n := n + 1
+  n
+
+fn main_generators() -> Unit ! log, div
+= do
+  log("sorted {sorted([5, 2, 8, 1, 9])}")
+  log("odd squares {take(3, () => squares_of_odds([1, 2, 3, 4, 5, 6, 7]))}")
+  log("fib {take(10, () => fib_upto(1000))}")
+  log("first {first_square_over(50)}")
+  log(total(["1", "2", "3"]))
+  log(total(["1", "x", "3"]))
+  log("count {traced_count([7, 8])}")
+
+test tree_order = sorted([5, 2, 8, 1, 9]) == [1, 2, 5, 8, 9]
+
+test generic_each = take(2, () => each_generators(["a", "b", "c"])) == ["a", "b"]
+
+test filtered = take(5, () => squares_of_odds([1, 2, 3, 4, 5])) == [1, 9, 25]
+
+test infinite = take(4, naturals) == [0, 1, 2, 3]
+
+test early_return = first_square_over(50) == 8
+
+test fib = take(100, () => fib_upto(30)) == [0, 1, 1, 2, 3, 5, 8, 13, 21]
+
+test errors_escape = total(["1", "x", "3"]) == "bad x after 1"
+
+test sums = total(["1", "2", "3"]) == "sum 6"
+
+test body_effects = traced_count([7, 8]) == 2

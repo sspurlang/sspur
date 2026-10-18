@@ -1,0 +1,12 @@
+# programs/gs_hello.ssp: frozen by the 1.x compatibility promise (docs/reference/stability.md)
+== canonical
+blake3 968a8918944389a036753c26ad450b9569869f17e7e1f54b68f169e0b5d24e2d
+== hashes
+#qb3dlg5yeyhbtf4fxqnu3k44scoyr33os6zkhivtlhfkboyqxcvq  main
+== check
+== run interp
+hello, world
+== run native
+(same as run interp)
+== fmt
+(the source, unchanged)

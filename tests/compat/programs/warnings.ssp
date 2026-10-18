@@ -1,0 +1,20 @@
+// A program that checks with warnings and runs.
+
+fn quiet(n: Int) -> Int ! log
+= n + 1
+
+fn kind(o: Opt[Int]) -> Str
+= match o
+| some(_) => "some"
+| none => "none"
+| _ => "never"
+
+fn grow(xs: List[Int]) -> List[Int]
+= do
+  xs.push(1)
+  xs
+
+fn main() -> Unit ! log
+= do
+  n = quiet(1)
+  log("{n} {kind(some(n))} {grow([0]).len}")

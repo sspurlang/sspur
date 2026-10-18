@@ -1,0 +1,961 @@
+// SSPUR Pulse shared library: context, HTTP, files, time,
+// formatting, escaping, page shell, charts, maps, RSS and ICS writers.
+
+pub type Ctx = {
+  sec: Str,
+  root: Str,
+  data: Str,
+  out: Str,
+  web: Str,
+  fixtures: Str,
+  record: Str,
+  now: Time,
+  base: Str,
+  backfill: Int,
+  force: Bool,
+  skip: Bool,
+}
+
+pub fn ctx(sec: Str) -> Ctx ! env, time
+= do
+  root = env_var("PULSE_ROOT").or("pulse")
+  t = parse_time(env_var("PULSE_NOW").or("")).or(now())
+  Ctx{
+    sec,
+    root,
+    data: env_var("PULSE_DATA").or(root + "/data"),
+    out: env_var("PULSE_OUT").or(root + "/out"),
+    web: root + "/web",
+    fixtures: env_var("PULSE_FIXTURES").or(""),
+    record: env_var("PULSE_RECORD").or(""),
+    now: t,
+    base: env_var("PULSE_BASE").or("https://sspurlang.github.io/sspur/pulse/"),
+    backfill: env_var("PULSE_BACKFILL").or("").to_int.or(6),
+    force: env_var("PULSE_FORCE").or("") == "1",
+    skip: env_var("PULSE_SKIP").or("") == "1",
+  }
+
+pub fn ua() -> Str
+= "SSPUR-Pulse/1.0 (https://github.com/sspurlang/sspur)"
+
+// HTTP
+
+fn header_pair(h: Str) -> (Str, Str)
+= match h.split_once(":")
+| some((n, v)) => (n.trim, v.trim)
+| none => (h.trim, "")
+
+fn http_once(url: Str, headers: List[Str]) -> Res[Str, Str] ! net
+= do
+  r = http.req("GET", url) with
+    headers := [("user-agent", ua())] + headers.map(header_pair),
+    timeout_ms := 60000
+  match http.send(r)
+  | err(e) => err(e.str)
+  | ok(resp) => if resp.status >= 200 and resp.status < 300 then ok(resp.body)
+    else err("HTTP {resp.status}")
+
+fn retryable(e: Str) -> Bool
+= not (e.starts_with("HTTP 4") and e != "HTTP 429")
+
+pub fn get(cx: Ctx, name: Str, url: Str, headers: List[Str]) -> Res[Str, Str] ! net, fs, time, log
+= if cx.fixtures != "" then read_file("{cx.fixtures}/{cx.sec}/{name}") else do
+  var r = http_once(url, headers)
+  for t in 1..3
+    if r is err(e) and retryable(e) then do
+      sleep_ms(2000 * t * t)
+      r := http_once(url, headers)
+  match r
+  | ok(body) => do
+    if cx.record != "" then save("{cx.record}/{cx.sec}/{name}", body)
+    ok(body)
+  | err(e) => do
+    log("{cx.sec}: GET {url} failed: {e}")
+    err(e)
+
+// Files
+
+pub fn parent(p: Str) -> Str
+= do
+  parts = p.split("/")
+  parts.take(parts.len - 1).join("/")
+
+pub fn save(p: Str, s: Str) -> Unit ! fs, log
+= do
+  made = mkdir_all(parent(p))
+  tmp = p + ".tmp"
+  w = write_file(tmp, s)
+  r = if w.is_ok then rename(tmp, p) else w
+  if r is err(e) then log("write {p}: {e}")
+
+pub fn read(p: Str) -> Opt[Str] ! fs
+= match read_file(p)
+| ok(s) => some(s)
+| err(_) => none
+
+pub fn publish(cx: Ctx, rel: Str, s: Str) -> Unit ! fs, log
+= save("{cx.out}/{rel}", s)
+
+pub fn state_path(cx: Ctx, name: Str) -> Str
+= "{cx.data}/{cx.sec}/{name}"
+
+// Lists
+
+pub fn cap[T](xs: List[T], n: Int) -> List[T]
+= xs.drop(max(0, xs.len - n))
+
+pub fn uniq_by[T](xs: List[T], key: T -> Str) -> List[T]
+= do
+  var seen = empty_set()
+  var out = []
+  for x in xs
+    k = key(x)
+    if not seen.has(k) then do
+      seen := seen.add(k)
+      out := out.push(x)
+  out
+
+test cap_keeps_tail = cap([1, 2, 3, 4], 2) == [3, 4] and cap([1], 5) == [1]
+
+test uniq_first = uniq_by(["a", "b", "a"], x => x) == ["a", "b"]
+
+// Time
+
+pub fn day(t: Time) -> Str
+= t.format("%F")
+
+pub fn day_time(d: Str) -> Time
+= parse_time(d).or(time_ms(0))
+
+pub fn short_date(t: Time) -> Str
+= "{t.format("%b")} {t.format("%d").to_int.or(0)}"
+
+pub fn hm(t: Time) -> Str
+= t.format("%H:%M")
+
+pub fn plural(n: Int, w: Str) -> Str
+= if n == 1 then "1 {w}" else "{n} {w}s"
+
+pub fn plural_of(n: Int, one: Str, many: Str) -> Str
+= if n == 1 then "1 {one}" else "{thousands(n)} {many}"
+
+pub fn ago(now: Time, t: Time) -> Str
+= do
+  s = (now.unix_ms - t.unix_ms) / 1000
+  if s < 90 then "just now"
+    else if s < 5400 then "{plural(s / 60, "minute")} ago"
+    else if s < 129600 then "{plural((s + 1800) / 3600, "hour")} ago"
+    else "{plural((s + 43200) / 86400, "day")} ago"
+
+pub fn until(now: Time, t: Time) -> Str
+= do
+  s = (t.unix_ms - now.unix_ms) / 1000
+  if s <= 0 then "now"
+    else if s < 3600 then "in {plural(max(1, s / 60), "minute")}"
+    else if s < 172800 then "in {s / 3600} h {s % 3600 / 60} min"
+    else "in {plural(s / 86400, "day")}"
+
+test ago_words = ago(time_ms(7200000), time_ms(0)) == "2 hours ago" and
+  ago(time_ms(60000), time_ms(0)) == "just now" and
+  ago(time_ms(259200000), time_ms(0)) == "3 days ago"
+
+test until_words = until(time_ms(0), time_ms(90000000)) == "in 25 h 0 min" and
+  until(time_ms(5), time_ms(0)) == "now"
+
+// Numbers
+
+pub fn f1(x: F64) -> Str
+= x.fmt(1)
+
+pub fn thousands(n: Int) -> Str
+= n.format(",")
+
+pub fn compact(x: F64) -> Str
+= do
+  a = x.abs
+  if a >= 999500.0 then "{(x / 1000000.0).fmt(if a >= 9950000.0 then 0 else 1)}M"
+    else if a >= 9950.0 then "{(x / 1000.0).fmt(0)}K"
+    else if a >= 1000.0 then "{(x / 1000.0).fmt(1)}K"
+    else if x == x.floor.to_f64 then x.floor.str
+    else x.fmt(1)
+
+pub fn signed(n: Int) -> Str
+= if n > 0 then "+{thousands(n)}" else if n < 0 then "−{thousands(-n)}" else "0"
+
+test compact_numbers = compact(1406448.0) == "1.4M" and
+  compact(25300.0) == "25K" and
+  compact(1234.0) == "1.2K" and
+  compact(42.0) == "42" and
+  compact(12000000.0) == "12M"
+
+test plurals = plural_of(3, "country", "countries") == "3 countries" and
+  plural_of(1, "launch", "launches") == "1 launch"
+
+test signed_numbers = signed(1200) == "+1,200" and signed(0) == "0"
+
+// Escaping
+
+pub fn esc(s: Str) -> Str
+= s
+  .replace("&", "&amp;")
+  .replace("<", "&lt;")
+  .replace(">", "&gt;")
+  .replace("\"", "&quot;")
+  .replace("'", "&#39;")
+
+pub fn safe_url(u: Str) -> Str
+= if u.starts_with("https://") or u.starts_with("http://") then esc(u) else "#"
+
+fn hex_byte(b: Int) -> Str
+= "%" + "0123456789ABCDEF".get(b / 16).or("0") + "0123456789ABCDEF".get(b % 16).or("0")
+
+fn unreserved(b: Int) -> Bool
+= b >= 48 and b <= 57 or
+  b >= 65 and b <= 90 or
+  b >= 97 and b <= 122 or
+  b == 45 or
+  b == 46 or
+  b == 95 or
+  b == 126
+
+pub fn url_enc(s: Str) -> Str
+= s.bytes.map(b => if unreserved(b) then from_bytes([b]).or("") else hex_byte(b)).join("")
+
+pub fn script_json(s: Str) -> Str
+= s.replace("</", "<\\/")
+
+pub fn unescape_xml(s: Str) -> Str
+= s
+  .replace("&lt;", "<")
+  .replace("&gt;", ">")
+  .replace("&quot;", "\"")
+  .replace("&apos;", "'")
+  .replace("&#39;", "'")
+  .replace("&amp;", "&")
+
+pub fn squash(s: Str) -> Str
+= s.split("\n").map(_.trim).filter(l => not l.is_empty).join(" ").replace("  ", " ")
+
+pub fn clip(s: Str, n: Int) -> Str
+= if s.len <= n then s else s.take(n - 1).trim + "…"
+
+test esc_html = esc("<a href='x'>&\"</a>") == "&lt;a href=&#39;x&#39;&gt;&amp;&quot;&lt;/a&gt;"
+
+test safe_urls = safe_url("javascript:alert(1)") == "#" and
+  safe_url("https://a.b/?q=1&r=2") == "https://a.b/?q=1&amp;r=2"
+
+test url_encoding = url_enc("a b>c/é") == "a%20b%3Ec%2F%C3%A9"
+
+test script_safe = script_json("\{\"a\":\"</script>\"}") == "\{\"a\":\"<\\/script>\"}"
+
+test xml_entities = unescape_xml("a &amp;lt; b &lt;i&gt;") == "a &lt; b <i>"
+
+test clipping = clip("hello world", 6) == "hello…" and clip("hi", 6) == "hi"
+
+// XML: a small, forgiving extractor for the elements Pulse needs.
+
+pub fn xml_blocks(s: Str, tag: Str) -> List[Str]
+= s
+  .split("<{tag}")
+  .drop(1)
+  .map(b => b.split("</{tag}>").first.or(""))
+  .filter(b => b.starts_with(">") or b.starts_with(" "))
+  .map(b => b.split_once(">").map(_.1).or(""))
+
+pub fn xml_text(s: Str, tag: Str) -> Str
+= unescape_xml(squash(xml_blocks(s, tag).first.or("").replace("<![CDATA[", "").replace("]]>", "")))
+
+pub fn xml_attrs(s: Str, tag: Str, attr: Str) -> List[Str]
+= s
+  .split("<{tag} ")
+  .drop(1)
+  .map(b => b.split(">").first.or(""))
+  .map(b => b.split("{attr}=\"").get(1).map(v => v.split("\"").first.or("")).or(""))
+  .filter(v => not v.is_empty)
+
+test xml_extract = xml_text("<e><title>A &amp; B\n  c</title></e>", "title") == "A & B c" and
+  xml_blocks("<a>1</a><ab>x</ab><a k='v'>2</a>", "a") == ["1", "2"] and
+  xml_attrs("<c term=\"cs.AI\" s=\"x\"/><c term=\"cs.LG\"/>", "c", "term") == ["cs.AI", "cs.LG"]
+
+// Sections
+
+pub type Sec = {slug: Str, name: Str, nav: Str, blurb: Str, credit: Str}
+
+pub fn sections() -> List[Sec]
+= [
+  Sec{
+    slug: "reading",
+    name: "What the world is reading",
+    nav: "Reading",
+    blurb: "The most viewed English Wikipedia articles",
+    credit: "Pageviews from the <a href='https://wikimedia.org/api/rest_v1/'>Wikimedia REST API</a>, article text CC BY-SA 4.0",
+  },
+  Sec{
+    slug: "launches",
+    name: "Space launches",
+    nav: "Launches",
+    blurb: "Every rocket heading to orbit soon",
+    credit: "Launches from <a href='https://thespacedevs.com/llapi'>The Space Devs Launch Library 2</a>; satellites from <a href='https://celestrak.org/'>CelesTrak</a>, propagated with <a href='https://github.com/shashwatak/satellite-js'>satellite.js</a> (MIT); country shapes from <a href='https://www.naturalearthdata.com/'>Natural Earth</a>, public domain",
+  },
+  Sec{
+    slug: "quakes",
+    name: "Earthquakes",
+    nav: "Quakes",
+    blurb: "Every quake the USGS recorded in the last day",
+    credit: "Quakes from the <a href='https://earthquake.usgs.gov/earthquakes/feed/'>USGS Earthquake Hazards Program</a>, public domain",
+  },
+  Sec{
+    slug: "repos",
+    name: "Fastest rising repos",
+    nav: "Repos",
+    blurb: "New GitHub projects gaining stars fastest",
+    credit: "Repositories from the <a href='https://docs.github.com/en/rest/search'>GitHub REST API</a>",
+  },
+  Sec{
+    slug: "hn",
+    name: "Hacker News time machine",
+    nav: "HN",
+    blurb: "Top stories on this date 5, 10 and 15 years ago",
+    credit: "Stories from <a href='https://hn.algolia.com/api'>Hacker News Search by Algolia</a> and <a href='https://news.ycombinator.com/'>Hacker News</a>",
+  },
+  Sec{
+    slug: "papers",
+    name: "AI papers of the day",
+    nav: "Papers",
+    blurb: "New arXiv papers in AI, language and learning",
+    credit: "Papers from the <a href='https://info.arxiv.org/help/api/'>arXiv API</a> (thank you to arXiv for use of its open access interoperability), attention from HN Algolia",
+  },
+  Sec{
+    slug: "weather",
+    name: "World weather board",
+    nav: "Weather",
+    blurb: "A hundred cities, hottest to coldest, right now",
+    credit: "Weather from <a href='https://open-meteo.com/'>Open-Meteo</a>, CC BY 4.0",
+  },
+  Sec{
+    slug: "holidays",
+    name: "Public holidays",
+    nav: "Holidays",
+    blurb: "Who is on holiday today, and what is next",
+    credit: "Holidays from <a href='https://date.nager.at/'>Nager.Date</a>, MIT licensed, and for countries it does not cover, Google public holiday calendars",
+  },
+]
+
+pub fn sec_name(slug: Str) -> Str
+= sections().find(_.slug == slug).map(_.name).or("World right now")
+
+// Icons, drawn on a 24 unit grid and stroked with currentColor.
+
+pub fn icon_path(slug: Str) -> Str
+= match slug
+| "reading" => "M12 6.5C10 5 7 4.5 3.5 5v13.5c3.5-.5 6.5 0 8.5 1.5 2-1.5 5-2 8.5-1.5V5C17 4.5 14 5 12 6.5zM12 6.5V20"
+| "launches" => "M12 2.5c3.2 2.3 4.8 6 4.2 11.2L14 16h-4l-2.2-2.3C7.2 8.5 8.8 4.8 12 2.5zM10 16l-1.5 4.5L12 19l3.5 1.5L14 16M12 8.2v.1"
+| "quakes" => "M2 12h4l2.2-5 3.3 11 3.2-15 2.8 12.5 1.8-3.5H22"
+| "repos" => "M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"
+| "hn" => "M3.5 12a8.5 8.5 0 1 0 2.6-6.1M3.5 4v4.5H8M12 7.5V12l3 2"
+| "papers" => "M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h4"
+| "weather" => "M12 3v2M12 19v2M5.6 5.6 7 7M17 17l1.4 1.4M3 12h2M19 12h2M5.6 18.4 7 17M17 7l1.4-1.4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"
+| "holidays" => "M4 6h16v14H4zM4 10h16M8 3.5V7M16 3.5V7M12 12.5l1 2.1 2.3.3-1.7 1.6.4 2.3-2-1.1-2 1.1.4-2.3-1.7-1.6 2.3-.3z"
+| "theme" => "M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"
+| "feed" => "M5 5a14 14 0 0 1 14 14M5 11a8 8 0 0 1 8 8M6 18.5v.1"
+| "cal" => "M4 6h16v14H4zM4 10h16M8 3.5V7M16 3.5V7"
+| "data" => "M8 4H6a2 2 0 0 0-2 2v4l-2 2 2 2v4a2 2 0 0 0 2 2h2M16 4h2a2 2 0 0 1 2 2v4l2 2-2 2v4a2 2 0 0 1-2 2h-2"
+| _ => "M3 12h4l3-8 4 16 3-8h4"
+
+pub fn icon(slug: Str) -> Str
+= "<svg class='ic' viewBox='0 0 24 24' aria-hidden='true' focusable='false'><path d='{icon_path(slug)}'/></svg>"
+
+// Page shell
+
+pub type Page = {
+  title: Str,
+  desc: Str,
+  h1: Str,
+  lede: Str,
+  body: Str,
+  updated: Time,
+  stale: Bool,
+  note: Str,
+  snippet: Str,
+  data: Str,
+}
+
+pub fn prefix(cx: Ctx) -> Str
+= if cx.sec == "overview" or cx.sec == "404" then "" else "../"
+
+pub fn sec_url(cx: Ctx, slug: Str) -> Str
+= if slug == "overview" then "{prefix(cx)}./" else "{prefix(cx)}{slug}/"
+
+pub fn nav(cx: Ctx) -> Str
+= do
+  home = "<a class='chip{if cx.sec == "overview" then " on" else ""}' href='{sec_url(cx, "overview")}'{if cx.sec == "overview" then " aria-current='page'" else ""}>{icon("overview")}<span>Now</span></a>"
+  links = sections().map(
+    s => "<a class='chip s-{s.slug}{if cx.sec == s.slug then " on" else ""}' href='{sec_url(cx, s.slug)}'{if cx.sec == s.slug then " aria-current='page'" else ""}>{icon(s.slug)}<span>{s.nav}</span></a>",
+  ).join("")
+  "<nav class='chips-nav' aria-label='Sections'><div class='chips-row'>{home}{links}</div></nav>"
+
+pub fn badge(cx: Ctx, updated: Time, stale: Bool) -> Str
+= "<p class='badge{if stale then " stale" else ""}'><span class='dot' aria-hidden='true'></span><span>{if stale then "Last good data, updated" else "Updated"} <time datetime='{updated.iso}' data-rel>{ago(cx.now, updated)}</time></span></p>"
+
+pub fn credit_lines(cx: Ctx) -> Str
+= do
+  ss = if cx.sec == "overview" or cx.sec == "404" then sections()
+    else sections().filter(_.slug == cx.sec)
+  ss.map(s => "<li>{s.credit}</li>").join("")
+
+pub fn footer(cx: Ctx) -> Str
+= do
+  src = if cx.sec == "overview" or
+    cx.sec == "404" then "https://github.com/sspurlang/sspur/tree/main/pulse"
+    else "https://github.com/sspurlang/sspur/tree/main/pulse/{cx.sec}"
+  "<footer class='foot'><div class='wrap'><p class='foot-lead'>Computed every 6 hours by <a href='{src}'>SSPUR programs</a>. No servers, no keys, no trackers.</p><ul class='credits'>{credit_lines(cx)}<li>Display type: Bricolage Grotesque, SIL Open Font License 1.1</li></ul><p class='foot-links'><a href='https://sspurlang.github.io/sspur/'>SSPUR docs</a><a href='https://sspurlang.github.io/sspur/play/'>Playground</a><a href='https://sspurlang.github.io/sspur/pulse-how-it-works.html'>How Pulse works</a><a href='https://github.com/sspurlang/sspur'>Source</a></p><p class='secrets'><button type='button' data-secrets aria-haspopup='dialog'>7 secrets hidden on this site. <span data-found>You've found 0.</span></button></p><p class='made'>Created by <a href='https://utkarshavardhana.github.io/' target='_blank' rel='noopener'>Utkarsha Vardhana</a></p></div></footer>"
+
+pub fn page(cx: Ctx, p: Page) -> Str ! fs
+= do
+  css = read("{cx.web}/pulse.css").or("").replace("@ASSETS@", "{prefix(cx)}assets/")
+  head_js = read("{cx.web}/head.js").or("")
+  pre = prefix(cx)
+  url = if cx.sec == "overview" then cx.base
+    else if cx.sec == "404" then "{cx.base}404.html"
+    else "{cx.base}{cx.sec}/"
+  og = "{cx.base}og/{if cx.sec == "404" then "overview" else cx.sec}.png"
+  title = if cx.sec == "overview" then p.title else "{p.title} | SSPUR Pulse"
+  head = "<!doctype html><html lang='en' class='s-{cx.sec}'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'><title>{esc(title)}</title><meta name='description' content='{esc(p.desc)}'>{if cx.sec == "404" then "<meta name='robots' content='noindex'>" else ""}<link rel='canonical' href='{esc(url)}'><meta name='theme-color' content='#f6f5f1' media='(prefers-color-scheme: light)'><meta name='theme-color' content='#0d0f14' media='(prefers-color-scheme: dark)'><meta name='color-scheme' content='light dark'><meta property='og:type' content='website'><meta property='og:site_name' content='SSPUR Pulse'><meta property='og:title' content='{esc(title)}'><meta property='og:description' content='{esc(p.desc)}'><meta property='og:url' content='{esc(url)}'><meta property='og:image' content='{esc(og)}'><meta property='og:image:width' content='1200'><meta property='og:image:height' content='630'><meta name='twitter:card' content='summary_large_image'><meta name='twitter:title' content='{esc(title)}'><meta name='twitter:description' content='{esc(p.desc)}'><meta name='twitter:image' content='{esc(og)}'><link rel='icon' href='{pre}assets/icon.svg' type='image/svg+xml'><link rel='icon' href='{pre}assets/icon-192.png' sizes='192x192' type='image/png'><link rel='apple-touch-icon' href='{pre}assets/icon-192.png'><link rel='manifest' href='{pre}manifest.webmanifest'><link rel='preload' href='{pre}assets/pulse-display.woff2' as='font' type='font/woff2' crossorigin>{if cx.sec == "overview" or cx.sec == "404" then "" else "<link rel='alternate' type='application/json' href='{pre}api/{cx.sec}.json'>"}<script>{head_js}</script><style>{css}</style><script src='{pre}assets/pulse.js' defer></script></head>"
+  top = "<a class='skip' href='#main'>Skip to content</a><header class='top'><div class='wrap top-in'><a class='logo' href='{sec_url(cx, "overview")}' aria-label='SSPUR Pulse, home'><span class='logo-mark' aria-hidden='true'>{icon("overview")}</span><span class='logo-word'>Pulse</span></a>{nav(cx)}<button class='theme' type='button' aria-label='Switch theme' title='Switch theme'><svg class='ic t-moon' viewBox='0 0 24 24' aria-hidden='true' focusable='false'><path d='{icon_path("theme")}'/></svg><svg class='ic t-sun' viewBox='0 0 24 24' aria-hidden='true' focusable='false'><path d='{icon_path("weather")}'/></svg></button></div></header>"
+  intro = "<section class='hero wrap'><p class='kicker'>{icon(cx.sec)}<span>{esc(if cx.sec == "overview" or cx.sec == "404" then "SSPUR Pulse" else sec_name(cx.sec))}</span></p><h1>{p.h1}</h1><p class='lede'>{p.lede}</p>{if cx.sec == "404" then "" else badge(cx, p.updated, p.stale)}{if p.note == "" then "" else "<p class='note'>{esc(p.note)}</p>"}</section>"
+  tpl = if p.snippet == "" then "" else "<template id='sspur-src'>{esc(p.snippet)}</template>"
+  data = if p.data == "" then ""
+    else "<script type='application/json' id='pulse-charts'>{script_json(p.data)}</script>"
+  "{head}<body>{top}<main id='main'>{intro}{p.body}</main>{footer(cx)}<div class='tip' role='status' aria-live='polite' hidden></div>{tpl}{data}</body></html>\n"
+
+// The source of one top-level definition of a section, for the "sspur" easter egg.
+pub fn snippet(cx: Ctx, name: Str) -> Str ! fs
+= do
+  src = read("{cx.root}/{cx.sec}/main.ssp").or("")
+  parts = src.split("\nfn {name}(")
+  if parts.len < 2 then "" else "fn {name}(" + parts[1].split("\n\n").first.or("")
+
+// Cards and small parts
+
+pub fn section_head(title: Str, sub: Str) -> Str
+= "<div class='sh'><h2>{title}</h2>{if sub == "" then "" else "<p>{sub}</p>"}</div>"
+
+pub fn stat(value: Str, label: Str, count: Str) -> Str
+= "<div class='stat'><p class='stat-v'>{if count == "" then value else "<span class='num' data-count='{count}'>{value}</span>"}</p><p class='stat-l'>{label}</p></div>"
+
+pub fn links_row(items: List[(Str, Str, Str)]) -> Str
+= "<p class='dl'>{items.map(i => "<a class='btn' href='{i.1}'>{icon(i.0)}<span>{i.2}</span></a>").join("")}</p>"
+
+pub fn seg(name: Str, label: Str, opts: List[(Str, Str)], cur: Str) -> Str
+= "<div class='seg ctl' role='radiogroup' aria-label='{esc(label)}' data-ctl='{name}'>{opts.map(o => "<button type='button' role='radio' aria-checked='{if o.0 == cur then "true" else "false"}' data-v='{esc(o.0)}'>{esc(o.1)}</button>").join("")}</div>"
+
+pub fn chips(name: Str, label: Str, target: Str, opts: List[(Str, Str)]) -> Str
+= chips_on(name, label, target, opts, "all")
+
+// Filter chips that start on `cur`; without JavaScript every item stays visible.
+pub fn chips_on(name: Str, label: Str, target: Str, opts: List[(Str, Str)], cur: Str) -> Str
+= "<div class='fchips ctl' role='group' aria-label='{esc(label)}' data-filter='{name}' data-target='{target}'>{opts.map(o => "<button type='button' aria-pressed='{if o.0 == cur then "true" else "false"}' data-v='{esc(o.0)}'>{esc(o.1)}</button>").join("")}</div>"
+
+// Charts. The same spec goes to the page as JSON, and pulse.js redraws it on toggles.
+
+pub type Series = {key: Str, name: Str, color: Int, values: List[Opt[F64]]}
+
+pub type Chart = {kind: Str, labels: List[Str], series: List[Series], unit: Str, digits: Int}
+
+pub type View = {key: Str, label: Str, chart: Chart}
+
+pub type Range = {key: Str, label: Str, n: Int}
+
+pub type Group = {id: Str, views: List[View], ranges: List[Range], view: Str, range: Str}
+
+fn nice_unit(raw: F64) -> F64
+= do
+  m = 10.0.pow(raw.log10.floor.to_f64)
+  n = raw / m
+  (if n <= 1.0 then 1.0 else if n <= 2.0 then 2.0 else if n <= 2.5 then 2.5 else if n <= 5.0 then 5.0 else 10.0) *
+    m
+
+pub fn ticks(lo: F64, hi: F64, count: Int) -> List[F64]
+= ticks_min(lo, hi, count, 0.0)
+
+// Counts never get fractional gridlines: their step is at least `least`.
+pub fn ticks_min(lo: F64, hi: F64, count: Int, least: F64) -> List[F64]
+= do
+  span = if hi - lo <= 0.0 then max(1.0, hi.abs) else hi - lo
+  step = max(least, nice_unit(span / count.to_f64))
+  top = if hi <= lo then lo + span else hi
+  a = (lo / step).floor
+  b = (top / step).ceil
+  (a..max(b, a + 1) + 1).map(i => i.to_f64 * step)
+
+test count_ticks = ticks_min(0.0, 2.0, 4, 1.0) == [0.0, 1.0, 2.0]
+
+test nice_ticks = ticks(0.0, 87.0, 4) == [0.0, 25.0, 50.0, 75.0, 100.0] and
+  ticks(-3.0, 12.0, 3) == [-5.0, 0.0, 5.0, 10.0, 15.0] and
+  ticks(0.0, 0.0, 4) == [0.0, 0.25, 0.5, 0.75, 1.0]
+
+pub fn tick_label(v: F64, digits: Int) -> Str
+= if v.abs >= 1000.0 then compact(v)
+  else if v == v.floor.to_f64 then v.floor.str
+  else v.fmt(max(1, digits))
+
+pub fn value_label(v: F64, digits: Int) -> Str
+= if v.abs >= 10000.0 then compact(v) else if digits == 0 then thousands(v.round) else v.fmt(digits)
+
+pub fn slice_chart(c: Chart, n: Int) -> Chart
+= if n <= 0 or n >= c.labels.len then c
+  else c with
+    labels := cap(c.labels, n),
+    series := c.series.map(s => s with values := cap(s.values, n))
+
+fn col_total(c: Chart, i: Int) -> F64
+= c.series.map(s => s.values.get(i).or(none).or(0.0)).sum
+
+fn vals(c: Chart) -> List[F64]
+= c.series.flat_map(s => s.values.filter(_.is_some).map(_.or(0.0)))
+
+pub fn chart_ticks(c: Chart, lo: F64, hi: F64) -> List[F64]
+= ticks_min(lo, hi, 4, if c.digits == 0 then 1.0 else 0.0)
+
+pub fn is_rank(c: Chart) -> Bool
+= c.kind == "line" and c.unit == "rank"
+
+pub fn domain(c: Chart) -> (F64, F64)
+= if is_rank(c) then (1.0, max(2.0, chart_ticks(c, 0.0, vals(c).max.or(1.0)).last.or(2.0))) else do
+  vs = if c.kind == "stack" then (0..c.labels.len).map(i => col_total(c, i)) else vals(c)
+  hi = vs.max.or(1.0)
+  lo = if c.kind == "line" then min(0.0, vs.min.or(0.0)) else 0.0
+  t = chart_ticks(c, lo, hi)
+  (t.first.or(0.0), t.last.or(1.0))
+
+fn pct(v: F64, lo: F64, hi: F64) -> F64
+= if hi == lo then 0.0 else (v - lo) / (hi - lo) * 100.0
+
+fn p2(x: F64) -> Str
+= x.fmt(2)
+
+fn ypct(inv: Bool, v: F64, lo: F64, hi: F64) -> F64
+= if inv then 100.0 - pct(v, lo, hi) else pct(v, lo, hi)
+
+fn xpos(i: Int, n: Int) -> F64
+= if n <= 1 then 500.0 else i.to_f64 * 1000.0 / (n - 1).to_f64
+
+fn line_path(vs: List[Opt[F64]], lo: F64, hi: F64, inv: Bool) -> Str
+= do
+  n = vs.len
+  var out = str_buf()
+  var pen = false
+  for (i, v) in vs.enumerate
+    match v
+    | some(y) => do
+      out := out.add(
+        "{if pen then "L" else "M"}{xpos(i, n).fmt(1)} {(1000.0 - ypct(inv, y, lo, hi) * 10.0).fmt(1)}",
+      )
+      pen := true
+    | none => pen := false
+  out.str
+
+// The area under a line, closed separately for each unbroken run of points.
+fn area_path(vs: List[Opt[F64]], lo: F64, hi: F64) -> Str
+= do
+  n = vs.len
+  var out = str_buf()
+  var pen = false
+  var last = 0.0
+  for (i, v) in vs.enumerate
+    match v
+    | some(y) => do
+      x = xpos(i, n).fmt(1)
+      out := out.add(
+        if pen then "L{x} {(1000.0 - pct(y, lo, hi) * 10.0).fmt(1)}"
+          else "M{x} 1000L{x} {(1000.0 - pct(y, lo, hi) * 10.0).fmt(1)}",
+      )
+      last := xpos(i, n)
+      pen := true
+    | none => do
+      if pen then out := out.add("L{last.fmt(1)} 1000Z")
+      pen := false
+  if pen then out := out.add("L{last.fmt(1)} 1000Z")
+  out.str
+
+test area_runs = area_path([none, some(10.0), some(0.0), none], 0.0, 10.0) ==
+  "M333.3 1000L333.3 0.0L666.7 1000.0L666.7 1000Z"
+
+test path_gaps = line_path([some(0.0), some(10.0), none, some(5.0)], 0.0, 10.0, false) ==
+  "M0.0 1000.0L333.3 0.0M1000.0 500.0"
+
+fn x_labels(c: Chart) -> Str
+= do
+  n = c.labels.len
+  wide = if n <= 12 then 1 else max(1, (n + 5) / 6)
+  narrow = if n <= 7 then 1 else if n <= 12 then 2 else max(1, (n + 2) / 3)
+  bars = c.kind != "line"
+  c.labels.enumerate.filter(p => (n - 1 - p.0) % wide == 0).map(p => do
+    left = if bars then (p.0.to_f64 + 0.5) * 100.0 / n.to_f64
+      else if n <= 1 then 50.0
+      else p.0.to_f64 * 100.0 / (n - 1).to_f64
+    cls = if (n - 1 - p.0) % narrow == 0 then "" else " class='w'"
+    "<span{cls} style='left:{p2(left)}%'>{esc(p.1)}</span>").join("")
+
+fn end_label(s: Series, lo: F64, hi: F64, inv: Bool) -> Str
+= match s.values.filter(_.is_some).last
+| some(
+  some(v),
+) => "<span class='k{s.color}' style='top:{p2(100.0 - ypct(inv, v, lo, hi))}%'>{esc(s.name)}</span>"
+| _ => ""
+
+fn seg_bar(s: Series, i: Int, lo: F64, hi: F64) -> Str
+= match s.values.get(i).or(none)
+| some(v) if v > 0.0 => "<i class='k{s.color}' style='height:{p2(pct(v, lo, hi))}%'></i>"
+| _ => ""
+
+fn line_marks(c: Chart, lo: F64, hi: F64) -> Str
+= do
+  inv = is_rank(c)
+  paths = c.series.map(
+    s => "{if c.series.len == 1 and not inv then "<path class='ar k{s.color}' d='{area_path(s.values, lo, hi)}'/>" else ""}<path class='ln k{s.color}' d='{line_path(s.values, lo, hi, inv)}' vector-effect='non-scaling-stroke'/>",
+  ).join("")
+  labels = if c.series.len < 2 then "" else c.series.map(s => end_label(s, lo, hi, inv)).join("")
+  "<svg class='cv-svg' viewBox='0 0 1000 1000' preserveAspectRatio='none' aria-hidden='true'>{paths}</svg>{if labels == "" then "" else "<div class='cv-dl' aria-hidden='true'>{labels}</div>"}"
+
+fn bar_marks(c: Chart, lo: F64, hi: F64) -> Str
+= "<div class='cv-bars' aria-hidden='true'>{(0..c.labels.len).map(i => "<div class='cv-col'>{c.series.map(s => seg_bar(s, i, lo, hi)).join("")}</div>").join("")}</div>"
+
+// Horizontal bars for ranked categories, labels on the left.
+fn hbar_marks(c: Chart) -> Str
+= do
+  s = c.series.first.get
+  hi = max(vals(c).max.or(1.0), 1e-6)
+  rows = c.labels.enumerate.map(p => do
+    v = s.values.get(p.0).or(none).or(0.0)
+    "<div class='hb'><span class='hb-l'>{esc(p.1)}</span><span class='hb-t'><i class='k{s.color}' style='transform:scaleX({(max(0.0, v) / hi).fmt(4)})'></i></span><span class='hb-v'>{value_label(v, c.digits)}</span></div>")
+  "<div class='cv-hb'>{rows.join("")}</div>"
+
+pub fn plot(c: Chart) -> Str
+= if c.kind == "hbar" then hbar_marks(c) else do
+  (lo, hi) = domain(c)
+  inv = is_rank(c)
+  ts = if inv then [1.0] + chart_ticks(c, 0.0, hi).filter(t => t > 1.0 and t <= hi)
+    else chart_ticks(c, lo, hi).filter(t => t >= lo and t <= hi)
+  ys = ts.map(
+    t => "<span style='bottom:{p2(ypct(inv, t, lo, hi))}%'><b>{if inv then "#" else ""}{tick_label(t, c.digits)}</b></span>",
+  ).join("")
+  marks = if c.kind == "line" then line_marks(c, lo, hi) else bar_marks(c, lo, hi)
+  "<div class='cv-plot{if c.kind == "line" and c.series.len > 1 then " gut" else ""}'><div class='cv-y' aria-hidden='true'>{ys}</div><div class='cv-area'>{marks}</div></div><div class='cv-x' aria-hidden='true'>{x_labels(c)}</div>"
+
+pub fn data_table(c: Chart, caption: Str) -> Str
+= do
+  hs = c.series.map(s => "<th scope='col'>{esc(s.name)}</th>").join("")
+  rows = c.labels.enumerate.map(
+    p => "<tr><th scope='row'>{esc(p.1)}</th>{c.series.map(s => "<td>{s.values.get(p.0).or(none).map(v => value_label(v, c.digits)).or("")}</td>").join("")}</tr>",
+  ).join("")
+  "<table class='sr-only'><caption>{esc(caption)}</caption><thead><tr><th scope='col'>Point</th>{hs}</tr></thead><tbody>{rows}</tbody></table>"
+
+pub fn chart_view(g: Group) -> Chart
+= do
+  v = g.views.find(_.key == g.view).or(g.views.first.get)
+  n = g.ranges.find(_.key == g.range).map(_.n).or(0)
+  slice_chart(v.chart, n)
+
+pub fn chart_block(g: Group, title: Str, sub: Str) -> Str
+= do
+  c = chart_view(g)
+  vseg = if g.views.len > 1 and
+    not g.views.any(v => v.key.contains("~")) then seg(
+      "view",
+      "Metric",
+      g.views.map(v => (v.key, v.label)),
+      g.view,
+    )
+    else ""
+  rseg = if g.ranges.len >
+    1 then seg("range", "Time range", g.ranges.map(r => (r.key, r.label)), g.range)
+    else ""
+  schips = if c.series.len >
+    1 then "<div class='schips ctl' role='group' aria-label='Series'>{c.series.map(s => "<button type='button' class='k{s.color}' aria-pressed='true' data-s='{esc(s.key)}'><i aria-hidden='true'></i>{esc(s.name)}</button>").join("")}</div>"
+    else ""
+  "<figure class='card cv-fig' data-group='{g.id}'><figcaption class='cv-cap'><h2 class='ct'>{title}</h2>{if sub == "" then "" else "<p>{sub}</p>"}</figcaption><div class='cv-ctl'>{vseg}{rseg}</div>{schips}<div class='cv' tabindex='0' role='group' aria-label='{esc(title)}, interactive chart. Use arrow keys to read values.'>{plot(c)}</div>{data_table(c, title)}</figure>"
+
+pub fn charts_json(gs: List[Group]) -> Str
+= json.encode(gs)
+
+pub fn spark(vs: List[Opt[F64]], cls: Str) -> Str
+= do
+  xs = vs.filter(_.is_some).map(_.or(0.0))
+  hi = xs.max.or(1.0)
+  lo = xs.min.or(0.0)
+  (a, b) = if hi == lo then (lo - 1.0, hi + 1.0) else (lo, hi)
+  if xs.len < 2 then "<span class='sp sp-none' aria-hidden='true'></span>"
+    else "<svg class='sp {cls}' viewBox='0 0 1000 1000' preserveAspectRatio='none' aria-hidden='true'><path d='{line_path(vs, a - (b - a) * 0.08, b + (b - a) * 0.08, false)}' vector-effect='non-scaling-stroke'/></svg>"
+
+// A world map in an equirectangular projection, 2 units per degree.
+
+pub type Dot = {lat: F64, lon: F64, r: F64, cls: Str, tip: Str, id: Str, fill: Str, tags: Str}
+
+pub fn map_x(lon: F64) -> F64
+= (lon + 180.0) * 2.0
+
+pub fn map_y(lat: F64) -> F64
+= (90.0 - lat) * 2.0
+
+test projection = map_x(0.0) == 360.0 and
+  map_y(0.0) == 180.0 and
+  map_x(-180.0) == 0.0 and
+  map_y(90.0) == 0.0
+
+pub fn world_map(cx: Ctx, dots: List[Dot], label: Str) -> Str ! fs
+= do
+  land = read("{cx.web}/land.path").or("").trim
+  ds = dots.map(
+    d => "<circle class='{d.cls}' cx='{map_x(d.lon).fmt(1)}' cy='{map_y(d.lat).fmt(1)}' r='{d.r.fmt(1)}'{if d.fill == "" then "" else " style='fill:{d.fill}'"} data-tip='{esc(d.tip)}' data-id='{esc(d.id)}'{if d.tags == "" then "" else " data-tags='{esc(d.tags)}'"}/>",
+  ).join("")
+  "<div class='map' tabindex='0' role='group' aria-label='{esc(label)}. Use arrow keys to move between points.'><svg viewBox='0 10 720 290' role='img' aria-label='{esc(label)}'><path class='land' d='{land}'/><g class='dots'>{ds}</g></svg></div>"
+
+// RSS 2.0
+
+pub type Item = {title: Str, link: Str, desc: Str, date: Time, guid: Str}
+
+pub fn rfc822(t: Time) -> Str
+= t.format("%a, %d %b %Y %H:%M:%S +0000")
+
+pub fn rss(cx: Ctx, title: Str, desc: Str, items: List[Item]) -> Str
+= do
+  link = "{cx.base}{cx.sec}/"
+  body = items.map(
+    i => "<item><title>{esc(i.title)}</title><link>{esc(i.link)}</link><guid isPermaLink='false'>{esc(i.guid)}</guid><pubDate>{rfc822(i.date)}</pubDate><description>{esc(i.desc)}</description></item>",
+  ).join("\n")
+  "<?xml version='1.0' encoding='UTF-8'?>\n<rss version='2.0' xmlns:atom='http://www.w3.org/2005/Atom'><channel><title>{esc(title)}</title><link>{esc(link)}</link><atom:link href='{esc(cx.base)}feeds/{cx.sec}.xml' rel='self' type='application/rss+xml'/><description>{esc(desc)}</description><language>en</language><lastBuildDate>{rfc822(cx.now)}</lastBuildDate><generator>SSPUR Pulse</generator>\n{body}\n</channel></rss>\n"
+
+test rss_dates = rfc822(time_ms(0)) == "Thu, 01 Jan 1970 00:00:00 +0000"
+
+// iCalendar (RFC 5545)
+
+pub type Ev = {
+  uid: Str,
+  start: Time,
+  end: Time,
+  all_day: Bool,
+  summary: Str,
+  desc: Str,
+  loc: Str,
+  url: Str,
+}
+
+pub fn cr() -> Str
+= from_codes([13]).or("")
+
+pub fn crlf() -> Str
+= cr() + "\n"
+
+pub fn ics_esc(s: Str) -> Str
+= s
+  .replace("\\", "\\\\")
+  .replace(";", "\\;")
+  .replace(",", "\\,")
+  .replace(cr(), "")
+  .replace("\n", "\\n")
+
+pub fn fold(line: Str) -> Str
+= do
+  var out = str_buf()
+  var n = 0
+  for c in line.chars
+    b = c.byte_len
+    if n + b > 75 then do
+      out := out.add(crlf() + " ")
+      n := 1
+    out := out.add(c)
+    n := n + b
+  out.str
+
+test ics_fold = fold("a".repeat(80)) == "a".repeat(75) + crlf() + " " + "aaaaa" and
+  ics_esc("a,b;c\nd") == "a\\,b\\;c\\nd"
+
+fn ics_stamp(t: Time) -> Str
+= t.format("%Y%m%dT%H%M%SZ")
+
+pub fn ics(name: Str, evs: List[Ev], now: Time) -> Str
+= do
+  ev = evs.map(e => do
+    when = if e.all_day then [
+      "DTSTART;VALUE=DATE:{e.start.format("%Y%m%d")}",
+      "DTEND;VALUE=DATE:{e.end.format("%Y%m%d")}",
+    ]
+      else ["DTSTART:{ics_stamp(e.start)}", "DTEND:{ics_stamp(e.end)}"]
+    (["BEGIN:VEVENT", "UID:{e.uid}", "DTSTAMP:{ics_stamp(now)}"] + when + ["SUMMARY:{ics_esc(e.summary)}"] + (if e.desc == "" then [] else ["DESCRIPTION:{ics_esc(e.desc)}"]) + (if e.loc == "" then [] else ["LOCATION:{ics_esc(e.loc)}"]) + (if e.url == "" then [] else ["URL:{e.url}"]) + (if e.all_day then ["TRANSP:TRANSPARENT"] else []) + ["END:VEVENT"])
+      .map(fold)
+      .join(crlf()))
+  (["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//SSPUR Pulse//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH", fold("X-WR-CALNAME:{ics_esc(name)}")] + ev + ["END:VCALENDAR"]).join(
+    crlf(),
+  ) +
+    crlf()
+
+// Social card, rendered to PNG at build time when a converter exists.
+
+pub fn og_svg(cx: Ctx, title: Str, value: Str, label: Str) -> Str
+= "<svg xmlns='http://www.w3.org/2000/svg' width='1200' height='630' viewBox='0 0 1200 630'><rect width='1200' height='630' fill='#f6f5f1'/><rect x='40' y='40' width='1120' height='550' rx='48' fill='#ffffff'/><circle cx='1040' cy='170' r='70' fill='#ff5a36'/><path d='M120 150h70l30-60 50 120 40-90 30 30h60' fill='none' stroke='#14161c' stroke-width='14' stroke-linecap='round' stroke-linejoin='round'/><text x='120' y='290' font-family='Pulse Display, Arial, sans-serif' font-weight='800' font-size='54' fill='#14161c'>{esc(clip(title, 34))}</text><text x='120' y='440' font-family='Pulse Display, Arial, sans-serif' font-weight='800' font-size='130' fill='#14161c'>{esc(clip(value, 14))}</text><text x='120' y='510' font-family='Arial, sans-serif' font-size='38' fill='#4a4f5c'>{esc(clip(label, 52))}</text><text x='120' y='565' font-family='Arial, sans-serif' font-size='26' fill='#6b7080'>SSPUR Pulse, computed every 6 hours by SSPUR programs</text></svg>\n"
+
+// Section envelope written to api/<sec>.json and read by the overview.
+
+pub type Headline = {
+  value: Str,
+  label: Str,
+  detail: Str,
+  count: Str,
+  spark: List[Opt[F64]],
+  spark_kind: Str,
+}
+
+pub type Meta = {
+  section: Str,
+  title: Str,
+  updated: Str,
+  stale: Bool,
+  headline: Headline,
+  generated: Str,
+}
+
+pub fn meta(cx: Ctx, updated: Time, stale: Bool, h: Headline) -> Meta
+= Meta{
+  section: cx.sec,
+  title: sec_name(cx.sec),
+  updated: updated.iso,
+  stale,
+  headline: h,
+  generated: cx.now.iso,
+}
+
+// Fetch outcomes: fresh data, else the last good data, else the bundled sample.
+
+pub type Got[T] = {value: T, stale: Bool, note: Str}
+
+pub fn settle[T, e](
+  fresh: Res[T, Str],
+  prev: Opt[T],
+  seed: () -> Res[T, Str] ! e,
+) -> Opt[Got[T]] ! e
+= if fresh is ok(v) then some(Got{value: v, stale: false, note: ""})
+  else if prev is some(p) then some(
+    Got{
+      value: p,
+      stale: fresh != err("skip"),
+      note: if fresh == err("skip") then ""
+        else "The latest update failed, so this shows the last good data.",
+    },
+  )
+  else if seed() is ok(s) then some(
+    Got{
+      value: s,
+      stale: true,
+      note: "Showing a bundled sample until the first live update succeeds.",
+    },
+  )
+  else none
+
+test settle_fresh = settle(ok(2), some(1), () => ok(0)) ==
+  some(Got{value: 2, stale: false, note: ""})
+
+test settle_keeps_last_good = settle(
+  err("HTTP 500"),
+  some(1),
+  () => ok(0),
+).map(g => (g.value, g.stale)) == some((1, true))
+
+test settle_skip_is_not_stale = settle(
+  err("skip"),
+  some(1),
+  () => ok(0),
+).map(g => (g.value, g.stale)) == some((1, false))
+
+test settle_seed = settle(err("x"), none, () => ok(7)).map(_.value) == some(7) and
+  settle(err("x"), none, () => err("y")).is_none
+
+pub fn seed_ctx(cx: Ctx) -> Ctx
+= cx with fixtures := cx.root + "/fixtures"
+
+pub fn stamp(cx: Ctx) -> Time ! fs
+= if cx.fixtures == "" then cx.now
+  else parse_time(read("{cx.fixtures}/{cx.sec}/captured.txt").or("").trim).or(cx.now)
+
+pub fn due(cx: Ctx, last: Str, minutes: Int) -> Bool
+= not cx.skip and
+  (cx.force or cx.fixtures != "" or cx.now.unix_ms - parse_time(last).map(_.unix_ms).or(0) >= minutes * 60000)
+
+test due_rules = due(
+  Ctx{
+    sec: "x",
+    root: "",
+    data: "",
+    out: "",
+    web: "",
+    fixtures: "",
+    record: "",
+    now: time_ms(7200000),
+    base: "",
+    backfill: 0,
+    force: false,
+    skip: false,
+  },
+  "1970-01-01T01:30:00Z",
+  60,
+) == false and
+  due(
+    Ctx{
+      sec: "x",
+      root: "",
+      data: "",
+      out: "",
+      web: "",
+      fixtures: "",
+      record: "",
+      now: time_ms(7200000),
+      base: "",
+      backfill: 0,
+      force: false,
+      skip: false,
+    },
+    "",
+    60,
+  )
+
+test short_dates = short_date(time_ms(86400000 * 3)) == "Jan 4"
+
+// More controls. A view key can have parts joined by "~" (such as "Article~views"):
+// a part control swaps one part and keeps the others.
+
+pub fn sort_seg(target: Str, label: Str, opts: List[(Str, Str)], cur: Str) -> Str
+= "<div class='seg ctl' role='radiogroup' aria-label='{esc(label)}' data-sort='{target}'>{opts.map(o => "<button type='button' role='radio' aria-checked='{if o.0 == cur then "true" else "false"}' data-v='{esc(o.0)}'>{esc(o.1)}</button>").join("")}</div>"
+
+pub fn picker(name: Str, label: Str, target: Str, mode: Str, opts: List[(Str, Str)]) -> Str
+= "<label class='pick ctl'><span>{esc(label)}</span><select data-filter='{name}' data-target='{target}' data-mode='{mode}'>{opts.map(o => "<option value='{esc(o.0)}'>{esc(o.1)}</option>").join("")}</select></label>"
+
+pub fn part_seg(group: Str, part: Int, label: Str, opts: List[(Str, Str)], cur: Str) -> Str
+= "<div class='seg ctl' role='radiogroup' aria-label='{esc(label)}' data-vpart='{part}' data-for='{group}'>{opts.map(o => "<button type='button' role='radio' aria-checked='{if o.0 == cur then "true" else "false"}' data-v='{esc(o.0)}'>{esc(o.1)}</button>").join("")}</div>"
+
+pub fn part_pick(group: Str, part: Int, label: Str, opts: List[(Str, Str)], cur: Str) -> Str
+= "<label class='pick ctl'><span>{esc(label)}</span><select data-vpart='{part}' data-for='{group}'>{opts.map(o => "<option value='{esc(o.0)}'{if o.0 == cur then " selected" else ""}>{esc(o.1)}</option>").join("")}</select></label>"
+
+// Long lists: 10 rows on phones and 20 on wider screens until "Show all" is opened.
+// It is a details element, so it works without JavaScript; pulse.js keeps the count right under filters.
+pub fn more(id: Str) -> Str
+= "<details class='more' data-more='{id}'><summary><span class='m-open'>Show all</span><span class='m-close'>Show fewer</span></summary></details>"
+
+// A mini chart for an overview tile: bars or a line, 100 by 100 units stretched to the tile.
+pub fn mini(vs: List[Opt[F64]], kind: Str) -> Str
+= do
+  xs = vs.filter(_.is_some).map(_.or(0.0))
+  hi = max(xs.max.or(1.0), 1e-6)
+  n = vs.len
+  bars = vs.enumerate.map(p => do
+    match p.1
+    | some(v) if v >
+      0.0 => "<rect x='{(p.0.to_f64 * 100.0 / n.to_f64 + 0.12 * 100.0 / n.to_f64).fmt(2)}' y='{(100.0 - v / hi * 100.0).fmt(2)}' width='{(0.76 * 100.0 / n.to_f64).fmt(2)}' height='{(v / hi * 100.0).fmt(2)}'/>"
+    | _ => "").join("")
+  if xs.len < 2 then ""
+    else if kind ==
+      "bar" then "<svg class='mini' viewBox='0 0 100 100' preserveAspectRatio='none' aria-hidden='true'>{bars}</svg>"
+    else spark(vs, "mini")
+
+test mini_charts = mini([some(1.0), some(2.0)], "bar").contains("<rect") and
+  mini([some(1.0)], "bar") == "" and
+  mini([some(1.0), none, some(3.0)], "line").contains("<path")

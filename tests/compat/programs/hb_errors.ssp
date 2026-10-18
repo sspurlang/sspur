@@ -1,0 +1,50 @@
+// ANCHOR: raise
+type StockErr = Unknown{sku: Str} | Short{sku: Str, have: Int}
+
+type Item = {sku: Str, qty: Int}
+
+fn reserve(stock: List[Item], sku: Str, n: Int) -> List[Item] ! fail[StockErr]
+= do
+  it = stock.find(_.sku == sku).ok_or(Unknown{sku})
+  if it.qty < n then raise Short{sku, have: it.qty}
+  stock.map(i => if i.sku == sku then i with qty := i.qty - n else i)
+
+// ANCHOR_END: raise
+
+// ANCHOR: catch
+fn try_reserve(stock: List[Item], sku: Str, n: Int) -> Str
+= catch "reserved, {reserve(stock, sku, n).find(_.sku == sku).map(_.qty).or(0)} left"
+| Unknown{sku} => "no such item: {sku}"
+| Short{have} => "only {have} left"
+
+fn checkout(stock: List[Item]) -> List[Item] ! fail[StockErr]
+= do
+  a = reserve(stock, "pen", 2)
+  reserve(a, "ink", 1)
+
+// ANCHOR_END: catch
+
+// ANCHOR: sys
+fn line_count(path: Str) -> Int ! fs
+= match read_file(path)
+| ok(text) => text.split("\n").len
+| err(_) => 0
+
+// ANCHOR_END: sys
+
+fn main() -> Unit ! log, fs
+= do
+  stock = [Item{sku: "pen", qty: 5}, Item{sku: "ink", qty: 0}]
+  log(try_reserve(stock, "pen", 2))
+  log(try_reserve(stock, "pen", 9))
+  log(try_reserve(stock, "cap", 1))
+  log(catch "{checkout(stock).len} items"
+  | Short{sku} => "checkout failed on {sku}"
+  | Unknown => "checkout failed")
+  log("{line_count("errors.ssp") > 10} {line_count("nope.txt")}")
+
+// ANCHOR: test
+test short = catch reserve([Item{sku: "a", qty: 1}], "a", 2) == []
+| Short{have} => have == 1
+| _ => false
+// ANCHOR_END: test

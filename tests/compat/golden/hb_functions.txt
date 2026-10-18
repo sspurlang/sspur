@@ -1,0 +1,31 @@
+# programs/hb_functions.ssp: frozen by the 1.x compatibility promise (docs/reference/stability.md)
+== canonical
+blake3 026c8daf9d60dba9bfd7ea24e80d7fbd8a4d2e6493378efc4bf3471a88b0043e
+== hashes
+#vfjbxhu6qhc7fpef4pfqkipslsyd3uc6ep5a5727pcxtxtc4jp3q  clamp_to
+#v6dbixlgnpb3ok3xjxycnkzpudkhi6gpos4y7mwi5kaezhtgu7hq  shout
+#tx6cqvjt3i5mofshceozr7hz4supo5xabjh57c5klxmnwknilcjq  ufcs
+#lgeosmq6423ikni5polmxa2loio2uefbnh4ag7g56ihds3q25pwa  apply_twice
+#3ijjj2hijhwpqmmipi6eauii453jp6oblxq5wd2ewjwh6j6pawgq  lambdas
+#qmxp56jsd5liprerzgq3rsitpsl3g4nzbidsablh46azmxjrrqzq  placeholder
+#k4yybagve2ue55odejofwqfng2unjrqalkwav5hcus6yt4c4ej5a  grades
+#zxzlf6opow4typ6god4jfqp64chpdaya4ster4qxze5y4ql7iiwq  block
+#losi4khb6tqhkww752uiyxmtxlp4vl657jdvadvzqez63tlhjqaa  is_small
+#gu6kxs5257x4pd66udoas7wfqufjycyofs7j55ani3z7v7tqfika  fn_values
+#xki5thft7rwuqby4tw7zursbc3ylrcoqz5jhrpv7ye6lwbvseraa  digits
+#uoqbvbtffqabaeatlo275d6p4rrq76ezumxgionnp4ngt57jh43q  local
+== check
+== test interp
+pass  clamp_to.ex1
+pass  clamp_to.ex2
+pass  ufcs
+pass  lambdas
+pass  placeholder
+pass  block
+pass  fn_values
+pass  local
+8 passed, 0 failed
+== test native
+(same as test interp)
+== fmt
+(the source, unchanged)

@@ -1,0 +1,28 @@
+# programs/hb_collections.ssp: frozen by the 1.x compatibility promise (docs/reference/stability.md)
+== canonical
+blake3 53ce9cd4c1321541e4f3dd862408c784cc30993418f4f1169360471f169103b3
+== hashes
+#7ifn2ivsx33bpymnaxmszixkddb4wnfmcm3qwpgjgnzfwg3rj5ha  Order
+#trm7sxc4wfjhowc6lds45hclenazrapsp3w4wtoy6tlebm2xwc2a  top_customers
+#fsmfh26b6rw3yvgipr5n24qr6ejegaa3ofdpxqlwebkf6uiaxqya  list_ops
+#ehrrbcnrbfz2dkg3nh5wrjylib7lip3lxdwobl2bwd2ly33vbbwq  maps
+#mjuckbkijwayj7wl36ieydzvxb3hni2l6m2rzmky4ajjmvue2bpa  sets
+#qlcfs4u6wqusqe4wlq3f3xmfuo32jqiyh6d4v2y4j2f32oaznx2a  histogram
+#mkktes5jnyq4t5xnzyvzzg3fh5tf2gkjf54cnu6ofqoxr6u6db2q  loops
+#safpgxmerrtrgmd4quopi3jjpj4b6y7s4hbsyhi3o7pcynqaujta  main
+== check
+== run interp
+ana: 1000
+bo: 900
+== run native
+(same as run interp)
+== test interp
+pass  list_ops
+pass  maps
+pass  sets
+pass  loops
+4 passed, 0 failed
+== test native
+(same as test interp)
+== fmt
+(the source, unchanged)

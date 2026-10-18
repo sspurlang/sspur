@@ -1,0 +1,27 @@
+# programs/hb_basics.ssp: frozen by the 1.x compatibility promise (docs/reference/stability.md)
+== canonical
+blake3 46557e7a2f13d459df09d8216590a946fb85d793a4c6f4a29545077de62f1469
+== hashes
+#4xqg7k5dpdityzbnra476izlbaiztbzd63ke2uwd5gsoe2incswa  main
+#dlaikmntpq3r4m6ef6dpgb5eepf73a3bkqme7wutpd23ep4eeuzq  greeting
+#dgglsmrj4z2dc6jwbiylfcbdnuqttptyef5wtaaspzw4jtp3j4ua  values
+#vuu4wtiqdy5n7luu7hzczamlcaj7iysqkibqi7rmhmgsfljrv3ta  morning
+#rdlysv6ecj27bdbrvkhmmspqnyadkt7cvx5q2av6vtspzevgqxtq  evening
+#nmgrvs6zdrfaahjqybexjzqqoyairfsmocvsz2tsuimlv424exma  values_print
+== check
+== run interp
+1. SSPUR checks types
+2. SSPUR checks effects
+3. SSPUR checks contracts
+good morning
+== run native
+(same as run interp)
+== test interp
+pass  morning
+pass  evening
+pass  values_print
+3 passed, 0 failed
+== test native
+(same as test interp)
+== fmt
+(the source, unchanged)

@@ -1,0 +1,37 @@
+// ANCHOR: main
+fn main() -> Unit ! log
+= do
+  name = "SSPUR"
+  var count = 0
+  for word in ["types", "effects", "contracts"]
+    count := count + 1
+    log("{count}. {name} checks {word}")
+  log(greeting(3))
+
+// ANCHOR_END: main
+
+// ANCHOR: fn
+fn greeting(hour: Int) -> Str
+= if hour < 12 then "good morning" else "good evening"
+
+// ANCHOR_END: fn
+
+// ANCHOR: values
+fn values() -> Str
+= do
+  n = 7 / 2
+  x = 7.0 / 2.0
+  big = 1000000
+  mask = 255
+  ok = n == 3 and not x < 3.0
+  "{n} {x} {big} {mask} {ok}"
+
+// ANCHOR_END: values
+
+// ANCHOR: test
+test morning = greeting(9) == "good morning"
+
+test evening = greeting(20) == "good evening"
+
+test values_print = values() == "3 3.5 1000000 255 true"
+// ANCHOR_END: test

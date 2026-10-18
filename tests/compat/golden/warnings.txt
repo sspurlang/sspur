@@ -1,0 +1,18 @@
+# programs/warnings.ssp: frozen by the 1.x compatibility promise (docs/reference/stability.md)
+== canonical
+blake3 eabfafc5ca82752cd2bc062ca222bb19c58ddf6d3e363424d7d70cb4d2d681ed
+== hashes
+#qjybuaq3rw4q4gigrxcemqb7nmpkibonwfwm25pefbb2m7qolnmq  quiet
+#xmcpxfefahsc3kw43ck4jccrlwfcvkknmozvdqvntngw2qxefdba  kind
+#4ugk6576ev6iljcktvrwzanl5vt5ztlogkg4eyklakovdegt6cbq  grow
+#npggnwakrqflhqeoqv4uiuccbouu2et7427fvcstp3ocoxzucwkq  main
+== check
+W_EFFECT_UNUSED quiet
+W_ARM_UNREACHABLE kind
+W_UNUSED_RESULT grow
+== run interp
+2 some 1
+== run native
+(same as run interp)
+== fmt
+(the source, unchanged)

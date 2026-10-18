@@ -1,0 +1,62 @@
+// ANCHOR: pipeline
+type Order = {customer: Str, item: Str, cents: Int where _ >= 0}
+
+fn top_customers(orders: List[Order], n: Int) -> List[(Str, Int)]
+= do
+  totals = orders.group_by(_.customer).map(g => (g.0, g.1.map(_.cents).sum))
+  totals.sort_by((-_.1, _.0)).take(n)
+
+// ANCHOR_END: pipeline
+
+// ANCHOR: list
+test list_ops = do
+  xs = [5, 3, 8, 3]
+  xs.filter(_ > 4) == [5, 8] and
+    xs.unique == [5, 3, 8] and
+    xs.fold(0, (a, x) => a + x) == 19 and
+    xs.enumerate.first == some((0, 5)) and
+    xs.windows(2).len == 3 and
+    xs.partition(_ % 2 == 0) == ([8], [5, 3, 3])
+
+// ANCHOR_END: list
+
+// ANCHOR: maps
+test maps = do
+  stock = empty_map().put("pen", 3).put("ink", 0)
+  later = stock.put("pen", 2)
+  stock.get("pen") == some(3) and
+    later.get("pen") == some(2) and
+    stock.keys == ["ink", "pen"] and
+    stock.has("cap") == false
+
+test sets = do
+  a = [1, 2, 3].to_set
+  b = [2, 3, 4].to_set
+  a.inter(b).items == [2, 3] and a.union(b).len == 4 and a.diff(b).has(1)
+
+// ANCHOR_END: maps
+
+// ANCHOR: loops
+fn histogram(words: List[Str]) -> Str
+= do
+  var out = str_buf()
+  for (w, n) in words.counts.sort_by(_.0)
+    out := out.add("{w}={"*".repeat(n)} ")
+  out.str.trim
+
+test loops = histogram(["b", "a", "b"]) == "a=* b=**" and
+  range(10, 0, -3) == [10, 7, 4, 1] and
+  (0..5).map(_ * _).sum == 30
+
+// ANCHOR_END: loops
+
+fn main() -> Unit ! log
+= do
+  orders = [
+    Order{customer: "ana", item: "pen", cents: 300},
+    Order{customer: "bo", item: "ink", cents: 900},
+    Order{customer: "ana", item: "pad", cents: 700},
+    Order{customer: "cy", item: "pen", cents: 300},
+  ]
+  for (who, cents) in top_customers(orders, 2)
+    log("{who}: {cents}")

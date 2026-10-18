@@ -1,0 +1,775 @@
+// features
+
+type Shape = Circle{r: F64} | Rect{w: F64, h: F64} | Dot
+
+type Point = {x: Int, y: Int} derive Eq
+
+type Age = Int where _ >= 0 and _ < 150
+
+type MathErr = DivZero | Overflow{at: Int}
+
+fn area(s: Shape) -> F64
+= match s
+| Circle{r} => 3.14159 * r * r
+| Rect{w, h} => w * h
+| Dot => 0.0
+
+fn safe_div(a: Int, b: Int) -> Int ! fail[MathErr]
+  pre a >= 0
+  post r <= a
+= if b == 0 then raise DivZero else a / b
+
+fn sum_sq(xs: List[Int]) -> Int
+= xs.map(_ * _).fold(0, (acc, x) => acc + x)
+
+fn describe(p: Point) -> Str
+= "point({p.x}, {p.y}) has norm {p.x ** 2 + p.y ** 2} and literal \{braces}"
+
+fn count_to(n: Int) -> List[Int] ! log
+= do
+  var out = []
+  for i in 0..n
+    log("at {i}")
+    out := out.push(i)
+  out
+
+fn first_even(xs: List[Int]) -> Opt[Int]
+= do
+  for x in xs
+    if x % 2 == 0 then return some(x)
+  none
+
+fn div_or_zero(a: Int, b: Int) -> Int
+= catch safe_div(a, b)
+| DivZero => 0
+| Overflow{at} => at
+
+fn main() -> Unit ! log
+= do
+  (a, b) = (3, 4)
+  p = Point{x: a, y: b}
+  log(describe(p))
+  log("area {area(Rect{w: 2.0, h: 3.5})}")
+  log("sum_sq {sum_sq([1, 2, 3])}")
+  log("div {div_or_zero(10, 0)} {div_or_zero(10, 3)}")
+  match first_even([1, 3, 6, 7])
+  | some(x) if x > 4 => log("big even {x}")
+  | some(x) => log("even {x}")
+  | none => log("no even")
+
+test area_dot = area(Dot) == 0.0
+
+test sum_sq_ok = sum_sq([1, 2, 3]) == 14
+
+test div_zero = div_or_zero(1, 0) == 0
+
+// primes
+
+fn is_prime(n: Int) -> Bool
+= if n < 2 then false else (2..n).filter(d => d * d <= n).all(d => n % d != 0)
+
+fn sieve(limit: Int where _ >= 2) -> List[Int]
+= do
+  var composite = []
+  var primes = []
+  for n in 2..limit + 1
+    if not composite.contains(n) then do
+      primes := primes.push(n)
+      composite := composite.concat((n..limit + 1).filter(_ % n == 0))
+  primes
+
+fn fizzbuzz(n: Int) -> Str
+= match (n % 3, n % 5)
+| (0, 0) => "FizzBuzz"
+| (0, _) => "Fizz"
+| (_, 0) => "Buzz"
+| _ => n.str
+
+fn gcd(a: Int, b: Int) -> Int
+  pre a >= 0 and b >= 0
+= if b == 0 then a else gcd(b, a % b)
+
+fn main_primes() -> Unit ! log
+= do
+  log("primes {sieve(30)}")
+  log((1..16).map(fizzbuzz).join(" "))
+  log("gcd {gcd(48, 18)}")
+
+test sieve_ok = sieve(30) == [2, 3, 5, 7, 11, 13, 17, 19, 23, 29]
+
+test agrees = (2..60).filter(is_prime) == sieve(59)
+
+test fizz = fizzbuzz(15) == "FizzBuzz" and fizzbuzz(9) == "Fizz" and fizzbuzz(7) == "7"
+
+test gcd_ok = gcd(48, 18) == 6
+
+fn pair_sum(a: List[Int], b: List[Int]) -> Int ! div
+= do
+  var p = a
+  var q = b
+  var total = 0
+  while p.pop_front is some((x, pr)) and q.pop_front is some((y, qr)) and x * y != 0
+    total := total + x * y
+    p := pr
+    q := qr
+  while p.pop_front is some((x, rest)) and x > 0
+    total := total + x
+    p := rest
+  total
+
+test pair_sum_ok = pair_sum([1, 2, 5, 6, -1, 7], [3, 4]) == 22 and
+  pair_sum([], [1]) == 0 and
+  pair_sum([2, 0, 4], [5, 1]) == 10
+
+// calc
+
+type Expr =
+  | Num{v: Int}
+  | Add{a: Expr, b: Expr}
+  | Mul{a: Expr, b: Expr}
+  | Neg{e: Expr}
+  | Div{a: Expr, b: Expr}
+
+type CalcErr = DivByZero
+
+fn divide(x: Int, y: Int) -> Int ! fail[CalcErr]
+= if y == 0 then raise DivByZero else x / y
+
+fn eval(e: Expr) -> Int ! fail[CalcErr]
+= match e
+| Num{v} => v
+| Add{a, b} => eval(a) + eval(b)
+| Mul{a, b} => eval(a) * eval(b)
+| Neg{e} => -eval(e)
+| Div{a, b} => divide(eval(a), eval(b))
+
+fn show(e: Expr) -> Str
+= match e
+| Num{v} => v.str
+| Add{a, b} => "({show(a)} + {show(b)})"
+| Mul{a, b} => "{show(a)} * {show(b)}"
+| Neg{e} => "-{show(e)}"
+| Div{a, b} => "{show(a)} / {show(b)}"
+
+fn simplify(e: Expr) -> Expr
+= match e
+| Add{a: Num{v: 0}, b} => simplify(b)
+| Add{a, b: Num{v: 0}} => simplify(a)
+| Mul{a: Num{v: 1}, b} => simplify(b)
+| Mul{a, b: Num{v: 1}} => simplify(a)
+| Add{a, b} => Add{a: simplify(a), b: simplify(b)}
+| Mul{a, b} => Mul{a: simplify(a), b: simplify(b)}
+| Neg{e} => Neg{e: simplify(e)}
+| Div{a, b} => Div{a: simplify(a), b: simplify(b)}
+| Num{v} => Num{v}
+
+fn run(e: Expr) -> Str
+= catch "{show(e)} = {eval(e)}"
+| DivByZero => "{show(e)} = error: division by zero"
+
+fn main_calc() -> Unit ! log
+= do
+  log(run(Add{a: Num{v: 2}, b: Mul{a: Num{v: 3}, b: Num{v: 4}}}))
+  log(run(Div{a: Num{v: 1}, b: Num{v: 0}}))
+  log(show(simplify(Add{a: Num{v: 0}, b: Mul{a: Num{v: 1}, b: Num{v: 7}}})))
+
+test eval_ok = run(Add{a: Num{v: 2}, b: Mul{a: Num{v: 3}, b: Num{v: 4}}}) == "(2 + 3 * 4) = 14"
+
+test div_zero_calc = run(Div{a: Num{v: 1}, b: Num{v: 0}}) == "1 / 0 = error: division by zero"
+
+test simplify_ok = show(simplify(Add{a: Num{v: 0}, b: Mul{a: Num{v: 1}, b: Num{v: 7}}})) == "7"
+
+test neg = run(Neg{e: Num{v: 5}}) == "-5 = -5"
+
+// bank
+
+type AccountId = new Str
+
+type Account = {id: AccountId, owner: Str, balance: Int where _ >= 0}
+
+type BankErr = Insufficient{needed: Int, available: Int} | SameAccount
+
+fn deposit(a: Account, amount: Int where _ > 0) -> Account
+  post r.balance == a.balance + amount
+= {id: a.id, owner: a.owner, balance: a.balance + amount}
+
+fn withdraw(a: Account, amount: Int where _ > 0) -> Account ! fail[BankErr]
+  post r.balance == a.balance - amount
+= if amount > a.balance then raise Insufficient{needed: amount, available: a.balance}
+  else {id: a.id, owner: a.owner, balance: a.balance - amount}
+
+fn transfer(
+  from: Account,
+  to: Account,
+  amount: Int where _ > 0,
+) -> (Account, Account) ! fail[BankErr]
+= if from.id == to.id then raise SameAccount else (withdraw(from, amount), deposit(to, amount))
+
+fn describe_bank(a: Account) -> Str
+= "{a.owner} has {a.balance}"
+
+fn show_pair(p: (Account, Account)) -> Str
+= "{describe_bank(p.0)}; {describe_bank(p.1)}"
+
+fn attempt(from: Account, to: Account, amount: Int where _ > 0) -> Str
+= catch show_pair(transfer(from, to, amount))
+| Insufficient{needed, available} => "declined: needs {needed}, has {available}"
+| SameAccount => "declined: same account"
+
+fn alice() -> Account
+= Account{id: AccountId("a1"), owner: "alice", balance: 100}
+
+fn bob() -> Account
+= Account{id: AccountId("b1"), owner: "bob", balance: 20}
+
+fn main_bank() -> Unit ! log
+= do
+  log(attempt(alice(), bob(), 30))
+  log(attempt(bob(), alice(), 50))
+  log(attempt(alice(), alice(), 1))
+
+test ok_transfer = attempt(alice(), bob(), 30) == "alice has 70; bob has 50"
+
+test declined = attempt(bob(), alice(), 50) == "declined: needs 50, has 20"
+
+test same = attempt(alice(), alice(), 1) == "declined: same account"
+
+test ids_compare = AccountId("x") == AccountId("x")
+
+// sorting
+
+fn quicksort(xs: List[Int]) -> List[Int]
+  post r.len == xs.len
+= match xs.first
+| none => []
+| some(p) => quicksort(xs.drop(1).filter(_ < p)) + [p] + quicksort(xs.drop(1).filter(_ >= p))
+
+fn merge(a: List[Int], b: List[Int]) -> List[Int]
+= match (a.first, b.first)
+| (some(x), some(y)) => if x <= y then [x] + merge(a.drop(1), b) else [y] + merge(a, b.drop(1))
+| (none, _) => b
+| _ => a
+
+fn merge_sort(xs: List[Int]) -> List[Int]
+  post r.len == xs.len
+= if xs.len <= 1 then xs
+  else merge(merge_sort(xs.take(xs.len / 2)), merge_sort(xs.drop(xs.len / 2)))
+
+fn is_sorted(xs: List[Int]) -> Bool
+= xs.zip(xs.drop(1)).all(_.0 <= _.1)
+
+fn go(xs: List[Int], t: Int, lo: Int, hi: Int) -> Opt[Int]
+  pre lo >= 0 and hi <= xs.len
+= if lo >= hi then none else do
+  mid = (lo + hi) / 2
+  v = xs[mid]
+  if v == t then some(mid) else if v < t then go(xs, t, mid + 1, hi) else go(xs, t, lo, mid)
+
+fn bsearch(xs: List[Int], target: Int) -> Opt[Int]
+= go(xs, target, 0, xs.len)
+
+fn main_sorting() -> Unit ! log
+= do
+  log("{quicksort([3, 1, 4, 1, 5, 9, 2, 6])}")
+  log("{merge_sort([5, -2, 7, 0, 0, 3])}")
+
+test qs = quicksort([3, 1, 4, 1, 5, 9, 2, 6]) == [1, 1, 2, 3, 4, 5, 6, 9]
+
+test ms = merge_sort([5, -2, 7, 0, 0, 3]) == [-2, 0, 0, 3, 5, 7]
+
+test sorted_check = is_sorted(merge_sort((0..50).map(_ * 7919 % 101)))
+
+test agree = quicksort((0..40).map(_ * 31 % 17)) == merge_sort((0..40).map(_ * 31 % 17))
+
+test bs_found = bsearch([1, 3, 5, 7, 9, 11], 7) == some(3)
+
+test bs_missing = bsearch([1, 3, 5], 4) == none
+
+// orders
+
+type Item = {sku: Str, qty: Int where _ > 0, price: Int where _ >= 0}
+
+type Order = {id: Str, items: List[Item] where _.len > 0}
+
+type OrderErr = OutOfStock{sku: Str, wanted: Int, have: Int} | Unknown{sku: Str}
+
+fn total(items: List[Item]) -> Int
+  post r >= 0
+= items.map(_.price * _.qty).sum
+
+fn check_stock(stock: Map[Str, Int], i: Item) -> Unit ! fail[OrderErr]
+= match stock.get(i.sku)
+| none => raise Unknown{sku: i.sku}
+| some(have) if have < i.qty => raise OutOfStock{sku: i.sku, wanted: i.qty, have}
+| some(_) => ()
+
+fn place(stock: Map[Str, Int], o: Order) -> Map[Str, Int] ! fail[OrderErr]
+= do
+  for i in o.items
+    check_stock(stock, i)
+  o.items.fold(stock, (s, i) => s.put(i.sku, s.get(i.sku).or(0) - i.qty))
+
+fn summary(left: Map[Str, Int], o: Order) -> Str
+= "placed {o.id} for {total(o.items)}, stock now {left.items}"
+
+fn try_place(stock: Map[Str, Int], o: Order) -> Str
+= catch summary(place(stock, o), o)
+| OutOfStock{sku, wanted, have} => "short on {sku}: wanted {wanted}, have {have}"
+| Unknown{sku} => "unknown sku {sku}"
+
+fn stock() -> Map[Str, Int]
+= empty_map().put("apple", 5).put("pear", 1)
+
+fn main_orders() -> Unit ! log
+= do
+  log(try_place(stock(), Order{id: "o1", items: [Item{sku: "apple", qty: 2, price: 3}]}))
+  log(try_place(stock(), Order{id: "o2", items: [Item{sku: "pear", qty: 3, price: 1}]}))
+  log(try_place(stock(), Order{id: "o3", items: [Item{sku: "kiwi", qty: 1, price: 1}]}))
+
+test total_ok = total([Item{sku: "a", qty: 2, price: 3}, Item{sku: "b", qty: 1, price: 4}]) == 10
+
+test short = try_place(stock(), Order{id: "o2", items: [Item{sku: "pear", qty: 3, price: 1}]}) ==
+  "short on pear: wanted 3, have 1"
+
+test unknown = try_place(stock(), Order{id: "o3", items: [Item{sku: "kiwi", qty: 1, price: 1}]}) ==
+  "unknown sku kiwi"
+
+test stock_drops = catch place(
+  stock(),
+  Order{id: "o1", items: [Item{sku: "apple", qty: 2, price: 1}]},
+).get("apple") == some(3)
+| _ => false
+
+// lifecycle
+
+type Status =
+  | Created
+  | Paid{amount: Int}
+  | Shipped{tracking: Str}
+  | Delivered
+  | Cancelled{reason: Str}
+
+type Event = Pay{amount: Int} | Ship{tracking: Str} | Deliver | Cancel{reason: Str}
+
+type TransitionErr = Invalid{from: Str, event: Str}
+
+fn name(s: Status) -> Str
+= match s
+| Created => "created"
+| Paid{amount} => "paid({amount})"
+| Shipped{tracking} => "shipped({tracking})"
+| Delivered => "delivered"
+| Cancelled{reason} => "cancelled({reason})"
+
+fn event_name(e: Event) -> Str
+= match e
+| Pay{amount} => "pay"
+| Ship{tracking} => "ship"
+| Deliver => "deliver"
+| Cancel{reason} => "cancel"
+
+fn step(s: Status, e: Event) -> Status ! fail[TransitionErr]
+= match (s, e)
+| (Created, Pay{amount}) => Paid{amount}
+| (Created, Cancel{reason}) => Cancelled{reason}
+| (Paid{amount}, Ship{tracking}) => Shipped{tracking}
+| (Paid{amount}, Cancel{reason}) => Cancelled{reason: "{reason}, refund {amount}"}
+| (Shipped{tracking}, Deliver) => Delivered
+| _ => raise Invalid{from: name(s), event: event_name(e)}
+
+fn run_lifecycle(events: List[Event]) -> Str
+= catch name(events.fold(Created, (s, e) => step(s, e)))
+| Invalid{from, event} => "invalid: {event} while {from}"
+
+fn main_lifecycle() -> Unit ! log
+= do
+  log(run_lifecycle([Pay{amount: 10}, Ship{tracking: "T1"}, Deliver]))
+  log(run_lifecycle([Pay{amount: 5}, Cancel{reason: "changed mind"}]))
+  log(run_lifecycle([Ship{tracking: "T2"}]))
+
+test happy = run_lifecycle([Pay{amount: 10}, Ship{tracking: "T1"}, Deliver]) == "delivered"
+
+test cancel_refund = run_lifecycle([Pay{amount: 5}, Cancel{reason: "changed mind"}]) ==
+  "cancelled(changed mind, refund 5)"
+
+test bad = run_lifecycle([Ship{tracking: "T2"}]) == "invalid: ship while created"
+
+// updates
+
+type Address = {city: Str, zip: Str}
+
+type User = {name: Str, age: Int where _ >= 0, address: Address, tags: List[Str]}
+
+fn birthday(u: User) -> User
+  post r.age == u.age + 1
+  ex birthday(sample()).age == 31
+= u with age := u.age + 1
+
+fn relocate(u: User, city: Str) -> User
+  ex relocate(sample(), "Pune").address.city == "Pune"
+  ex relocate(sample(), "Pune").address.zip == "560001"
+= u with address.city := city
+
+fn retag(u: User, i: Int, t: Str) -> User
+  pre i >= 0 and i < u.tags.len
+= u with tags[i] := t, name := u.name.upper
+
+fn sample() -> User
+= {name: "asha", age: 30, address: {city: "Bengaluru", zip: "560001"}, tags: ["admin", "beta"]}
+
+fn main_updates() -> Unit ! log
+= do
+  log("{birthday(sample())}")
+  log("{retag(relocate(sample(), "Pune"), 1, "ga")}")
+
+test retag_ok = retag(sample(), 1, "ga").tags == ["admin", "ga"]
+
+test retag_name = retag(sample(), 0, "x").name == "ASHA"
+
+test original_unchanged = do
+  u = sample()
+  v = u with age := 99
+  u.age == 30 and v.age == 99
+
+// word_counts
+
+fn f(s: Str) -> List[(Str, Int)]
+= s.words.counts
+
+test t1 = f("a b a c b a") == [("a", 3), ("b", 2), ("c", 1)]
+
+test t2 = f("") == []
+
+test t3 = f("héllo wörld héllo, x-y z") == "héllo wörld héllo, x-y z".words.counts
+
+test t4 = f("  lead  trail  ") == [("lead", 1), ("trail", 1)]
+
+test t5 = f("Ab ab AB") == [("Ab", 1), ("ab", 1), ("AB", 1)]
+
+test t6 = f("x1 x2 x1 9 9 9") == [("x1", 2), ("x2", 1), ("9", 3)]
+
+// word_freq
+
+fn top_words(text: Str, k: Int where _ >= 0) -> List[(Str, Int)]
+  post r.len <= k
+= text.lower.words.counts.sort_by((-_.1, _.0)).take(k)
+
+fn main_word_freq() -> Unit ! log
+= do
+  for (w, n) in top_words("the cat and the hat and the bat", 3)
+    log("{w}: {n}")
+
+test top_two = top_words("b a b c a b", 2) == [("b", 3), ("a", 2)]
+
+test empty = top_words("", 5) == []
+
+test limit = top_words("a b c d", 2).len == 2
+
+// retry
+
+type NetErr = Timeout{attempt: Int} | Refused
+
+fn flaky(attempt: Int, succeed_on: Int) -> Str ! fail[NetErr]
+= if attempt < succeed_on then raise Timeout{attempt} else "response after {attempt} attempts"
+
+fn backoff(attempt: Int where _ >= 1 and _ <= 30) -> Opt[Str] ! log
+= do
+  log("attempt {attempt} timed out, backing off {100 * 2 ** (attempt - 1)}ms")
+  none
+
+fn with_retry(tries: Int where _ > 0 and _ <= 30, succeed_on: Int) -> Str ! fail[NetErr], log
+= do
+  var result = none
+  for i in 1..tries + 1
+    if result.is_none then result := catch some(flaky(i, succeed_on))
+    | Timeout{attempt} => backoff(attempt)
+    | Refused => none
+  result.ok_or(Refused)
+
+fn main_retry() -> Unit ! log
+= catch log(with_retry(5, 3))
+| _ => log("gave up")
+
+test eventually = with_retry(5, 3) == "response after 3 attempts"
+
+test gives_up = catch with_retry(2, 5) == "never"
+| Refused => true
+| _ => false
+
+// rules
+
+type Zone = Local | Domestic | Remote
+
+rule shipping(kg: Int, zone: Zone, prime: Bool) -> Int
+  | kg <= 1, _, true => 0
+  | kg <= 1, Local, false => 3
+  | kg <= 5, Local, _ => 5
+  | _, Remote, _ => 12
+  | _, _, _ => 8
+
+rule near(zone: Zone, kg: Int) -> Bool
+  | Local | Domestic, kg <= 10 => true
+  | _, _ => false
+
+rule grade(score: Int) -> Str
+  pre score >= 0 and score <= 100
+  | score >= 90 => "A"
+  | score >= 75 => "B"
+  | score >= 50 => "C"
+  | _ => "F"
+
+fn main_rules() -> Unit ! log
+= do
+  log("1kg prime remote: {shipping(1, Remote, true)}")
+  log("3kg local: {shipping(3, Local, false)}")
+  log("grades: {[95, 80, 51, 10].map(grade)}")
+
+test free = shipping(1, Domestic, true) == 0
+
+test local_small = shipping(1, Local, false) == 3
+
+test remote = shipping(9, Remote, false) == 12
+
+test fallback = shipping(9, Domestic, true) == 8
+
+test grades = [95, 80, 51, 10].map(grade) == ["A", "B", "C", "F"]
+
+test near_rule = near(Local, 3) and
+  near(Domestic, 10) and
+  not near(Remote, 1) and
+  not near(Local, 11)
+
+// richer patterns: or-patterns, list patterns, if e is p (ADR 0029)
+
+type Tok = TLit{v: Int} | TNeg{v: Int} | TAdd | TSub | TMul | TOpen | TClose
+
+fn tok_value(t: Tok) -> Int
+= match t
+| TLit{v} | TNeg{v} => v
+| TAdd | TSub | TMul => 0
+| TOpen | TClose => -1
+
+fn is_op(t: Tok) -> Bool
+= match t
+| TAdd | TSub | TMul => true
+| _ => false
+
+fn rpn(toks: List[Tok], stack: List[Int]) -> Opt[Int]
+= match (toks, stack)
+| ([], [x]) => some(x)
+| ([TLit{v}, ..rest], _) => rpn(rest, [v] + stack)
+| ([TAdd, ..rest], [b, a, ..s]) => rpn(rest, [a + b] + s)
+| ([TSub, ..rest], [b, a, ..s]) => rpn(rest, [a - b] + s)
+| ([TMul, ..rest], [b, a, ..s]) => rpn(rest, [a * b] + s)
+| _ => none
+
+fn pairwise(xs: List[Int]) -> List[Int]
+= match xs
+| [a, b, ..rest] => [a + b] + pairwise([b] + rest)
+| [_] | [] => []
+
+fn middle(xs: List[Str]) -> List[Str]
+= match xs
+| [_, ..mid, _] => mid
+| _ => []
+
+fn last_two(xs: List[Int]) -> Opt[(Int, Int)]
+= match xs
+| [..init, a, b] => some((a + init.len * 0, b))
+| _ => none
+
+fn firsts(xs: List[Res[Int, Str]]) -> Str
+= match xs
+| [ok(0 | 1), ..] => "small"
+| [ok(n), ..] if n > 100 => "big"
+| [ok(_), err(e), ..] => "then {e}"
+| [err(_) | ok(_), ..rest] if rest.is_empty => "alone"
+| [_, ..] => "other"
+| [] => "empty"
+
+fn zip_sum(ps: List[(Int, Int)]) -> Int
+= match ps
+| [(a, b), ..rest] => a * b + zip_sum(rest)
+| [] => 0
+
+fn route(req: List[Str]) -> Str
+= match req
+| ["GET", path] | ["HEAD", path] => "read {path}"
+| ["POST", path, ..body] => "write {path} {body.len}"
+| [m, ..] => "unknown {m}"
+| [] => "empty"
+
+fn nested(o: Opt[Opt[Int]]) -> Int
+= match o
+| some(some(x)) => x
+| some(none) => -1
+| none => -2
+
+fn bools(p: (Bool, Bool)) -> Int
+= match p
+| (true, true) => 3
+| (true, false) | (false, true) => 1
+| (false, false) => 0
+
+fn count_pos(xs: List[Opt[Int]]) -> Int
+= do
+  var n = 0
+  for x in xs
+    if x is some(v) and v > 0 then n := n + v
+  n
+
+fn parity(n: Int) -> Str
+= if n.str.to_int is some(m) and m % 2 == 0 then "even"
+  else if n is 1 | 3 | 5 then "small odd"
+  else "odd"
+
+fn opt_or(o: Opt[Str]) -> Str
+= if o is some(s) then s else "-"
+
+test or_patterns = tok_value(TNeg{v: -3}) == -3 and
+  tok_value(TClose) == -1 and
+  is_op(TMul) and
+  not is_op(TLit{v: 1}) and
+  bools((false, true)) == 1 and
+  bools((true, true)) == 3 and
+  bools((false, false)) == 0
+
+test list_patterns = rpn([TLit{v: 2}, TLit{v: 3}, TAdd, TLit{v: 4}, TMul], []) == some(20) and
+  rpn([TAdd], []) == none and
+  pairwise([1, 2, 3, 4]) == [3, 5, 7] and
+  middle(["a", "b", "c", "d"]) == ["b", "c"] and
+  middle(["a"]) == [] and
+  last_two([1, 2, 3]) == some((2, 3)) and
+  last_two([1]) == none
+
+test nested_list_patterns = firsts([ok(1)]) == "small" and
+  firsts([ok(500)]) == "big" and
+  firsts([ok(7), err("x")]) == "then x" and
+  firsts([err("e")]) == "alone" and
+  firsts([err("e"), ok(2)]) == "other" and
+  firsts([]) == "empty" and
+  zip_sum([(1, 2), (3, 4)]) == 14
+
+test literal_list_patterns = route(["GET", "/a"]) == "read /a" and
+  route(["HEAD", "/b"]) == "read /b" and
+  route(["POST", "/c", "x", "y"]) == "write /c 2" and
+  route(["PUT"]) == "unknown PUT" and
+  route([]) == "empty" and
+  nested(some(none)) == -1 and
+  nested(some(some(4))) == 4
+
+test if_is = count_pos([some(2), none, some(-1), some(3)]) == 5 and
+  parity(4) == "even" and
+  parity(3) == "small odd" and
+  parity(7) == "odd" and
+  opt_or(none) == "-" and
+  opt_or(some("a")) == "a"
+
+// pattern tests as Bool expressions, if chains, guard clauses, long lines (ADR 0032)
+fn some_count(xs: List[Opt[Int]]) -> Int
+= xs.filter(_ is some(_)).len
+
+fn any_pair(xss: List[List[Int]]) -> Bool
+= xss.any(x => x is [_, _, ..])
+
+fn big_some(o: Opt[Int]) -> Bool
+= o is some(v) and v > 10
+
+fn same_kind(a: Tok, b: Tok) -> Int
+= if a is TLit{v} and b is TLit{v: w} and v != w then v - w
+  else if a is TNeg{v} and b is TClose then v
+  else 0
+
+fn either_none(a: Opt[Int], b: Opt[Int]) -> Bool
+= a is none or (b is none)
+
+fn head_plus(xs: List[Int]) -> Int
+= do
+  [first, ..rest] = xs else -1
+  [second, ..] = rest else first
+  first + second
+
+fn opt_sum(xs: List[Opt[Int]]) -> Int
+= do
+  var t = 0
+  for x in xs
+    some(v) = x else ()
+    t := t + v
+  t
+
+fn digits(s: Str) -> Res[Int, Str]
+= do
+  some(n) = s.to_int else return err("not a number: {s}")
+  ok(n * 2)
+
+fn doubled(xs: List[Opt[Int]]) -> List[Int]
+= xs.map(x => do
+  some(v) = x else 0
+  v * 2)
+
+fn scale(p: Point, k: Int) -> Int
+= do
+  Point{x, y} = p
+  x * k + y * k
+
+fn long_chain(xs: List[Int]) -> Int
+= xs.filter(_ > 0).map(_ * 3).sum
+
+test is_expressions = some_count([some(1), none, some(2)]) == 2 and
+  any_pair([[1], [2, 3]]) and
+  not any_pair([[1]]) and
+  big_some(some(11)) and
+  not big_some(some(3)) and
+  not big_some(none) and
+  either_none(some(1), none) and
+  not either_none(some(1), some(2))
+
+test if_chains = same_kind(TLit{v: 5}, TLit{v: 2}) == 3 and
+  same_kind(TLit{v: 5}, TLit{v: 5}) == 0 and
+  same_kind(TNeg{v: -4}, TClose) == -4 and
+  same_kind(TClose, TClose) == 0
+
+test guards = head_plus([4, 5, 6]) == 9 and
+  head_plus([4]) == 4 and
+  head_plus([]) == -1 and
+  opt_sum([some(2), none, some(5)]) == 7 and
+  digits("21") == ok(42) and
+  (digits("x") is err(_)) and
+  doubled([some(1), none]) == [2, 0]
+
+test long_lines = scale(Point{x: 1, y: 2}, 3) == 9 and long_chain([-1, 2, 3]) == 15
+
+// Syntax settled for 1.0 (ADR 0042): annotated bindings, `_ =>`, `with` against `==`, braces
+// and escapes in strings.
+
+type Pt = {a: Int, b: Int} derive Eq
+
+fn annotated(n: Int) -> Int
+= do
+  var seen: List[Int] = []
+  last: Opt[Int] = none
+  for i in 0..n
+    seen := seen.push(i)
+  seen.len + last.or(0)
+
+fn braces(s: Str) -> Bool
+= s.contains("\{") or s.contains("}")
+
+test annotations = annotated(3) == 3
+
+test ignoring_lambdas = (0..3).map(_ => 7) == [7, 7, 7] and ["a", "b"].fold(0, (n, _) => n + 1) == 2
+
+test with_against_eq = Pt{a: 0, b: 0} != (Pt{a: 0, b: 0} with a := 1) and
+  Pt{a: 1, b: 0} == (Pt{a: 0, b: 0} with a := 1)
+
+test braces_in_strings = braces("\{id}") and
+  not braces("id") and
+  "\{\{x}}".len == 5 and
+  "a\{3}".len == 4 and
+  "\{".len == 1
+
+test escapes = "\\{1 + 0}" == "\\1" and
+  "\\\{1}".len == 4 and
+  "é" == "é" and
+  "😀".len == 1 and
+  "}" == "}"

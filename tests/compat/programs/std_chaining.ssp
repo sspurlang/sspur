@@ -1,0 +1,38 @@
+// Opt.and_then, Res.and_then, List.repeat and Map.is_empty
+
+fn half(n: Int) -> Opt[Int]
+= if n % 2 == 0 then some(n / 2) else none
+
+fn parse(s: Str) -> Res[Int, Str]
+= match s.to_int
+| some(n) => ok(n)
+| none => err("bad {s}")
+
+fn positive(n: Int) -> Res[Int, Str]
+= if n > 0 then ok(n) else err("not positive")
+
+fn zeros(n: Int) -> List[Int]
+= [0].repeat(n)
+
+fn none_of(n: Int) -> List[Int]
+= zeros(0).repeat(n)
+
+test opt_chain = some(8).and_then(half).and_then(half) == some(2) and
+  some(3).and_then(half) == none and
+  none.and_then(half) == none
+
+test opt_lambda = some("a").and_then(s => if s == "" then none else some(s.len)) == some(1)
+
+test res_chain = parse("4").and_then(positive) == ok(4) and
+  parse("-4").and_then(positive) == err("not positive") and
+  parse("x").and_then(positive) == err("bad x")
+
+test repeat_one = zeros(3) == [0, 0, 0] and zeros(0) == []
+
+test repeat_many = [1, 2].repeat(2) == [1, 2, 1, 2] and
+  none_of(5) == [] and
+  ["a"].repeat(2).join("") == "aa"
+
+test map_empty = empty_map().is_empty and
+  not empty_map().put(1, "a").is_empty and
+  empty_map().put(1, "a").remove(1).is_empty

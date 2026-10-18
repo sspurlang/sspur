@@ -1,0 +1,447 @@
+// The reference answers of the 2026-10-02-set2/reference corpus run (bench/eval/corpus.jsonl), with their hidden tests.
+
+// t31
+fn max_subarray(xs: List[Int] where _.len > 0) -> Int
+= do
+  var best = xs[0]
+  var cur = 0
+  for x in xs
+    cur := max(x, cur + x)
+    best := max(best, cur)
+  best
+
+test t31_0 = max_subarray([-2, 1, -3, 4, -1, 2, 1, -5, 4]) == 6
+
+test t31_1 = max_subarray([-3, -1, -2]) == -1
+
+test t31_2 = max_subarray([5]) == 5
+
+// t32
+fn rotate(xs: List[Int], k: Int where _ >= 0) -> List[Int]
+= if xs.is_empty then [] else xs.drop(k % xs.len) + xs.take(k % xs.len)
+
+test t32_0 = rotate([1, 2, 3, 4, 5], 2) == [3, 4, 5, 1, 2]
+
+test t32_1 = rotate([1, 2, 3], 3) == [1, 2, 3]
+
+test t32_2 = rotate([1, 2, 3], 7) == [2, 3, 1]
+
+test t32_3 = rotate([], 4) == []
+
+// t33
+fn transpose(m: List[List[Int]]) -> List[List[Int]]
+= match m.first
+| none => []
+| some(row) => (0..row.len).map(i => m.map(r => r[i]))
+
+test t33_0 = transpose([[1, 2, 3], [4, 5, 6]]) == [[1, 4], [2, 5], [3, 6]]
+
+test t33_1 = transpose([]) == []
+
+test t33_2 = transpose([[7]]) == [[7]]
+
+// t34
+fn dedupe_adjacent(xs: List[Int]) -> List[Int]
+= xs.fold([], (acc, x) => if acc.last == some(x) then acc else acc.push(x))
+
+test t34_0 = dedupe_adjacent([1, 1, 2, 2, 2, 1, 3, 3]) == [1, 2, 1, 3]
+
+test t34_1 = dedupe_adjacent([]) == []
+
+test t34_2 = dedupe_adjacent([4]) == [4]
+
+// t35
+fn merge_sorted(a: List[Int], b: List[Int]) -> List[Int]
+= match (a.first, b.first)
+| (some(x), some(y)) => if x <= y then [x] + merge_sorted(a.drop(1), b)
+  else [y] + merge_sorted(a, b.drop(1))
+| (none, _) => b
+| _ => a
+
+test t35_0 = merge_sorted([1, 4, 9], [2, 4, 10]) == [1, 2, 4, 4, 9, 10]
+
+test t35_1 = merge_sorted([], [3]) == [3]
+
+test t35_2 = merge_sorted([1], []) == [1]
+
+// t36
+fn is_balanced(s: Str) -> Bool
+= do
+  var stack = []
+  var ok = true
+  for c in s.chars
+    if "([\{".contains(c) then stack := stack.push(c)
+      else if ")]}".contains(c) then if stack.last ==
+        some(opener(c)) then stack := stack.take(stack.len - 1)
+      else ok := false
+  ok and stack.is_empty
+
+fn opener(c: Str) -> Str
+= if c == ")" then "(" else if c == "]" then "[" else "\{"
+
+test t36_0 = is_balanced("a(b[c]\{d})e")
+
+test t36_1 = not is_balanced("(]")
+
+test t36_2 = not is_balanced("((")
+
+test t36_3 = is_balanced("")
+
+test t36_4 = not is_balanced("())(")
+
+test t36_5 = is_balanced("\{[()]}")
+
+// t37
+fn shift_letters(s: Str, k: Int) -> Str
+= s.chars.map(c => shift(c, k)).join("")
+
+fn shift(c: Str, k: Int) -> Str
+= do
+  alpha = "abcdefghijklmnopqrstuvwxyz"
+  match alpha.chars.enumerate.find(_.1 == c)
+  | some((i, _)) => alpha.chars[((i + k) % 26 + 26) % 26]
+  | none => c
+
+test t37_0 = shift_letters("abc xyz", 2) == "cde zab"
+
+test t37_1 = shift_letters("hello", -1) == "gdkkn"
+
+test t37_2 = shift_letters("a-Z!", 27) == "b-Z!"
+
+// t38
+fn word_lengths(s: Str) -> List[Int]
+= s.split(" ").filter(w => not w.is_empty).map(_.len)
+
+test t38_0 = word_lengths("hi  there you") == [2, 5, 3]
+
+test t38_1 = word_lengths("   ") == []
+
+test t38_2 = word_lengths("one") == [3]
+
+// t39
+fn longest_word(s: Str) -> Str
+= s.split(" ").fold("", (best, w) => if w.len > best.len then w else best)
+
+test t39_0 = longest_word("a bb ccc dd eee") == "ccc"
+
+test t39_1 = longest_word("") == ""
+
+test t39_2 = longest_word("  x  ") == "x"
+
+// t40
+fn is_palindrome_num(n: Int where _ >= 0) -> Bool
+= n.str == n.str.reverse
+
+test t40_0 = is_palindrome_num(12321)
+
+test t40_1 = not is_palindrome_num(123)
+
+test t40_2 = is_palindrome_num(0)
+
+test t40_3 = is_palindrome_num(7)
+
+// t41
+fn digit_sum(n: Int where _ >= 0) -> Int
+= if n < 10 then n else n % 10 + digit_sum(n / 10)
+
+test t41_0 = digit_sum(9875) == 29
+
+test t41_1 = digit_sum(0) == 0
+
+test t41_2 = digit_sum(1000000) == 1
+
+// t42
+fn gcd(a: Int, b: Int) -> Int
+= if b == 0 then a else gcd(b, a % b)
+
+fn lcm_list(xs: List[Int]) -> Int
+= xs.fold(1, (acc, x) => acc / gcd(acc, x) * x)
+
+test t42_0 = lcm_list([4, 6, 8]) == 24
+
+test t42_1 = lcm_list([]) == 1
+
+test t42_2 = lcm_list([7, 3]) == 21
+
+test t42_3 = lcm_list([5]) == 5
+
+type Item = {name: Str, price: Int, qty: Int}
+
+// t43
+fn restock(items: List[Item], name: Str, n: Int) -> List[Item]
+= items.map(i => if i.name == name then i with qty := i.qty + n else i)
+
+test t43_0 = restock(
+  [Item{name: "a", price: 1, qty: 2}, Item{name: "b", price: 3, qty: 0}],
+  "b",
+  5,
+) == [Item{name: "a", price: 1, qty: 2}, Item{name: "b", price: 3, qty: 5}]
+
+test t43_1 = restock([], "a", 1) == []
+
+// t44
+fn inventory_value(items: List[Item]) -> Int
+= items.map(_.price * _.qty).sum
+
+test t44_0 = inventory_value(
+  [Item{name: "a", price: 2, qty: 3}, Item{name: "b", price: 10, qty: 1}],
+) == 16
+
+test t44_1 = inventory_value([]) == 0
+
+// t45
+fn cheapest(items: List[Item]) -> Opt[Str]
+= items.fold(none, (best, i) => do
+  match best
+  | some(b) if b.price <= i.price => some(b)
+  | _ => some(i)).map(_.name)
+
+test t45_0 = cheapest(
+  [
+    Item{name: "a", price: 5, qty: 1},
+    Item{name: "b", price: 2, qty: 1},
+    Item{name: "c", price: 2, qty: 9},
+  ],
+) == some("b")
+
+test t45_1 = cheapest([]) == none
+
+type CmdErr = Unknown{cmd: Str} | MissingArg{cmd: Str}
+
+// t46
+fn exec(stack: List[Int], cmd: Str) -> List[Int] ! fail[CmdErr]
+= do
+  words = cmd.split(" ")
+  op = words[0]
+  if op == "push" then do
+    n = words.get(1).or("").to_int.ok_or(MissingArg{cmd: "push"})
+    stack.push(n)
+  else if op ==
+    "pop" then (if stack.is_empty then raise MissingArg{cmd: "pop"} else stack.take(stack.len - 1))
+  else if op ==
+    "add" then (if stack.len < 2 then raise MissingArg{cmd: "add"} else stack.take(stack.len - 2).push(stack[stack.len - 2] + stack[stack.len - 1]))
+  else raise Unknown{cmd: op}
+
+test t46_0 = catch exec([1], "push 5") == [1, 5]
+| _ => false
+
+test t46_1 = catch exec([1, 2], "add") == [3]
+| _ => false
+
+test t46_2 = catch exec([], "pop") == []
+| MissingArg{cmd} => cmd == "pop"
+| _ => false
+
+test t46_3 = catch exec([], "jump 3") == []
+| Unknown{cmd} => cmd == "jump"
+| _ => false
+
+test t46_4 = catch exec([], "push x") == []
+| MissingArg{cmd} => cmd == "push"
+| _ => false
+
+// t48
+fn trace_sum(xs: List[Int]) -> Int ! log
+= do
+  var t = 0
+  for x in xs
+    t := t + x
+    log("total={t}")
+  t
+
+test t48_0 = trace_sum([1, 2, 3]) == 6
+
+test t48_1 = trace_sum([]) == 0
+
+// t49
+fn partition[A](xs: List[A], f: A -> Bool) -> (List[A], List[A])
+= (xs.filter(f), xs.filter(x => not f(x)))
+
+test t49_0 = partition([1, 2, 3, 4, 5], _ % 2 == 0) == ([2, 4], [1, 3, 5])
+
+test t49_1 = partition(["a"], s => s == "b") == ([], ["a"])
+
+// t50
+fn frequencies[A](xs: List[A]) -> Map[A, Int]
+= xs.fold(empty_map(), (m, x) => m.put(x, m.get(x).or(0) + 1))
+
+test t50_0 = frequencies(["a", "b", "a"]).get("a") == some(2)
+
+test t50_1 = frequencies([1, 1, 1]).get(1) == some(3)
+
+test t50_2 = frequencies([1]).get(2) == none
+
+test t50_3 = frequencies([3, 4, 3]).len == 2
+
+// t51
+fn zip_with[A, B, C](xs: List[A], ys: List[B], f: (A, B) -> C) -> List[C]
+= xs.zip(ys).map(p => f(p.0, p.1))
+
+test t51_0 = zip_with([1, 2, 3], [10, 20], (a, b) => a + b) == [11, 22]
+
+test t51_1 = zip_with(["a"], [3], (s, n) => s.repeat(n)) == ["aaa"]
+
+// t52
+fn fib_list(n: Int where _ >= 0) -> List[Int]
+= do
+  var out = []
+  var a = 0
+  var b = 1
+  for i in 0..n
+    out := out.push(a)
+    t = a + b
+    a := b
+    b := t
+  out
+
+test t52_0 = fib_list(7) == [0, 1, 1, 2, 3, 5, 8]
+
+test t52_1 = fib_list(0) == []
+
+test t52_2 = fib_list(1) == [0]
+
+type Tree = Leaf | Node{left: Tree, value: Int, right: Tree}
+
+// t53
+fn insert(t: Tree, x: Int) -> Tree
+= match t
+| Leaf => Node{left: Leaf, value: x, right: Leaf}
+| Node{left, value, right} => if x < value then Node{left: insert(left, x), value, right}
+  else if x > value then Node{left, value, right: insert(right, x)}
+  else t
+
+test t53_0 = insert(Leaf, 5) == Node{left: Leaf, value: 5, right: Leaf}
+
+test t53_1 = insert(insert(Leaf, 5), 3) ==
+  Node{left: Node{left: Leaf, value: 3, right: Leaf}, value: 5, right: Leaf}
+
+test t53_2 = insert(insert(Leaf, 5), 5) == Node{left: Leaf, value: 5, right: Leaf}
+
+// t54
+fn inorder(t: Tree) -> List[Int]
+= match t
+| Leaf => []
+| Node{left, value, right} => inorder(left) + [value] + inorder(right)
+
+fn kth_smallest(t: Tree, k: Int) -> Opt[Int]
+= if k < 1 then none else inorder(t).get(k - 1)
+
+test t54_0 = kth_smallest(
+  Node{
+    left: Node{left: Leaf, value: 1, right: Leaf},
+    value: 3,
+    right: Node{left: Leaf, value: 8, right: Leaf},
+  },
+  2,
+) == some(3)
+
+test t54_1 = kth_smallest(Leaf, 1) == none
+
+test t54_2 = kth_smallest(Node{left: Leaf, value: 4, right: Leaf}, 0) == none
+
+test t54_3 = kth_smallest(Node{left: Leaf, value: 4, right: Leaf}, 2) == none
+
+// t55
+fn height(t: Tree) -> Int
+= match t
+| Leaf => 0
+| Node{left, right} => 1 + max(height(left), height(right))
+
+fn tree_height_balanced(t: Tree) -> Bool
+= match t
+| Leaf => true
+| Node{left, right} => (height(left) - height(right)).abs <= 1 and
+  tree_height_balanced(left) and
+  tree_height_balanced(right)
+
+test t55_0 = tree_height_balanced(Leaf)
+
+test t55_1 = tree_height_balanced(
+  Node{left: Node{left: Leaf, value: 1, right: Leaf}, value: 2, right: Leaf},
+)
+
+test t55_2 = not tree_height_balanced(
+  Node{
+    left: Node{left: Node{left: Leaf, value: 1, right: Leaf}, value: 2, right: Leaf},
+    value: 3,
+    right: Leaf,
+  },
+)
+
+type Json = JNull | JBool{b: Bool} | JNum{n: Int} | JStr{s: Str} | JArr{items: List[Json]}
+
+// t56
+fn render(j: Json) -> Str
+= match j
+| JNull => "null"
+| JBool{b} => b.str
+| JNum{n} => n.str
+| JStr{s} => "\"{s}\""
+| JArr{items} => "[" + items.map(render).join(",") + "]"
+
+test t56_0 = render(JArr{items: [JNum{n: 1}, JStr{s: "x"}, JNull, JBool{b: true}]}) ==
+  "[1,\"x\",null,true]"
+
+test t56_1 = render(JArr{items: []}) == "[]"
+
+test t56_2 = render(JNum{n: -3}) == "-3"
+
+// t57
+fn sum_nums(j: Json) -> Int
+= match j
+| JNum{n} => n
+| JArr{items} => items.map(sum_nums).sum
+| _ => 0
+
+test t57_0 = sum_nums(JArr{items: [JNum{n: 1}, JArr{items: [JNum{n: 2}, JStr{s: "9"}]}, JNull]}) ==
+  3
+
+test t57_1 = sum_nums(JNull) == 0
+
+type Vending = Idle | HasCoins{cents: Int}
+
+type Action = Coin{cents: Int} | Buy{price: Int} | Refund
+
+// t58
+fn cents(v: Vending) -> Int
+= match v
+| Idle => 0
+| HasCoins{cents} => cents
+
+fn step(v: Vending, a: Action) -> (Vending, Str)
+= match a
+| Coin{cents: c} => (HasCoins{cents: cents(v) + c}, "")
+| Buy{price} => if cents(v) >= price then (Idle, "vend change {cents(v) - price}")
+  else (v, "need {price - cents(v)}")
+| Refund => (Idle, "refund {cents(v)}")
+
+test t58_0 = step(Idle, Coin{cents: 25}) == (HasCoins{cents: 25}, "")
+
+test t58_1 = step(HasCoins{cents: 25}, Coin{cents: 10}) == (HasCoins{cents: 35}, "")
+
+test t58_2 = step(HasCoins{cents: 50}, Buy{price: 35}) == (Idle, "vend change 15")
+
+test t58_3 = step(HasCoins{cents: 20}, Buy{price: 35}) == (HasCoins{cents: 20}, "need 15")
+
+test t58_4 = step(Idle, Refund) == (Idle, "refund 0")
+
+test t58_5 = step(Idle, Buy{price: 5}) == (Idle, "need 5")
+
+// t60
+fn spiral(m: List[List[Int]]) -> List[Int]
+= match m.first
+| none => []
+| some(top) => top + spiral(rotate_ccw(m.drop(1)))
+
+fn rotate_ccw(m: List[List[Int]]) -> List[List[Int]]
+= match m.first
+| none => []
+| some(row) => (0..row.len).reverse.map(i => m.map(r => r[i]))
+
+test t60_0 = spiral([[1, 2, 3], [4, 5, 6], [7, 8, 9]]) == [1, 2, 3, 6, 9, 8, 7, 4, 5]
+
+test t60_1 = spiral([[1, 2], [3, 4], [5, 6]]) == [1, 2, 4, 6, 5, 3]
+
+test t60_2 = spiral([]) == []
+
+test t60_3 = spiral([[1, 2, 3]]) == [1, 2, 3]

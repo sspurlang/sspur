@@ -1,0 +1,21 @@
+use money
+
+type Line = {name: Str, price: money.Price, qty: Int}
+
+fn line_total(l: Line) -> money.Price
+= money.times(l.price, l.qty)
+
+pub fn total(ls: List[Line]) -> money.Price
+= ls.fold(money.price(0), (acc, l) => money.add(acc, line_total(l)))
+
+test totals = money.show(total([Line{name: "tea", price: money.price(350), qty: 2}])) == "7.00 EUR"
+
+fn main() -> Unit ! log
+= do
+  ls = [
+    Line{name: "tea", price: money.price(350), qty: 2},
+    Line{name: "cake", price: money.price(425), qty: 1},
+  ]
+  for l in ls
+    log("{l.qty} x {l.name}: {money.show(line_total(l))}")
+  log("total {money.show(total(ls))}")

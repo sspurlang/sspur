@@ -1,0 +1,4 @@
+[package]
+name = "money"
+version = "1.0.0"
+src = "lib.ssp"

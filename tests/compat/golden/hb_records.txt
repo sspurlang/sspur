@@ -1,0 +1,35 @@
+# programs/hb_records.ssp: frozen by the 1.x compatibility promise (docs/reference/stability.md)
+== canonical
+blake3 a1134fbac497ff49c30f21f79aeb905d6a23e992c7ae155bc264180fdee52e5e
+== hashes
+#rskb347zglf4lbidkwbvzxtnikbzvvf2bu7j32jj4777g52jazta  Address
+#jdu4ssp227qpgfach7jsteizarbhcvztiib2fyyvoodaf5asc3ya  User
+#7qu4xdlzcs6mjanhleucxtlpnmrhulmtqq4qkqw54h2xb66zafva  birthday
+#bujvleqk677lskecezc74oytmar55xxygyfmm7qray2oixi3g4pa  move_to
+#7a3bbnbqk77ff4gi2efqed5jnefrbmal2mik37jdgmlzkvzecb3q  records
+#elrecu2iwa6zalukbamo36d3xm4ab6xmszkjzfrpiil63gua6cdq  Shape
+#d7y7ycqmqsjhsu33w7lu7kbgkhglbqhetus6gvo4v7aiicjvam4a  Status
+#zy6c4awiauunchpalgoe4y7r52eguban6cgsbiag36bckz5zj5ma  area
+#xxvn5cmpvpc37aq323377urlenp2be7njzpte5r4zzg6hehilzzq  sums
+#ehnl2bntbcypdqboc3xi6dnqizs67fqv3culwczx3rfzynillxfa  Pair
+#5ua2uqsae73ipqt3skcbxoebonm4gy37escek7umikk25dkvcauq  Tree
+#ghdm5qmcpxbpyqieryoi3m4x63iavu4vgr5qq3dqax4w5gnlh66a  insert
+#lgxt2t47go5rlpjhmh7oend4g2uctqjysbfew5tkjkbulfakrurq  size
+#ijkunravtpgqawmaoareix2nlm2zlbydhocigu7e33irinjbdidq  generic
+#qzgttmc4xyvn7tzr2yilmanqh6xlzngatyqudyaxjt6wpcrakjxa  main
+== check
+== run interp
+Rect{w: 1.0, h: 2.0}
+Suspended{reason: "late fees"}
+Pair{first: 1, second: [true]}
+== run native
+(same as run interp)
+== test interp
+pass  records
+pass  sums
+pass  generic
+3 passed, 0 failed
+== test native
+(same as test interp)
+== fmt
+(the source, unchanged)

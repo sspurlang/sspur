@@ -311,6 +311,7 @@ This page lists every code the compiler can emit, grouped by area. The test suit
 | `W_HANDLE_UNUSED` | A `handle` around code that never performs that effect | Remove the `handle` |
 | `W_UNSAFE_UNUSED` | An `unsafe` clause with no unsafe operation | Remove the clause |
 | `W_KERNEL_UNWRITTEN` | A kernel's `&mut` slice that is never written | Declare it `&[T]` |
+| `W_DEPRECATED` | A use of a deprecated builtin: it still works in every 1.x release and goes in 2.0 (see [Stability and deprecation](stability.md)) | Write the replacement the hint gives |
 | `W_RULE_UNCHECKED` | A `rule` too large for gap and overlap analysis | Split it, or accept that it isn't checked |
 
 ## Audit notes

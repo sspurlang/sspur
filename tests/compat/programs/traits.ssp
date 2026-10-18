@@ -1,0 +1,316 @@
+// traits
+
+trait Shape
+  fn area(s: Self) -> F64
+  fn name(s: Self) -> Str
+  = "shape"
+  fn describe(s: Self) -> Str
+  = "{s.name} of area {s.area}"
+
+trait Announce
+  fn announce(x: Self, who: Str) -> Str ! log
+
+type Circle = {r: F64}
+
+type Rect = {w: F64, h: F64}
+
+type Box[T] = {v: T}
+
+type Cell = Empty | Full{n: Int}
+
+impl Shape for Circle
+  fn area(c: Circle) -> F64
+  = 3.0 * c.r * c.r
+  fn name(c: Circle) -> Str
+  = "circle"
+
+impl Shape for Rect
+  fn area(r: Self) -> F64
+  = r.w * r.h
+
+impl Announce for Rect
+  fn announce(r: Rect, who: Str) -> Str ! log
+  = do
+    log("{who} sees a rect")
+    "{who}: {r.w} by {r.h}"
+
+impl[T: Show] Show for Box[T]
+  fn show(b: Box[T]) -> Str
+  = "Box({b.v.show})"
+
+impl Show for Cell
+  fn show(c: Cell) -> Str
+  = match c
+  | Empty => "."
+  | Full{n} => n.str
+
+fn grid(cs: List[Cell]) -> Str
+= cs.map(_.show).join("")
+
+fn loud(r: Rect) -> Str ! log
+= r.announce("ann")
+
+fn areas[T: Shape](xs: List[T]) -> F64
+= xs.map(area).sum
+
+test default_method = Rect{w: 2.0, h: 3.0}.describe == "shape of area 6.0"
+
+test overridden_default = Circle{r: 1.0}.describe == "circle of area 3.0"
+
+test call_form = area(Rect{w: 1.0, h: 4.0}) == 4.0
+
+test generic_impl = Box{v: Box{v: 7}}.show == "Box(Box(7))"
+
+test builtin_show = Box{v: "x"}.show == "Box(x)" and 5.show == "5"
+
+test sum_impl = grid([Empty, Full{n: 3}, Empty]) == ".3."
+
+test effectful_method = loud(Rect{w: 1.0, h: 2.0}) == "ann: 1.0 by 2.0"
+
+test zero_arg_field_form = Circle{r: 2.0}.name == "circle"
+
+test method_values = [Rect{w: 1.0, h: 2.0}].map(area) == [2.0] and
+  areas([Circle{r: 1.0}]) == 3.0 and
+  [1, 2].fold(0, add) == 3 and
+  [Empty, Full{n: 4}].map(show).join("") == ".4"
+
+// constraints
+
+trait Score
+  fn score(x: Self) -> Int
+
+type Player = {name: Str, pts: Int}
+
+type Team = {members: List[Player]}
+
+impl Score for Player
+  fn score(p: Player) -> Int
+  = p.pts
+
+impl Score for Team
+  fn score(t: Team) -> Int
+  = t.members.map(_.score).sum
+
+fn max_of[T: Ord](xs: List[T]) -> Opt[T]
+  ex max_of([3, 9, 2]) == some(9)
+  ex max_of(["b", "a"]) == some("b")
+= xs.fold(none, (m, x) => do
+  match m
+  | none => some(x)
+  | some(y) => if x > y then some(x) else some(y))
+
+fn best[T: Score](xs: List[T]) -> Int
+  pre xs.len > 0
+= match max_of(xs.map(_.score))
+| some(s) => s
+| none => 0
+
+fn label[T: Eq + Show](a: T, b: T) -> Str
+= if a == b then "same {a.show}" else "{a.show}/{b.show}"
+
+fn all_shown[T: Show](xs: List[T]) -> Str
+= xs.map(x => "<{x.show}>").join("")
+
+fn each_score[T: Score, e](xs: List[T], f: Int -> Unit ! e) -> Unit ! e
+= do
+  for x in xs
+    f(x.score)
+  ()
+
+fn counted[T: Ord](xs: List[T], x: T) -> Int
+= xs.filter(_ == x).len
+
+fn show_it[T: Show](x: T) -> Str
+= x.show
+
+fn shout(n: Int) -> Unit ! log
+= log("score {n}")
+
+fn run_scores() -> Int ! log
+= do
+  each_score([Player{name: "a", pts: 2}], shout)
+  1
+
+test best_player = best([Player{name: "a", pts: 4}, Player{name: "b", pts: 9}]) == 9
+
+test best_team = best([Team{members: [Player{name: "a", pts: 4}, Player{name: "b", pts: 1}]}]) == 5
+
+test multiple_bounds = label(1, 1) == "same 1" and label("x", "y") == "x/y"
+
+test lambda_in_generic = all_shown([1, 2]) == "<1><2>"
+
+test as_value = [1, 2].map(show_it) == ["1", "2"]
+
+test method_sugar = [4, 7, 1].max_of == some(7)
+
+test empty_list_defaults = max_of([]) == none
+
+test nested = max_of([[1, 2], [1, 3]]) == some([1, 3])
+
+test tuples = max_of([(1, "b"), (1, "c")]) == some((1, "c"))
+
+test eq_bound = counted([1, 2, 1], 1) == 2
+
+test effect_row = run_scores() == 1
+
+// operators
+
+type Vec2 = {x: Int, y: Int} derive Eq, Show
+
+type Money = {cents: Int}
+
+type Frac = {num: Int, den: Int where _ > 0}
+
+type Row = {cells: List[F64]}
+
+impl Add for Vec2
+  fn add(a: Vec2, b: Vec2) -> Vec2
+  = Vec2{x: a.x + b.x, y: a.y + b.y}
+
+impl Sub for Vec2
+  fn sub(a: Vec2, b: Vec2) -> Vec2
+  = Vec2{x: a.x - b.x, y: a.y - b.y}
+
+impl Mul for Vec2
+  fn mul(a: Vec2, b: Vec2) -> Vec2
+  = Vec2{x: a.x * b.x, y: a.y * b.y}
+
+impl Neg for Vec2
+  fn neg(a: Vec2) -> Vec2
+  = Vec2{x: -a.x, y: -a.y}
+
+impl Add for Money
+  fn add(a: Money, b: Money) -> Money
+  = Money{cents: a.cents + b.cents}
+
+impl Div for Money
+  fn div(a: Money, b: Money) -> Money
+  = Money{cents: a.cents / b.cents}
+
+impl Eq for Frac
+  fn eq(a: Frac, b: Frac) -> Bool
+  = a.num * b.den == b.num * a.den
+
+impl Ord for Frac
+  fn cmp(a: Frac, b: Frac) -> Int
+  = a.num * b.den - b.num * a.den
+
+impl Mul for Frac
+  fn mul(a: Frac, b: Frac) -> Frac
+  = Frac{num: a.num * b.num, den: a.den * b.den}
+
+impl Index[Int, F64] for Row
+  fn index(r: Row, i: Int) -> F64
+  = r.cells[i]
+
+fn sum_all[T: Add](xs: List[T], zero: T) -> T
+= xs.fold(zero, (a, b) => a + b)
+
+fn smallest[T: Ord](xs: List[T], first: T) -> T
+= xs.fold(first, (m, x) => if x < m then x else m)
+
+fn same_all[T: Eq](xs: List[T], x: T) -> Bool
+= xs.all(_ == x)
+
+fn at[R: Index[Int, F64]](r: R, i: Int) -> F64
+= r[i]
+
+fn negate_all[T: Neg](xs: List[T]) -> List[T]
+= xs.map(x => -x)
+
+fn third(r: Row) -> F64
+= r[2]
+
+test vec_ops = Vec2{x: 1, y: 2} + Vec2{x: 3, y: 4} - Vec2{x: 1, y: 1} == Vec2{x: 3, y: 5}
+
+test vec_mul = Vec2{x: 2, y: 3} * Vec2{x: 4, y: 5} == Vec2{x: 8, y: 15}
+
+test vec_neg = -Vec2{x: 1, y: -2} == Vec2{x: -1, y: 2}
+
+test money_sum = sum_all([Money{cents: 5}, Money{cents: 7}], Money{cents: 0}).cents == 12
+
+test money_div = (Money{cents: 9} / Money{cents: 2}).cents == 4
+
+test int_sum = sum_all([1, 2, 3], 0) == 6 and sum_all(["a", "b"], "") == "ab"
+
+test frac_eq = Frac{num: 1, den: 2} == Frac{num: 2, den: 4} and
+  Frac{num: 1, den: 2} != Frac{num: 1, den: 3}
+
+test frac_ord = Frac{num: 1, den: 3} < Frac{num: 1, den: 2} and
+  Frac{num: 2, den: 3} >= Frac{num: 4, den: 6}
+
+test frac_min = smallest([Frac{num: 3, den: 4}, Frac{num: 1, den: 8}], Frac{num: 1, den: 1}).num ==
+  1
+
+test frac_mul = Frac{num: 1, den: 2} * Frac{num: 2, den: 3} == Frac{num: 1, den: 3}
+
+test generic_eq_uses_impl = same_all(
+  [Frac{num: 1, den: 2}, Frac{num: 3, den: 6}],
+  Frac{num: 2, den: 4},
+)
+
+test generic_eq_builtin = same_all([1, 1], 1) and not same_all([1, 2], 1)
+
+test index_impl = third(Row{cells: [1.0, 2.0, 3.5]}) == 3.5 and at(Row{cells: [4.0]}, 0) == 4.0
+
+test neg_generic = negate_all([1, -2]) == [-1, 2] and
+  negate_all([Vec2{x: 1, y: 1}]) == [Vec2{x: -1, y: -1}]
+
+test builtin_list_eq_uses_the_element_impl = [Frac{num: 1, den: 2}] == [Frac{num: 2, den: 4}] and
+  [Frac{num: 1, den: 2}].contains(Frac{num: 1, den: 2}) and
+  not [Frac{num: 1, den: 2}].contains(Frac{num: 2, den: 4})
+
+// derive
+
+type Point = {x: Int, y: Int} derive Eq, Ord, Show, Hash, Json
+
+type Suit = Clubs | Hearts | Spades{rank: Int} derive Eq, Ord, Show, Hash
+
+type Pair[A, B] = {first: A, second: B} derive Eq, Ord, Show, Json
+
+type Id = new Str derive Eq, Ord, Show, Hash
+
+fn largest[T: Ord](xs: List[T]) -> Opt[T]
+= xs.fold(none, (m, x) => do
+  match m
+  | none => some(x)
+  | some(y) => if x > y then some(x) else some(y))
+
+fn distinct_hashes[T: Hash](xs: List[T]) -> Int
+= xs.map(_.hash).unique.len
+
+fn dump[T: Json](xs: List[T]) -> Str
+= "[" + xs.map(_.to_json).join(",") + "]"
+
+fn render[T: Show](xs: List[T]) -> Str
+= xs.map(_.show).join(" ")
+
+fn ordered[T: Ord](a: T, b: T) -> Bool
+= a <= b
+
+test record_ord = Point{x: 1, y: 2} < Point{x: 1, y: 3} and Point{x: 2, y: 0} > Point{x: 1, y: 9}
+
+test record_max = largest([Point{x: 1, y: 5}, Point{x: 2, y: 1}]) == some(Point{x: 2, y: 1})
+
+test record_show = Point{x: 1, y: 2}.show == "Point\{x: 1, y: 2}"
+
+test record_hash = Point{x: 1, y: 2}.hash == Point{x: 1, y: 2}.hash and
+  distinct_hashes([Point{x: 1, y: 2}, Point{x: 2, y: 1}, Point{x: 1, y: 2}]) == 2
+
+test record_json = Point{x: 1, y: 2}.to_json == "\{\"x\":1,\"y\":2}" and
+  json.decode[Point](Point{x: 3, y: 4}.to_json) == ok(Point{x: 3, y: 4})
+
+test sum_compare = Clubs != Hearts and ordered(Spades{rank: 1}, Spades{rank: 2})
+
+test sum_show = render([Clubs, Spades{rank: 3}]) == "Clubs Spades\{rank: 3}"
+
+test generic_derive = Pair{first: 1, second: "a"} < Pair{first: 1, second: "b"} and
+  largest([Pair{first: 2, second: 0}, Pair{first: 1, second: 9}]) == some(Pair{first: 2, second: 0})
+
+test generic_json = dump([Pair{first: 1, second: true}]) == "[\{\"first\":1,\"second\":true}]"
+
+test newtype_derive = Id("a") < Id("b") and
+  Id("x").show == Id("x").str and
+  largest([Id("q"), Id("z")]) == some(Id("z"))
+
+test structural_eq_unchanged = Point{x: 1, y: 2} == Point{x: 1, y: 2} and [Clubs] == [Clubs]

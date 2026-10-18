@@ -1,0 +1,28 @@
+# programs/gs_shapes.ssp: frozen by the 1.x compatibility promise (docs/reference/stability.md)
+== canonical
+blake3 20d848806f9acf9c3a2f1cfa30adc5a5c315f14812a8eb12738e9dc3285d39d4
+== hashes
+#x4a3x3lcxuvbqezano3nolnexrls3mkrkunk5d4ohdfes2x3g7la  Point
+#tv7ezxmioakaguz4prvxuen5r3th42hpgdqklakklzy25rqncx6q  Shape
+#vky665mlsqb7d7e66kjfoidq4g4fyjutgvlrvp7x6n6hzxhs77na  area
+#y7rypl5qdrqvnyvct6cgrqkrm5k4g4ubupzsfimkuzc2zhtdx55q  describe
+#iocquztpiry74cnnjhkv7jl6gxe2dr2gk4vqcidhtjzx3knbpkkq  main
+#y2y3lbqmir4nxnntutq2xqeij7vlp4c4nk2mdnridvwnszzqpcrq  square
+#6zbjmulumienvchkps52xciclogkrm62fzuma5p4wlprvcntr7dq  dot_area
+== check
+== run interp
+circle at (0, 0), radius 2: area 12
+square 3x3: area 9
+rect 4x1: area 4
+dot: area 0
+total area 25
+== run native
+(same as run interp)
+== test interp
+pass  square
+pass  dot_area
+2 passed, 0 failed
+== test native
+(same as test interp)
+== fmt
+(the source, unchanged)

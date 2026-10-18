@@ -1,0 +1,33 @@
+type Point = {x: Int, y: Int}
+
+type Shape = Circle{center: Point, r: Int where _ > 0} | Rect{corner: Point, w: Int, h: Int} | Dot
+
+fn area(s: Shape) -> Int
+= match s
+| Circle{r} => 3 * r * r
+| Rect{w, h} => w * h
+| Dot => 0
+
+fn describe(s: Shape) -> Str
+= match s
+| Circle{center, r} => "circle at ({center.x}, {center.y}), radius {r}"
+| Rect{w, h} if w == h => "square {w}x{h}"
+| Rect{w, h} => "rect {w}x{h}"
+| Dot => "dot"
+
+fn main() -> Unit ! log
+= do
+  origin = Point{x: 0, y: 0}
+  shapes = [
+    Circle{center: origin, r: 2},
+    Rect{corner: origin, w: 3, h: 3},
+    Rect{corner: origin with x := 5, w: 4, h: 1},
+    Dot,
+  ]
+  for s in shapes
+    log("{describe(s)}: area {area(s)}")
+  log("total area {shapes.map(area).sum}")
+
+test square = describe(Rect{corner: Point{x: 1, y: 1}, w: 2, h: 2}) == "square 2x2"
+
+test dot_area = area(Dot) == 0

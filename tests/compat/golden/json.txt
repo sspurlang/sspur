@@ -1,0 +1,64 @@
+# programs/json.ssp: frozen by the 1.x compatibility promise (docs/reference/stability.md)
+== canonical
+blake3 67cb4f05d1cfc3a2c659189613a30557f30a2d15e6a5f3370eaf4b6e5dbba3db
+== hashes
+#mtdaeaszsuiy4bb6wsylh2d2qsbbp5eyklwn6y2kuljetgi3vrea  Sku
+#zk54fzlsodertji5muiz2ezv2ty3noa7bsci5tctlluaeymfwgoq  Line
+#fuyz6uhxudrnrrbfafmdyofngxl7nklumbx2bu2vikceptrcibaa  Status
+#x2vqpheildvjsu2lxpafkygyr47ujhtw2v4pqifqiozexboks3aq  Order
+#w2p76u2vrt3u5e3b4vc2z4oncgsxcofqolirpjndmiv7mwf5ryfa  sample
+#vg4qdzw3wbmzvqyby2s6wfxwvjq6xmzfv63uzpbh2mw5v7bp6sca  encode_order
+#bbplyffe2mw2tgm3xzk66cj2s62i2cu6j7ltwho7elvb5vlzwjlq  round_trip
+#tbyso4c5eojr53m2cwlqw4q3m7h7rnxx6zpsyhnrkwbaot5xxuwq  decode_order
+#yho4guzhmwdyqy23yq52dl7cxouywxtwho4vnhn32pmikjtm3lvq  statuses
+#qgepihyoahiylintdshwedyikcuvyjtlzf4o6mmqg3cnpeg5vvya  pairs
+#w5zsihxeo2uzhbsag4hhn2oxfvlereh3zpu3rlwyoxd4zgk2zc6q  tuples
+#sghuhbe6hx7uuibzxh3iknybzj5uba26h7aezyu2vzcpytvno7xa  ints
+#x3ikej6x74x7zk5ehmu6yqyy76eqfsi6pjflv2t2gwgkdk3yvetq  describe
+#philkbranv5hq2iysbzjd5wrrr44pdrclywhkqi6xy27qslhskxq  status_of
+#qtvk2lp6etao7fp3ab26y5rqjmfyashaawtioi42brc4cjgrujza  floats
+#usy5x7imzyj7xsnkinnzgxpbuls6gtleye6zujuj7tbaztevslfq  unicode
+#wxhy2rsxwpr4k4w2qr3obobnpomxly6u7zyhzaxnyiaxo7ht2dja  heap_json
+#xyg4tbpa5qh43resegajuemim26yimty25fzynwpoijtr5b3jwka  enc
+#emvyb4rlwe4nwoe7z6lkuqkymdz7jk3wljythm3lnwnq3yivju2a  trip
+#gigkygzefd6kuyz5ueqmnlt2rvtms3sd6jh53o6shuz76b45xanq  missing_opt
+#5dccw2ajcoz5f3la42t3gjhfirpmnahx4tdz5zem4oic7a4zcfja  wrong_type
+#ctziby2oi4o2kqz6h3zdmpzqcsjmmdaenfeykwxncrz7ioou2dda  missing_field
+#tvtb6q5kypz7lkhy5osnfzpi742iro7hje3duaqftchoc6hqjzoq  bad_json
+#wx32qr4wzkn5kuk3mqlekcyoqz4fqgyvgcvwfpd25u6zqw7dzumq  bad_tag
+#7c45z4dpyjzmniwosgvxnbq7r442uev7o2yc5vevqt5qxy6zqdlq  tags
+#hu7lq567hzjmgzj3nr43pjyq4wmdrqliiqsrae4ew6z3g2ka4c7a  sums
+#ywzinufp7iv7ok6nnyudh5a2cxecqdlqryutwnzwk5zz7m2odbka  int_keys
+#za53tvgrb2htltorpb54673c6axqktrld5tjfzze3zwwo6b5z6cq  pair_shape
+#whhwahi7sgwla3xlmpzarhmaqcfopfl4hohbpzlvloxqhng3m2sa  tuple_list
+#vc3ba6m4riotxhy3bo2o4akvzowhi2fz7vqwz3z6g7fxtzjxueja  float_forms
+#sf4izesjhdihjkm3r2j5vooxtba4vgdcdpzctbhjl52bmk2etk4q  escapes
+#dhtfybd4xbbhunsnb2psbat3mohbgli2dr4eh4eszzqe5xaku52q  big_int
+#apc2engqnlg5hdeyvxxsxkwwdrla676irys7pvlsavonsbqldq6a  collections
+#ehxuz466z7flccfw53qf34mtqnkkiurlxbybkghbrj2wkizxnjka  Omm
+#egoo7adfikipkm7vqfvaewlz2y5yhkyehwke3ewc5iam4s3s47fa  omm_names
+#ltbavwfaxtz2aiswicc6wmox5baozn374q3e4r54k5oz4g7ahlcq  upper_fields
+== check
+== test interp
+pass  enc
+pass  trip
+pass  missing_opt
+pass  wrong_type
+pass  missing_field
+pass  bad_json
+pass  bad_tag
+pass  tags
+pass  sums
+pass  int_keys
+pass  pair_shape
+pass  tuple_list
+pass  float_forms
+pass  escapes
+pass  big_int
+pass  collections
+pass  upper_fields
+17 passed, 0 failed
+== test native
+(same as test interp)
+== fmt
+(the source, unchanged)

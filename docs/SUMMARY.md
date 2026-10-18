@@ -48,6 +48,7 @@
 - [Error codes](reference/errors.md)
 - [Command line](reference/cli.md)
 - [Debugging](reference/debugging.md)
+- [Stability and deprecation](reference/stability.md)
 - [Agent reference](agent/agent-spec.md)
   - [Agent reference, more](agent/agent-spec-more.md)
   - [MCP setup](agent/mcp.md)

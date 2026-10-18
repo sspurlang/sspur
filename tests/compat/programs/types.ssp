@@ -1,0 +1,128 @@
+// generics
+
+type Pair[A, B] = {first: A, second: B}
+
+type Tree[T] = Leaf | Node{left: Tree[T], value: T, right: Tree[T]}
+
+fn swap[A, B](p: Pair[A, B]) -> Pair[B, A]
+= Pair{first: p.second, second: p.first}
+
+fn twice[A, e](x: A, f: A -> A ! e) -> A ! e
+= f(f(x))
+
+fn compose[A, B, C](f: A -> B, g: B -> C) -> A -> C
+= x => g(f(x))
+
+fn insert(t: Tree[Int], x: Int) -> Tree[Int]
+= match t
+| Leaf => Node{left: Leaf, value: x, right: Leaf}
+| Node{left, value, right} => if x < value then Node{left: insert(left, x), value, right}
+  else Node{left, value, right: insert(right, x)}
+
+fn to_list[T](t: Tree[T]) -> List[T]
+= match t
+| Leaf => []
+| Node{left, value, right} => to_list(left) + [value] + to_list(right)
+
+fn size[T](t: Tree[T]) -> Int
+= match t
+| Leaf => 0
+| Node{left, right} => size(left) + 1 + size(right)
+
+fn loud_inc(x: Int) -> Int ! log
+= do
+  log("inc {x}")
+  x + 1
+
+fn main() -> Unit ! log
+= do
+  log("twice loud: {twice(1, loud_inc)}")
+  log("tree: {to_list([5, 3, 8, 1, 4].fold(Leaf, insert))}")
+
+test swap_ok = swap(Pair{first: 1, second: "a"}) == Pair{first: "a", second: 1}
+
+test twice_pure = twice(3, _ * 2) == 12
+
+test compose_ok = compose(_ + 1, _ * 10)(2) == 30
+
+test tree_sorted = to_list([5, 3, 8, 1, 4].fold(Leaf, insert)) == [1, 3, 4, 5, 8]
+
+test tree_size = size([5, 3, 8].fold(Leaf, insert)) == 3
+
+// recursive_tuple_list
+
+type J = JNull | JNum{n: Int} | JObj{fields: List[(Str, J)]}
+
+fn count(fs: List[(Str, J)]) -> Int
+= fs.len
+
+fn size_recursive_tuple_list(j: J) -> Int
+= match j
+| JObj{fields} => 1 + count(fields)
+| _ => 1
+
+test t = size_recursive_tuple_list(JObj{fields: [("a", JNull)]}) == 2
+
+// c_keyword_fields
+
+type R = {short: Int, int: Int, default: Int}
+
+fn f(r: R) -> Int
+= r.short + r.int + r.default
+
+test t_c_keyword_fields = f(R{short: 1, int: 2, default: 3}) == 6
+
+// safety
+
+type User = {email: Pii[Str], password: Secret[Str], plan: Str}
+
+type Sentiment = Positive | Negative | Neutral
+
+fn login(u: User, attempt: Str) -> Bool
+= u.password.check(_ == attempt)
+
+fn audit_line(u: User) -> Str
+= "user {u.email} on plan {u.plan}"
+
+fn domain(u: User) -> Pii[Str]
+= u.email.map(e => e.split("@").last.or(""))
+
+fn parse_age(raw: Untrusted[Str]) -> Opt[Int]
+= raw.validate(s => valid_age(s))
+
+fn valid_age(s: Str) -> Opt[Int]
+= match s.trim.to_int
+| some(n) if n >= 0 and n < 150 => some(n)
+| _ => none
+
+fn classify(text: Str) -> Guess[Sentiment]
+= if text.contains("great") then guess(Positive, 0.93)
+  else if text.contains("bad") then guess(Negative, 0.71)
+  else guess(Neutral, 0.4)
+
+fn route(text: Str) -> Str
+= match classify(text).at_least(0.9)
+| some(Positive) => "auto-reply"
+| some(_) => "triage"
+| none => "human review"
+
+fn sample() -> User
+= {email: pii("asha@example.com"), password: secret("hunter2"), plan: "pro"}
+
+fn main_safety() -> Unit ! log
+= do
+  log(audit_line(sample()))
+  log("login ok: {login(sample(), "hunter2")}")
+  log("route: {route("this is great")} / {route("bad service")}")
+
+test login_ok = login(sample(), "hunter2") and not login(sample(), "nope")
+
+test redacted = audit_line(sample()) == "user <redacted> on plan pro"
+
+test domain_hidden = domain(sample()).expose("test assertion") == "example.com"
+
+test age_valid = parse_age(untrusted(" 42 ")) == some(42)
+
+test age_invalid = parse_age(untrusted("200")) == none and parse_age(untrusted("x")) == none
+
+test routing = route("great") == "auto-reply" and route("bad") == "human review"

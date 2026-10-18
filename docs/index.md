@@ -63,6 +63,7 @@
 <li><a href="reference/effects.html">Effects</a></li>
 <li><a href="reference/errors.html">Error codes</a></li>
 <li><a href="reference/cli.html">Command line</a></li>
+<li><a href="reference/stability.html">Stability and deprecation</a></li>
 <li><a href="agent/agent-spec.html">Agent reference</a></li>
 <li><a href="reference/schema.html">JSON schemas</a></li>
 </ul>

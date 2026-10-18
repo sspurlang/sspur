@@ -1,0 +1,38 @@
+// Programs that don't check: the codes are part of the 1.x promise, the messages are not.
+
+type Shape = Circle{r: F64} | Square{s: F64}
+
+type Err = Bad{n: Int}
+
+fn area(s: Shape) -> F64
+= match s
+| Circle{r} => r * r
+
+fn noisy(x: Int) -> Int
+= do
+  log("x")
+  x
+
+fn wrong(x: Int) -> Str
+= x + 1
+
+fn unknown(n: Int) -> Int
+= nope(n)
+
+fn arity(n: Int) -> Int
+= wrong(n, n).len
+
+fn risky(n: Int) -> Int
+= if n < 0 then raise Bad{n} else n
+
+fn field(s: Str) -> Int
+= s.missing
+
+fn typo(p: Pointt) -> Int
+= 1
+
+fn twice(n: Int) -> Int
+= n
+
+fn twice(n: Int) -> Int
+= n * 2

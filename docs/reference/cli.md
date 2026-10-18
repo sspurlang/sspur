@@ -1,6 +1,6 @@
 # Command line
 
-Everything SSPUR does goes through one binary, `sspur`. This is its usage text, exactly as the current build prints it (CI checks this page against `sspur --help` and `sspur deploy`):
+Everything SSPUR does goes through one binary, `sspur`. This is its usage text, exactly as the current build prints it (CI checks this page against `sspur --help` and `sspur deploy`). Commands and flags marked `(experimental)` may change in a 1.x minor release; [Stability and deprecation](stability.md) lists what 1.x keeps:
 
 ```console
 {{#include ../snippets/reference/cli.out}}

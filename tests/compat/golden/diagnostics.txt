@@ -1,0 +1,18 @@
+# programs/diagnostics.ssp: frozen by the 1.x compatibility promise (docs/reference/stability.md)
+== canonical
+blake3 b88cc29e9c276cd4b5a6f837a3bec94bd8c32f370437e49218850483d05a7704
+== hashes
+-- exit 1
+== check
+E_DUPLICATE -
+E_UNKNOWN_TYPE typo
+E_NONEXHAUSTIVE area
+E_EFFECT_MISSING noisy
+E_TYPE_MISMATCH wrong
+E_UNKNOWN_NAME unknown
+E_ARITY arity
+E_EFFECT_MISSING risky
+E_UNKNOWN_METHOD field
+-- exit 1
+== fmt
+(the source, unchanged)

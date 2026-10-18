@@ -1,0 +1,40 @@
+# programs/cheat.ssp: frozen by the 1.x compatibility promise (docs/reference/stability.md)
+== canonical
+blake3 f4aeda97c752e98655e5d30c4e93fea5825f03f9bfefaa1ee5ac33ff3367fa9e
+== hashes
+#utrbdt4x46fj3tj6imeecw5vbywxctpzjzx2c3jan4ehzu4lhv2q  Id
+#fnbiun7bsy7pmzdjlk5yxieqx4k6uzul4jjm6bqzcvtil7b7gkjq  Qty
+#bfilyi7ovvc4qpipsmad7u3ad4r4nuru22wgmsyyfphyc42x5jvq  Item
+#elrecu2iwa6zalukbamo36d3xm4ab6xmszkjzfrpiil63gua6cdq  Shape
+#ehnl2bntbcypdqboc3xi6dnqizs67fqv3culwczx3rfzynillxfa  Pair
+#w4gw5ovyzye56srrduki3tu7b732sjxlhswmlbo2gpqwzi2ibvda  Err
+#564ybfcu25pueylqqdacqm6ms4nwycvu4nbl5tcpgw35g2p3qrya  area
+#kfuisys3kdgdual6wy5m3ifhaarc25sdxvsih7no2vbamn5sionq  clamp_pct
+#myrks2t6ed24vgzabqg5fkb6gefrjnbh2gfi7rwo3x7anrpfol5q  first_tag
+#5n434ayvtngi2l75u6w6jmmlbphklvffzilssj522t3gzl7ue66a  sides
+#nl35eqmj7fqjtqicrgmrbw3lkfsbxch2ocxru2jffgmabojm4hqq  add_all
+#lm3dminwckyaey4dcyplfnua627nmer6blfoyo6geiplbbyd2bya  width_or
+#bn6otuinojrti626cwcbcyuamsr4lp7cwpa62hnsxtm5grtax7xa  round_ones
+#fvpg5jxdb72gsjcss4b4lqcn5eoxx7fjzuuhc52yy74pbrxzb5uq  stats
+#3tthbr6rb2fobgpdrjvguahzhns6t4knlb4pw6v3qv352rj4tkna  labels
+#pyvy6zgodwqaulaqky2jbinfrsydzneg7w6ecxxbavobscuxh6ea  lookup
+#lpi6tsi26eggcdbrncrdampmvsudbdwazqg7n7mdaho6wh5uybwa  qty_or_zero
+#6xvtt55whlhju2uguj6edshdrml5mgtubk3hk5ghe3hrm3igoi6a  qty_of
+#kh2r7fhfjdz5rcthuaqbwvd6l43scqsj2bq4shzkukonqe6mvrta  ask
+#5djek3zkgs3c6jpnuj2hebstrmpnzj72hu36at3jnt5uhaf6tlra  twice
+#psz66xkbtsloust2m6lmss4e7n4262znnwg2pwciasfxf73iyrpa  answered
+#g3xxzrywbvnowcgcux5x2nnmzyhil62mgewubrvswashgd4swagq  Named
+#fqxmyuomh2cljpkt4o3bhjcw3i57cy4j5wmtzbk2qntxvw5fradq  impl Named for Item
+#fm6cbepm6cm5m2zs4necuoxymm5j2kcklyayzdiql6tic36hplta  greet_all
+#rpumqtjtdipf2wuuda5qkadvk5jumdbjml4abou4s3pv7eubhbfq  values
+#vn3ep5ia4imulgek3iy4j2dpc42fgknonll4bgd2whhxke2n6q4q  rest
+== check
+== test interp
+pass  clamp_pct.ex1
+pass  values
+pass  rest
+3 passed, 0 failed
+== test native
+(same as test interp)
+== fmt
+(the source, unchanged)

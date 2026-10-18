@@ -1,0 +1,70 @@
+# programs/fmt_input.ssp: frozen by the 1.x compatibility promise (docs/reference/stability.md)
+== canonical
+blake3 95c2a4d1c18f9cbdb8cbb4a564563ad0128d45465a64b16e591ce9b23f2e73c6
+== hashes
+#6rz423e62qu7gubephhwgpj4jmpgnamw4u66v3vb6px7xurlj5ea  Order
+#xyru7hl3zfjvobyuaun535bsvhxwwn33rd4np6sewqbmrix25v2a  summary
+#qv3igffp5qn2rlwmsghpvttv3vtchvmwbwprcihrirymrmy3rxeq  totals
+#mbomsps76ldgvjoisdifxtea6stiqdql7hiboxv2v3dicv7nux6q  label
+#tcbi5wblhznmzxs3mragy7ok7kmsabliq2pitxiocgg327dvzuxq  main
+== check
+== run interp
+1 ada: shipped
+2 bo: held for review
+1250 250000 many
+== run native
+(same as run interp)
+== fmt
+// Not formatted on purpose: the golden keeps what `sspur fmt` makes of it.
+type Order = {
+  id: Int,
+  customer: Str,
+  items: List[Str],
+  total_cents: Int,
+  shipped: Bool,
+  notes: Opt[Str],
+}
+
+fn summary(o: Order) -> Str // one line per order
+= if o.shipped then "{o.id} {o.customer}: shipped"
+  else if o.total_cents > 100000 then "{o.id} {o.customer}: held for review"
+  else "{o.id} {o.customer}: pending"
+
+fn totals(os: List[Order]) -> (Int, Int, Int)
+= (
+  os.filter(o => o.shipped).map(o => o.total_cents).sum,
+  os.filter(o => not o.shipped).map(o => o.total_cents).sum,
+  os.len,
+)
+
+fn label(n: Int) -> Str
+= match n
+| 0 => "none" // nothing yet
+| 1 => "one"
+| _ => "many"
+
+fn main() -> Unit ! log
+= do
+  // two orders
+  os = [
+    Order{
+      id: 1,
+      customer: "ada",
+      items: ["pen", "ink"],
+      total_cents: 1250,
+      shipped: true,
+      notes: none,
+    },
+    Order{
+      id: 2,
+      customer: "bo",
+      items: [],
+      total_cents: 250000,
+      shipped: false,
+      notes: some("call first"),
+    },
+  ]
+  for o in os
+    log(summary(o))
+  (a, b, n) = totals(os)
+  log("{a} {b} {label(n)}")

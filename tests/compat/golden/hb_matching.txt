@@ -1,0 +1,48 @@
+# programs/hb_matching.ssp: frozen by the 1.x compatibility promise (docs/reference/stability.md)
+== canonical
+blake3 a07bce1e18ec2fe80688ae252beacb3a5fa5d93030991db26da5e8ed163ca63b
+== hashes
+#elrecu2iwa6zalukbamo36d3xm4ab6xmszkjzfrpiil63gua6cdq  Shape
+#ogql7vwhg5t6feaxhi5hqsvpixy7vfdf6kc6lucb7vwthxeb52la  label
+#4wk3fic2j33f72inzm7m3z3czc3kowpgkwv4kfy4retou6hfn6za  fizz
+#ptdprlbqfoj3t4d2uvuikbrzbkeh3nyvp5hild6avygdzxr6g7sq  parse_port
+#5n434ayvtngi2l75u6w6jmmlbphklvffzilssj522t3gzl7ue66a  corners
+#pbug4qzmxohptmh5xaoensdp2alv63uu34cti3artq3woas7y5iq  weekend
+#qme5hebrladjm52fflzxjmzgyuebtku4tj5ouely5qagcrdo75oq  total
+#ed7wrwoxl75xvgqfjk42ro75w4feetti2ihdyc4flga2kcmbk4ba  describe
+#wh5zt6fo4vqyecy2bmtwqseeceyhwwf6se55wyydjzlkkfetq5qq  route
+#yredozroix3qn7r6tmjxfgwywn5523luuycgsfnc4gndgnzs6lga  port_or
+#bpgrfswjmax63uyjbfywsliu6w7hafdh5n7s6szgqa7gx3yvfzfa  radius
+#bn6otuinojrti626cwcbcyuamsr4lp7cwpa62hnsxtm5grtax7xa  circles
+#chdnql4bsfx6f6qtrqzv4qb7f6qc57jv7udshebjfnagmgnmodta  has_pair
+#uqevmldbccx5m4dojrojcjgwnrymjpifnw6h5jufhsuj7epecmaa  both_round
+#sn5s2fx4o5twk25hwokw4yukqf3pkw2bpzhk5od7u5bqz5bp6j5q  ArgErr
+#wmwhugh76h462nri7bd35yfoveagb6vifrixeggfijzn2ngxjkoa  first_port
+#xfhfo37riyfardpsvev6ig373lteixzmys3srtxdieau6fowf5ka  need
+#h4a6vb5fuzq5unxdxq5rjur3dyx46myumu7syugbl7njwgykx6rq  Zone
+#nhnynfm2rmqh7jsovp6cx2rphf5urrxj27akclps3wsy2vd4zcoa  fee
+#ajnxbwvjnii5pohtcgxle7wesbmsf4tmrbumkmasd5iyu7vnug3a  labels
+#26mmul2kbuycdjgifk6w2bsc43jpsrvb4lwjyywhqntlarqaln6q  fizzbuzz
+#lr3cc4g3mlnwh2yxkge5b6gmhsbh2h3gdi2wsmirpsijejoamaga  ports
+#xzhannsflrhxe6gdea6rrwiz5sumizuinzpolznb2dzpwbg6mmua  fees
+#paq2hbxqbnv3guobsmyesyr4cecl4ixa75zwhggcae7bbrtt3p3q  or_patterns
+#ozw3cg25izm722zsim4kmrf56epucusnoiox7ftlojzn3bx4m44q  lists
+#huxqyoofxqsiswkvxvnzfdaoznoahxh6hjxp6ovowzbfbvwt44ya  is_tests
+#kl5si5whkud7s5riy367j4z2g54ragpbpcrswi7vq35yzj3wiqra  is_exprs
+#cmbzbh3ziupfe6lgmfad2aucsxtgwlc2zto527jm6fbupcwrhwga  guards
+== check
+== test interp
+pass  labels
+pass  fizzbuzz
+pass  ports
+pass  fees
+pass  or_patterns
+pass  lists
+pass  is_tests
+pass  is_exprs
+pass  guards
+9 passed, 0 failed
+== test native
+(same as test interp)
+== fmt
+(the source, unchanged)

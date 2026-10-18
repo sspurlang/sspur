@@ -1,0 +1,71 @@
+# programs/types.ssp: frozen by the 1.x compatibility promise (docs/reference/stability.md)
+== canonical
+blake3 8e3a48ded35dda8a9d0b72dcb2dbc9ba51081a34d87d0786d9acee093b9f726a
+== hashes
+#ehnl2bntbcypdqboc3xi6dnqizs67fqv3culwczx3rfzynillxfa  Pair
+#5ua2uqsae73ipqt3skcbxoebonm4gy37escek7umikk25dkvcauq  Tree
+#fl2urxkb2jhk5gq5hgt3vhetgfjvk3ec5ukbxedq6xm6bjsoitca  swap
+#a3kk3p6qqu5wle6gmvfd3mlatkrzc75j54gf6wii4tc4lvvjh6ma  twice
+#57vom5swijnk2dzjqqkag4jhhrxmj65yjli46wonen23j2lfm4ja  compose
+#ghdm5qmcpxbpyqieryoi3m4x63iavu4vgr5qq3dqax4w5gnlh66a  insert
+#k57m76dlk3hcgvr4t3jxgytctx25fwszfnse6d5wkm427j4gvdbq  to_list
+#trdn5hpgxksqy2nherayz6e4zseum37ahfdcpplhur3h5twkde3a  size
+#c5ora3dbp2bdqetku73abe5qbkuimvt3kzioyxkkmsmtg4jcarsq  loud_inc
+#pdvsyda327336ihr6klhjhnayyg6qyn65e3wmiff3sbpazqgcanq  main
+#j3sgs3ulogrlm3pdofdphjnkgzdjzth3hljshozepner7haqnh4q  swap_ok
+#tgw6qpmhkwfas2ot7gxdaaektmpxbhfilhonncdadvdxxvqv2o5a  twice_pure
+#vng4becf3uxnmnmlrq5a7mfxaikdcjtbmrazhvgazc7pdo7t6wcq  compose_ok
+#6m5l4pwfpvkpvqngkfr43vygltyetu2e6wjzhkzojbqogeczug4a  tree_sorted
+#n5pdkwpmlohxfxgsmifx2rng3b4vb2ecdoiszljhhwpvkvruwonq  tree_size
+#thfzzv5npzrl7xjalhwkkwl6xsgbpbo6odn7urn5jig22mwanwvq  J
+#mqnjk5cd74zjgj3xcle3xh7yyyc36c2q5klaheunqsedz4buuubq  count
+#tsha4amrbevrgjlfxmngsukcbiig53retxrwpdzhda5aj2jykytq  size_recursive_tuple_list
+#mryg4sqizwkihoklnehoxdtt424edsga4bbpgv4a5q4aoxetdv4a  t
+#eowkssofoidroti3ijlwamkjdckv4yjxd33ifzhekbuuhw6x5c5a  R
+#ghmm3r3jszuuek27cpobx62fy2rinm5c6ldlp5ei34a4bda54uwa  f
+#pcfvnqgci3fbsxg7mtamw5db32e7tqy64bdrzd6t55qapr7qhk2q  t_c_keyword_fields
+#4dyo74woh7gh4iwpsy6d4tulkxacteoo5msvcbrxtnmkkbd5w2ja  User
+#ei5b336aoqv5vbfubylui4br2sk65bjxmavpdv4f327v7l4otyza  Sentiment
+#25og4ddm2t7fydwxcufc5kqzvirquyo6mr3nthkzuetq5uwfvgtq  login
+#vfo5sgvodinksxy6r6hmvqef3kvziqf4mgednduf6b6ae4cg5guq  audit_line
+#hm6izhmexuhfoxiwtlusaj2wyrrv765hjxt2qy7sncgvexhvwh5q  domain
+#5ow4ryw636coj7jdoidb37jpq36lzwqiulz2febqlawzxyvufciq  parse_age
+#zaabu6udass4ig5g4lprcpqctw6nt757nttqg5rnhnqeryx57vsa  valid_age
+#26mszqz3d2obu3jn2yko4esvaei3ld6on4ofxooccalnvie23zna  classify
+#qa5gvkkplz4yt4f2a24fupjskzzhcy5zfz7rnf6iuv3ypn6w2j3q  route
+#izrxggg6wdghxhvhex5tk47and3x2cmkekf4qgpkz43y7w4dawja  sample
+#e7vtbz6ep4sbe56mkplapop3zngiktqf3kyk2mnx3gtk32iekyvq  main_safety
+#pmmxc4brrpciad4omhpudunrvnrwu42yycjor4b6ott6mohxzefq  login_ok
+#lwyj4gl3uy3cnfzv6b2to3lhdnbvpm24hadrpibrzkrdezdurtja  redacted
+#k3kojvsa2csbp7iezrwg6tmnms5o625a6jkolg7pr27ym4fojeaa  domain_hidden
+#4me5x6tauemsigdz7zqnpibbkdsk3cof4m4rvh7kje2jouazac7q  age_valid
+#6o6rj23d76y43oqspsfrene6zzxmsdobxdsvex3szmzeufyyyw4a  age_invalid
+#usnzuqtmrswtexzknvbx3756635jujuzumr374hyss3lpdjobwga  routing
+== check
+A_DECLASSIFY domain_hidden
+== run interp
+inc 1
+inc 2
+twice loud: 3
+tree: [1, 3, 4, 5, 8]
+== run native
+(same as run interp)
+== test interp
+pass  swap_ok
+pass  twice_pure
+pass  compose_ok
+pass  tree_sorted
+pass  tree_size
+pass  t
+pass  t_c_keyword_fields
+pass  login_ok
+pass  redacted
+pass  domain_hidden
+pass  age_valid
+pass  age_invalid
+pass  routing
+13 passed, 0 failed
+== test native
+(same as test interp)
+== fmt
+(the source, unchanged)

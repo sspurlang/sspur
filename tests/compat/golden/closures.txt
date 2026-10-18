@@ -1,0 +1,40 @@
+# programs/closures.ssp: frozen by the 1.x compatibility promise (docs/reference/stability.md)
+== canonical
+blake3 bc38e2d5cadfd50cdda45a68df62543a5483cf20e069ea8bf7ffc5d0778a771c
+== hashes
+#xqszqcoqcndg5rrkjafcodmebbz63zl2nkqoasxhuepharyjbima  reads
+#qn2lhq43hlwahbzrcvnhokppur3zabydp37gvsjzf63o73cvx64q  reads_live
+#q2xdtberfbeggjss4w5z4oaag5w4yrmiuqffo5zkrzvs23sckd4q  k0
+#tntj55xtpl735ijvvo4gv5ot2ludrcogxc3tw324cxrmaw6tqi7a  make_acc
+#grt3ophggumiq22kcm7f5k5z2273a26ltcw2yhvhbmc7vjixpf4q  c1
+#vatkvm7f2f4gtoishsc3xr7or3i37c3a7fuskzood5ihq62gzruq  c2
+#pl7e4twpxbqylgwdrfhiqp7px7gpdx23f64w6xhe3swyxnhq7jta  c3
+#gltpjeq7trvwnulu46waubnfkulc3xlzvm4jwkrkmgyk2jwh6xga  nest
+#dfcfxectpc4e7snybb3sqpzugtu7hwypji3dh63qm4uii7pmvf3a  closure_read
+#vuaefts2jnb2ajxbmf4ed3yuixqmmhsczjdjossmbizab2uvlmsq  apply
+#o3skcmpu6jn73755jwrfe3z6enokpx6vsclzdvpzxga5ta4g4wja  per_iter
+#nvm4z6kmbu5e6nxihfyrsszlmdkcuwhtwuvbahr4tiqku4qv6psq  running
+#qi77uagglz4xjvj2isqqlxj6n5jqqqyfcewvfgmgcvihknm5wviq  blocky
+#fb652pntggvgr64ksuaxkgrrmsbjykaa7jyaxfmc4mlwgpiirddq  nested_blocks
+#jofmrezhtvd4wj3q5qpudsqzn3xl6dj2frwwcmzfp4rhrbfvuswa  c5
+#vothwf6t4qcycwmatem7wnzlvuzo6kw7v7z7nj56rvbnilsgo5fa  c6
+#ycow4ug54kpjsm4rri4jwhgi3wrh3na6rooej5m32pllpvxr3qhq  c7
+#ao2wontti2hpjxue7wh6edt2r7i5ownqoi3pi52kansp2lciyoyq  c8
+#qjmfolvezoo2jhitizk4bvp23zwn7sx4p45etsfz6bbznxgr6s6a  c9
+#py37vbfw2z3jaku7nfmdd3wp5uadhduhw45pd2droiitg4zx776a  c10
+== check
+== test interp
+pass  c1
+pass  c2
+pass  c3
+pass  c5
+pass  c6
+pass  c7
+pass  c8
+pass  c9
+pass  c10
+9 passed, 0 failed
+== test native
+(same as test interp)
+== fmt
+(the source, unchanged)

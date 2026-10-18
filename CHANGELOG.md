@@ -4,6 +4,9 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+### Added
+- The 1.x stability and deprecation policy, `docs/reference/stability.md`: what 1.0 freezes, what stays experimental (marked `(experimental)` in `sspur --help`), and the `W_DEPRECATED` warning a feature gets before 2.0 can remove it. A compatibility suite in `cargo test` (`tests/compat`) checks frozen programs and packages against their recorded hashes, diagnostics, `run` and `test` output in both tiers and `sspur fmt` output.
+
 ## [0.15.0] - 2026-10-18
 
 ### Added

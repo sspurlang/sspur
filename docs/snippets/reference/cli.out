@@ -10,11 +10,11 @@ usage:
   sspur yank NAME@VERSION [--undo] [--deprecate MSG]   request a yank (or deprecation); sspur api [--json] shows the public API and the facts the checks use
   sspur edit [file|-] [-e SRC] [--test] replace or add definitions by name (also 'rename A B', 'remove A' lines)
   sspur apply [tx.json|-] [-e JSON] [--test] apply a transaction of ops
-  sspur q <query> [target] [--budget N] query the codebase (list [types|fns|tests] sig body callers callees effects find grep pack why impact holes diag log; body and pack take A,B,C)
+  sspur q <query> [target] [--budget N] (experimental) query the codebase (list [types|fns|tests] sig body callers callees effects find grep pack why impact holes diag log; body and pack take A,B,C)
     q find 'a|b*'  names matching, with signatures   q grep TEXT  definitions whose source contains TEXT, with the lines   q body A,B  several bodies
-  sspur start [NAME|PATTERN...]         the agent spec plus this codebase: all of it if small, else counts, q pack of NAMEs, q find of the rest
-  sspur spec [--more|--full] [src] [QUERY TARGET...]  the spec (--more: the rest of the builtins, --full: the reference), then optionally src and queries
-  sspur src | log | export | mcp [--dir PATH] | --version
+  sspur start [NAME|PATTERN...]         (experimental) the agent spec plus this codebase: all of it if small, else counts, q pack of NAMEs, q find of the rest
+  sspur spec [--more|--full] [src] [QUERY TARGET...]  (experimental) the spec (--more: the rest of the builtins, --full: the reference), then optionally src and queries
+  sspur src | log | export | mcp [--dir PATH] | --version   (mcp is experimental)
   sspur lsp                             the language server, over stdio, for VS Code and other editors (docs: Editor setup)
   sspur bind header.h [--lib NAME] [-o out.ssp]   generate extern declarations from a C header (uses clang)
   sspur export-c file.ssp [-o libfoo] [--shared] [--prefix P]  build a C library and header from the C-compatible functions
@@ -24,21 +24,21 @@ usage:
   sspur fill [file.ssp] [?hole|fn] [--apply] [--all] [--json] [--fill-ms N]  the best expression for each typed hole; --apply writes it in
   sspur suggest [file.ssp] [fn] [--apply] [--json] [--cases N]  pre and post clauses that held on every test-derived and fuzzed run; --apply adds them
   verify proves pre/post/where clauses with z3 and reports proved, counterexample, or unknown per clause
-  run/test compile to native code by default (cached); --interp forces the interpreter, --native uses the Cranelift JIT,
+  run/test compile to native code by default (cached); --interp forces the interpreter, --native uses the Cranelift JIT (experimental),
   --O3 raises the optimization level; fuzz --differential compares native against the interpreter
   a failed native build prints one warning and falls back (--quiet hides it); --strict-native or SSPUR_STRICT_NATIVE=1 makes it an error
   sspur fuzz --gen N [--seed S] [--cases C] [--group G] [--modes O2,O2-whole,O3] [--keep DIR] [--print]  generate N random programs and compare interpreter and native
-  run/test/build --pgo [--retrain] train once, then build with clang profile data; --lto off|thin|full (ADR 0024)
-  sspur build --backend llvm file.ssp [-o prog]  direct LLVM IR prototype for the scalar and record subset (ADR 0024)
+  run/test/build --pgo [--retrain] (experimental) train once, then build with clang profile data; --lto off|thin|full (ADR 0024)
+  sspur build --backend llvm file.ssp [-o prog]  (experimental) direct LLVM IR prototype for the scalar and record subset (ADR 0024)
   sspur explain-opt file.ssp [--all]    show the proven rewrites applied before native codegen (--all adds rejected candidates)
   sspur run --profile file.ssp          run in the interpreter and record call counts that guide inlining (ADR 0022)
-  sspur build --target riscv64-qemu|aarch64-qemu|thumbv7em-mps2 file.ssp [-o kernel.elf]  build a 'profile bare' kernel or Cortex-M4 firmware (freestanding C, clang, ld.lld)
+  sspur build --target riscv64-qemu|aarch64-qemu|thumbv7em-mps2 file.ssp [-o kernel.elf]  (experimental) build a 'profile bare' kernel or Cortex-M4 firmware (freestanding C, clang, ld.lld)
   run/test/build --debug (or SSPUR_DEBUG=1) build native code with DWARF (CodeView on Windows) mapped to the .ssp lines, at -O0
   sspur debug [file.ssp] [args] [--debugger lldb|gdb]  build with --debug and start lldb (macOS) or gdb (Linux) on it, stopped at main
   sspur debug-init [--install]          write the lldb and gdb formatters for Str, List, Opt, Bool and sums; --install loads them from ~/.lldbinit and ~/.gdbinit
-  sspur gpu file.ssp [--emit metal|opencl|spirv|ptx] [-o out]  emit the kernel fns as Metal, OpenCL C, SPIR-V or PTX (ADR 0020)
-  sspur deploy plan|local|migrate|replay|swap|promote|rollback|backfill|status   (sspur deploy for details; ADR 0016, 0019; never calls AWS)
-  sspur sync serve [--port N] | push REMOTE | pull REMOTE | status | resolve ours|theirs [PATH]   replicate by hash (REMOTE: dir or tcp://host:port; ADR 0021)
+  sspur gpu file.ssp [--emit metal|opencl|spirv|ptx] [-o out]  (experimental) emit the kernel fns as Metal, OpenCL C, SPIR-V or PTX (ADR 0020)
+  sspur deploy plan|local|migrate|replay|swap|promote|rollback|backfill|status   (experimental; sspur deploy for details; ADR 0016, 0019; never calls AWS)
+  sspur sync serve [--port N] | push REMOTE | pull REMOTE | status | resolve ours|theirs [PATH]   (experimental) replicate by hash (REMOTE: dir or tcp://host:port; ADR 0021)
 $ sspur deploy
 usage (nothing here calls AWS):
   sspur deploy plan <file.ssp> [--out DIR]          write template.json, iam/*.json, plan.json, bootstrap.c, build.sh, deploy.sh, rollback.sh, backfill.sh and a host build to DIR (default deploy/)

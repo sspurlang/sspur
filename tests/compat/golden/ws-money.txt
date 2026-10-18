@@ -1,0 +1,32 @@
+# ws/money/lib.ssp: frozen by the 1.x compatibility promise (docs/reference/stability.md)
+== canonical
+blake3 491831af9f9f57ca0e2c5a7608e68ac75d54dd3a115943c913aa551bf62a979b
+== hashes
+#ddcds4ouhjqu77rs2kdest4nyox6ugpcn6q7w4vkypk2qpdcicja  Cents
+#defumis2fi3hxjdsjjpo2vkii2uvjovcrrneaq4xvapzxj3ecdea  Price
+#x4jp6t4yex5z7tbepc4hvu5xzhrpuhp2iza7d5a2hrzd3hfe33da  price
+#gpswydsk225bl2ey667qozff2xxjjxaqbg2olipx2sxn744k5txq  show
+#ml7t62tuvny4watdxjnleao6lma6edljjh7b2rhjprmp7t5qwwja  add
+#zl67tqaqrbeiaelh2urlxekqgiqj4hycxpgukhqyx4are76may2a  times
+#ja6p4x4xwyzoloaw454hudvrvgeitjhbngwn7bgmn3wuhjcts2yq  pad
+#fhlrhzobcqcpzdfo6mjktuowg2i3e6ld3qw5sqzqsitwtq32pqkq  shows
+#5wdplbogt4eqnpvdkkeab7u3syi656qj36lkdgqvzfbnhjqjs52q  multiplies
+#t5jv67jsvodjmyuvb33wevk6wobkmp27svfn2nhqdhj5i62nvr6q  adds
+== exports
+package yzzje7o4tdfchumcbxcpu75k3ypfmzngrb6eysatgje7photnpxa
+#ddcds4ouhjqu77rs2kdest4nyox6ugpcn6q7w4vkypk2qpdcicja  Cents
+#defumis2fi3hxjdsjjpo2vkii2uvjovcrrneaq4xvapzxj3ecdea  Price
+#x4jp6t4yex5z7tbepc4hvu5xzhrpuhp2iza7d5a2hrzd3hfe33da  price
+#gpswydsk225bl2ey667qozff2xxjjxaqbg2olipx2sxn744k5txq  show
+#ml7t62tuvny4watdxjnleao6lma6edljjh7b2rhjprmp7t5qwwja  add
+#zl67tqaqrbeiaelh2urlxekqgiqj4hycxpgukhqyx4are76may2a  times
+== check
+== test interp
+pass  shows
+pass  multiplies
+pass  adds
+3 passed, 0 failed
+== test native
+(same as test interp)
+== fmt
+(the source, unchanged)

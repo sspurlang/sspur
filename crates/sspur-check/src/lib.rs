@@ -1,5 +1,6 @@
 mod bare;
 mod builtins;
+mod deprecated;
 mod holes;
 pub mod own;
 mod deploy;
@@ -880,6 +881,15 @@ impl Checker {
             for (recv, src) in builtins::std_methods() {
                 let (name, s) = self.builtin_scheme(src);
                 self.methods.insert((recv.to_string(), name), method_scheme(s));
+            }
+            #[cfg(test)]
+            for (d, src) in deprecated::TEST_ONLY {
+                let (name, s) = self.builtin_scheme(src);
+                if d.recv.is_empty() {
+                    self.globals.insert(name, s);
+                } else {
+                    self.methods.insert((d.recv.to_string(), name), method_scheme(s));
+                }
             }
         }
         let t = Type::Param("T".into());
@@ -1951,6 +1961,7 @@ impl Checker {
                 if con == "#Request" || con == "#Response" || con == "#Proc" {
                     self.record_method_site(&con, name, span);
                 }
+                self.deprecated_use(&con, name, span);
                 self.call_scheme(&s, name, Some((rt, recv.span)), args, span)
             }
             None => {
@@ -1970,6 +1981,18 @@ impl Checker {
                 }
                 self.fresh()
             }
+        }
+    }
+
+    /// `W_DEPRECATED` for a use of a deprecated builtin; a function of the program's own shadows one.
+    #[inline]
+    fn deprecated_use(&mut self, recv: &str, name: &str, span: Span) {
+        if !deprecated::ANY || recv.is_empty() && self.fns.contains_key(name) {
+            return;
+        }
+        if let Some(d) = deprecated::find(recv, name) {
+            let what = if d.recv.is_empty() { format!("'{name}'") } else { format!("'.{name}'") };
+            self.push_diag("W_DEPRECATED", "warning", span, format!("{what} is deprecated since {} and goes in 2.0", d.since), Some(format!("write {}", d.instead)), vec![]);
         }
     }
 
@@ -2377,6 +2400,7 @@ impl Checker {
                     }
                     if self.lookup(n).is_none()
                         && let Some(s) = self.fns.get(n).or_else(|| self.globals.get(n)).cloned() {
+                            self.deprecated_use("", n, f.span);
                             return self.call_scheme(&s, n, None, args, e.span);
                         }
                     if self.lookup(n).is_none() && !args.is_empty() && self.method_trait.contains_key(n) {
@@ -2844,6 +2868,7 @@ impl Checker {
             self.push_diag("E_KERNEL_VALUE", "error", span, format!("kernel '{n}' can only be called, which launches it"), None, vec![]);
         }
         if let Some(s) = self.fns.get(n).or_else(|| self.globals.get(n)).cloned() {
+            self.deprecated_use("", n, span);
             let (params, ret, atoms, rvars, fails, ueffs) = self.instantiate(&s);
             let mut row = Row::closed(atoms);
             row.var = rvars.first().copied();

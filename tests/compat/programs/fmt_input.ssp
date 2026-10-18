@@ -1,0 +1,25 @@
+// Not formatted on purpose: the golden keeps what `sspur fmt` makes of it.
+type   Order = {id: Int, customer: Str, items: List[Str], total_cents: Int, shipped: Bool, notes: Opt[Str]}
+
+
+
+fn   summary(o: Order) -> Str   // one line per order
+= if o.shipped then "{o.id} {o.customer}: shipped" else if o.total_cents > 100000 then "{o.id} {o.customer}: held for review" else "{o.id} {o.customer}: pending"
+
+fn totals(os: List[Order]) -> (Int, Int, Int)
+= (os.filter(o => o.shipped).map(o => o.total_cents).sum, os.filter(o => not o.shipped).map(o => o.total_cents).sum, os.len)
+
+fn label(n: Int) -> Str
+= match n
+  | 0 => "none"   // nothing yet
+  | 1 => "one"
+  | _ => "many"
+
+fn main() -> Unit ! log
+= do
+    // two orders
+    os = [Order{id: 1, customer: "ada", items: ["pen", "ink"], total_cents: 1250, shipped: true, notes: none}, Order{id: 2, customer: "bo", items: [], total_cents: 250000, shipped: false, notes: some("call first")}]
+    for o in os
+        log(summary(o))
+    (a, b, n) = totals(os)
+    log("{a} {b} {label(n)}")

@@ -1,0 +1,28 @@
+# programs/std_chaining.ssp: frozen by the 1.x compatibility promise (docs/reference/stability.md)
+== canonical
+blake3 62b5f4f5f854a0816354dcdfdc49394f309f5b324ef89253694d6c26ef7e044c
+== hashes
+#ueicun44l4fxmjqnimave2ocqaybcgpzilyuuohkcwrquk4u3uvq  half
+#5llm26gtut334h3sk23pbytnalc6buowbcfyaewoxt5jcxuwkepa  parse
+#axubmefdcukunrx44lips6rodrtcpoljh7s7gh7mmkzy5lfxecwa  positive
+#ssf6xij7divniugzzikp2u44nl2hgnxogcsz6tlgokkdtgppqe6a  zeros
+#6ryem6t3q6pok2rmibv4z5lqa5dba6u3bsrax4f5fyponnra6fwa  none_of
+#bz23avdrtrbobqfinyqjhwwwkxl6yql3qf5zunzdbcheto5eyvoq  opt_chain
+#ho6sywtmj3rajpd4hkw6tx3zjmupgnleyg6lfyrj73k6y45sty2q  opt_lambda
+#qxrdxj27xtmfcpnbabddwayxt4577xdngssi6twaotnp2nzsmz6q  res_chain
+#vis4ftgddivz5qpepd3k5d2yqerhuuvy7ehahsa56u5dzrrp4jlq  repeat_one
+#qrcuvxm6xqw4uc5z2ncinpuo3yomayeqzl5icchd2ufvwfzi4d3a  repeat_many
+#ppaoytkknq2xjvmpsvzquvib2eealxvhnxdbnu77szcxqi2x4qia  map_empty
+== check
+== test interp
+pass  opt_chain
+pass  opt_lambda
+pass  res_chain
+pass  repeat_one
+pass  repeat_many
+pass  map_empty
+6 passed, 0 failed
+== test native
+(same as test interp)
+== fmt
+(the source, unchanged)

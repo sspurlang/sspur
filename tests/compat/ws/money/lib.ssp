@@ -1,0 +1,27 @@
+/// An amount in cents.
+pub type Cents = Int where _ >= 0
+
+pub type Price = {cents: Cents, currency: Str}
+
+pub fn price(cents: Cents) -> Price
+= Price{cents, currency: "EUR"}
+
+pub fn show(p: Price) -> Str
+= "{p.cents / 100}.{pad(p.cents % 100)} {p.currency}"
+
+pub fn add(a: Price, b: Price) -> Price
+  pre a.currency == b.currency
+= a with cents := a.cents + b.cents
+
+pub fn times(p: Price, n: Int) -> Price
+  pre n >= 0
+= p with cents := p.cents * n
+
+fn pad(n: Int) -> Str
+= if n < 10 then "0{n}" else n.str
+
+test shows = show(price(1205)) == "12.05 EUR"
+
+test multiplies = times(price(250), 3).cents == 750
+
+test adds = add(price(1), price(99)).cents == 100

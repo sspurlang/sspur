@@ -1,0 +1,56 @@
+// ANCHOR: sig
+fn clamp_to(x: Int, lo: Int, hi: Int) -> Int
+  ex clamp_to(5, 0, 3) == 3
+  ex clamp_to(-1, 0, 3) == 0
+= if x < lo then lo else if x > hi then hi else x
+
+// ANCHOR_END: sig
+
+// ANCHOR: ufcs
+fn shout(s: Str, times: Int) -> Str
+= s.upper.repeat(times)
+
+test ufcs = "hi".shout(2) == "HIHI" and shout("hi", 2) == "HIHI"
+
+// ANCHOR_END: ufcs
+
+// ANCHOR: lambda
+fn apply_twice(f: Int -> Int, x: Int) -> Int
+= f(f(x))
+
+test lambdas = do
+  add3 = x => x + 3
+  apply_twice(add3, 1) == 7 and apply_twice(_ * 2, 5) == 20
+
+test placeholder = [1, 2, 3].map(_ * 10) == [10, 20, 30] and ["b", "a"].sort_by(_) == ["a", "b"]
+
+// ANCHOR_END: lambda
+
+// ANCHOR: block
+fn grades(scores: List[Int]) -> List[Str]
+= scores.map(s => do
+  pct = s * 100 / 50
+  if pct >= 90 then "A" else if pct >= 70 then "B" else "C")
+
+test block = grades([48, 40, 20]) == ["A", "B", "C"]
+
+// ANCHOR_END: block
+
+// ANCHOR: values
+fn is_small(n: Int) -> Bool
+= n < 10
+
+test fn_values = [3, 30, 4].filter(is_small) == [3, 4] and
+  [1, 2, 3].fold(0, (acc, x) => acc + x) == 6
+
+// ANCHOR_END: values
+
+// ANCHOR: local
+fn digits(n: Int where _ >= 0) -> List[Int]
+= do
+  fn go(m: Int, acc: List[Int]) -> List[Int]
+  = if m < 10 then acc.push_front(m) else go(m / 10, acc.push_front(m % 10))
+  go(n, [])
+
+test local = digits(507) == [5, 0, 7]
+// ANCHOR_END: local

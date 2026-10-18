@@ -1,0 +1,390 @@
+// The reference answers of the 2026-10-02/reference corpus run (bench/eval/corpus.jsonl), with their hidden tests.
+
+// t01
+fn clamp(x: Int, lo: Int, hi: Int) -> Int
+  pre lo <= hi
+  post r >= lo and r <= hi
+= max(lo, min(x, hi))
+
+test t01_0 = clamp(5, 0, 10) == 5
+
+test t01_1 = clamp(-3, 0, 10) == 0
+
+test t01_2 = clamp(99, 0, 10) == 10
+
+test t01_3 = clamp(7, 7, 7) == 7
+
+// t02
+fn second_largest(xs: List[Int]) -> Opt[Int]
+= xs.unique.sort.reverse.get(1)
+
+test t02_0 = second_largest([3, 1, 4, 1, 5]) == some(4)
+
+test t02_1 = second_largest([5, 5, 5]) == none
+
+test t02_2 = second_largest([]) == none
+
+test t02_3 = second_largest([2, 9]) == some(2)
+
+// t03
+fn running_sum(xs: List[Int]) -> List[Int]
+  post r.len == xs.len
+= do
+  var acc = 0
+  var out = []
+  for x in xs
+    acc := acc + x
+    out := out.push(acc)
+  out
+
+test t03_0 = running_sum([1, 2, 3]) == [1, 3, 6]
+
+test t03_1 = running_sum([]) == []
+
+test t03_2 = running_sum([5, -5, 2]) == [5, 0, 2]
+
+// t04
+fn chunk(xs: List[Int], n: Int where _ > 0) -> List[List[Int]]
+= if xs.is_empty then [] else [xs.take(n)] + chunk(xs.drop(n), n)
+
+test t04_0 = chunk([1, 2, 3, 4, 5], 2) == [[1, 2], [3, 4], [5]]
+
+test t04_1 = chunk([], 3) == []
+
+test t04_2 = chunk([1, 2], 5) == [[1, 2]]
+
+// t05
+fn flatten(xss: List[List[Int]]) -> List[Int]
+= xss.flat_map(xs => xs)
+
+test t05_0 = flatten([[1], [2, 3], []]) == [1, 2, 3]
+
+test t05_1 = flatten([]) == []
+
+// t06
+fn letters(s: Str) -> List[Str]
+= s.lower.chars.filter(_.is_alpha).sort
+
+fn is_anagram(a: Str, b: Str) -> Bool
+= letters(a) == letters(b)
+
+test t06_0 = is_anagram("Listen", "Silent")
+
+test t06_1 = is_anagram("a gentleman", "Elegant man!")
+
+test t06_2 = not is_anagram("abc", "abd")
+
+test t06_3 = not is_anagram("aab", "ab")
+
+// t07
+fn cap(w: Str) -> Str
+= w.chars.take(1).join("").upper + w.chars.drop(1).join("").lower
+
+fn title_case(s: Str) -> Str
+= s.split(" ").map(cap).join(" ")
+
+test t07_0 = title_case("hello world") == "Hello World"
+
+test t07_1 = title_case("sSPUR lang") == "Sspur Lang"
+
+test t07_2 = title_case("x") == "X"
+
+// t08
+fn count_vowels(s: Str) -> Int
+= s.lower.chars.filter(c => "aeiou".contains(c)).len
+
+test t08_0 = count_vowels("Hello World") == 3
+
+test t08_1 = count_vowels("") == 0
+
+test t08_2 = count_vowels("AEIOUxyz") == 5
+
+// t09
+fn log_each(xs: List[Str]) -> Int ! log
+= do
+  for (i, x) in xs.enumerate
+    log("{i}: {x}")
+  xs.len
+
+test t09_0 = log_each(["a", "b"]) == 2
+
+test t09_1 = log_each([]) == 0
+
+// t10
+fn compress(s: Str) -> Str
+= do
+  var out = ""
+  var prev = ""
+  var n = 0
+  for c in s.chars
+    if c == prev then n := n + 1 else do
+      out := out + flush(prev, n)
+      prev := c
+      n := 1
+  out + flush(prev, n)
+
+fn flush(c: Str, n: Int) -> Str
+= if n == 0 then "" else if n == 1 then c else "{c}{n}"
+
+test t10_0 = compress("aaabcc") == "a3bc2"
+
+test t10_1 = compress("") == ""
+
+test t10_2 = compress("abc") == "abc"
+
+test t10_3 = compress("zzzz") == "z4"
+
+type Shape = Circle{r: F64} | Rect{w: F64, h: F64} | Square{s: F64}
+
+// t11
+fn perimeter(s: Shape) -> F64
+= match s
+| Circle{r} => 2.0 * 3.14159 * r
+| Rect{w, h} => 2.0 * (w + h)
+| Square{s} => 4.0 * s
+
+test t11_0 = perimeter(Rect{w: 2.0, h: 3.0}) == 10.0
+
+test t11_1 = perimeter(Square{s: 1.5}) == 6.0
+
+test t11_2 = perimeter(Circle{r: 1.0}) == 6.28318
+
+// t12
+fn area(s: Shape) -> F64
+= match s
+| Circle{r} => 3.14159 * r * r
+| Rect{w, h} => w * h
+| Square{s} => s * s
+
+fn largest_area(xs: List[Shape]) -> Opt[Shape]
+= xs.fold(none, (best, x) => pick(best, x))
+
+fn pick(best: Opt[Shape], x: Shape) -> Opt[Shape]
+= match best
+| some(b) if area(b) >= area(x) => some(b)
+| _ => some(x)
+
+test t12_0 = largest_area([Square{s: 2.0}, Rect{w: 1.0, h: 5.0}, Circle{r: 1.0}]) ==
+  some(Rect{w: 1.0, h: 5.0})
+
+test t12_1 = largest_area([]) == none
+
+test t12_2 = largest_area([Square{s: 2.0}, Rect{w: 2.0, h: 2.0}]) == some(Square{s: 2.0})
+
+type ParseErr = Empty | NotNumber{text: Str}
+
+// t13
+fn parse_int(s: Str) -> Int ! fail[ParseErr]
+= do
+  t = s.trim
+  if t.len == 0 then raise Empty
+  t.to_int.ok_or(NotNumber{text: t})
+
+test t13_0 = catch parse_int(" 42 ") == 42
+| _ => false
+
+test t13_1 = catch parse_int("  ") == 0
+| Empty => true
+| _ => false
+
+test t13_2 = catch parse_int("4x") == 0
+| NotNumber{text} => text == "4x"
+| _ => false
+
+type Account = {id: Str, balance: Int}
+
+type TxErr = Insufficient{short: Int} | Invalid
+
+// t16
+fn withdraw(a: Account, amt: Int) -> Account ! fail[TxErr]
+= if amt <= 0 then raise Invalid
+  else if amt > a.balance then raise Insufficient{short: amt - a.balance}
+  else {id: a.id, balance: a.balance - amt}
+
+test t16_0 = catch withdraw({id: "a", balance: 10}, 4).balance == 6
+| _ => false
+
+test t16_1 = catch withdraw({id: "a", balance: 10}, 0).balance == 0
+| Invalid => true
+| _ => false
+
+test t16_2 = catch withdraw({id: "a", balance: 10}, 15).balance == 0
+| Insufficient{short} => short == 5
+| _ => false
+
+// t18
+fn pairs[A](xs: List[A]) -> List[(A, A)]
+= xs.zip(xs.drop(1))
+
+test t18_0 = pairs([1, 2, 3]) == [(1, 2), (2, 3)]
+
+test t18_1 = pairs([1]) == []
+
+test t18_2 = pairs(["a", "b"]) == [("a", "b")]
+
+// t19
+fn group_by_len(words: List[Str]) -> Map[Int, List[Str]]
+= words.fold(empty_map(), (m, w) => m.put(w.len, m.get(w.len).or([]).push(w)))
+
+test t19_0 = group_by_len(["a", "bb", "c"]).get(1) == some(["a", "c"])
+
+test t19_1 = group_by_len(["a", "bb", "c"]).get(2) == some(["bb"])
+
+test t19_2 = group_by_len([]).len == 0
+
+// t20
+fn most_common(xs: List[Str]) -> Opt[Str]
+= xs.counts.sort_by(-_.1).first.map(_.0)
+
+test t20_0 = most_common(["b", "a", "a", "b", "c"]) == some("b")
+
+test t20_1 = most_common([]) == none
+
+test t20_2 = most_common(["x", "y", "y"]) == some("y")
+
+// t21
+fn apply_n[A](x: A, n: Int, f: A -> A) -> A
+  pre n >= 0
+= if n == 0 then x else apply_n(f(x), n - 1, f)
+
+test t21_0 = apply_n(1, 3, _ * 2) == 8
+
+test t21_1 = apply_n("a", 2, _ + "b") == "abb"
+
+test t21_2 = apply_n(5, 0, _ + 1) == 5
+
+// t22
+fn compose_all(fs: List[Int -> Int]) -> Int -> Int
+= fs.fold(x => x, (acc, f) => x => f(acc(x)))
+
+test t22_0 = compose_all([_ + 1, _ * 2])(3) == 8
+
+test t22_1 = compose_all([])(7) == 7
+
+type Tree = Leaf | Node{left: Tree, value: Int, right: Tree}
+
+// t23
+fn depth(t: Tree) -> Int
+= match t
+| Leaf => 0
+| Node{left, right} => 1 + max(depth(left), depth(right))
+
+test t23_0 = depth(Leaf) == 0
+
+test t23_1 = depth(Node{left: Leaf, value: 1, right: Node{left: Leaf, value: 2, right: Leaf}}) == 2
+
+// t24
+fn tree_sum(t: Tree) -> Int
+= match t
+| Leaf => 0
+| Node{left, value, right} => tree_sum(left) + value + tree_sum(right)
+
+test t24_0 = tree_sum(Leaf) == 0
+
+test t24_1 = tree_sum(
+  Node{
+    left: Node{left: Leaf, value: 4, right: Leaf},
+    value: 1,
+    right: Node{left: Leaf, value: 2, right: Leaf},
+  },
+) == 7
+
+// t25
+fn mirror(t: Tree) -> Tree
+= match t
+| Leaf => Leaf
+| Node{left, value, right} => Node{left: mirror(right), value, right: mirror(left)}
+
+test t25_0 = mirror(Node{left: Node{left: Leaf, value: 1, right: Leaf}, value: 2, right: Leaf}) ==
+  Node{left: Leaf, value: 2, right: Node{left: Leaf, value: 1, right: Leaf}}
+
+test t25_1 = mirror(Leaf) == Leaf
+
+// t26
+fn inorder(t: Tree) -> List[Int]
+= match t
+| Leaf => []
+| Node{left, value, right} => inorder(left) + [value] + inorder(right)
+
+fn is_bst(t: Tree) -> Bool
+= do
+  xs = inorder(t)
+  xs.zip(xs.drop(1)).all(_.0 < _.1)
+
+test t26_0 = is_bst(
+  Node{
+    left: Node{left: Leaf, value: 1, right: Leaf},
+    value: 2,
+    right: Node{left: Leaf, value: 3, right: Leaf},
+  },
+)
+
+test t26_1 = not is_bst(Node{left: Node{left: Leaf, value: 5, right: Leaf}, value: 2, right: Leaf})
+
+test t26_2 = is_bst(Leaf)
+
+test t26_3 = not is_bst(Node{left: Node{left: Leaf, value: 2, right: Leaf}, value: 2, right: Leaf})
+
+type Light = Red | Yellow | Green
+
+// t27
+fn next(l: Light) -> Light
+= match l
+| Green => Yellow
+| Yellow => Red
+| Red => Green
+
+fn after(l: Light, n: Int) -> Light
+  pre n >= 0
+= if n == 0 then l else after(next(l), (n - 1) % 3)
+
+test t27_0 = after(Green, 1) == Yellow
+
+test t27_1 = after(Red, 1) == Green
+
+test t27_2 = after(Green, 3) == Green
+
+test t27_3 = after(Yellow, 0) == Yellow
+
+test t27_4 = after(Green, 1000) == Yellow
+
+// t28
+fn fib(n: Int) -> Int
+  pre n >= 0
+= do
+  var a = 0
+  var b = 1
+  for i in 0..n
+    t = a + b
+    a := b
+    b := t
+  a
+
+test t28_0 = fib(0) == 0
+
+test t28_1 = fib(1) == 1
+
+test t28_2 = fib(10) == 55
+
+test t28_3 = fib(90) == 2880067194370816120
+
+// t29
+fn primes_upto(n: Int) -> List[Int]
+= (2..n + 1).filter(p => (2..p).all(d => d * d > p or p % d != 0))
+
+test t29_0 = primes_upto(20) == [2, 3, 5, 7, 11, 13, 17, 19]
+
+test t29_1 = primes_upto(1) == []
+
+test t29_2 = primes_upto(2) == [2]
+
+// t30
+fn binary(n: Int) -> Str
+  pre n >= 0
+= if n < 2 then n.str else binary(n / 2) + (n % 2).str
+
+test t30_0 = binary(0) == "0"
+
+test t30_1 = binary(5) == "101"
+
+test t30_2 = binary(1024) == "10000000000"

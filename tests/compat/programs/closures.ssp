@@ -1,0 +1,110 @@
+// captures
+
+fn reads(xs: List[Int]) -> Int
+= do
+  var k = 1
+  for i in 0..3
+    k := k * 2
+  xs.map(x => x * k).sum
+
+fn reads_live(n: Int) -> Int
+= do
+  var k = 0
+  var s = 0
+  for i in 0..n
+    k := k + i
+    s := s + [1, 2, 3].map(x => x + k).sum
+  s
+
+fn k0(i: Int) -> Int
+= i
+
+fn make_acc(n: Int) -> Int
+= do
+  var hits = 0
+  fn bump(k: Int) -> Int
+  = do
+    hits := hits + k
+    hits
+  for i in 0..n
+    hits := bump(i) - k0(i)
+  hits
+
+test c1 = reads([1, 2, 3]) == 48
+
+test c2 = reads_live(4) == 6 * 4 + 3 * 10 + 0
+
+test c3 = make_acc(5) == 0
+
+fn nest(n: Int) -> Int
+= do
+  var a = 1
+  fn outer(k: Int) -> Int
+  = do
+    fn inner(j: Int) -> Int
+    = do
+      a := a + j
+      a
+    inner(k) * 2
+  for i in 0..n
+    a := outer(i) - a
+  a
+
+fn closure_read(n: Int) -> Int
+= do
+  var m = 3
+  f = x => x * m
+  m := 5
+  g = apply(f, n)
+  m := 7
+  g + apply(f, n)
+
+fn apply(f: Int -> Int, x: Int) -> Int
+= f(x)
+
+fn per_iter(n: Int) -> Int
+= do
+  var s = 0
+  for i in 0..n
+    var c = i
+    fn bump(k: Int) -> Int
+    = do
+      c := c + k
+      c
+    s := s + bump(10) + c
+  s
+
+fn running(xs: List[Int]) -> (Int, List[Int])
+= do
+  var total = 0
+  ys = xs.map(x => do
+    total := total + x
+    total)
+  (total, ys)
+
+fn blocky(n: Int) -> Int
+= (0..n).map(x => do
+  y = x * 3 - 1
+  if y > 4 then y else 0).filter(_ > 5).sum
+
+fn nested_blocks(xs: List[Int]) -> List[Str]
+= xs.map(x => do
+  inner = xs.map(z => do
+    w = z + x
+    w * 2).sum
+  match inner % 3
+  | 0 => "z"
+  | _ => inner.str)
+
+test c5 = nest(4) != 0
+
+test c6 = closure_read(2) == 24
+
+test c7 = per_iter(5) > 0
+
+test c8 = running([1, 2, 3]) == (6, [1, 3, 6])
+
+test c9 = blocky(1000) ==
+  (0..1000).map(x => if x * 3 - 1 > 4 then x * 3 - 1 else 0).filter(_ > 5).sum
+
+test c10 = nested_blocks([1, 2]) == ["10", "14"]

@@ -1,0 +1,26 @@
+# programs/eq_impls.ssp: frozen by the 1.x compatibility promise (docs/reference/stability.md)
+== canonical
+blake3 f308c16c31ad3f645c1ccac8214d78b399490b6cae223423cab9b13849b3d63c
+== hashes
+#mtdaeaszsuiy4bb6wsylh2d2qsbbp5eyklwn6y2kuljetgi3vrea  Ci
+#f3tvukmcpuyv3ytgxucbrtvm47jhrunpkyrb4kfb5gp5wfgf6sfq  impl Eq for Ci
+#45p6ecr4nyq36nft3ystasykipoy5zrblwb6ya3ucdrtzhacpk6q  Tag
+#2rhwht53wvlg7evyb33ytbb5mnxpwd2ldjsdv4hfqyfen2k5np4q  Shape
+#t3xqoriypjn3dg7d3xxvjlwywzwchwr36dp2roxx7o7zz7rvi5cq  Wrap
+#2bumgsv6hc67wdzfgavdjomtnykat7nykz5tr2hzeg563fakrg5a  res_ci
+#gbrjxc5qfa4v3qxf5zdxmwfmtkbfxv2kwdmv3jitabylhyygy3fa  KB
+#tuq54pcztn7l2d42stn6r3ikvrfp3ofwfglfrgpzv43ysdd5uxca  impl Eq for KB
+#5aie535cfm523j5xvsxo6y46m3jy7jwnkoarhrpb2irdvragw4xq  Key
+#lwguo7o4i5jsvj3egydmjsl35ptvog6os5aysmb2hpsxpv25itvq  eq_reaches_impls_inside_containers
+#wflwuhg6sgodze2s43d4emvhukbkpa2atn2rczk4cinp7uc6qgpa  derived_eq_uses_field_impls
+#k4dozaofyz6yr4ouwrrsgh3bzkafox4lkfuhiqvickjncy34jgwa  secrets_compare_through_their_impl
+== check
+== test interp
+pass  eq_reaches_impls_inside_containers
+pass  derived_eq_uses_field_impls
+pass  secrets_compare_through_their_impl
+3 passed, 0 failed
+== test native
+(same as test interp)
+== fmt
+(the source, unchanged)

@@ -1,0 +1,138 @@
+// ANCHOR: types
+type Id = new Str derive Eq, Show
+
+type Qty = Int where _ > 0
+
+type Item = {id: Id, qty: Qty, tags: List[Str]} derive Eq, Show
+
+type Shape = Circle{r: F64} | Rect{w: F64, h: F64} | Dot
+
+type Pair[A, B] = {first: A, second: B}
+
+type Err = NotFound{id: Str} | Bad
+
+// ANCHOR_END: types
+
+// ANCHOR: fns
+fn area(s: Shape) -> F64
+= match s
+| Circle{r} => 3.14 * r * r
+| Rect{w, h} if w == h => w * w
+| Rect{w, h} => w * h
+| Dot => 0.0
+
+fn clamp_pct(x: Int) -> Int
+  pre x > -1000
+  post r >= 0 and r <= 100
+  ex clamp_pct(150) == 100
+= if x < 0 then 0 else if x > 100 then 100 else x
+
+fn first_tag[T](xs: List[T], f: T -> Bool) -> Opt[T]
+= xs.find(f)
+
+fn sides(s: Shape) -> Int
+= match s
+| Circle | Dot => 0
+| Rect => 4
+
+fn add_all(xs: List[Int]) -> Int
+= match xs
+| [] => 0
+| [x, ..rest] => x + add_all(rest)
+
+fn width_or(s: Shape, d: F64) -> F64
+= if s is Rect{w} and w > 0.0 then w else d
+
+fn round_ones(xs: List[Shape]) -> Int
+= xs.filter(_ is Circle).len
+
+// ANCHOR_END: fns
+
+// ANCHOR: blocks
+fn stats(xs: List[Int]) -> (Int, Int) ! log
+= do
+  total = xs.sum
+  var big = 0
+  for x in xs
+    if x > 10 then big := big + 1
+  log("total {total}, {big} big")
+  (total, big)
+
+fn labels(xs: List[Int]) -> List[Str]
+= xs.map(x => do
+  half = x / 2
+  if half > 3 then "big {x}" else "small {x}")
+
+// ANCHOR_END: blocks
+
+// ANCHOR: errors
+fn lookup(items: List[Item], id: Str) -> Item ! fail[Err]
+= items.find(_.id.raw == id).ok_or(NotFound{id})
+
+fn qty_or_zero(items: List[Item], id: Str) -> Int
+= catch lookup(items, id).qty
+| NotFound => 0
+| Bad => -1
+
+fn qty_of(items: List[Item], id: Str) -> Int ! fail[Err]
+= do
+  some(item) = items.find(_.id.raw == id) else raise NotFound{id}
+  item.qty
+
+// ANCHOR_END: errors
+
+// ANCHOR: effects
+effect ask() -> Int
+
+fn twice() -> Int ! ask
+= ask() + ask()
+
+fn answered() -> Int
+= handle twice()
+| ask() => resume(21)
+
+// ANCHOR_END: effects
+
+// ANCHOR: traits
+trait Named
+  fn name(x: Self) -> Str
+  fn greet(x: Self) -> Str
+  = "hi {x.name}"
+
+impl Named for Item
+  fn name(i: Item) -> Str
+  = i.id.raw
+
+fn greet_all[T: Named](xs: List[T]) -> List[Str]
+= xs.map(greet)
+
+// ANCHOR_END: traits
+
+// ANCHOR: values
+test values = do
+  it = Item{id: Id("a"), qty: 2, tags: []}
+  moved = it with qty := 3, tags := ["new"]
+  p = Pair{first: 1, second: "one"}
+  (a, b) = (p.first, p.second)
+  [1, 2, 3].map(_ * 2) == [2, 4, 6] and
+    moved.qty == 3 and
+    a == 1 and
+    b.len == 3 and
+    "n={a}" == "n=1" and
+    some(2).or(0) == 2 and
+    empty_map().put("k", 1).get("k") == some(1)
+
+// ANCHOR_END: values
+
+test rest = area(Rect{w: 2.0, h: 2.0}) == 4.0 and
+  sides(Dot) == 0 and
+  add_all([1, 2]) == 3 and
+  width_or(Rect{w: 2.0, h: 1.0}, 1.0) == 2.0 and
+  round_ones([Dot, Circle{r: 1.0}]) == 1 and
+  qty_of([Item{id: Id("b"), qty: 4, tags: []}], "b") == 4 and
+  first_tag([1, 2], _ > 1) == some(2) and
+  stats([5, 20]) == (25, 1) and
+  labels([2, 8]) == ["small 2", "big 8"] and
+  qty_or_zero([], "x") == 0 and
+  answered() == 42 and
+  greet_all([Item{id: Id("b"), qty: 1, tags: []}]) == ["hi b"]

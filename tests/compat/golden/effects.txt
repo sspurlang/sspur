@@ -1,0 +1,132 @@
+# programs/effects.ssp: frozen by the 1.x compatibility promise (docs/reference/stability.md)
+== canonical
+blake3 475aa697f58827a7afb333ae7b43030b573fbfd6ee940c44156e7ff7619ef7c8
+== hashes
+#rb3gfrhr5plzatmr7nktzkxbchktukswas4fktmr6fjuaxsorp6q  Order
+#57lel3haongblho56jrvwjrrbsgwn2rl4rszxo5y4423fa6ltlrq  StockErr
+#wqxqxk7exdrk5pxn7fm5j2id5pari4zvwcs6rtft7fk3q2sodp4q  config
+#3m3cqezdmnwvd4oaryoizjjdtra336l4cyyhzroimheeqkgjl2ca  inventory
+#mpr7jbcaqhm36ns7iop7bzayn6gxvvxzwhohduvhqrp5vq67ydda  audit
+#nn5uumzl55dleymt6swhaeb6trjxyba2htjpmb6u2vqui3xudzuq  place
+#455l7p2t2ysf2dc7ccztrrjghlbxdv7u7gsv2wcjgvqaanvqkkqa  place_all
+#4jyrx2an2dwh4ofykpjltnl2wpejxwocx64eprlxfq5igym65b6q  in_memory
+#fcnpiphsflooadr77rlfw25c2uw66oqc5hx2qxaxbgfv2qkfn7ta  checked
+#p22rn5e6eos3llonnxv2xjsfmcr7tpkndzv26nycw436acsl75dq  limit
+#a6r6yrnfcokxhhba3lm6pdc7g7m5xn44g34gsx5ps2r4zf3rs2xq  with_config
+#ad6osunxx46r6mydbqioz4y53p6gsbcf25dt4ppn5fldwovegbeq  first_over
+#ta6265bsdvxvqb6h7bjx5z2cjbyg27nve3uxxrhzmhgporyke4ja  traced
+#2ivu44zir7rur4zodscdmmcp6s2jxtxnt4kgqmraeysiu44b7rcq  noisy
+#zw3ktlhyr5exmek3zggcaw4om3rwndrsux6vglskgkxnrgnu2ivq  quiet
+#zicblqggjpjdurr7fpv4mdt4djkiwqaxi73x6i5yyibkd4lefjea  stocked
+#mtj7rn6hn4gowkeqemjc6unoqpbb2ejv7dlggf6gvifbs4cvb7zq  audit_fails
+#eihd2ngydytbt3m2eb5ym7h34xpaojohjyxroo6ji7arai642iwq  audit_raises
+#n2dwusqsdxzejiqyozewairyngvw2roadpshhe77ed4rtamfe56a  main
+#ywmx4lhrgkx2ikqt2ebw2fkrqw6nojtzb33s6jb2nbebov3ljc3q  mem
+#twbawetwzdozuzblh4nblvmzr6ewmsd4uvufnpvfskp3fybuuafa  fold_state
+#izasl5z3aqu6qt6ljebzmilmpliljdd63jq2u6m6jae4ptfopnea  stock_out
+#j44wqew3blz6cfplsbxnwzgb3o4lpnbbd24r3jixq4lbtsqnvvha  stock_ok
+#vi6nwhuoyhv4fd4i2k3ezkocmyxwng2kjb4b3wpbdvez4kzsxzpa  config_reader
+#gecvxeiqnhybxhlgydwfxpb2zz7bmr6iekfvyitkwh7i5zpu52za  abort_early
+#fmmxtz46kulw35cdh4p5f2mdfxrrvsjlxwc6vk2vgmw3oebi4teq  abort_never
+#ujw5kmeswgxsazqwbbck6oikirgy6z7fruwyn2j2bgxvnj7ugeoq  after_resume
+#ensaeru4gulqnmdeuq4wozjznu6w6xq2tigv2v6tcl6xcbqhm4eq  log_captured
+#jrri4dh5jjq3a6io2h3orldq76nbh66rrexurahsuwi6ynzvi7vq  clause_error_escapes
+#v76ohnzaea6h5npmgslmwyclhblkzi5wecoyqdxkz4cra4u4docq  Tree
+#kh2r7fhfjdz5rcthuaqbwvd6l43scqsj2bq4shzkukonqe6mvrta  ask
+#ozc2lz3fuc67igr4jtcm35grdj3f5bdl4rz4277x2gxgw75sm5sa  tell
+#zp2di3wfazp2rjldvxgdlgf3nqb45nipgiij6egvcfiacbxbsidq  pick
+#l5igqx7i3l3d5nvtt74bxbowjuw57dff6amx3d3xhcxricszg4pq  walk
+#27mgytpift7sgfx6sxpzvtmmjmiykghpdfr6dhmlmfhagxvq3fbq  each
+#pzrs5r3zmiwhva7pppncuwumjy4s7oa7g2bgizf7nzbh74dcp67q  evens_of
+#w7b7lzz37kcuda6rvmyaxbw4aqnf6ef3lfk7yttrhirqwfwqoera  build
+#xt2ahr7hkvqv7brjhu4l34p6szoxqboowu4v7w65y2asdaznukka  sum_evens
+#uak7ytni34bwpooitlrnnawiuh2xhgktnuoxbt64vyxekmdmje2a  pairs
+#rdtb2vt5qjtldk7yr2aol3qtr3g5fbx32syx4fd6ekvng4qimdsq  somes
+#pfakjurktnvqiegmvs6qbyfzejcawidcrueieh2bm6dmiurnuwqa  asker
+#fn2yixjiti6pjmvxnhsmlgibbkrmpkszkcjdmotgr5yuhhe6gm6a  layered
+#2os6cijzlapyrebrveftgcywfm63fj7bqsqh7g4zx6phqfxghkia  args_order
+#fpqmxavmoiife4h62eea4oywdnxcidr3fhqh3sqbdth7cujdkb5a  with_ret
+#j6xtph4akh6zt4frtvvhaby6xmi2vejo6ifplv6364c3y6ndfyda  inner_gen
+#u6zfw4ogrnbtahhpxkzq2jg6delqnyoqbztd4owxcpmbahxnygvq  local_gen
+#qz2no2pulxdxa7xtq5zcmt2i52vvgtuqeks3wrgnsyjz3w5jhfia  shadow
+#bk6pxhonjl3pb6nph7vfjxm4qzacomxdedchrp6obwo5gjznbnya  a
+#txccvqjgmoikoblnswwhgrswjacbc43i7vsnugfqbumdtfjvyyva  b
+#yocbxdvzqmghwurphvwmjfgfou5vgglrhgkdrcfd5fl4ah4xnoyq  c
+#6t3xha2p24xanrbbvs4wlq6tozhgkyjp2ldeh6xlvgimgcqpkj4q  d
+#q7viat4wg6wwpmpaofaevjajgiz43idzimiqxwazko2dcwktdmya  e
+#uylbkqz5tpjlgr367w45kaszxnkr6lyv55lkyz7pfnoduqekh75q  f
+#2wluwn2x3zkqm5jov4cxcxzgmu63sn3bvrzpgnewpmd3uu2tcqpa  g
+#pkfsqioc3ncet6rxt6dxeam4ttpnvaycr6jedc6p4tbmm33tkd3a  h
+#ecqqhmplazodi6xmizfwkjdawtrdxqno6sbvl55ucfzhaac7776q  i
+#v76ohnzaea6h5npmgslmwyclhblkzi5wecoyqdxkz4cra4u4docq  TreeGenerators
+#4yxkvf5cpunifror2k6i63n2hhtm7o2mkuj3utm2xequx3iwnyaa  ParseErr
+#5dgthwizeidpwxuilsagasbgnr3473alf4lhzzcsklxhtlyzwi6q  insert
+#l5igqx7i3l3d5nvtt74bxbowjuw57dff6amx3d3xhcxricszg4pq  walk_generators
+#27mgytpift7sgfx6sxpzvtmmjmiykghpdfr6dhmlmfhagxvq3fbq  each_generators
+#k4a5dz2ykwc2j25puxjbxjvwu6nz3nschomkiuhybk4zczqohjnq  naturals
+#hajwsnrhufthmyzdov66mjlc26s42uqzzfpgxomdnox3aqd25p4q  fib_upto
+#zhibmgclt7la3lh2tpi7lunoftrhfcjpxmxk5hb2gwahygtptala  squares_of_odds
+#4seelgu56r2qqmyzi7rhiuvcocchaxljeugj7fstmae7bvknrrfa  sorted
+#7ecx5h6vth5ghqiswig7g544alcuswoe54ex4gtcsa7ly4xdtj7a  first_square_over
+#iqlui7wbsjywxnfqxk4swo7lkuymt354ledcatgxngofdlzwwepa  take
+#6daof7tqvmbdnj35smzxg7rhjy4ky24tdtcu4bopazd2lsp57kfa  parse_all
+#dqytrjypq7eqps5fnqgrlqgfdnushivyjm3pa3nnpum7uypkalma  total
+#awvaqer2epdw2lpymxsffowdfdp36vlvztlwxrsbk5sxsjlza77a  traced_count
+#tuwt6p2hfjbxzlqypws5vh5x74rjniyqaz4bjaayyyhwken4buoa  main_generators
+#g7q2eicdtsj2zcrdcw6cqlabk3el3nzwr6wqaflvterwuevbfwqq  tree_order
+#mf4mfqzox7hhhmclvjn2dc4trecv7u7syrc4to3pqetdfgorhlsa  generic_each
+#mtuphguhouotts4hhoprh2tax4pjwzvwvnn7zlev7c57txq3htza  filtered
+#zbjtnr2nwjvbzwzkxy2tnavtyvywn32yh4uh5ilykd2ury5dydna  infinite
+#amqaxdi6vrin5dn4vmcj7pnr6vsktkts2y6qz5cscktyzfjz24aa  early_return
+#np5f73k3l4abpmjf62tsxa2o7jn2bmlm2bd2gd5aye4pl4rzsa5q  fib
+#gxhnokmcfd77bpo7t5sxklww5nfenau5v6rsjyixil4yez6s6pba  errors_escape
+#gerre7vxtfcu2ij53eoxuljdyur53vrhaao4xjgpbhxsc33dleaq  sums
+#hushbpslhtdtwtrbbsa5dyc47rzskbttikupyb3de4icgbawguba  body_effects
+== check
+== run interp
+left 3
+out of b
+config 41
+first some(9)
+enter a
+enter b
+leave b with 40
+leave a with 41
+traced 42
+quiet (26, ["noisy 2", "enter a", "enter b", "leave b with 20", "leave a with 21"])
+== run native
+(same as run interp)
+== test interp
+pass  mem
+pass  fold_state
+pass  stock_out
+pass  stock_ok
+pass  config_reader
+pass  abort_early
+pass  abort_never
+pass  after_resume
+pass  log_captured
+pass  clause_error_escapes
+pass  a
+pass  b
+pass  c
+pass  d
+pass  e
+pass  f
+pass  g
+pass  h
+pass  i
+pass  tree_order
+pass  generic_each
+pass  filtered
+pass  infinite
+pass  early_return
+pass  fib
+pass  errors_escape
+pass  sums
+pass  body_effects
+28 passed, 0 failed
+== test native
+(same as test interp)
+== fmt
+(the source, unchanged)

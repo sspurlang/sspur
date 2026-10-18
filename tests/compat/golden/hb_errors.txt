@@ -1,0 +1,28 @@
+# programs/hb_errors.ssp: frozen by the 1.x compatibility promise (docs/reference/stability.md)
+== canonical
+blake3 80a95cac2eca8da811f356cc08ca868f16175e189f6134cc43848e34f4411390
+== hashes
+#zolgc3lsfcrab6sdqxa55vkgfmxhuutzexzp6nbu7hqobv5kwgta  StockErr
+#rb3gfrhr5plzatmr7nktzkxbchktukswas4fktmr6fjuaxsorp6q  Item
+#jdky6vaxj2axnohhkje2bqmwdtqt53qna7z2bsveakham5apckdq  reserve
+#6twm24wvxybbwzfqnkpu4lmnk342xg3dzbbnn6ovxvmudz6di4kq  try_reserve
+#akx5x2kvqnl25rjepz7nmoaekailmyfl4bzst2fkq7hchskonwrq  checkout
+#7hufolbkpjfdqxs522pa4cakeyjcxpgta3ed27kz2jh3hvzgfoha  line_count
+#vyctpcukjjmukw7t5nzdlca3koqy4rqm7hqo5c6dx4qmyjlnulxq  main
+#m6st5na6rz6odqzokcjdhqvw7reudeipmji62mlzyi7pr656w7tq  short
+== check
+== run interp
+reserved, 3 left
+only 5 left
+no such item: cap
+checkout failed on ink
+false 0
+== run native
+(same as run interp)
+== test interp
+pass  short
+1 passed, 0 failed
+== test native
+(same as test interp)
+== fmt
+(the source, unchanged)

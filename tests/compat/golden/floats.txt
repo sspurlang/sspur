@@ -1,0 +1,41 @@
+# programs/floats.ssp: frozen by the 1.x compatibility promise (docs/reference/stability.md)
+== canonical
+blake3 86e710a9a04da576c4947f81fcbed1109ff19cb37a25394e928174ea2ea258f7
+== hashes
+#mh3xfgkedkymvkf7asevan3buiqygrxbnjaj5ltpgsd6psmcnjba  neg_zero
+#tunbmgp3uie6fqkuntjxe74cyvkp7eb7zs7zgbniyexkmv5mef7a  non_negative
+#5gyo427brk4pes22r5yuigyun6rbq7hrywklfmh3r5b4pa2odb3q  checked
+#62gcqyx5uswan2ek3xezlbflwkzhjyppftr4rw7jwa7nlmqiuv4a  not_a_number
+#4w4tyr3rqrtpqtjplocy2txraxdo2ckrybq2xsin5oropiqhxjaq  nan_equals_itself
+#kcf3rwk64ehsrfifllnsgnnesbxpa2qefcxusmu7rtg6iqrelv5a  nan_above_inf
+#llqalsqakacgjl2utyi3gbjxdmise2zkewpxbibbedudkgtro5ka  nan_not_less
+#ymgaijhscubtactrhwaz4jkjw5ujreoblznaveltgiymgso5tlkq  zeros_equal
+#ttnipj4ogaek3qtbxoxb4peycqlwrs3z3ik5npwr6jnrys4niblq  zero_refinement
+#de6zysquf67j43jvxafdobpzhcz3ntpk4sdlkeili2uytavkxyfq  zeros_one_key
+#5a7j6lcftclp566lj4mwmhhh5g2r6j367m26ctovziqfyizsk5pq  zeros_unique
+#dqgt5jwummppin7gsx2pvdei7z4u3cceipkvmve7zrp6cnay4nba  zeros_sort_stable
+#ealebrfgwk3qvptkjshm6wjpsojr6szfxn2ttmxkusg6zprq23kq  zero_keeps_sign
+#ygeyayvckslp5tonkezns3j7tqstg7kgolnlp7rtjprrq5bwgnfq  checked_in_range
+#uiwspr4n5nwcn3ffmn2gemguskkdgiic3imq2appphw7vzo35i5q  checked_edges
+#ulcu24w4wb7luqt74r3j5xxf43z7wbyf2yn62sqk2ficvxuxhzra  checked_out
+#hian5jdc646fl3nqpymmtfmo3qzh7dlpxan6cfysyjz7nlvfo2wa  plain_in_range
+== check
+== test interp
+pass  nan_equals_itself
+pass  nan_above_inf
+pass  nan_not_less
+pass  zeros_equal
+pass  zero_refinement
+pass  zeros_one_key
+pass  zeros_unique
+pass  zeros_sort_stable
+pass  zero_keeps_sign
+pass  checked_in_range
+pass  checked_edges
+pass  checked_out
+pass  plain_in_range
+13 passed, 0 failed
+== test native
+(same as test interp)
+== fmt
+(the source, unchanged)

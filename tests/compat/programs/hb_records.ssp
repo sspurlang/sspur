@@ -1,0 +1,62 @@
+// ANCHOR: record
+type Address = {city: Str, zip: Str}
+
+type User = {name: Str, age: Int where _ >= 0, address: Address, tags: List[Str]}
+
+fn birthday(u: User) -> User
+= u with age := u.age + 1
+
+fn move_to(u: User, city: Str) -> User
+= u with address.city := city, tags[0] := "moved"
+
+test records = do
+  home = Address{city: "Pune", zip: "411001"}
+  name = "Asha"
+  u = User{name, age: 30, address: home, tags: ["new"]}
+  birthday(u).age == 31 and move_to(u, "Delhi").address.city == "Delhi" and u.address.city == "Pune"
+
+// ANCHOR_END: record
+
+// ANCHOR: sum
+type Shape = Circle{r: F64} | Rect{w: F64, h: F64} | Dot
+
+type Status = Active | Suspended{reason: Str}
+
+fn area(s: Shape) -> F64
+= match s
+| Circle{r} => 3.14 * r * r
+| Rect{w, h} => w * h
+| Dot => 0.0
+
+test sums = area(Rect{w: 2.0, h: 3.0}) == 6.0 and area(Dot) == 0.0
+
+// ANCHOR_END: sum
+
+// ANCHOR: generic
+type Pair[A, B] = {first: A, second: B}
+
+type Tree[T] = Leaf | Node{left: Tree[T], value: T, right: Tree[T]}
+
+fn insert(t: Tree[Int], x: Int) -> Tree[Int]
+= match t
+| Leaf => Node{left: Leaf, value: x, right: Leaf}
+| Node{left, value, right} => if x < value then Node{left: insert(left, x), value, right}
+  else Node{left, value, right: insert(right, x)}
+
+fn size[T](t: Tree[T]) -> Int
+= match t
+| Leaf => 0
+| Node{left, right} => 1 + size(left) + size(right)
+
+test generic = size([5, 2, 8].fold(Leaf, insert)) == 3 and
+  Pair{first: 1, second: "one"}.second == "one"
+
+// ANCHOR_END: generic
+
+// ANCHOR: show
+fn main() -> Unit ! log
+= do
+  log("{Rect{w: 1.0, h: 2.0}}")
+  log("{Suspended{reason: "late fees"}}")
+  log("{Pair{first: 1, second: [true]}}")
+// ANCHOR_END: show
