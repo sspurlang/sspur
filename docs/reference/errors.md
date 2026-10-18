@@ -313,6 +313,7 @@ This page lists every code the compiler can emit, grouped by area. The test suit
 | `W_KERNEL_UNWRITTEN` | A kernel's `&mut` slice that is never written | Declare it `&[T]` |
 | `W_DEPRECATED` | A use of a deprecated builtin: it still works in every 1.x release and goes in 2.0 (see [Stability and deprecation](stability.md)) | Write the replacement the hint gives |
 | `W_RULE_UNCHECKED` | A `rule` too large for gap and overlap analysis | Split it, or accept that it isn't checked |
+| `W_CONVERSION_MAY_TRAP` | An `F64` `round`, `floor`, `ceil` or `trunc` that `sspur check` can't prove finite and in `[-2^63, 2^63)`, so it may trap with `integer overflow` ([numbers](stdlib/numbers.md#f64-order-and-conversions), ADR 0044) | `x.checked_round` (an `Opt[Int]`), or a guard, `where` or `pre` that bounds it: `if x.is_finite and x.abs < 9.2e18 then x.round else ...` |
 
 ## Audit notes
 

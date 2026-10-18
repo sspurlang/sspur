@@ -355,8 +355,10 @@ fn env_diag(e: String) -> Diag {
 
 fn check_doc(state: &State, out: &crossbeam_channel::Sender<Message>, uri: &str) {
     let Some((text, version, path)) = state.doc(uri) else { return };
+    let mut own = 0;
     let (analysis, diags) = match load_doc(state, &text, path.as_deref()) {
         Ok(l) => {
+            own = l.own;
             let d = l.check.diags.clone();
             (Some(Arc::new(Analysis { src: text.clone(), module: l.module, check: l.check })), d)
         }
@@ -371,12 +373,21 @@ fn check_doc(state: &State, out: &crossbeam_channel::Sender<Message>, uri: &str)
     }
     publish(out, uri, version, &text, &json);
     lock(&state.checked).insert(uri.to_string(), Checked { text: text.clone(), analysis: analysis.clone(), diags: json });
-    if analysis.is_none() || !diags.iter().any(|d| d.code == "E_HOLE") || diags.iter().any(Diag::is_error) {
+    let Some(a) = analysis.as_ref().filter(|_| !diags.iter().any(Diag::is_error)) else { return };
+    let conv = sspur_smt::conv::warnings(&a.module, &a.check, own).diags;
+    if !diags.iter().any(|d| d.code == "E_HOLE") {
+        if !conv.is_empty() && state.version(uri) == Some(version) {
+            let all: Vec<Diag> = diags.iter().cloned().chain(conv).collect();
+            let json = ide::diags_json(&text, &all, Some(&a.module));
+            publish(out, uri, version, &text, &json);
+            lock(&state.checked).insert(uri.to_string(), Checked { text, analysis, diags: json });
+        }
         return;
     }
     let Ok(l) = load_doc(state, &text, path.as_deref()) else { return };
     let mut diags = l.check.diags.clone();
     fill::enrich(&l, &mut diags, Some(fill::budget(FILL_MS)));
+    diags.extend(conv);
     let json = ide::diags_json(&text, &diags, Some(&l.module));
     if state.version(uri) != Some(version) {
         return;

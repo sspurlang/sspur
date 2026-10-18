@@ -254,6 +254,9 @@ package 6zgfppsqtg4mujqzzu6ghnitn5opz6zknj7uckg52bzzf5doyemq
 #codngk22o4teuxndgt2eax2776fomabfdobsqnzhcme6j7js4dcq  more
 #66a5j57xtzywfmbianwqbf4v3ruocmfael7epehpttkcb3lccj7q  mini
 == check
+W_CONVERSION_MAY_TRAP nice_unit
+W_CONVERSION_MAY_TRAP ticks_min
+W_CONVERSION_MAY_TRAP ticks_min
 == test interp
 pass  cap_keeps_tail
 pass  uniq_first

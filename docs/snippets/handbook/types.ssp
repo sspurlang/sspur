@@ -1,5 +1,5 @@
 // ANCHOR: prim
-fn describe(n: Int, ratio: F64, ok: Bool, label: Str) -> Str
+fn describe(n: Int, ratio: F64 where _ >= 0.0 and _ <= 1.0, ok: Bool, label: Str) -> Str
 = "{label}: {n} items, {(ratio * 100.0).round}% done, ok={ok}"
 
 test prim = describe(3, 0.25, true, "build") == "build: 3 items, 25% done, ok=true"

@@ -1,3 +1,5 @@
+pub mod conv;
+mod float;
 mod z3;
 
 pub use z3::{collecting, parse_model, solve_all, Answer, Solver};
@@ -31,6 +33,8 @@ pub struct FnCtx {
     pub params: Vec<(String, String, bool)>,
     decls: String,
     facts: Vec<String>,
+    /// Loop invariants (float mode) every query of the function may assume.
+    pub(crate) assumed: Vec<String>,
 }
 
 pub struct Site {
@@ -69,6 +73,7 @@ pub struct Analysis {
     posts: HashMap<(String, usize), usize>,
     rets: HashMap<String, usize>,
     usable_fns: HashSet<String>,
+    pub(crate) cands: Vec<float::Cand>,
 }
 
 impl Analysis {
@@ -78,8 +83,8 @@ impl Analysis {
         for t in f.facts[..q.upto].iter().chain(&f.facts[q.extra.0..q.extra.1]) {
             writeln!(s, "(assert {t})").unwrap();
         }
-        for p in &q.path {
-            writeln!(s, "(assert {p})").unwrap();
+        for t in f.assumed.iter().chain(&q.path) {
+            writeln!(s, "(assert {t})").unwrap();
         }
         writeln!(s, "(assert (not {}))", q.goal).unwrap();
         s
@@ -109,6 +114,8 @@ enum Val {
     Rec(usize),
     Tup(Vec<Val>),
     List(String),
+    /// An `F64` in float mode: class and real (see `float.rs`).
+    F(String, String),
     Other,
     Never,
 }
@@ -118,6 +125,8 @@ enum Bind {
     Val(Val),
     Lazy,
     Mutable,
+    /// A `var` in float mode, with its value until the next assignment or loop.
+    Var(Option<Val>),
 }
 
 struct Goal {
@@ -144,6 +153,20 @@ struct Enc<'a> {
     fidx: usize,
     fname: String,
     usable: bool,
+    floats: bool,
+    /// Float operations by operands, so the same expression rounds the same way twice.
+    fmemo: HashMap<String, Val>,
+    /// The `to_f64` results so far (Int term, real), for monotonicity.
+    fints: Vec<(String, String)>,
+    /// Real literals made by `f_lit`, by term, for constant folding.
+    flits: HashMap<String, f64>,
+    /// The loops being walked (float mode): their `F64` vars and invariant candidates.
+    frames: Vec<HashMap<String, Vec<usize>>>,
+    roots: Vec<&'a Expr>,
+    /// The calls being inlined (float mode): callee names, and the call spans as a site-kind suffix.
+    inlined: Vec<String>,
+    chain: String,
+    budget: usize,
     decls: String,
     facts: Vec<String>,
     path: Vec<String>,
@@ -166,6 +189,13 @@ fn count_returns(e: &Expr) -> usize {
 
 fn lit(n: i128) -> String {
     if n < 0 { format!("(- {})", -n) } else { n.to_string() }
+}
+
+fn int_lit(t: &str) -> Option<i64> {
+    match t.strip_prefix("(- ").and_then(|x| x.strip_suffix(')')) {
+        Some(x) => x.parse::<i64>().ok().map(|k| -k),
+        None => t.parse().ok(),
+    }
 }
 
 fn in_range(t: &str) -> String {
@@ -261,17 +291,44 @@ fn count_spans(m: &Module) -> HashSet<(u32, u32, u8)> {
 }
 
 pub fn analyze(m: &Module, check: &CheckOutput) -> Analysis {
+    let (mut enc, defs) = encoder(m, check, false);
+    for f in &defs {
+        enc.function(f);
+    }
+    for f in &defs {
+        for (i, ex) in f.examples.iter().enumerate() {
+            enc.test(&format!("{}.ex{}", f.name, i + 1), ex);
+        }
+    }
+    for d in &m.defs {
+        if let Def::Test(t) = d {
+            enc.test(&t.name, &t.body);
+        }
+    }
+    enc.an
+}
+
+fn encoder<'a>(m: &'a Module, check: &'a CheckOutput, floats: bool) -> (Enc<'a>, Vec<&'a FnDef>) {
     let mut enc = Enc {
         check,
         fns: HashMap::new(),
         aliases: HashMap::new(),
         frefs: HashMap::new(),
-        dups: count_spans(m),
+        dups: if floats { HashSet::new() } else { count_spans(m) },
         an: Analysis::default(),
         entry_clause: HashMap::new(),
         fidx: 0,
         fname: String::new(),
         usable: false,
+        floats,
+        fmemo: HashMap::new(),
+        fints: vec![],
+        flits: HashMap::new(),
+        frames: vec![],
+        roots: vec![],
+        inlined: vec![],
+        chain: String::new(),
+        budget: 0,
         decls: String::new(),
         facts: vec![],
         path: vec![],
@@ -325,33 +382,20 @@ pub fn analyze(m: &Module, check: &CheckOutput) -> Analysis {
                 None => ClauseKind::Pre,
             };
             enc.entry_clause.insert((f.name.clone(), j), enc.an.clauses.len());
-            enc.an.clauses.push(Clause { func: f.name.clone(), kind, text: printer::expr(c, 0), obligations: vec![] });
+            enc.an.clauses.push(Clause { func: f.name.clone(), kind, text: if floats { String::new() } else { printer::expr(c, 0) }, obligations: vec![] });
         }
         for (i, p) in f.posts.iter().enumerate() {
             enc.an.posts.insert((f.name.clone(), i), enc.an.clauses.len());
-            enc.an.clauses.push(Clause { func: f.name.clone(), kind: ClauseKind::Post, text: printer::expr(p, 0), obligations: vec![] });
+            enc.an.clauses.push(Clause { func: f.name.clone(), kind: ClauseKind::Post, text: if floats { String::new() } else { printer::expr(p, 0) }, obligations: vec![] });
         }
         if let Some(rt) = &f.ret
             && let Some(n) = ty_name(rt)
             && let Some(r) = enc.aliases.get(n) {
                 enc.an.rets.insert(f.name.clone(), enc.an.clauses.len());
-                enc.an.clauses.push(Clause { func: f.name.clone(), kind: ClauseKind::Ret(n.to_string()), text: printer::expr(r, 0), obligations: vec![] });
+                enc.an.clauses.push(Clause { func: f.name.clone(), kind: ClauseKind::Ret(n.to_string()), text: if floats { String::new() } else { printer::expr(r, 0) }, obligations: vec![] });
             }
     }
-    for f in &defs {
-        enc.function(f);
-    }
-    for f in &defs {
-        for (i, ex) in f.examples.iter().enumerate() {
-            enc.test(&format!("{}.ex{}", f.name, i + 1), ex);
-        }
-    }
-    for d in &m.defs {
-        if let Def::Test(t) = d {
-            enc.test(&t.name, &t.body);
-        }
-    }
-    enc.an
+    (enc, defs)
 }
 
 impl<'a> Enc<'a> {
@@ -374,6 +418,12 @@ impl<'a> Enc<'a> {
         self.fname = name.to_string();
         self.usable = usable;
         self.decls.clear();
+        if self.floats {
+            self.decls.push_str(&float::prelude());
+            self.fmemo.clear();
+            self.fints.clear();
+            self.budget = float::INLINE_BUDGET;
+        }
         self.facts.clear();
         self.path.clear();
         self.env.clear();
@@ -384,11 +434,12 @@ impl<'a> Enc<'a> {
     }
 
     fn finish(&mut self, is_test: bool, params: Vec<(String, String, bool)>) {
-        self.an.fns.push(FnCtx { name: self.fname.clone(), is_test, params, decls: std::mem::take(&mut self.decls), facts: std::mem::take(&mut self.facts) });
+        self.an.fns.push(FnCtx { name: self.fname.clone(), is_test, params, decls: std::mem::take(&mut self.decls), facts: std::mem::take(&mut self.facts), assumed: vec![] });
     }
 
     fn test(&mut self, name: &str, body: &'a Expr) {
         self.reset(name, false);
+        self.roots = vec![body];
         self.env.push(HashMap::new());
         self.ex(body);
         self.finish(true, vec![]);
@@ -424,6 +475,7 @@ impl<'a> Enc<'a> {
                 self.facts.push(t);
             }
         }
+        self.roots = vec![&f.body];
         let v = match &f.body.kind {
             ExprKind::Table(_) => Val::Other,
             _ => self.ex(&f.body),
@@ -508,7 +560,7 @@ impl<'a> Enc<'a> {
         }
         let usable = self.usable && !self.dups.contains(&(e.span.start, e.span.end, kind_tag(&e.kind)));
         let q = cond.map(|goal| Query { fun: self.fidx, upto: self.facts.len(), extra: (0, 0), path: self.path.clone(), goal });
-        let site = self.an.sites.entry((e.span.start, e.span.end, kind.to_string())).or_insert(Site { func: self.fname.clone(), usable, queries: vec![] });
+        let site = self.an.sites.entry((e.span.start, e.span.end, format!("{kind}{}", self.chain))).or_insert(Site { func: self.fname.clone(), usable, queries: vec![] });
         site.usable &= usable;
         site.queries.push(q);
     }
@@ -538,6 +590,7 @@ impl<'a> Enc<'a> {
         match t {
             Some(Type::Con(n, a)) if a.is_empty() && n == "Int" => Val::Int(self.int_sym(MIN, MAX)),
             Some(Type::Con(n, a)) if a.is_empty() && n == "Bool" => Val::Bool(self.sym("Bool")),
+            Some(Type::Con(n, a)) if a.is_empty() && n == "F64" && self.floats => self.f_fresh(),
             Some(Type::Con(n, a)) if a.len() == 1 && n == "List" => Val::List(self.int_sym("0", LEN_MAX)),
             Some(Type::Tuple(ts)) => Val::Tup(ts.iter().map(|t| self.fresh_of(Some(t))).collect()),
             Some(Type::Con(n, _)) if self.check.records.contains_key(n) => {
@@ -569,6 +622,12 @@ impl<'a> Enc<'a> {
         match self.env[i][n].clone() {
             Bind::Val(v) => v,
             Bind::Mutable => self.fresh_e(e),
+            Bind::Var(Some(v)) => v,
+            Bind::Var(None) => {
+                let v = if self.tracked(n) { self.f_invariant(n) } else { self.fresh_e(e) };
+                self.env[i].insert(n.to_string(), Bind::Var(Some(v.clone())));
+                v
+            }
             Bind::Lazy => {
                 let v = self.fresh_e(e);
                 self.env[i].insert(n.to_string(), Bind::Val(v.clone()));
@@ -626,6 +685,7 @@ impl<'a> Enc<'a> {
             (Val::Int(x), Val::Int(y)) => Val::Int(self.define("Int", format!("(ite {c} {x} {y})"))),
             (Val::Bool(x), Val::Bool(y)) => Val::Bool(self.define("Bool", format!("(ite {c} {x} {y})"))),
             (Val::List(x), Val::List(y)) => Val::List(self.define("Int", format!("(ite {c} {x} {y})"))),
+            (Val::F(cx, rx), Val::F(cy, ry)) => Val::F(self.define("Int", format!("(ite {c} {cx} {cy})")), self.define("Real", format!("(ite {c} {rx} {ry})"))),
             (Val::Tup(xs), Val::Tup(ys)) if xs.len() == ys.len() => Val::Tup(xs.into_iter().zip(ys).map(|(x, y)| self.merge(c, x, y, e)).collect()),
             _ => self.fresh_e(e),
         }
@@ -660,6 +720,7 @@ impl<'a> Enc<'a> {
                 }
             }
             ExprKind::Bool(b) => Val::Bool(b.to_string()),
+            ExprKind::Float(x) if self.floats => self.f_lit(*x),
             ExprKind::Float(_) | ExprKind::Unit => Val::Other,
             ExprKind::Str(parts) => {
                 for p in parts {
@@ -675,7 +736,21 @@ impl<'a> Enc<'a> {
             }
             ExprKind::Name(n) => self.name(n, e),
             ExprKind::Placeholder => self.name("_", e),
-            ExprKind::Lambda { .. } => Val::Other,
+            ExprKind::Lambda { params, body, .. } => {
+                if self.floats && self.goals.is_empty() {
+                    let ps = match self.ty(e) {
+                        Some(Type::Fn(ps, ..)) => ps.clone(),
+                        _ => vec![],
+                    };
+                    let scope = params.iter().enumerate().map(|(i, p)| (p.clone(), Bind::Val(self.fresh_of(ps.get(i))))).collect();
+                    self.forget_vars();
+                    self.env.push(scope);
+                    self.guard(|s| s.ex(body));
+                    self.env.pop();
+                    self.forget_vars();
+                }
+                Val::Other
+            }
             ExprKind::Field(x, f) => self.field(e, x, f),
             ExprKind::Call(f, args) => self.call_expr(e, f, args),
             ExprKind::Method { recv, name, args, .. } => self.method(e, recv, name, args),
@@ -710,6 +785,10 @@ impl<'a> Enc<'a> {
             }
             ExprKind::Unary(UnOp::Ref | UnOp::RefMut, x) => self.ex(x),
             ExprKind::Unary(UnOp::Neg, x) => match self.ex(x) {
+                Val::F(c, r) => match self.flits.get(&r).filter(|_| c == "0") {
+                    Some(&v) => self.f_lit(-v),
+                    None => self.f_neg(&c, &r),
+                },
                 Val::Int(t) if is_ty(self.ty(e), "Int") => {
                     let c = format!("(not (= {t} {MIN}))");
                     let v = self.define("Int", format!("(- {t})"));
@@ -774,6 +853,10 @@ impl<'a> Enc<'a> {
                             let f = format!("(= {x} {y})");
                             self.assume(&f);
                         }
+                        (Val::F(cx, rx), Val::F(cy, ry)) => {
+                            let f = format!("(and (= {cx} {cy}) (= {rx} {ry}))");
+                            self.assume(&f);
+                        }
                         _ => {}
                     }
                     self.path.truncate(depth);
@@ -782,6 +865,21 @@ impl<'a> Enc<'a> {
                 let any = format!("(or false {})", gs.join(" "));
                 self.assume(&any);
                 r
+            }
+            ExprKind::Catch(b, arms) | ExprKind::Handle(b, arms) if self.floats && self.goals.is_empty() => {
+                self.guard(|s| s.ex(b));
+                for arm in arms {
+                    self.env.push(HashMap::new());
+                    self.bind_pat(&arm.pat, None);
+                    self.guard(|s| {
+                        if let Some(g) = &arm.guard {
+                            s.ex(g);
+                        }
+                        s.ex(&arm.body)
+                    });
+                    self.env.pop();
+                }
+                self.fresh_e(e)
             }
             ExprKind::Catch(..) | ExprKind::Table(_) | ExprKind::Handle(..) => {
                 self.fail();
@@ -848,6 +946,14 @@ impl<'a> Enc<'a> {
             BinOp::Eq | BinOp::Ne => Some("="),
             _ => None,
         };
+        if let (Val::F(ca, ra), Val::F(cb, rb)) = (&av, &bv) {
+            if cmp.is_some() {
+                return Val::Bool(self.f_cmp(op, (ca, ra), (cb, rb)));
+            }
+            if is_ty(self.ty(e), "F64") {
+                return self.f_arith(op, (ca.clone(), ra.clone()), (cb.clone(), rb.clone()));
+            }
+        }
         if let Some(sym) = cmp {
             let t = match (&av, &bv) {
                 (Val::Int(x), Val::Int(y)) => format!("({sym} {x} {y})"),
@@ -912,8 +1018,27 @@ impl<'a> Enc<'a> {
     fn builtin_method(&mut self, e: &Expr, recv: &Expr, rv: Val, name: &str, args: Vec<Val>) -> Val {
         let rt = self.ty(recv);
         let is_field = matches!(rt, Some(Type::Con(n, _)) if self.check.records.get(n).is_some_and(|(_, fs)| fs.iter().any(|(f, _)| f == name)));
-        if !is_field && !PURE.contains(&name) && name.parse::<usize>().is_err() {
+        if !is_field && !PURE.contains(&name) && !(self.floats && float::FPURE.contains(&name)) && name.parse::<usize>().is_err() {
             self.fail();
+        }
+        if self.floats && !is_field {
+            match (&rv, name) {
+                (Val::F(c, r), _) if is_ty(rt, "F64") => {
+                    let (c, r) = (c.clone(), r.clone());
+                    if let Some(v) = self.f_method(e, name, &c, &r, &args) {
+                        return v;
+                    }
+                }
+                (Val::Int(n), "to_f64") if args.is_empty() => {
+                    let n = n.clone();
+                    return match int_lit(&n) {
+                        Some(k) => self.f_lit(k as f64),
+                        None => self.f_of_int(&n),
+                    };
+                }
+                _ if float::CONV.contains(&name) && args.is_empty() && is_ty(rt, "F64") => self.checkpoint(e, "conv", None),
+                _ => {}
+            }
         }
         let list_result = matches!(self.ty(e), Some(Type::Con(n, a)) if n == "List" && a.len() == 1);
         match (name, args.as_slice(), rv) {
@@ -951,6 +1076,11 @@ impl<'a> Enc<'a> {
                 }
             };
         }
+        if self.floats
+            && let Some(v) = self.elem_lambda(e, recv, name, args)
+        {
+            return v;
+        }
         let rv = self.ex(recv);
         let avs = args.iter().map(|a| self.guard(|s| s.ex(a))).collect();
         self.builtin_method(e, recv, rv, name, avs)
@@ -959,6 +1089,20 @@ impl<'a> Enc<'a> {
     fn call_expr(&mut self, e: &'a Expr, f: &'a Expr, args: &'a [Expr]) -> Val {
         if let ExprKind::Name(g) = &f.kind
             && !self.bound(g) {
+                if self.floats && matches!(g.as_str(), "min" | "max" | "clamp" | "inf" | "nan" | "pi" | "rand_f64") && !self.fns.contains_key(g.as_str()) {
+                    let vals: Vec<Val> = args.iter().map(|a| self.ex(a)).collect();
+                    if let Some(v) = self.f_global(g, &vals, e) {
+                        return v;
+                    }
+                    if (g == "min" || g == "max")
+                        && is_ty(self.ty(e), "Int")
+                        && let [Val::Int(x), Val::Int(y)] = vals.as_slice()
+                    {
+                        let o = if g == "min" { "<" } else { ">" };
+                        return Val::Int(self.define("Int", format!("(ite ({o} {y} {x}) {y} {x})")));
+                    }
+                    return self.fresh_e(e);
+                }
                 if GLOBALS.contains(&g.as_str()) {
                     let vals: Vec<Val> = args.iter().map(|a| self.ex(a)).collect();
                     if (g == "min" || g == "max") && is_ty(self.ty(e), "Int")
@@ -1024,7 +1168,10 @@ impl<'a> Enc<'a> {
             site.queries.push(q);
             self.assume(&goal);
         }
-        let r = self.fresh_e(e);
+        let r = match self.inline(e, g, &binds) {
+            Some(v) => v,
+            None => self.fresh_e(e),
+        };
         let mut rb = binds;
         rb.push(("r".into(), r.clone()));
         for post in &g.posts {
@@ -1080,17 +1227,25 @@ impl<'a> Enc<'a> {
                     self.bind_pat(p, Some(v));
                 }
                 Stmt::Var(n, x) => {
-                    self.ex(x);
-                    self.env.last_mut().unwrap().insert(n.clone(), Bind::Mutable);
+                    let v = self.ex(x);
+                    let b = if self.floats && v != Val::Never && !self.closure_assigned(n) { Bind::Var(Some(v)) } else { Bind::Mutable };
+                    self.env.last_mut().unwrap().insert(n.clone(), b);
                 }
-                Stmt::Assign(_, x, _) => {
-                    self.ex(x);
+                Stmt::Assign(n, x, _) => {
+                    let v = self.ex(x);
+                    if self.floats {
+                        self.assigned(n, v);
+                    }
                 }
                 Stmt::Expr(x) => last = self.ex(x),
                 Stmt::Fn(f) => {
                     self.env.last_mut().unwrap().insert(f.name.clone(), Bind::Mutable);
+                    if self.floats {
+                        self.local_fn(f);
+                    }
                 }
                 Stmt::For(p, it, body) => {
+                    let tracked = self.enter_loop(&[body]);
                     let range = match (p, &it.kind) {
                         (Pat::Bind(i), ExprKind::Range(a, b)) => Some((i, a, b)),
                         _ => None,
@@ -1113,13 +1268,16 @@ impl<'a> Enc<'a> {
                         self.guard(|s| s.ex(body));
                         self.env.pop();
                     }
+                    self.leave_loop(tracked);
                 }
                 Stmt::While(c, body) => {
+                    let tracked = self.enter_loop(&[c, body]);
                     self.guard(|s| {
                         let cv = s.ex(c);
                         let ct = s.bool_of(cv);
                         s.under(ct, |s| s.ex(body));
                     });
+                    self.leave_loop(tracked);
                 }
             }
         }

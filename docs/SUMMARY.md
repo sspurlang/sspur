@@ -133,6 +133,7 @@
   - [ADR 0041: Cold native builds of big packages](adr/0041-cold-native-builds.md)
   - [ADR 0042: sspur fmt keeps comments, and the last syntax fixes before 1.0](adr/0042-comments-and-the-last-syntax-fixes.md)
   - [ADR 0043: The hot functions first in the sspur binary](adr/0043-hot-functions-first.md)
+  - [ADR 0044: Proving F64 to Int conversions safe](adr/0044-conversion-proofs.md)
 - [Native performance versus C++](design/native-benchmarks.md)
 - [Agent benchmarks](design/agent-benchmarks.md)
 

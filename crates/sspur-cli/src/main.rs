@@ -486,10 +486,14 @@ fn program_cmd(cmd: &str, args: &Args) -> ExitCode {
     if cmd == "check" {
         let mut diags = loaded.check.diags.clone();
         fill::enrich(&loaded, &mut diags, (!args.has("--no-fill")).then(|| args.num("--fill-ms", fill::budget(400) as usize) as u64));
+        let unchecked = verify::conversions(&loaded, &mut diags);
         report(&loaded.src, &label, &diags, json);
         if !json {
             for a in &loaded.dep_audits {
                 eprintln!("{a}");
+            }
+            if unchecked > 0 {
+                eprintln!("note: {unchecked} F64 to Int conversion{} not checked for W_CONVERSION_MAY_TRAP: z3 not found (install it, or set SSPUR_Z3 to its path)", if unchecked == 1 { " is" } else { "s are" });
             }
         }
     } else {

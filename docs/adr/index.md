@@ -47,3 +47,4 @@ Every change that shapes the language, the compiler or the tools has an architec
 | [0041](0041-cold-native-builds.md) | Cold native builds of big packages | Native |
 | [0042](0042-comments-and-the-last-syntax-fixes.md) | `sspur fmt` keeps comments, and the last syntax fixes before 1.0 | Language |
 | [0043](0043-hot-functions-first.md) | The hot functions first in the sspur binary | Tooling |
+| [0044](0044-conversion-proofs.md) | `W_CONVERSION_MAY_TRAP`: proving `F64` to `Int` conversions safe | Tooling |

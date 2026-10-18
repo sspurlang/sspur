@@ -14,7 +14,7 @@
 {{#include ../snippets/handbook/types.ssp:prim}}
 ```
 
-Conversions are always written out: `n.to_f64`, `x.round`, `x.floor`, `s.to_int` (which gives an `Opt[Int]`, since the text may not be a number), and `.str` on any value.
+Conversions are always written out: `n.to_f64`, `x.round`, `x.floor`, `s.to_int` (which gives an `Opt[Int]`, since the text may not be a number), and `.str` on any value. `x.round` traps for NaN, an infinity or a value outside `Int`'s range, so `sspur check` warns unless it can see that `x` is in range, as the refinement on `ratio` shows here; `x.checked_round` gives an `Opt[Int]` instead.
 
 ## Lists and tuples
 

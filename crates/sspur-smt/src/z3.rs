@@ -57,15 +57,45 @@ fn shard(dir: &std::path::Path, key: &str) -> PathBuf {
     dir.join(&key[..2])
 }
 
+/// Answers looked up one file at a time, by key: until a process has looked up `STAT_MAX`
+/// keys, it looks for the three answer files instead of listing a shard, which costs about a
+/// millisecond.
+static STATTED: std::sync::Mutex<Option<std::collections::HashMap<PathBuf, Option<&'static str>>>> = std::sync::Mutex::new(None);
+const STAT_MAX: usize = 4096;
+
 /// The cached answer for the query `key` in the cache `dir`.
 fn known(dir: &std::path::Path, key: &str) -> Option<&'static str> {
-    with_answers(&shard(dir, key), |m| m.get(key).copied())
+    let d = shard(dir, key);
+    if let Some(m) = ANSWERS.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|a| a.get(&d)) {
+        return m.get(key).copied();
+    }
+    let mut g = STATTED.lock().unwrap_or_else(|e| e.into_inner());
+    let st = g.get_or_insert_with(Default::default);
+    let path = d.join(key);
+    if let Some(t) = st.get(&path) {
+        return *t;
+    }
+    if st.len() < STAT_MAX {
+        let t = ["unsat", "sat", "unknown"].into_iter().find(|t| d.join(format!("{key}.{t}")).exists());
+        st.insert(path, t);
+        return t;
+    }
+    drop(g);
+    with_answers(&d, |m| m.get(key).copied())
 }
 
 fn remember(dir: &std::path::Path, key: &str, t: &'static str) {
     let d = shard(dir, key);
     if std::fs::create_dir_all(&d).is_ok() && std::fs::OpenOptions::new().write(true).create(true).truncate(false).open(d.join(format!("{key}.{t}"))).is_ok() {
-        with_answers(&d, |m| m.insert(key.to_string(), t));
+        if let Some(m) = ANSWERS.lock().unwrap_or_else(|e| e.into_inner()).as_mut().and_then(|a| a.get_mut(&d)) {
+            m.insert(key.to_string(), t);
+        }
+        let path = d.join(key);
+        if let Some(st) = STATTED.lock().unwrap_or_else(|e| e.into_inner()).as_mut()
+            && st.contains_key(&path)
+        {
+            st.insert(path, Some(t));
+        }
     }
 }
 
@@ -203,6 +233,11 @@ impl Solver {
         let dir = self.cache.as_ref()?;
         let key = blake3::hash(format!("{}\n{script}", self.timeout_ms).as_bytes()).to_hex().to_string();
         Some((dir.clone(), key[..32].to_string()))
+    }
+
+    /// Whether the cache has an answer for `script`.
+    pub fn is_cached(&self, script: &str) -> bool {
+        self.cache_key(script).is_some_and(|(d, k)| known(&d, &k).is_some())
     }
 
     pub fn check(&mut self, script: &str, vars: &[String]) -> Answer {

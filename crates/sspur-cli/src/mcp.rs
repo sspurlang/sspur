@@ -124,6 +124,7 @@ fn call(srv: &mut Server, name: &str, a: &Json) -> (String, bool) {
         "check" => {
             let mut diags = loaded.check.diags.clone();
             fill::enrich(&loaded, &mut diags, Some(fill::budget(400)));
+            crate::verify::conversions(&loaded, &mut diags);
             let lines = agent::diag_lines(&loaded.src, &diags, None);
             let head = if loaded.check.has_errors() { "errors".to_string() } else { format!("ok {} definitions", loaded.module.defs.len()) };
             (std::iter::once(head).chain(lines).collect::<Vec<_>>().join("\n"), loaded.check.has_errors())

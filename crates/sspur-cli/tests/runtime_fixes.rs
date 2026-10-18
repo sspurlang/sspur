@@ -176,3 +176,25 @@ fn namespaced_calls_convert_arguments_and_nothing_else_does() {
     let (_, err, ok) = sspur(&d, &["check", "p.ssp"]);
     assert!(!ok && err.contains("E_TYPE_MISMATCH"), "{err}");
 }
+
+#[test]
+fn check_warns_about_conversions_it_cannot_prove() {
+    let d = dir("conv");
+    let src = "fn pct(p: F64 where _ >= 0.0 and _ <= 1.0) -> Int\n= (p * 100.0).round\n\nfn cut(x: F64) -> Int\n= if x > 0.0 then x.floor else 0\n\nfn main() -> Unit ! log\n= log(\"{pct(0.5)} {cut(2.5)}\")\n";
+    std::fs::write(d.join("p.ssp"), src).unwrap();
+    let z3 = Command::new("z3").arg("--version").output().is_ok() || std::path::Path::new("/opt/homebrew/bin/z3").exists();
+    let (_, err, ok) = sspur(&d, &["check", "p.ssp"]);
+    assert!(ok, "{err}");
+    if z3 {
+        let warns: Vec<&str> = err.lines().filter(|l| l.contains("W_CONVERSION_MAY_TRAP")).collect();
+        assert_eq!(warns, ["p.ssp:5:19 warning W_CONVERSION_MAY_TRAP 'x.floor' traps when 'x' is NaN, infinite or outside Int's range, and that isn't ruled out here"], "{err}");
+        assert!(err.contains("hint: use 'x.checked_floor' (an Opt[Int]), or guard it: 'if x.is_finite and x.abs < 9.2e18 then x.floor else ...'"), "{err}");
+        let (out, _, _) = sspur(&d, &["check", "--json", "p.ssp"]);
+        assert!(out.contains("\"code\":\"W_CONVERSION_MAY_TRAP\"") && out.contains("\"def\":\"cut\""), "{out}");
+    }
+    let (out, err, ok) = sspur(&d, &["run", "--interp", "p.ssp"]);
+    assert!(ok && out == "50 2\n" && !err.contains("W_CONVERSION"), "run does not prove conversions: {out}{err}");
+    let o = Command::new(env!("CARGO_BIN_EXE_sspur")).args(["check", "p.ssp"]).current_dir(&d).env("SSPUR_CACHE", d.join("cold")).env("SSPUR_Z3", "off").output().unwrap();
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(!err.contains("warning W_CONVERSION") && err.contains("note: 2 F64 to Int conversions are not checked for W_CONVERSION_MAY_TRAP: z3 not found"), "{err}");
+}

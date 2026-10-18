@@ -108,3 +108,85 @@ fn record_field_invariants_feed_proofs() {
 fn models_parse_negative_values() {
     assert_eq!(parse_model("((k1 5) (k2 (- 3)) (k3 true))"), vec![("k1".into(), "5".into()), ("k2".into(), "-3".into()), ("k3".into(), "true".into())]);
 }
+
+fn conv_warnings(src: &str) -> Vec<String> {
+    let m = parse(src).unwrap();
+    let c = sspur_check::check(&m);
+    assert!(!c.has_errors(), "{:?}", c.diags);
+    let mut ds: Vec<String> = conv::warnings(&m, &c, m.defs.len()).diags.into_iter().map(|d| d.def.unwrap()).collect();
+    ds.sort();
+    ds
+}
+
+#[test]
+fn doubles_encode_exactly() {
+    use float::real_lit;
+    assert_eq!(real_lit(0.5), "(/ 1.0 2.0)");
+    assert_eq!(real_lit(-3.0), "(- 3.0)");
+    assert_eq!(real_lit(-0.0), "(- 0.0)");
+    assert_eq!(real_lit(9_223_372_036_854_775_808.0), "9223372036854775808.0");
+    assert_eq!(real_lit(0.95), "(/ 4278419646001971.0 4503599627370496.0)");
+    assert_eq!(real_lit(5e-324), format!("(/ 1.0 {}.0)", float::times_pow2(1, 1074)));
+}
+
+#[test]
+fn conversions_are_proved_from_refinements_guards_and_contracts() {
+    if !z3() {
+        return;
+    }
+    let safe = "type Prob = F64 where _ >= 0.0 and _ <= 1.0
+type Pt = {x: F64 where _.abs < 1000.0, y: F64}
+fn pct(p: Prob) -> Int
+= (p * 100.0).round
+fn guarded(x: F64) -> Int
+= if x.is_finite and x.abs < 9.2e18 then x.floor else 0
+fn total_order(x: F64, cap: Int) -> Int
+= if x.is_nan or x >= cap.to_f64 then cap else if x <= 0.0 then 0 else x.round
+fn pre_ok(x: F64) -> Int
+  pre x.abs < 1000000.0
+= x.trunc
+fn share(xs: List[Int], p: Prob) -> Int
+= (xs.len.to_f64 * p).floor
+fn clamped(x: F64) -> Int
+= min(max(x, 0.0), 100.0).round + clamp(x, -5.0, 5.0).ceil
+fn field(p: Pt) -> Int
+= p.x.floor
+fn edges() -> Int
+= 9.223372036854775e18.floor + (-9223372036854775808.0).floor + (2.5 * 4.0).round
+fn lam(xs: List[F64]) -> List[Int]
+= xs.map(x => if x.abs < 100.0 then x.round else 0)
+fn helper(t: F64, k: List[Int]) -> Int
+= t.floor + k.len
+fn caller(p: Prob) -> Int
+= helper(p * 10.0, [])
+fn guarded_var(x: F64) -> Int
+= do
+  var v = x
+  if v.abs < 10.0 then v.round else 0
+";
+    assert_eq!(conv_warnings(safe), Vec::<String>::new());
+    let unsafe_ = "fn plain(x: F64) -> Int
+= x.floor
+fn nan_above(x: F64) -> Int
+= if x > 0.0 then x.floor else 0
+fn neg_inf(x: F64) -> Int
+= if x < 9.2e18 then x.floor else 0
+fn rounds_up(n: Int) -> Int
+= n.to_f64.floor
+fn at_two_63() -> Int
+= 9.223372036854775807e18.round
+fn sqrt_neg(x: F64) -> Int
+= if x < 100.0 then x.sqrt.floor else 0
+fn open_helper(t: F64) -> Int
+= t.floor
+fn caller(p: F64 where _ >= 0.0 and _ <= 1.0) -> Int
+= open_helper(p)
+fn looped(x: F64) -> Int
+= do
+  var v = 0.5
+  for i in 0..3
+    v := v * x
+  v.round
+";
+    assert_eq!(conv_warnings(unsafe_), ["at_two_63", "looped", "nan_above", "neg_inf", "open_helper", "plain", "rounds_up", "sqrt_neg"]);
+}
