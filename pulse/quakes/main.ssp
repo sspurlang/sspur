@@ -88,7 +88,7 @@ fn row(cx: Ctx, i: Int, q: Quake) -> Str
 fn bands24(qs: List[Quake]) -> Chart
 = do
   names = ["<1", "1", "2", "3", "4", "5", "6+"]
-  counts = (0..7).map(b => qs.filter(q => min(6, max(0, q.mag.floor)) == b).len.to_f64)
+  counts = (0..7).map(b => qs.filter(q => min(6, max(0, clamp(q.mag, -1.0, 99.0).floor)) == b).len.to_f64)
   Chart{kind: "bar", labels: names, series: [Series{key: "n", name: "Quakes", color: 0, values: counts.map(some)}], unit: "quakes", digits: 0}
 
 fn month_group(ds: List[Day]) -> Group

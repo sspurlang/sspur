@@ -100,7 +100,7 @@ fn series(s: State, name: Str) -> List[Opt[F64]]
 = s.snaps.map(p => p.stars.get(name).map(_.to_f64))
 
 fn vel_label(k: Rank) -> Str
-= if k.vel >= 10.0 then thousands(k.vel.round) else k.vel.fmt(1)
+= if k.vel >= 10.0 and k.vel < 9.0e18 then thousands(k.vel.round) else k.vel.fmt(1)
 
 fn row(s: State, i: Int, k: Rank, top: F64, langs: List[Str], now: Time) -> Str
 = do

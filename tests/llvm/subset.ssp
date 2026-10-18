@@ -38,7 +38,7 @@ fn main() -> Unit ! log, div
   while i < 5
     b := step(b, i)
     i := i + 1
-  log("pos {b.pos.x} {b.pos.y} dist {manhattan(b.pos)} mass {(b.mass * 100.0).round} live {b.live}")
+  log("pos {b.pos.x} {b.pos.y} dist {manhattan(b.pos)} mass {if b.mass.abs < 1.0e15 then (b.mass * 100.0).round else 0} live {b.live}")
   log("first {first_over(1000, 90)} none {first_over(10, 1000)} bits {bits(12345)}")
   log("clamp {clamp(15, 0, 9)} {clamp(-3, 0, 9)} half {half(41)}")
   log("order {order(-0.0, 0.0)} {order(0.0, -0.0)} {order(1.5, 1.5)} {not order(2.0, 1.0) and true}")

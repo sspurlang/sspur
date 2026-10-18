@@ -70,7 +70,7 @@ fn total_results(s: Str) -> Opt[Int]
 fn day_count(date: Str, total: Int, sample: List[Paper]) -> DayCount
 = do
   n = max(1, sample.len)
-  counts = (0..8).map(t => (sample.filter(_.topic == t).len * total).to_f64 / n.to_f64).map(_.round)
+  counts = (0..8).map(t => (sample.filter(_.topic == t).len * total).to_f64 / n.to_f64).map(_.checked_round.or(0))
   DayCount{date, total, counts, est: total > sample.len}
 
 fn arxiv_url(q: Str, n: Int) -> Str

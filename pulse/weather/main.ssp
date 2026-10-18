@@ -33,7 +33,7 @@ fn today(xs: List[Opt[F64]]) -> Opt[F64]
 = xs.last.or(none)
 
 fn wx(c: City, l: Loc) -> Opt[Wx]
-= if l.current is some(cur) and cur.temperature_2m is some(t) and l.daily is some(d) and l.hourly is some(h) then some(Wx{c, local: cur.time.or(""), temp: t, feels: cur.apparent_temperature.or(t), hum: cur.relative_humidity_2m.or(0.0), rain: cur.precipitation.or(0.0), wind: cur.wind_speed_10m.or(0.0), code: cur.weather_code.or(0.0).round, isday: cur.is_day.or(1.0) > 0.5, tmax: max(today(d.temperature_2m_max).or(t), t), tmin: min(today(d.temperature_2m_min).or(t), t), rsum: today(d.precipitation_sum).or(0.0), wmax: max(today(d.wind_speed_10m_max).or(0.0), cur.wind_speed_10m.or(0.0)), hours: h.time, ht: h.temperature_2m, hr: h.precipitation, hw: h.wind_speed_10m, dates: d.time, dmax: d.temperature_2m_max, dmin: d.temperature_2m_min, dsum: d.precipitation_sum, dwind: d.wind_speed_10m_max}) else none
+= if l.current is some(cur) and cur.temperature_2m is some(t) and l.daily is some(d) and l.hourly is some(h) then some(Wx{c, local: cur.time.or(""), temp: t, feels: cur.apparent_temperature.or(t), hum: cur.relative_humidity_2m.or(0.0), rain: cur.precipitation.or(0.0), wind: cur.wind_speed_10m.or(0.0), code: cur.weather_code.or(0.0).checked_round.or(0), isday: cur.is_day.or(1.0) > 0.5, tmax: max(today(d.temperature_2m_max).or(t), t), tmin: min(today(d.temperature_2m_min).or(t), t), rsum: today(d.precipitation_sum).or(0.0), wmax: max(today(d.wind_speed_10m_max).or(0.0), cur.wind_speed_10m.or(0.0)), hours: h.time, ht: h.temperature_2m, hr: h.precipitation, hw: h.wind_speed_10m, dates: d.time, dmax: d.temperature_2m_max, dmin: d.temperature_2m_min, dsum: d.precipitation_sum, dwind: d.wind_speed_10m_max}) else none
 
 fn in_range(x: F64, lo: F64, hi: F64) -> Bool
 = x >= lo and x <= hi
@@ -74,7 +74,7 @@ fn sky(code: Int) -> Str
 fn hex2(n: Int) -> Str
 = clamp(n, 0, 255).format("02x")
 
-fn mix(a: Int, b: Int, f: F64) -> Int
+fn mix(a: Int where _ >= 0 and _ <= 255, b: Int where _ >= 0 and _ <= 255, f: F64 where _ >= 0.0 and _ <= 1.0) -> Int
 = (a.to_f64 + (b - a).to_f64 * f).round
 
 // A diverging scale from deep blue at -30 to deep red at 48.
@@ -112,8 +112,8 @@ fn sups_now(ws: List[Wx]) -> Str
   wet = top_by(ws, _.rain)
   humid = top_by(ws, _.hum)
   windy = top_by(ws, _.wind)
-  wetcard = if wet.rain > 0.0 then sup("Wettest now", wet, "{f1(wet.rain)} mm", "in the last hour, {local_hm(wet)} local", "") else sup("Most humid now", humid, "{humid.hum.round}%", "no rain anywhere on the board this hour", "")
-  "<div class='stats'>{sup("Hottest now", hot, deg(hot.temp), "{sky(hot.code)}, {local_hm(hot)} local", hot_kind(hot.temp))}{sup("Coldest now", cold, deg(cold.temp), "{sky(cold.code)}, {local_hm(cold)} local", hot_kind(cold.temp))}{wetcard}{sup("Windiest now", windy, "{windy.wind.round} km/h", "{sky(windy.code)}, {local_hm(windy)} local", "")}</div>"
+  wetcard = if wet.rain > 0.0 then sup("Wettest now", wet, "{f1(wet.rain)} mm", "in the last hour, {local_hm(wet)} local", "") else sup("Most humid now", humid, "{humid.hum.checked_round.or(0)}%", "no rain anywhere on the board this hour", "")
+  "<div class='stats'>{sup("Hottest now", hot, deg(hot.temp), "{sky(hot.code)}, {local_hm(hot)} local", hot_kind(hot.temp))}{sup("Coldest now", cold, deg(cold.temp), "{sky(cold.code)}, {local_hm(cold)} local", hot_kind(cold.temp))}{wetcard}{sup("Windiest now", windy, "{windy.wind.checked_round.or(0)} km/h", "{sky(windy.code)}, {local_hm(windy)} local", "")}</div>"
 
 fn sups_today(ws: List[Wx]) -> Str
 = do
@@ -121,7 +121,7 @@ fn sups_today(ws: List[Wx]) -> Str
   cold = top_by(ws, w => -w.tmin)
   wet = top_by(ws, _.rsum)
   windy = top_by(ws, _.wmax)
-  "<div class='stats'>{sup("Hottest today", hot, deg(hot.tmax), "the high of the local day", hot_kind(hot.tmax))}{sup("Coldest today", cold, deg(cold.tmin), "the low of the local day", hot_kind(cold.tmin))}{sup("Wettest today", wet, "{f1(wet.rsum)} mm", "rain so far and forecast", "")}{sup("Windiest today", windy, "{windy.wmax.round} km/h", "the strongest wind of the day", "")}</div>"
+  "<div class='stats'>{sup("Hottest today", hot, deg(hot.tmax), "the high of the local day", hot_kind(hot.tmax))}{sup("Coldest today", cold, deg(cold.tmin), "the low of the local day", hot_kind(cold.tmin))}{sup("Wettest today", wet, "{f1(wet.rsum)} mm", "rain so far and forecast", "")}{sup("Windiest today", windy, "{windy.wmax.checked_round.or(0)} km/h", "the strongest wind of the day", "")}</div>"
 
 fn tags(w: Wx) -> Str
 = if w.c.cc == "IN" then "{w.c.cont} in" else w.c.cont
@@ -129,7 +129,7 @@ fn tags(w: Wx) -> Str
 fn row(w: Wx) -> Str
 = do
   bar = clamp((w.temp + 30.0) / 80.0, 0.02, 1.0)
-  "<li class='row' data-tags='{tags(w)}' data-ktemp='{w.temp}' data-kmax='{w.tmax}' data-krain='{w.rsum}' data-kwind='{w.wind}'><span class='rk' aria-hidden='true'></span><div class='main'><p class='t'>{esc(w.c.name)} <span class='muted small'>{w.c.cc}</span></p><p class='m'>{sky(w.code)}, {local_hm(w)} local · high {deg(w.tmax)} · low {deg(w.tmin)} · {f1(w.rsum)} mm · {w.wind.round} km/h</p><span class='bar' style='--w:{bar.fmt(3)};background:{temp_color(w.temp)}'></span></div><span class='v'>{deg(w.temp)}<small>feels {deg(w.feels)}</small></span></li>"
+  "<li class='row' data-tags='{tags(w)}' data-ktemp='{w.temp}' data-kmax='{w.tmax}' data-krain='{w.rsum}' data-kwind='{w.wind}'><span class='rk' aria-hidden='true'></span><div class='main'><p class='t'>{esc(w.c.name)} <span class='muted small'>{w.c.cc}</span></p><p class='m'>{sky(w.code)}, {local_hm(w)} local · high {deg(w.tmax)} · low {deg(w.tmin)} · {f1(w.rsum)} mm · {w.wind.checked_round.or(0)} km/h</p><span class='bar' style='--w:{bar.fmt(3)};background:{temp_color(w.temp)}'></span></div><span class='v'>{deg(w.temp)}<small>feels {deg(w.feels)}</small></span></li>"
 
 fn dot(w: Wx) -> Dot
 = Dot{lat: w.c.lat, lon: w.c.lon, r: 7.0, cls: "", tip: "{w.c.name}, {w.c.cc} | {deg(w.temp)} now, high {deg(w.tmax)} | {sky(w.code)}, {local_hm(w)} local", id: w.c.slug, fill: temp_color(w.temp), tags: tags(w)}
@@ -172,7 +172,7 @@ fn hot15(ws: List[Wx]) -> Group
 fn avg_at(ws: List[Wx], pick: Wx -> List[Opt[F64]], i: Int) -> Opt[F64]
 = do
   xs = ws.map(w => pick(w).get(i).or(none)).filter(_.is_some).map(_.or(0.0))
-  if xs.is_empty then none else some(((xs.sum / xs.len.to_f64) * 10.0).round.to_f64 / 10.0)
+  if xs.is_empty then none else ((xs.sum / xs.len.to_f64) * 10.0).checked_round.map(k => k.to_f64 / 10.0)
 
 fn top_at(ws: List[Wx], i: Int) -> Opt[F64]
 = ws.map(w => w.dmax.get(i).or(none)).filter(_.is_some).map(_.or(0.0)).max

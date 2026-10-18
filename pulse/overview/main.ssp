@@ -77,7 +77,7 @@ fn lost(cx: Ctx) -> Unit ! fs, net, time, log
   if fresh is ok(i) then pulse.save(path, json.encode(i))
   c404 = cx with sec := "404"
   orbit = match iss
-    | some(i) => "<div class='card'><div class='sh'><h2>Meanwhile, in orbit</h2><p>When this page was built, the International Space Station was here.</p></div>{pulse.world_map(cx, [iss_dot(i.latitude, i.longitude)], "Where the ISS was")}<p class='muted' style='margin-top:12px'>{hemi(i.latitude, "N", "S")}, {hemi(i.longitude, "E", "W")}, {thousands(i.altitude.round)} km up, moving at {thousands(i.velocity.round)} km/h. It goes around the Earth about every 93 minutes, so it is somewhere else by now.</p></div>"
+    | some(i) => "<div class='card'><div class='sh'><h2>Meanwhile, in orbit</h2><p>When this page was built, the International Space Station was here.</p></div>{pulse.world_map(cx, [iss_dot(i.latitude, i.longitude)], "Where the ISS was")}<p class='muted' style='margin-top:12px'>{hemi(i.latitude, "N", "S")}, {hemi(i.longitude, "E", "W")}, {thousands(i.altitude.checked_round.or(0))} km up, moving at {thousands(i.velocity.checked_round.or(0))} km/h. It goes around the Earth about every 93 minutes, so it is somewhere else by now.</p></div>"
     | none => ""
   body = "<section class='wrap band'><div class='grid2'>{orbit}<div class='card'><h2>Try one of these</h2><ul class='rows'>{pulse.sections().map(s => "<li class='row'><span class='rk'>{pulse.icon(s.slug)}</span><div class='main'><p class='t'><a href='{s.slug}/'>{esc(s.name)}</a></p><p class='m'>{esc(s.blurb)}</p></div><span></span></li>").join("")}</ul></div></div></section>"
   p = Page{title: "Lost in orbit", desc: "This page does not exist.", h1: "This page is <em>lost in orbit</em>", lede: "The link you followed leads nowhere. The rest of the world is still right here: <a href='./'>back to Pulse</a>.", body, updated: cx.now, stale: false, note: "", snippet: "", data: ""}
@@ -100,7 +100,7 @@ pub fn km(la1: F64, lo1: F64, la2: F64, lo2: F64) -> F64
   h = (rad(la2 - la1) / 2.0).sin.pow(2.0) + rad(la1).cos * rad(la2).cos * (rad(lo2 - lo1) / 2.0).sin.pow(2.0)
   6371.0 * 2.0 * h.sqrt.asin
 
-test distances = km(28.61, 77.21, 19.08, 72.88).round == 1147 and km(0.0, 0.0, 0.0, 0.0) == 0.0
+test distances = (km(28.61, 77.21, 19.08, 72.88) - 1147.0).abs < 0.5 and km(0.0, 0.0, 0.0, 0.0) == 0.0
 
 fn nearest(cs: List[HereCity], la: F64, lo: F64) -> Str
 = cs.sort_by(c => km(la, lo, c.la, c.lo)).first.map(_.s).or("")
@@ -123,7 +123,7 @@ fn zones(cs: List[HereCity], tab: Str) -> Map[Str, Str]
   m
 
 fn here_city(w: WCity) -> HereCity
-= HereCity{s: w.c.slug, n: w.c.name, la: w.c.lat, lo: w.c.lon, t: w.temp, c: w.code.round, d: w.isday, hi: w.tmax, lw: w.tmin}
+= HereCity{s: w.c.slug, n: w.c.name, la: w.c.lat, lo: w.c.lon, t: w.temp, c: w.code.checked_round.or(0), d: w.isday, hi: w.tmax, lw: w.tmin}
 
 fn here(cx: Ctx) -> Unit ! fs, log
 = match pulse.read("{cx.out}/api/weather.json").map(s => json.decode[WApi](s))

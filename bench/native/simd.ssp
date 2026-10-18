@@ -41,4 +41,4 @@ fn main() -> Unit ! log
     d := d + dot(a, b)
     y := y + saxpy(r.to_f64 * 0.25, a, b).sum
   log("affine {s1} squares {s2} count {s3} shifted {s4}")
-  log("dot {(d * 1000.0).round} saxpy {(y * 1000.0).round}")
+  log("dot {(d * 1000.0).checked_round.or(0)} saxpy {(y * 1000.0).checked_round.or(0)}")

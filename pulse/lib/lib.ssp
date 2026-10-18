@@ -303,7 +303,7 @@ pub type Range = {key: Str, label: Str, n: Int}
 pub type Group = {id: Str, views: List[View], ranges: List[Range], view: Str, range: Str}
 
 fn nice_unit(raw: F64) -> F64
-= do
+= if not (raw > 0.0 and raw < 1.0e300) then 1.0 else do
   m = 10.0.pow(raw.log10.floor.to_f64)
   n = raw / m
   (if n <= 1.0 then 1.0 else if n <= 2.0 then 2.0 else if n <= 2.5 then 2.5 else if n <= 5.0 then 5.0 else 10.0) * m
@@ -317,8 +317,8 @@ pub fn ticks_min(lo: F64, hi: F64, count: Int, least: F64) -> List[F64]
   span = if hi - lo <= 0.0 then max(1.0, hi.abs) else hi - lo
   step = max(least, nice_unit(span / count.to_f64))
   top = if hi <= lo then lo + span else hi
-  a = (lo / step).floor
-  b = (top / step).ceil
+  a = (lo / step).checked_floor.or(0)
+  b = (top / step).checked_ceil.or(a)
   (a..(max(b, a + 1) + 1)).map(i => i.to_f64 * step)
 
 test count_ticks = ticks_min(0.0, 2.0, 4, 1.0) == [0.0, 1.0, 2.0]

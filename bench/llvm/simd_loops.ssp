@@ -59,4 +59,4 @@ fn main() -> Unit ! log
   for r in 0..40
     a := round_of(a, r, 1000000)
   log("affine {a.s1} squares {a.s2} count {a.s3} shifted {a.s4}")
-  log("dot {(a.d * 1000.0).round} saxpy {(a.y * 1000.0).round}")
+  log("dot {(a.d * 1000.0).checked_round.or(0)} saxpy {(a.y * 1000.0).checked_round.or(0)}")

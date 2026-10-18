@@ -98,7 +98,7 @@ fn load(cx: Ctx) -> Opt[State] ! fs
 
 // Output: one compact array per satellite, only what SGP4 needs, trimmed to useful precision.
 fn row(s: Sat) -> Str
-= "[{s.id},{json.encode(s.name)},{s.yy},{s.day.fmt(6)},{s.bstar.format(".3e")},{s.inc.fmt(3)},{s.raan.fmt(3)},{(s.ecc * 10000000.0).round},{s.argp.fmt(3)},{s.ma.fmt(3)},{s.mm.fmt(7)}]"
+= "[{s.id},{json.encode(s.name)},{s.yy},{s.day.fmt(6)},{s.bstar.format(".3e")},{s.inc.fmt(3)},{s.raan.fmt(3)},{(clamp(s.ecc, 0.0, 1.0) * 10000000.0).round},{s.argp.fmt(3)},{s.ma.fmt(3)},{s.mm.fmt(7)}]"
 
 test rows = row(Sat{id: 1, name: "A \"B\"", group: 0, yy: 26, day: 286.5, bstar: 0.000123, inc: 53.05, raan: 1.0, ecc: 0.0001, argp: 2.0, ma: 3.0, mm: 15.06}) == "[1,\"A \\\"B\\\"\",26,286.500000,1.230e-04,53.050,1.000,1000,2.000,3.000,15.0600000]"
 

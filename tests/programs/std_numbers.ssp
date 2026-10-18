@@ -6,7 +6,7 @@ fn dist(a: Pt, b: Pt) -> F64
 = (a.x - b.x).hypot(a.y - b.y)
 
 fn angle_deg(p: Pt) -> Int
-= (p.y.atan2(p.x) * 180.0 / 3.141592653589793).round
+= if p.x.is_nan or p.y.is_nan then 0 else (p.y.atan2(p.x) * 180.0 / 3.141592653589793).round
 
 fn compound(principal: F64, rate: F64, years: Int) -> Str
 = (principal * (1.0 + rate).pow(years.to_f64)).fmt(2)
@@ -102,7 +102,7 @@ fn std_normal_cdf(x: F64) -> F64
 = 0.5 * (1.0 + (x / 2.0.sqrt).erf)
 
 fn factorial(n: Int) -> Int
-= (n.to_f64 + 1.0).gamma.round
+= (n.to_f64 + 1.0).gamma.checked_round.or(0)
 
 fn angle_wrap(deg: F64) -> F64
 = deg.remainder(360.0)
