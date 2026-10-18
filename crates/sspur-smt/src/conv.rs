@@ -365,11 +365,180 @@ fn solve_new(solver: &mut Solver, scripts: impl Iterator<Item = String>) {
     }
 }
 
+/// The conversions of one definition in the order `outcomes` finds them.
+fn def_convs<'a>(d: &'a Def, check: &CheckOutput) -> Vec<Conv<'a>> {
+    fn walk<'a>(x: &'a Expr, def: &str, check: &CheckOutput, out: &mut Vec<Conv<'a>>) {
+        if let Some((recv, method)) = conv_of(x, check) {
+            out.push(Conv { def: def.to_string(), e: x, recv, method });
+        }
+        for c in visit::children(x) {
+            walk(c, def, check, out);
+        }
+    }
+    let mut out = Vec::new();
+    match d {
+        Def::Impl(im) => im.fns.iter().for_each(|f| fn_exprs(f).for_each(|x| walk(x, &f.name, check, &mut out))),
+        Def::Trait(t) => t.methods.iter().filter(|m| m.default).for_each(|m| fn_exprs(&m.sig).for_each(|x| walk(x, &m.sig.name, check, &mut out))),
+        _ => def_exprs(d).into_iter().for_each(|x| walk(x, d.name(), check, &mut out)),
+    }
+    out
+}
+
 /// Bumped whenever the encoding or the proof changes what it can prove.
 const PROOF_VERSION: &str = "1";
 
 fn is_ident(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_'
+}
+
+/// What a definition's conversion proofs read, as a cache key: its content hash, which covers
+/// everything it calls and the types it uses, and, for a function that isn't `pub`, the hashes
+/// of every definition whose text names it, three callers out (a superset of the callers whose
+/// context `outcomes` may use). `None` when a hash is missing.
+fn proof_key(defs: &[Def], i: usize, src: &str, spans: &[(usize, usize, usize)], hashes: &BTreeMap<String, String>, timeout: &str) -> Option<String> {
+    let mut rel: BTreeSet<usize> = BTreeSet::new();
+    let mut frontier = vec![i];
+    for _ in 0..DEPTH {
+        let mut next = vec![];
+        for f in frontier {
+            let Def::Fn(fd) = &defs[f] else { continue };
+            if fd.public {
+                continue;
+            }
+            let name = fd.name.rsplit("__").next().unwrap_or(&fd.name);
+            let b = src.as_bytes();
+            for (at, _) in src.match_indices(name) {
+                let end = at + name.len();
+                if (at > 0 && is_ident(b[at - 1])) || (end < b.len() && is_ident(b[end])) {
+                    continue;
+                }
+                let k = spans.partition_point(|s| s.0 <= at);
+                if k > 0 && at < spans[k - 1].1 && rel.insert(spans[k - 1].2) {
+                    next.push(spans[k - 1].2);
+                }
+            }
+        }
+        frontier = next;
+    }
+    let mut h = blake3::Hasher::new();
+    for t in [PROOF_VERSION, env!("CARGO_PKG_VERSION"), timeout, defs[i].name(), hashes.get(defs[i].name())?] {
+        h.update(t.as_bytes());
+        h.update(b"\n");
+    }
+    for r in rel {
+        let n = defs[r].name();
+        h.update(n.as_bytes());
+        h.update(b"\0");
+        h.update(hashes.get(n)?.as_bytes());
+        h.update(b"\n");
+    }
+    Some(h.finalize().to_hex()[..32].to_string())
+}
+
+/// A cached result: `Some(vec![])` when every conversion of the definition is proved, else the
+/// ordinal of each one that isn't and whether it is at least finite.
+fn cached(dir: &std::path::Path, key: &str) -> Option<Vec<(usize, bool)>> {
+    let d = dir.join(&key[..2]);
+    if d.join(format!("{key}.ok")).exists() {
+        return Some(vec![]);
+    }
+    let text = std::fs::read_to_string(d.join(format!("{key}.w"))).ok()?;
+    text.lines().map(|l| l.split_once(' ').and_then(|(a, b)| Some((a.parse().ok()?, b == "1")))).collect()
+}
+
+fn store(dir: &std::path::Path, key: &str, warns: &[(usize, bool)]) {
+    let d = dir.join(&key[..2]);
+    if std::fs::create_dir_all(&d).is_err() {
+        return;
+    }
+    if warns.is_empty() {
+        let _ = std::fs::File::create(d.join(format!("{key}.ok")));
+        return;
+    }
+    let text: String = warns.iter().map(|(o, f)| format!("{o} {}\n", u8::from(*f))).collect();
+    let tmp = d.join(format!("{key}.{}.tmp", std::process::id()));
+    if std::fs::write(&tmp, text).is_ok() {
+        let _ = std::fs::rename(&tmp, d.join(format!("{key}.w")));
+    }
+}
+
+/// `warnings`, with each definition's result cached under `proof_key` in `conv/` of the cache
+/// directory: a definition whose proof inputs are unchanged costs a stat, and only the others are
+/// encoded and proved. `src` holds the definitions' text at their spans.
+pub fn warnings_cached(m: &Module, check: &CheckOutput, own: usize, src: &str, hashes: &BTreeMap<String, String>) -> Report {
+    let defs = &m.defs[..own.min(m.defs.len())];
+    let mut spans: Vec<(usize, usize, usize)> = defs.iter().enumerate().map(|(i, d)| (d.span().start as usize, d.span().end as usize, i)).collect();
+    spans.sort_unstable();
+    let cands = candidates(defs, src, &spans);
+    if cands.is_empty() {
+        return Report::default();
+    }
+    let Some(dir) = sspur_syntax::cache_root().map(|c| c.join("conv")) else { return warnings(m, check, own) };
+    let timeout = std::env::var("SSPUR_SMT_TIMEOUT").unwrap_or_default();
+    let mut per: Vec<Vec<Diag>> = (0..defs.len()).map(|_| vec![]).collect();
+    let mut miss = vec![false; defs.len()];
+    let mut keys: Vec<(usize, String)> = vec![];
+    for &i in &cands {
+        let key = proof_key(defs, i, src, &spans, hashes, &timeout);
+        match key.as_deref().and_then(|k| cached(&dir, k)) {
+            Some(ws) if ws.is_empty() => {}
+            Some(ws) => {
+                let cs = def_convs(&defs[i], check);
+                match ws.iter().map(|&(o, finite)| cs.get(o).map(|c| diag(c, finite))).collect::<Option<Vec<_>>>() {
+                    Some(ds) => per[i] = ds,
+                    None => miss[i] = true,
+                }
+            }
+            None => miss[i] = true,
+        }
+        if let Some(k) = key.filter(|_| miss[i]) {
+            keys.push((i, k));
+        }
+    }
+    let mut unchecked = 0;
+    if miss.contains(&true) {
+        let os = outcomes(m, check, own, Some(&miss));
+        for (i, k) in keys {
+            let mine: Vec<Outcome> = os.iter().filter(|o| o.0 == i).map(|o| o.2).collect();
+            if !mine.contains(&Outcome::Unchecked) && mine.len() == def_convs(&defs[i], check).len() {
+                store(&dir, &k, &mine.iter().enumerate().filter_map(|(n, o)| if let Outcome::Warn(f) = o { Some((n, *f)) } else { None }).collect::<Vec<_>>());
+            }
+        }
+        for (i, c, o) in os {
+            match o {
+                Outcome::Proved => {}
+                Outcome::Warn(finite) => per[i].push(diag(&c, finite)),
+                Outcome::Unchecked => unchecked += 1,
+            }
+        }
+    }
+    Report { diags: per.into_iter().flatten().collect(), unchecked }
+}
+
+/// The definitions that may have a conversion: their text has `.round`, `.floor`, `.ceil` or
+/// `.trunc` (space after the dot allowed), found in one pass over the source, or their span isn't
+/// in it.
+fn candidates(defs: &[Def], src: &str, spans: &[(usize, usize, usize)]) -> Vec<usize> {
+    let mut out: Vec<usize> = spans.iter().filter(|s| s.0 >= s.1 || s.1 > src.len()).map(|s| s.2).collect();
+    let end = spans.iter().map(|s| s.1).filter(|&e| e <= src.len()).max().unwrap_or(0);
+    let b = &src.as_bytes()[..end];
+    for (at, _) in src[..end].match_indices('.') {
+        let mut j = at + 1;
+        while j < b.len() && b[j].is_ascii_whitespace() {
+            j += 1;
+        }
+        let r = &b[j..];
+        if !float::CONV.iter().any(|n| r.starts_with(n.as_bytes()) && r.get(n.len()).is_none_or(|&c| !is_ident(c))) {
+            continue;
+        }
+        let k = spans.partition_point(|s| s.0 <= at);
+        if k > 0 && at < spans[k - 1].1 && !out.contains(&spans[k - 1].2) {
+            out.push(spans[k - 1].2);
+        }
+    }
+    out.retain(|&i| !matches!(defs[i], Def::Use(_) | Def::Effect(_) | Def::Store(_) | Def::Svc(_)));
+    out.sort_unstable();
+    out
 }
 
 /// Whether `src` has `.round`, `.floor`, `.ceil` or `.trunc` (space after the dot allowed).
@@ -420,7 +589,7 @@ fn read_program(path: &std::path::Path) -> Option<Vec<Diag>> {
 /// `sspur check`'s conversion warnings, cached for the whole program under `conv/prog/` by a hash
 /// of its linked source (which holds every dependency's): a program checked before costs one hash
 /// of its text and one file read, with no encoding and no Z3.
-pub fn check_program(m: &Module, check: &CheckOutput, own: usize, src: &str) -> Report {
+pub fn check_program(m: &Module, check: &CheckOutput, own: usize, src: &str, hashes: &BTreeMap<String, String>) -> Report {
     let defs = &m.defs[..own.min(m.defs.len())];
     let end = defs.iter().map(|d| d.span().end as usize).filter(|&e| e <= src.len()).max().unwrap_or(0);
     let spans_ok = defs.iter().all(|d| d.span().end as usize <= src.len());
@@ -439,7 +608,7 @@ pub fn check_program(m: &Module, check: &CheckOutput, own: usize, src: &str) -> 
     if let Some(diags) = read_program(&path) {
         return Report { diags, unchecked: 0 };
     }
-    let r = warnings(m, check, own);
+    let r = warnings_cached(m, check, own, src, hashes);
     if r.unchecked == 0 && std::fs::create_dir_all(path.parent().unwrap()).is_ok() {
         let text: String = r.diags.iter().map(|d| format!("{}\t{}\t{}\t{}\t{}\n", esc(d.def.as_deref().unwrap_or("")), d.span[0], d.span[1], esc(&d.msg), esc(d.hint.as_deref().unwrap_or("")))).collect();
         let tmp = path.with_extension(format!("{}.tmp", std::process::id()));

@@ -200,7 +200,7 @@ fn check_warns_about_conversions_it_cannot_prove() {
 }
 
 #[test]
-fn conversion_proofs_are_cached_and_follow_their_inputs() {
+fn conversion_proofs_are_cached_per_definition_and_follow_their_inputs() {
     if !(Command::new("z3").arg("--version").output().is_ok() || std::path::Path::new("/opt/homebrew/bin/z3").exists()) {
         return;
     }
@@ -229,4 +229,6 @@ fn conversion_proofs_are_cached_and_follow_their_inputs() {
     assert!(check(v1, false).is_empty());
     assert_eq!(check(&callee, false), ["11"]);
     assert_eq!(check(&caller, false), ["2"]);
+    let other = format!("{caller}\nfn other(x: F64) -> F64\n= x * 2.0\n");
+    assert_eq!(check(&other, false), ["2"], "a new definition leaves the others' cached proofs alone");
 }

@@ -7,7 +7,7 @@ pub use z3::{collecting, parse_model, solve_all, Answer, Solver};
 use sspur_check::{expr_key, CheckOutput, Type};
 use sspur_syntax::*;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
 
 const MIN: &str = "(- 9223372036854775808)";

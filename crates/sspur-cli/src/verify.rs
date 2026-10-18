@@ -210,7 +210,7 @@ pub fn conversions(l: &Loaded, diags: &mut Vec<sspur_check::Diag>) -> usize {
     if diags.iter().any(sspur_check::Diag::is_error) {
         return 0;
     }
-    let r = sspur_smt::conv::check_program(&l.module, &l.check, l.own, &l.src);
+    let r = sspur_smt::conv::check_program(&l.module, &l.check, l.own, &l.src, &l.hashes);
     diags.extend(r.diags);
     r.unchecked
 }
