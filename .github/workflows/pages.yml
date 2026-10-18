@@ -7,6 +7,8 @@ on:
   schedule:
     # SSPUR Pulse refreshes every 6 hours.
     - cron: "17 */6 * * *"
+    # Weekly: keeps the schedule from being paused (the keepalive job).
+    - cron: "7 3 * * 1"
 
 permissions:
   contents: read
@@ -135,3 +137,16 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v5
+
+  keepalive:
+    # GitHub pauses scheduled workflows after 60 days without a commit; enabling this one again
+    # every week resets that clock, with no commit.
+    if: github.event.schedule == '7 3 * * 1'
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    steps:
+      - name: Keep the schedule alive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/pages.yml/enable"

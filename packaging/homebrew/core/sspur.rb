@@ -4,8 +4,8 @@
 class Sspur < Formula
   desc "Programming language for AI agents to write, read and maintain"
   homepage "https://sspurlang.github.io/"
-  url "https://github.com/sspurlang/sspur/archive/refs/tags/v0.14.0.tar.gz"
-  sha256 "REPLACE_WITH_THE_RELEASE_TARBALL_SHA256"
+  url "https://github.com/sspurlang/sspur/archive/refs/tags/v1.0.0.tar.gz"
+  sha256 "635e3ed801460aa519cdf683bcec4b1f3ff8ad29d1c423f0165d2e6a59544bad"
   license any_of: ["MIT", "Apache-2.0"]
   head "https://github.com/sspurlang/sspur.git", branch: "main"
 
