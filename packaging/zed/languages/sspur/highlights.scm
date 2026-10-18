@@ -88,6 +88,15 @@
 (scoped_type_identifier
   package: (identifier) @namespace)
 
+(scoped_type_identifier
+  module: (identifier) @namespace)
+
+(_
+  (scoped_type_identifier
+    name: (type_identifier) @constructor)
+  .
+  [(brace_group) (paren_group)])
+
 (parameters
   (identifier) @variable.parameter
   .
@@ -97,6 +106,27 @@
   (identifier) @property
   .
   ":")
+
+; Lambda parameters: `x => e`, `(x, y) => e`, `(x: Int) => e`.
+(_
+  (identifier) @variable.parameter
+  .
+  "=>")
+
+(_
+  (paren_group
+    (identifier) @variable.parameter
+    .
+    [":" "," ")"])
+  .
+  "=>")
+
+(_
+  "if"
+  .
+  (identifier) @variable
+  .
+  "=>")
 
 (type_parameters
   (identifier) @type)

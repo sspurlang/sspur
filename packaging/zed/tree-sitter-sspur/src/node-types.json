@@ -77,6 +77,10 @@
           "named": true
         },
         {
+          "type": "scoped_type_identifier",
+          "named": true
+        },
+        {
           "type": "service_definition",
           "named": true
         },
@@ -177,6 +181,10 @@
         },
         {
           "type": "rule_definition",
+          "named": true
+        },
+        {
+          "type": "scoped_type_identifier",
           "named": true
         },
         {
@@ -419,6 +427,10 @@
           "named": true
         },
         {
+          "type": "scoped_type_identifier",
+          "named": true
+        },
+        {
           "type": "service_definition",
           "named": true
         },
@@ -554,6 +566,10 @@
           "named": true
         },
         {
+          "type": "scoped_type_identifier",
+          "named": true
+        },
+        {
           "type": "service_definition",
           "named": true
         },
@@ -657,6 +673,10 @@
           "named": true
         },
         {
+          "type": "scoped_type_identifier",
+          "named": true
+        },
+        {
           "type": "service_definition",
           "named": true
         },
@@ -717,6 +737,16 @@
     "type": "scoped_type_identifier",
     "named": true,
     "fields": {
+      "module": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
       "name": {
         "multiple": false,
         "required": true,
@@ -826,6 +856,10 @@
         },
         {
           "type": "rule_definition",
+          "named": true
+        },
+        {
+          "type": "scoped_type_identifier",
           "named": true
         },
         {
@@ -1013,6 +1047,10 @@
           "named": true
         },
         {
+          "type": "scoped_type_identifier",
+          "named": true
+        },
+        {
           "type": "service_definition",
           "named": true
         },
@@ -1139,6 +1177,10 @@
         },
         {
           "type": "rule_definition",
+          "named": true
+        },
+        {
+          "type": "scoped_type_identifier",
           "named": true
         },
         {

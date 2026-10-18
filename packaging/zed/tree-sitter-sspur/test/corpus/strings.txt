@@ -18,7 +18,6 @@ x = "n={n} {x.name}" + "{}" + "([{" + "\{\"a\":1}"
       (member
         name: (identifier))))
   (string
-    (string_content)
     (string_content))
   (string
     (string_content)
@@ -60,3 +59,156 @@ s = "{xs.join(" -> ")}" + "{xs.join(\" -> \")}" + 'one {n}'
     (interpolation
       (identifier))))
 
+================================================================================
+Braces that are text
+================================================================================
+
+s = "{" + "{3}" + "{-2}" + "{{x}}" + "{a: 1}" + "{a b}" + "{x\ty}" + "{ }"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (identifier)
+  (string
+    (string_content))
+  (string
+    (string_content))
+  (string
+    (string_content))
+  (string
+    (string_content))
+  (string
+    (string_content))
+  (string
+    (string_content))
+  (string
+    (string_content))
+  (string
+    (string_content)))
+
+================================================================================
+A lone string in braces
+================================================================================
+
+b = "{" or s == "}"
+c = "{"x"}"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (identifier)
+  (string
+    (string_content))
+  (identifier)
+  (string
+    (string_content))
+  (identifier)
+  (string
+    (interpolation
+      (string
+        (string_content)))))
+
+================================================================================
+Expressions that interpolate
+================================================================================
+
+s = "{-n} {f(a)} {(a, b)} {[a]} {s.len} {?x} {x => x}{y}"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (identifier)
+  (string
+    (interpolation
+      (identifier))
+    (string_content)
+    (interpolation
+      (identifier)
+      (paren_group
+        (identifier)))
+    (string_content)
+    (interpolation
+      (paren_group
+        (identifier)
+        (identifier)))
+    (string_content)
+    (interpolation
+      (bracket_group
+        (identifier)))
+    (string_content)
+    (interpolation
+      (identifier)
+      (member
+        (identifier)))
+    (string_content)
+    (interpolation
+      (hole))
+    (string_content)
+    (interpolation
+      (identifier)
+      (identifier))
+    (interpolation
+      (identifier))))
+
+================================================================================
+Escapes
+================================================================================
+
+s = "caf\u{e9} \} \{ \' \" \\ \n" + 'it\'s {n}'
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (identifier)
+  (string
+    (string_content)
+    (escape_sequence)
+    (string_content)
+    (escape_sequence)
+    (string_content)
+    (escape_sequence)
+    (string_content)
+    (escape_sequence)
+    (string_content)
+    (escape_sequence)
+    (string_content)
+    (escape_sequence)
+    (string_content)
+    (escape_sequence))
+  (string
+    (string_content)
+    (escape_sequence)
+    (string_content)
+    (interpolation
+      (identifier))))
+
+================================================================================
+Interpolation in a string in an interpolation
+================================================================================
+
+s = "<ol>{xs.map(x => "<li>{x.name}</li>").join("")}</ol>"
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (identifier)
+  (string
+    (string_content)
+    (interpolation
+      (identifier)
+      (member
+        (identifier))
+      (paren_group
+        (identifier)
+        (string
+          (string_content)
+          (interpolation
+            (identifier)
+            (member
+              (identifier)))
+          (string_content)))
+      (member
+        (identifier))
+      (paren_group
+        (string)))
+    (string_content)))

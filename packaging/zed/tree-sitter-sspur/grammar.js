@@ -13,6 +13,10 @@ const SYMBOLS = [
   '<', '>', '+', '-', '*', '/', '%', '|', '!', '?', ';', '&', '@',
 ];
 
+// Keywords only where they start a construct (SOFT_KEYWORDS in the lexer); elsewhere
+// they are names: `fn why(field: Str, rule: Str)`.
+const SOFT = ['rule', 'trait', 'impl', 'store', 'svc', 'effect'];
+
 const KEYWORDS = [
   'var', 'for', 'in', 'if', 'then', 'else', 'match', 'catch', 'handle', 'do',
   'raise', 'return', 'with', 'where', 'and', 'or', 'not', 'par', 'while',
@@ -30,6 +34,7 @@ module.exports = grammar({
     $._sq_content,
     $._interpolation_start,
     $._error_sentinel,
+    $._scoped_dot,
   ],
 
   rules: {
@@ -57,7 +62,9 @@ module.exports = grammar({
       $.hole,
       $.hash,
       $.placeholder,
+      $.scoped_type_identifier,
       $.identifier,
+      $._soft_name,
       $.type_identifier,
       ...KEYWORDS,
       ...SYMBOLS,
@@ -96,11 +103,17 @@ module.exports = grammar({
       )),
     )),
 
+    _soft_name: $ => prec(-1, alias(choice(...SOFT), $.identifier)),
+
     _type_name: $ => choice($.type_identifier, $.scoped_type_identifier),
 
+    // `pkg.Name` and `pkg.module.Name`, one name in the lexer: a package's (or one of its
+    // public modules') type or constructor.
+    // The scanner reads a `.` as `_scoped_dot` only when the names after it end in a type.
     scoped_type_identifier: $ => seq(
       field('package', $.identifier),
-      '.',
+      repeat(seq(alias($._scoped_dot, '.'), field('module', $.identifier))),
+      alias($._scoped_dot, '.'),
       field('name', $.type_identifier),
     ),
 
@@ -142,7 +155,7 @@ module.exports = grammar({
       '}',
     ),
 
-    escape_sequence: _ => token.immediate(/\\./),
+    escape_sequence: _ => token.immediate(choice(/\\u\{[0-9a-fA-F]*\}/, /\\./)),
 
     // `\"text\"` inside an interpolation is a string written with escaped quotes.
     escaped_string: _ => token(seq('\\"', /[^"\\\n]*/, '\\"')),

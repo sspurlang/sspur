@@ -24,7 +24,7 @@ and install `/tmp/sspur-zed` with **zed: install dev extension**. The third argu
 
 ## The grammar
 
-SSPUR is indentation-sensitive. The grammar doesn't track layout: it reads a file as definition headers, tokens and bracketed groups, which is enough for highlighting and outlines and stays tolerant of unfinished code. Strings use a small external scanner (`src/scanner.c`) so that `{` starts an interpolation only where the compiler's lexer would (`"{}"` and `"([{"` are literal text). `src/parser.c` is generated and committed, since Zed compiles grammars from source. After editing `grammar.js`:
+SSPUR is indentation-sensitive. The grammar doesn't track layout: it reads a file as definition headers, tokens and bracketed groups, which is enough for highlighting and outlines and stays tolerant of unfinished code. Strings use a small external scanner (`src/scanner.c`) so that `{` starts an interpolation only where the compiler's lexer would (`"{}"`, `"{3}"`, `"{{x}}"`, `"{a: 1}"` and `"([{"` are literal text), and reads `pkg.module.Name` as one name. `src/parser.c` is generated and committed, since Zed compiles grammars from source. After editing `grammar.js`:
 
 ```sh
 cd packaging/zed/tree-sitter-sspur

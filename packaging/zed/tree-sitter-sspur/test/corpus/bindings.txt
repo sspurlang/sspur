@@ -1,0 +1,173 @@
+================================================================================
+Typed lambda parameters and a placeholder parameter
+================================================================================
+
+f = (x: Int, y: Int) => x + y
+g = xs.map(_ => 0)
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (identifier)
+  (paren_group
+    (identifier)
+    (type_identifier)
+    (identifier)
+    (type_identifier))
+  (identifier)
+  (identifier)
+  (identifier)
+  (identifier)
+  (member
+    (identifier))
+  (paren_group
+    (placeholder)
+    (integer)))
+
+================================================================================
+Binding annotations
+================================================================================
+
+fn main()
+= do
+  x: Int = 1
+  var ys: List[Str] = []
+  ys := ys + [x.str]
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameters))
+  (identifier)
+  (type_identifier)
+  (integer)
+  (identifier)
+  (type_identifier)
+  (bracket_group
+    (type_identifier))
+  (bracket_group)
+  (identifier)
+  (identifier)
+  (bracket_group
+    (identifier)
+    (member
+      (identifier))))
+
+================================================================================
+Package and module names
+================================================================================
+
+use geo
+p = geo.Point{x: 1} + geo.shapes.Circle(2) + a.b.c + t.0
+impl json.Show for geo.shapes.Point
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (identifier)
+  (identifier)
+  (identifier)
+  (scoped_type_identifier
+    (identifier)
+    (type_identifier))
+  (brace_group
+    (identifier)
+    (integer))
+  (scoped_type_identifier
+    (identifier)
+    (identifier)
+    (type_identifier))
+  (paren_group
+    (integer))
+  (identifier)
+  (member
+    (identifier))
+  (member
+    (identifier))
+  (identifier)
+  (member
+    (integer))
+  (impl_definition
+    (scoped_type_identifier
+      (identifier)
+      (type_identifier))
+    (scoped_type_identifier
+      (identifier)
+      (identifier)
+      (type_identifier))))
+
+================================================================================
+Soft keywords as names
+================================================================================
+
+fn why(field: Str, rule: Str, store: Int) -> Str
+= rule + effect
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameters
+      (identifier)
+      (type_identifier)
+      (identifier)
+      (type_identifier)
+      (identifier)
+      (type_identifier)))
+  (type_identifier)
+  (identifier)
+  (identifier))
+
+================================================================================
+Comments everywhere
+================================================================================
+
+fn f(a: Int, // the first
+     b: Int) // after the signature
+  -> Int // the result
+= // after the equals
+  match a // the scrutinee
+    // between arms
+    | 0 => [1, // in a list
+            2].len
+    | _ => Point{x: 1, // in a record
+                 y: b}.x
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameters
+      (identifier)
+      (type_identifier)
+      (comment)
+      (identifier)
+      (type_identifier)))
+  (comment)
+  (type_identifier)
+  (comment)
+  (comment)
+  (identifier)
+  (comment)
+  (comment)
+  (integer)
+  (bracket_group
+    (integer)
+    (comment)
+    (integer))
+  (member
+    (identifier))
+  (placeholder)
+  (type_identifier)
+  (brace_group
+    (identifier)
+    (integer)
+    (comment)
+    (identifier)
+    (identifier))
+  (member
+    (identifier)))

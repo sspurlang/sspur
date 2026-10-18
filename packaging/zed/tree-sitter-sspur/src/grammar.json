@@ -99,7 +99,15 @@
         },
         {
           "type": "SYMBOL",
+          "name": "scoped_type_identifier"
+        },
+        {
+          "type": "SYMBOL",
           "name": "identifier"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "_soft_name"
         },
         {
           "type": "SYMBOL",
@@ -560,6 +568,44 @@
         ]
       }
     },
+    "_soft_name": {
+      "type": "PREC",
+      "value": -1,
+      "content": {
+        "type": "ALIAS",
+        "content": {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "STRING",
+              "value": "rule"
+            },
+            {
+              "type": "STRING",
+              "value": "trait"
+            },
+            {
+              "type": "STRING",
+              "value": "impl"
+            },
+            {
+              "type": "STRING",
+              "value": "store"
+            },
+            {
+              "type": "STRING",
+              "value": "svc"
+            },
+            {
+              "type": "STRING",
+              "value": "effect"
+            }
+          ]
+        },
+        "named": true,
+        "value": "identifier"
+      }
+    },
     "_type_name": {
       "type": "CHOICE",
       "members": [
@@ -585,7 +631,37 @@
           }
         },
         {
-          "type": "STRING",
+          "type": "REPEAT",
+          "content": {
+            "type": "SEQ",
+            "members": [
+              {
+                "type": "ALIAS",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "_scoped_dot"
+                },
+                "named": false,
+                "value": "."
+              },
+              {
+                "type": "FIELD",
+                "name": "module",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "identifier"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "type": "ALIAS",
+          "content": {
+            "type": "SYMBOL",
+            "name": "_scoped_dot"
+          },
+          "named": false,
           "value": "."
         },
         {
@@ -950,8 +1026,17 @@
     "escape_sequence": {
       "type": "IMMEDIATE_TOKEN",
       "content": {
-        "type": "PATTERN",
-        "value": "\\\\."
+        "type": "CHOICE",
+        "members": [
+          {
+            "type": "PATTERN",
+            "value": "\\\\u\\{[0-9a-fA-F]*\\}"
+          },
+          {
+            "type": "PATTERN",
+            "value": "\\\\."
+          }
+        ]
       }
     },
     "escaped_string": {
@@ -1084,6 +1169,10 @@
     {
       "type": "SYMBOL",
       "name": "_error_sentinel"
+    },
+    {
+      "type": "SYMBOL",
+      "name": "_scoped_dot"
     }
   ],
   "inline": [],
