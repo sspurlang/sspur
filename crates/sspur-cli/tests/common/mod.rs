@@ -6,6 +6,7 @@ use std::time::Duration;
 
 /// Runs `cmd` to completion and returns its output and the CPU time it and its children used.
 /// Off Unix it is the wall-clock time.
+#[cfg_attr(unix, allow(clippy::zombie_processes))] // wait4 reaps it
 pub fn run_timed(cmd: &mut Command) -> (Output, Duration) {
     #[cfg(not(unix))]
     let t0 = std::time::Instant::now();
