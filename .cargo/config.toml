@@ -1,0 +1,6 @@
+# sspur's hot functions go first in the binary, so the common commands touch fewer pages (ADR 0043).
+[target.aarch64-apple-darwin]
+linker = "tools/order/link-clang.sh"
+
+[target.x86_64-apple-darwin]
+linker = "tools/order/link-clang.sh"

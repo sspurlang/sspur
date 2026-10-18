@@ -6,4 +6,11 @@ fn main() {
     if arm_mac {
         println!("cargo:rustc-link-arg-bin=sspur=-Wl,-fixup_chains");
     }
+    // The linker in .cargo/config.toml reads these (ADR 0043): relink when they change.
+    println!("cargo:rerun-if-changed=build.rs");
+    for f in ["../../tools/order/hot.txt", "../../tools/order/link-clang.sh"] {
+        if std::path::Path::new(f).exists() {
+            println!("cargo:rerun-if-changed={f}");
+        }
+    }
 }
