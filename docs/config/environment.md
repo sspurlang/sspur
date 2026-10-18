@@ -60,7 +60,7 @@ None of these are needed for normal use. They exist for CI, for pinning toolchai
 
 | Variable | Effect |
 |---|---|
-| `SSPUR_VERSION` | The release `install.sh` installs, such as `0.15.0` (default: the latest) |
+| `SSPUR_VERSION` | The release `install.sh` installs, such as `1.0.0` (default: the latest) |
 | `SSPUR_INSTALL_DIR` | Where `install.sh` puts the binary (default `~/.local/bin`) |
 | `SSPUR_SKIP_ATTESTATION` | Set to skip the `gh attestation verify` check that `install.sh` makes when `gh` is installed and signed in; the checksum is still checked |
 | `SSPUR_DOWNLOAD_BASE` | A mirror with the release archives and `SHA256SUMS` for `install.sh` and `install.ps1` to download from, instead of the GitHub release |

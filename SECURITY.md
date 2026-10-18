@@ -11,16 +11,16 @@ The report goes only to me, the maintainer. I'll acknowledge it within a week, k
 
 ## Supported versions
 
-SSPUR is pre-1.0. Fixes go into the latest release only.
+Security fixes go into the latest 1.x release.
 
 | Version | Supported |
 |---|---|
-| 0.15.x | Yes |
-| < 0.15 | No |
+| 1.x | Yes |
+| < 1.0 | No |
 
 ## Verifying release files
 
-Every file attached to a release after 0.15 has a build provenance attestation from the release workflow, and each `sspur` archive also has an SBOM attestation for the release's `sspur-vX.Y.Z.cdx.json` (CycloneDX, every Rust crate in the binary). Both are signed through Sigstore with the workflow's GitHub identity, so no key is involved. Check a file with the GitHub CLI (2.68 or newer, signed in):
+Every file attached to a release from 1.0 on has a build provenance attestation from the release workflow, and each `sspur` archive also has an SBOM attestation for the release's `sspur-vX.Y.Z.cdx.json` (CycloneDX, every Rust crate in the binary). Both are signed through Sigstore with the workflow's GitHub identity, so no key is involved. Check a file with the GitHub CLI (2.68 or newer, signed in):
 
 ```console
 gh attestation verify sspur-v1.0.0-aarch64-apple-darwin.tar.gz --repo sspurlang/sspur \

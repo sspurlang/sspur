@@ -36,7 +36,7 @@ Each [release](https://github.com/sspurlang/sspur/releases) has tarballs for `aa
 
 ## Verifying a release
 
-`SHA256SUMS` catches a damaged download, but it comes from the same place as the file. Releases after 0.15 also carry GitHub artifact attestations, signed through Sigstore by the release workflow: a build provenance attestation for every file attached to the release (archives, editor extensions, `SHA256SUMS`, the Homebrew formula, the Scoop manifest, `install.sh` and `install.ps1`), and an SBOM attestation for each `sspur` archive, which points at the release's `sspur-vX.Y.Z.cdx.json` (the CycloneDX list of every Rust crate in the binary). With the GitHub CLI (2.68 or newer, signed in with `gh auth login`):
+`SHA256SUMS` catches a damaged download, but it comes from the same place as the file. Releases from 1.0 on also carry GitHub artifact attestations, signed through Sigstore by the release workflow: a build provenance attestation for every file attached to the release (archives, editor extensions, `SHA256SUMS`, the Homebrew formula, the Scoop manifest, `install.sh` and `install.ps1`), and an SBOM attestation for each `sspur` archive, which points at the release's `sspur-vX.Y.Z.cdx.json` (the CycloneDX list of every Rust crate in the binary). With the GitHub CLI (2.68 or newer, signed in with `gh auth login`):
 
 ```console
 {{#include ../snippets/get-started/install-other.sh:verify}}

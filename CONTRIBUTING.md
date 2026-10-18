@@ -74,7 +74,7 @@ Decisions with lasting impact get an ADR in `docs/adr/`. If your change alters b
 
 1. Bump `version` in the root `Cargo.toml`, run `cargo build --release` to refresh `Cargo.lock`, and move the `Unreleased` notes in `CHANGELOG.md` under the new version. The VS Code and Zed extensions and the Claude Code plugin (`packaging/claude-code/.claude-plugin/plugin.json`) carry the same version; `cargo test --test cli` fails until they do.
 2. Push that commit to `main` and wait for CI to pass on it. CI doesn't run again for the tag.
-3. Tag and push: `git tag -a v0.15.0 -m v0.15.0 && git push origin v0.15.0`.
+3. Tag and push: `git tag -a v1.0.0 -m v1.0.0 && git push origin v1.0.0`.
 4. `release.yml` first checks that CI passed on the tagged commit and stops if it didn't. Then it builds the six targets (macOS, Linux and Windows, each on arm64 and x86_64), packages the VS Code extension, the LSP4IJ template and the Zed extension, writes `SHA256SUMS`, renders the Homebrew formula with `packaging/homebrew/render.sh VERSION SHA256SUMS` and the Scoop manifest with `packaging/scoop/render.sh`, writes the CycloneDX SBOM `sspur-vX.Y.Z.cdx.json` with `cargo cyclonedx`, and creates a draft release with all of them attached. Its last job, `attest`, signs build provenance for every attached file and the SBOM for the six archives, then checks them with `gh attestation verify`.
 5. Wait for the whole run to pass, `attest` included, then review the draft and publish it, then copy the rendered `sspur.rb` into `Formula/sspur.rb` of the `sspurlang/homebrew-sspur` tap.
 

@@ -1,15 +1,28 @@
 # Changelog
 
-All notable changes to SSPUR are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/). While SSPUR is below 1.0, minor releases can change the syntax and the standard library.
+All notable changes to SSPUR are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/). From 1.0, code that works on a release keeps working on every later 1.x release; [the stability policy](https://sspurlang.github.io/sspur/reference/stability.html) lists the exceptions, and a feature is deprecated with a warning before 2.0 can remove it. Before 1.0, minor releases could change the syntax and the standard library.
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-10-18
 
 ### Added
 - `W_CONVERSION_MAY_TRAP` (ADR 0044): `sspur check` uses Z3 to prove that every `F64` `round floor ceil trunc` gets a finite value in `Int`'s range, from refinements, `pre`, enclosing conditions, `clamp`/`min`/`max`, literal arithmetic and, for functions that aren't `pub`, their calls, and warns with `checked_round` (etc.) or the guard to add where it can't; code without the warning can't trap in a conversion. The compatibility golden of `tests/compat/pulse` gains its three warnings.
 - The 1.x stability and deprecation policy, `docs/reference/stability.md`: what 1.0 freezes, what stays experimental (marked `(experimental)` in `sspur --help`), and the `W_DEPRECATED` warning a feature gets before 2.0 can remove it. A compatibility suite in `cargo test` (`tests/compat`) checks frozen programs and packages against their recorded hashes, diagnostics, `run` and `test` output in both tiers and `sspur fmt` output.
 - Release files carry GitHub artifact attestations: build provenance for every file attached to a release and a CycloneDX SBOM (`sspur-vX.Y.Z.cdx.json`, also attached) for each `sspur` archive, checked with `gh attestation verify --repo sspurlang/sspur`; `install.sh` checks the provenance when `gh` is installed and signed in, and `SSPUR_SKIP_ATTESTATION=1` turns that off.
+- `sspur fix [FILE|DIR...] [--check]` moves code written for 0.14 to 1.0: it rewrites what 1.0 would read differently (strings whose braces or escapes changed meaning, a nested `match` whose arms moved, binding annotations 0.14 ignored) so the program means what it meant, and lists what to check by hand (`round floor ceil trunc` that can now trap, comparisons with a zero, `==` on types with their own `Eq`). The [migration guide](https://sspurlang.github.io/sspur/get-started/migrating-to-1.0.html) covers every change with before and after.
+
 ### Changed
 - The playground's WebAssembly is 5 KB smaller gzipped (941 KiB): the standard library's hover and completion docs are a separate 6 KB file that the page fetches after the engine starts.
+- The macOS binary lays out the functions of the hot commands first (ADR 0043, `tools/order/`), so `run`, `check`, `fmt`, `test` and the language server touch fewer pages: peak memory is 10 to 20% lower (hello world 2.4 to 2.0 MB, `check` of Pulse's library 10.1 to 9.0 MB), and code added later can't move the hot paths.
+- `W_CONVERSION_MAY_TRAP` proofs are cached by the content hashes they read, so a repeated `sspur check` of unchanged code proves nothing again, and an edit only proves again what depended on it.
+- Timing bounds in the tests measure CPU time, not wall-clock time, so they hold on a loaded machine.
+
+### Fixed
+- `sspur deploy local` no longer leaves a client waiting on a connection a function child inherited during a hot swap (each response now shuts its socket down), and routes to a new version only once its functions have started, so requests during `start` and `swap` don't time out with 502.
+- On `riscv64-qemu` and `aarch64-qemu`, an interrupt handler that re-arms the timer no longer unmasks interrupts inside the handler, where a tick already due nested and the return jumped to garbage (exit 63).
+- The Zed grammar follows the 0.15 string rules (`{` interpolates only an expression, `\u{...}`), scoped names `pkg.module.Name`, and soft keywords, so `rule` and `effect` can be names.
+- The reference documents 48 builtins it was missing (`Complex`, `FlatMap`, `MdSpan`, views, the random distributions, zones, files), every CLI flag, and every environment variable; a test keeps the environment page complete.
 
 ## [0.15.0] - 2026-10-18
 
@@ -505,7 +518,8 @@ This release covers Phases 3 to 7 of the roadmap and ADRs 0003 to 0024. SSPUR no
 - Language design spec, JSON schemas and the token benchmark.
 - Compiler core: parser, checker, content hashing, interpreter and the `sspur` CLI, with an 11-program suite.
 
-[Unreleased]: https://github.com/sspurlang/sspur/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/sspurlang/sspur/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/sspurlang/sspur/compare/v0.15.0...v1.0.0
 [0.15.0]: https://github.com/sspurlang/sspur/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/sspurlang/sspur/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/sspurlang/sspur/compare/v0.13.0...v0.13.1

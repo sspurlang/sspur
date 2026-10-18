@@ -1,8 +1,8 @@
 # ANCHOR: binary
 # a prebuilt tarball from https://github.com/sspurlang/sspur/releases
 shasum -a 256 -c SHA256SUMS --ignore-missing
-tar -xzf sspur-v0.15.0-aarch64-apple-darwin.tar.gz
-sudo install sspur-v0.15.0-aarch64-apple-darwin/sspur /usr/local/bin/
+tar -xzf sspur-v1.0.0-aarch64-apple-darwin.tar.gz
+sudo install sspur-v1.0.0-aarch64-apple-darwin/sspur /usr/local/bin/
 # ANCHOR_END: binary
 # ANCHOR: verify
 # was this file built from sspurlang/sspur by its release workflow, from the release tag?

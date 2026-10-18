@@ -1,6 +1,6 @@
 # Migrating to 1.0
 
-SSPUR 0.15.0 is the 1.0 release candidate. It settles the last pieces of syntax and of `F64`, and a few of those changes give existing source a different meaning. This page lists every change from 0.14 that can affect a program that worked under 0.14, with what the code meant before and after, and what `sspur fix` does about it.
+SSPUR 0.15.0 was the 1.0 release candidate, and 1.0.0 keeps its language. It settles the last pieces of syntax and of `F64`, and a few of those changes give existing source a different meaning. This page lists every change from 0.14 that can affect a program that worked under 0.14, with what the code meant before and after, and what `sspur fix` does about it.
 
 ## Running `sspur fix`
 
