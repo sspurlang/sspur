@@ -204,9 +204,11 @@ void __attribute__((noreturn)) ss_halt(int64_t code) {
 uint64_t ss_crit_enter(void) { uint64_t s; __asm__ volatile("csrrci %0, mstatus, 8" : "=r"(s) :: "memory"); return s & 8; }
 void ss_crit_leave(uint64_t s) { if (s) __asm__ volatile("csrsi mstatus, 8" ::: "memory"); }
 void ss_wait_irq(void) { __asm__ volatile("wfi"); }
+static volatile int ss_in_irq;
 void ss_irq_enable(int64_t n) {
     if (n >= 0 && n < 64) { uint64_t m = 1ULL << n; __asm__ volatile("csrs mie, %0" :: "r"(m)); }
-    __asm__ volatile("csrsi mstatus, 8");
+    /* in a handler, mret turns interrupts back on; enabling them here would nest and clobber mepc */
+    if (!ss_in_irq) __asm__ volatile("csrsi mstatus, 8");
 }
 int64_t ss_ticks(void) { return (int64_t)SS_MTIME; }
 int64_t ss_tick_hz(void) { return 10000000; }
@@ -215,7 +217,9 @@ void ss_trap_dispatch(uint64_t cause) {
     if ((int64_t)cause < 0) {
         uint64_t n = cause & 0xffff;
         if (n == 7) SS_MTIMECMP = UINT64_MAX;
+        ss_in_irq = 1;
         sspur_irq((int64_t)n);
+        ss_in_irq = 0;
         return;
     }
     ss_trapping = 1;
@@ -244,6 +248,8 @@ void __attribute__((noreturn)) ss_halt(int64_t code) {
 uint64_t ss_crit_enter(void) { uint64_t s; __asm__ volatile("mrs %0, daif\n msr daifset, #2" : "=r"(s) :: "memory"); return s; }
 void ss_crit_leave(uint64_t s) { __asm__ volatile("msr daif, %0" :: "r"(s) : "memory"); }
 void ss_wait_irq(void) { __asm__ volatile("wfi"); }
+static volatile int ss_in_irq[4];
+static inline int ss_core(void) { uint64_t v; __asm__ volatile("mrs %0, mpidr_el1" : "=r"(v)); return (int)(v & 3); }
 void ss_irq_enable(int64_t n) {
     if (n < 0 || n >= 1020) return;
     ss_w32(SS_GICD, 1);
@@ -252,7 +258,8 @@ void ss_irq_enable(int64_t n) {
     *(volatile uint8_t*)(SS_GICD + 0x400 + (uintptr_t)n) = 0x80;
     if (n >= 32) *(volatile uint8_t*)(SS_GICD + 0x800 + (uintptr_t)n) = 1;
     ss_w32(SS_GICD + 0x100 + ((uintptr_t)n / 32) * 4, 1u << (n % 32));
-    __asm__ volatile("msr daifclr, #2" ::: "memory");
+    /* in a handler, eret unmasks; unmasking here would nest and clobber ELR_EL1 */
+    if (!ss_in_irq[ss_core()]) __asm__ volatile("msr daifclr, #2" ::: "memory");
 }
 int64_t ss_ticks(void) { uint64_t v; __asm__ volatile("isb; mrs %0, cntvct_el0" : "=r"(v)); return (int64_t)v; }
 int64_t ss_tick_hz(void) { uint64_t v; __asm__ volatile("mrs %0, cntfrq_el0" : "=r"(v)); return (int64_t)v; }
@@ -266,7 +273,10 @@ void ss_irq_c(void) {
     uint32_t id = iar & 0x3ff;
     if (id >= 1020) return;
     if (id == 27) __asm__ volatile("msr cntv_ctl_el0, %0; isb" :: "r"(0ULL));
+    int c = ss_core();
+    ss_in_irq[c] = 1;
     sspur_irq((int64_t)id);
+    ss_in_irq[c] = 0;
     ss_w32(SS_GICC + 0x10, iar);
 }
 void ss_sync_c(void) { ss_trapping = 1; ss_halt(63); }

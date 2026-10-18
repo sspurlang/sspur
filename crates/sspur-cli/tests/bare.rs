@@ -237,9 +237,15 @@ fn bit_and_byte_builtins_match_across_tiers() {
 
 #[test]
 fn statics_shared_with_interrupt_handlers_and_stack_arrays_on_every_target() {
+    // a handler that re-arms an already due timer must not nest (a loaded host makes every 1 ms tick due on return)
+    let d = scratch("overdue");
+    let overdue = d.join("ticks_overdue.ssp");
+    std::fs::write(&overdue, std::fs::read_to_string(root().join("tests/bare/ticks.ssp")).unwrap().replace("timer_start(tick_hz() / 1000)", "timer_start(1)")).unwrap();
     for target in ["riscv64-qemu", "aarch64-qemu", "thumbv7em-mps2"] {
         boots(target, "ticks", "hist 804\nticks 5 seen 14 base 1005\n");
+        boots_with(target, overdue.to_str().unwrap(), "hist 804\nticks 5 seen 14 base 1005\n", 0);
     }
+    let _ = std::fs::remove_dir_all(&d);
     let (out, err, ok) = sspur(&["test", "tests/bare/ticks.ssp"]);
     assert!(ok && out.contains("3 passed, 0 failed"), "{out}{err}");
 }
