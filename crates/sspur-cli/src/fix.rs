@@ -8,7 +8,8 @@ use sspur_syntax::ast::*;
 use sspur_syntax::lexer::{lex, Tok};
 use sspur_syntax::visit::walk_expr;
 use sspur_syntax::{line_col, parse, parse_expr, printer};
-use std::collections::{HashMap, HashSet};
+use sspur_syntax::lexer::Token;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -288,14 +289,21 @@ fn short(s: &str) -> String {
     if s.chars().count() <= 60 { s.to_string() } else { format!("{}...", s.chars().take(57).collect::<String>()) }
 }
 
+/// The string literals 1.0 reads in `src`, in order; none if it can't lex it.
+fn strings_of(src: &str) -> Vec<Token> {
+    lex(src).map(|ts| ts.into_iter().filter(|t| matches!(t.tok, Tok::Str(_) | Tok::Interp(_))).collect()).unwrap_or_default()
+}
+
+fn string_at(ts: &[Token], start: usize) -> Option<&Token> {
+    ts.binary_search_by_key(&start, |t| t.span.start as usize).ok().and_then(|i| ts.get(i))
+}
+
 /// The literals 0.14 reads differently from 1.0, each with a literal 1.0 reads as 0.14 did, and
 /// those for which there is none. Nothing when 0.14 couldn't lex the source, which then was not
 /// 0.14 code.
 fn string_edits(src: &str) -> (Vec<Edit>, Vec<(usize, String)>) {
     let Some(lits) = v14::literals(src) else { return Default::default() };
-    let toks: HashMap<usize, (usize, Tok)> = lex(src)
-        .map(|ts| ts.into_iter().filter(|t| matches!(t.tok, Tok::Str(_) | Tok::Interp(_))).map(|t| (t.span.start as usize, (t.span.end as usize, t.tok))).collect())
-        .unwrap_or_default();
+    let toks = strings_of(src);
     let (mut edits, mut notes) = (Vec::new(), Vec::new());
     for (start, end, raw) in lits {
         let pattern = in_pattern(src, start, end);
@@ -303,8 +311,8 @@ fn string_edits(src: &str) -> (Vec<Edit>, Vec<(usize, String)>) {
             notes.push((start, format!("0.14 matched the pattern {} with a backslash before each '{{'; 1.0 matches the brace alone", short(sub(src, start, end)))));
         }
         let Some(want) = meaning14(&raw, pattern) else { return Default::default() };
-        let tok = toks.get(&start);
-        if tok.is_some_and(|(e, t)| *e == end && meaning15(t).is_some_and(|m| same(&m, &want))) {
+        let tok = string_at(&toks, start);
+        if tok.is_some_and(|t| t.span.end as usize == end && meaning15(&t.tok).is_some_and(|m| same(&m, &want))) {
             continue;
         }
         let eol = sfrom(src, end).find('\n').map_or(src.len(), |i| end + i);
@@ -314,8 +322,8 @@ fn string_edits(src: &str) -> (Vec<Edit>, Vec<(usize, String)>) {
             continue;
         };
         let mut msg = format!("string kept as 0.14 read it: {} -> {}", short(old), short(&new));
-        if let Some((e, _)) = tok.filter(|(e, _)| *e != end) {
-            let (_, c) = line_col(src, *e as u32);
+        if let Some(t) = tok.filter(|t| t.span.end as usize != end) {
+            let (_, c) = line_col(src, t.span.end);
             msg.push_str(&format!("; 1.0 ends the string at column {}, 0.14 ran it on, which was probably not meant", c - 1));
         }
         edits.push(Edit { start, end, new, want, msg });
@@ -334,13 +342,13 @@ fn fix_strings(out: &mut String, env: &pkg::Env, items: &mut Vec<Item>) {
     // The whole file must read each rewritten literal as wanted (`asm` and `ep` strings
     // interpolate only names).
     let mut fixed = apply(out, &edits.iter().collect::<Vec<_>>());
-    if let Ok(ts) = lex(&fixed) {
-        let at: HashMap<usize, (usize, Tok)> = ts.into_iter().map(|t| (t.span.start as usize, (t.span.end as usize, t.tok))).collect();
+    let ts = strings_of(&fixed);
+    if !ts.is_empty() {
         let mut shift: isize = 0;
         let mut bad = HashSet::new();
         for (i, e) in edits.iter().enumerate() {
             let s = (e.start as isize + shift) as usize;
-            if !at.get(&s).is_some_and(|(end, t)| *end == s + e.new.len() && meaning15(t).is_some_and(|m| same(&m, &e.want))) {
+            if !string_at(&ts, s).is_some_and(|t| t.span.end as usize == s + e.new.len() && meaning15(&t.tok).is_some_and(|m| same(&m, &e.want))) {
                 bad.insert(i);
             }
             shift += e.new.len() as isize - (e.end - e.start) as isize;
@@ -549,7 +557,7 @@ mod v14 {
 
 // ---- The syntax tree ----
 
-fn each(m: &Module, f: &mut impl FnMut(&Expr)) {
+fn each(m: &Module, f: &mut dyn FnMut(&Expr)) {
     fn fns<'a>(f: &'a FnDef, roots: &mut Vec<&'a Expr>) {
         roots.extend(f.pres.iter().chain(&f.posts).chain(&f.examples));
         roots.push(&f.body);
