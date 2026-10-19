@@ -3,7 +3,7 @@
 The runbook for whoever looks after SSPUR, its repositories and its sites: the rules every change
 follows, how to check a change against them, how to release, how to run the registry, and what to
 do when something breaks. [CONTRIBUTING.md](CONTRIBUTING.md) covers building, testing and sending
-a pull request; this page starts where it stops.
+a pull request; this page starts where it stops. Coding agents follow [AGENTS.md](AGENTS.md), which points here.
 
 ## Tenets
 
