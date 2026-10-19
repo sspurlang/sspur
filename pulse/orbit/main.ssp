@@ -123,7 +123,7 @@ fn main() -> Unit ! log, fs, net, env, time
 = do
   cx = pulse.ctx("orbit")
   prev = load(cx)
-  fresh = if pulse.due(cx, prev.map(_.updated).or(""), 300) then fetch(cx) else err("skip")
+  fresh = if pulse.due(cx, prev.map(_.updated).or(""), 150) then fetch(cx) else err("skip")
   match pulse.settle(fresh, prev, () => fetch(pulse.seed_ctx(cx)))
   | none => log("orbit: no data at all")
   | some(g) => do

@@ -70,4 +70,4 @@ The fuzzer found the counterexample: a price of 0 with no discount stays 0.
 - If you know another language, the pages for [TypeScript](from-typescript.md), [Python](from-python.md) and [Go and Rust](from-go-rust.md) programmers map what you know onto SSPUR.
 - [Build a CRUD service](../tutorials/crud-service.md) runs a small HTTP service with a table on your machine.
 - [SSPUR for AI agents](agents.md) shows how an agent works on a codebase with `sspur start`, `q` and `edit --test`.
-- [SSPUR Pulse](../pulse/index.html) is a larger program to read: a live dashboard built by SSPUR programs every 6 hours, explained in [how it works](../pulse-how-it-works.md).
+- [SSPUR Pulse](../pulse/index.html) is a larger program to read: a live dashboard built by SSPUR programs every 3 hours, explained in [how it works](../pulse-how-it-works.md).

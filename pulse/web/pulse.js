@@ -34,6 +34,29 @@
     const city = tz.split('/').pop().replace(/_/g, ' ');
     return !city || /^(UTC|GMT|Etc)/.test(tz) ? 'UTC' : renamed[city] || city;
   };
+  // Launch times in the visitor's own zone, written as the page writes UTC; UTC stays when the
+  // browser can't name a zone.
+  const local = () => {
+    let fmt = null, zone = null;
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+      if (tz && !/^(UTC|GMT|Etc\/(UTC|GMT))$/.test(tz)) {
+        fmt = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+        zone = new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' });
+      }
+    } catch (er) { fmt = null; }
+    if (!fmt) return;
+    $$('time[data-local]').forEach((t) => {
+      const d = new Date(t.getAttribute('datetime'));
+      if (isNaN(d)) return;
+      const p = {};
+      fmt.formatToParts(d).forEach((x) => { p[x.type] = x.value; });
+      const z = (zone.formatToParts(d).find((x) => x.type === 'timeZoneName') || {}).value || '';
+      t.textContent = `${p.weekday} ${p.month} ${p.day}, ${p.hour}:${p.minute}${z ? ' ' + z : ''}`;
+      t.title = t.getAttribute('datetime').replace('T', ' ').slice(0, 16) + ' UTC';
+    });
+  };
+  local();
   const tick = () => {
     const now = Date.now();
     $$('time[data-rel]').forEach((t) => { t.textContent = ago(now - Date.parse(t.getAttribute('datetime'))); });
@@ -470,5 +493,5 @@
     const pv = el.dataset.pickview, gid = pv.slice(0, pv.indexOf(':')), v = pv.slice(pv.indexOf(':') + 1), sel = $(`select[data-vpart="0"][data-for="${gid}"]`);
     if (sel && [...sel.options].some((o) => o.value === v)) { sel.value = v; sel.dispatchEvent(new Event('change')); }
   }));
-  if (W.console) console.log('%cSSPUR Pulse%c\nEvery number here was computed by SSPUR programs, every 6 hours, for free.\nRead them: https://github.com/sspurlang/sspur/tree/main/pulse\nSeven secrets are hidden on these pages; the footer counts the ones you have found.\nOn a keyboard, try the up up down down code, or type "sspur". On a phone, hold the logo, or tap the Updated badge three times.', 'font:800 20px system-ui;color:#d9381e', 'font:13px system-ui');
+  if (W.console) console.log('%cSSPUR Pulse%c\nEvery number here was computed by SSPUR programs, every 3 hours, for free.\nRead them: https://github.com/sspurlang/sspur/tree/main/pulse\nSeven secrets are hidden on these pages; the footer counts the ones you have found.\nOn a keyboard, try the up up down down code, or type "sspur". On a phone, hold the logo, or tap the Updated badge three times.', 'font:800 20px system-ui;color:#d9381e', 'font:13px system-ui');
 })();

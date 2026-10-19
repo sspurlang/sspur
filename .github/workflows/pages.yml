@@ -5,8 +5,8 @@ on:
     branches: [main]
   workflow_dispatch:
   schedule:
-    # SSPUR Pulse refreshes every 6 hours.
-    - cron: "17 */6 * * *"
+    # SSPUR Pulse refreshes every 3 hours.
+    - cron: "17 */3 * * *"
     # Weekly: keeps the schedule from being paused (the keepalive job).
     - cron: "7 3 * * 1"
 

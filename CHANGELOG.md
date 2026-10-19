@@ -4,6 +4,13 @@ All notable changes to SSPUR are recorded here. The format follows [Keep a Chang
 
 ## [Unreleased]
 
+### Changed
+- SSPUR Pulse refreshes every 3 hours instead of every 6, and every board refreshes on each run.
+- Pulse's launch times show in the visitor's own time zone, written like the UTC time the page carries, which stays when the browser can't name a zone.
+
+### Fixed
+- Pulse's reading board no longer fails when Wikimedia publishes a day's most read list late: it looks back a week for the newest list, and when Wikimedia has nothing newer yet the board is up to date, not stale.
+
 ## [1.0.0] - 2026-10-18
 
 ### Added

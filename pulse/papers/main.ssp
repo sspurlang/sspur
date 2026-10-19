@@ -212,7 +212,7 @@ fn main() -> Unit ! log, fs, net, env, time
 = do
   cx = pulse.ctx("papers")
   prev = load(cx)
-  fresh = if pulse.due(cx, prev.map(_.updated).or(""), 180) then fetch(cx, prev) else err("skip")
+  fresh = if pulse.due(cx, prev.map(_.updated).or(""), 150) then fetch(cx, prev) else err("skip")
   match pulse.settle(fresh, prev, () => fetch(pulse.seed_ctx(cx), none))
   | none => log("papers: no data at all")
   | some(g) => do

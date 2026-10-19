@@ -12,7 +12,7 @@ Documentation: **[sspurlang.github.io/sspur](https://sspurlang.github.io/sspur/)
 
 Home: **[sspurlang.github.io](https://sspurlang.github.io/)** · Packages: **[sspurlang.github.io/sspur-packages](https://sspurlang.github.io/sspur-packages/)**, the package registry, where you can search packages and publish your own.
 
-**[SSPUR Pulse](https://sspurlang.github.io/sspur/pulse/)** is a live dashboard of the world today, recomputed every 6 hours by SSPUR programs ([how it works](https://sspurlang.github.io/sspur/pulse-how-it-works.html)).
+**[SSPUR Pulse](https://sspurlang.github.io/sspur/pulse/)** is a live dashboard of the world today, recomputed every 3 hours by SSPUR programs ([how it works](https://sspurlang.github.io/sspur/pulse-how-it-works.html)).
 
 **[Try it in the playground](https://sspurlang.github.io/sspur/play/)**: write, check, run and test SSPUR in the browser, with nothing to install.
 
@@ -86,7 +86,7 @@ Most languages are designed around a human at a keyboard. SSPUR starts from a di
 - `kernel fn` GPU kernels: Metal with exact `F32` and identical traps, queued launches, shared memory and barriers, deterministic atomics, 2D grids and inlined helper fns, plus OpenCL C, SPIR-V and PTX through `sspur gpu`
 - `sspur deploy` to generate infrastructure and least-privilege IAM policies from a service's effects, run the service locally, migrate data, hot swap versions, and replay recorded traffic
 - Concurrent editing by many agents with typechecked merges, replica sync, and a shared build cache
-- [SSPUR Pulse](https://sspurlang.github.io/sspur/pulse/), a live dashboard of the world today, fetched, checked and rendered by SSPUR programs every 6 hours ([source](pulse/), [how it works](docs/pulse-how-it-works.md))
+- [SSPUR Pulse](https://sspurlang.github.io/sspur/pulse/), a live dashboard of the world today, fetched, checked and rendered by SSPUR programs every 3 hours ([source](pulse/), [how it works](docs/pulse-how-it-works.md))
 
 ## Performance
 

@@ -14,7 +14,7 @@
 
 [Try it in the playground](play/index.html): it checks and runs SSPUR in your browser, with nothing to install.
 
-[SSPUR Pulse](pulse/index.html) is a live dashboard of the world today, fetched, checked and rendered by SSPUR programs every 6 hours. [How it works](pulse-how-it-works.md) describes the programs behind it.
+[SSPUR Pulse](pulse/index.html) is a live dashboard of the world today, fetched, checked and rendered by SSPUR programs every 3 hours. [How it works](pulse-how-it-works.md) describes the programs behind it.
 
 **[SSPUR packages](https://sspurlang.github.io/sspur-packages/)** is the package registry: search packages, read their API docs, and publish your own from the browser or with `sspur publish`. SSPUR's home page is **[sspurlang.github.io](https://sspurlang.github.io/)**.
 
