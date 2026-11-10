@@ -33,7 +33,7 @@ If a native build fails, SSPUR prints one warning naming the function and the C 
 |---|---|
 | `--pgo` | Run the program once instrumented, merge the profile with `llvm-profdata`, and build with it. The profile is cached per source |
 | `--retrain` | With `--pgo`, repeat the training run |
-| `--lto off\|thin\|full` | Link-time optimization across the per-definition objects. Default `off`. On Linux it needs `lld` |
+| `--lto off\|thin\|full` | Link-time optimization across the per-definition objects. Default `off`. On Linux and Windows it needs `lld` |
 
 Both work with `run`, `test` and `build`. `sspur run --profile FILE` runs the interpreter and records call counts that guide inlining (ADR 0022), and `sspur explain-opt FILE [--all]` prints the proven rewrites applied before code generation.
 

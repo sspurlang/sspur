@@ -17,6 +17,7 @@ The handbook teaches the language from the start. Read it in order: each page us
 13. [Security and Crypto](security.md): password hashing, tokens, MACs, encryption, signatures and secrets.
 14. [Files, Compression and CSV](files-compression-csv.md): `Bytes`, gzip and zstd, and CSV with typed records.
 15. [Packages](packages.md): `sspur.toml`, `pub`, `use` and the lock file.
+16. [Publishing a package](publishing.md): the registry, versions, scoped names, the checks and `sspur publish`.
 
 Every code block in the handbook is a file in [`docs/snippets/handbook/`](https://github.com/sspurlang/sspur/tree/main/docs/snippets/handbook), and every terminal session is run by the test suite against the current compiler. If a page and the compiler disagree, CI fails.
 

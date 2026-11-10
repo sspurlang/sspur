@@ -102,6 +102,7 @@ $ sspur debug-init
 wrote /Users/me/.cache/sspur/debug/sspur_lldb.py and /Users/me/.cache/sspur/debug/sspur_gdb.py
 add to ~/.lldbinit:  command script import "/Users/me/.cache/sspur/debug/sspur_lldb.py"
 add to ~/.gdbinit:  source /Users/me/.cache/sspur/debug/sspur_gdb.py
+(or run 'sspur debug-init --install' to add them)
 $ sspur debug-init --install
 ```
 
@@ -119,7 +120,7 @@ Maps, sets and the other standard containers show as their C structs for now.
 
 ## Stopping on a trap
 
-Every trap (overflow, division by zero, a failed `pre` or `post`, an index out of range, a failed match, `.unwrap` of `none`) calls `sspur_trap` first:
+Every trap (overflow, division by zero, a failed `pre` or `post`, an index out of range, a failed match, `.get` of `none`) calls `sspur_trap` first:
 
 ```console
 (lldb) breakpoint set -n sspur_trap

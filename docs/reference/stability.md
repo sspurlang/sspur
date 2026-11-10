@@ -34,7 +34,7 @@ These may change or go in any 1.x minor release, with a line in the changelog. T
 | Cranelift JIT | `--native` on `run` and `test` (the default native tier, through C and clang, is stable) |
 | Agent tooling | The agent reference ([agent spec](../agent/agent-spec.md) and [more](../agent/agent-spec-more.md)) and its token budget, `sspur q`, `sspur start`, `sspur spec`, `sspur mcp` and its tools, and the Claude Code plugin in `packaging/claude-code` |
 
-Everything else in the usage text (`new`, `init`, `add`, `search`, `source`, `yank`, `api`, `edit`, `apply`, `hash`, `verify`, `fuzz`, `fill`, `suggest`, `native`, `explain-opt`, `debug`, `debug-init`, `bind`, `export-c`, `src`, `log`, `export`) is supported: it isn't removed in 1.x, and its flags follow the deprecation rule below, but what it prints for people can change in a minor release. The hashes `sspur hash` prints and the API `sspur api --json` reports are stable values, whatever the layout around them.
+Everything else in the usage text (`new`, `init`, `add`, `search`, `source`, `yank`, `api`, `archive`, `edit`, `apply`, `hash`, `verify`, `fuzz`, `fill`, `suggest`, `fix`, `native`, `explain-opt`, `debug`, `debug-init`, `bind`, `export-c`, `src`, `log`, `export`) is supported: it isn't removed in 1.x, and its flags follow the deprecation rule below, but what it prints for people can change in a minor release. The hashes `sspur hash` prints and the API `sspur api --json` reports are stable values, whatever the layout around them.
 
 ## Deprecation
 

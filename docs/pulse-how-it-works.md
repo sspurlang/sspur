@@ -38,7 +38,7 @@ Here is part of the quakes board, the function that turns the USGS month feed in
 
 ## Pages
 
-Every page is complete without JavaScript: charts are drawn by SSPUR as HTML and SVG, with a visually hidden data table for screen readers. The script, under 10 KB compressed, only enhances them: it redraws a chart when you switch a metric or a time range, adds a crosshair and a tooltip that follow the pointer, a finger or the arrow keys, ticks countdowns and relative times, filters and sorts lists, and keeps each view in the URL so it can be shared. Long lists show their first 10 rows on phones and 20 on larger screens behind a "Show all" toggle, which also works without JavaScript. Easter eggs (try the Konami code, or type "sspur") live in a separate file that loads only when one is found. The chart specs it uses are the same records SSPUR rendered, embedded in the page as JSON.
+Every page is complete without JavaScript: charts are drawn by SSPUR as HTML and SVG, with a visually hidden data table for screen readers. The script, about 12 KB compressed, only enhances them: it redraws a chart when you switch a metric or a time range, adds a crosshair and a tooltip that follow the pointer, a finger or the arrow keys, ticks countdowns and relative times, filters and sorts lists, and keeps each view in the URL so it can be shared. Long lists show their first 10 rows on phones and 20 on larger screens behind a "Show all" toggle, which also works without JavaScript. Easter eggs (try the Konami code, or type "sspur") live in a separate file that loads only when one is found. The chart specs it uses are the same records SSPUR rendered, embedded in the page as JSON.
 
 The display face is Bricolage Grotesque (SIL Open Font License), cut down to one weight and the characters Pulse uses, about 18 KB.
 
@@ -50,7 +50,7 @@ The launches page also draws the satellites in orbit on a globe. The SSPUR orbit
 
 ## Hosting
 
-The Pages workflow (`.github/workflows/pages.yml`) runs on every push to `main`, every three hours, and by hand. It builds the docs and the playground, builds `sspur`, runs the Pulse tests, restores the snapshots from the `pulse-data` branch, runs `pulse/run.sh` into `docs/book/pulse`, and pushes the new snapshots back to `pulse-data` as a single commit, so that branch never grows a history. It uses only the built-in `GITHUB_TOKEN`, with `contents: write` for the data branch and `pages: write` and `id-token: write` to deploy. The pushes to `pulse-data` also count as repository activity, so GitHub does not pause the schedule after 60 quiet days.
+The Pages workflow (`.github/workflows/pages.yml`) runs on every push to `main`, every three hours, and by hand. It builds the docs and the playground, builds `sspur`, runs the Pulse tests, restores the snapshots from the `pulse-data` branch, runs `pulse/run.sh` into `docs/book/pulse`, and pushes the new snapshots back to `pulse-data` as a single commit, so that branch never grows a history. It uses only the built-in `GITHUB_TOKEN`, with `contents: write` for the data branch and `pages: write` and `id-token: write` to deploy. A weekly `keepalive` job enables the workflow again through the API, so GitHub does not pause the schedule after 60 days without a commit.
 
 ## Running it yourself
 

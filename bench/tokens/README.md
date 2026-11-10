@@ -29,10 +29,10 @@ The second form also counts with Claude's tokenizer, via the count_tokens API (s
 
 ## Caveats
 
-1. **SSP-T samples are hand-written and unverified.** No compiler exists yet. The numbers will be re-measured once Phase 2 can typecheck them.
-2. The samples were written by the language's designer, so they're biased. Phase 2 adds model-written samples produced from the spec alone.
+1. **SSP-T samples are hand-written and unverified.** They were written in Phase 1, before the compiler existed, and they don't typecheck with the 1.0 compiler.
+2. The samples were written by the language's designer, so they're biased. Model-written programs produced from the spec alone are in [`../eval/`](../eval/README.md).
 3. Some savings come from moving checks into types (`where _ > 0` replaces runtime validation and its error variants). That's intended, but it means token savings and safety gains can't be separated in these numbers.
-4. Token count per file is a proxy. The real metric is **tokens per correct change** in agent sessions, which Phase 3 measures.
+4. Token count per file is a proxy. The real metric is **tokens per correct change** in agent sessions, which [`../agent/`](../agent/README.md) measures.
 
 ## Findings (Phase 1)
 

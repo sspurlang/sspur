@@ -59,7 +59,7 @@ The whole heap is released when native code returns to the interpreter. `SSPUR_M
 
 ## Coverage
 
-- Every function in `tests/programs/` (16 programs) and in the 199-program evaluation corpus written by other models (270 of 270 functions) compiles natively.
+- Every function in `tests/programs/` (22 programs) and in the 199-program evaluation corpus written by other models (270 of 270 functions) compiles natively.
 - Native results are identical to the interpreter on all of them, plus 300 random inputs per function (`sspur fuzz --differential`).
 
 ## Why it matches or beats C++
@@ -79,7 +79,7 @@ The whole heap is released when native code returns to the interpreter. `SSPUR_M
 | Single-allocation `join` with inline short copies; `for` loops that push once per iteration reserve capacity up front; hand-written integer formatting | No `snprintf`, no reallocation chains |
 | Traps `longjmp` from a cold function to the entry; calls to functions that can't `raise` carry no result check; self tail calls are loops | Safety checks stay off the hot path; recursion costs what it does in C |
 | Generic functions monomorphized; closures are a function pointer plus an arena environment | Template-like specialization; no boxing |
-| **Automatic parallelism** (ADR 0009): fused `map`/`filter` pipelines ending in an Int `sum`, `len`, or a scalar `map`, whose lambdas and callees are effect-free (only `div` allowed) and scalar-only, run on a pthread pool once a timed sequential warm-up predicts more than 100 microseconds of work | 6x on 10 cores with bit-identical results and traps; float sums stay sequential |
+| **Automatic parallelism** (ADR 0011): fused `map`/`filter` pipelines ending in an Int `sum`, `len`, or a scalar `map`, whose lambdas and callees are effect-free (only `div` allowed) and scalar-only, run on a pthread pool once a timed sequential warm-up predicts more than 100 microseconds of work | 6x on 10 cores with bit-identical results and traps; float sums stay sequential |
 | **Vectorizable checks** (ADR 0015): fused Int and F64 pipelines compute 64-element blocks branch-free, OR-ing overflow, range, and bounds conditions into one flag; a flagged block re-runs sequentially to report the exact trap. Under a checked small-value assumption the interval prover removes most per-element checks | clang emits NEON/SSE code for checked arithmetic; checked Int kernels about 2x faster than before and than C++ with the same checks |
 | **Proven rewrites** (ADR 0022): inlining that exposes a pipeline, loop fusion and `map`/`map` composition when the trap order provably can't change, overflow-aware folding, dead branches removed by intervals or Z3 | `simd` 15% faster (no 1M-element list per round), `typical` peak memory 85 MB to 15 MB; `sspur explain-opt` lists each rewrite and its proof |
 

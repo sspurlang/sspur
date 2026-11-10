@@ -1,6 +1,6 @@
 # ADR 0035: HTTP client and server
 
-Status: accepted, 2026-10-15
+Status: accepted, 2026-10-15. Amended by ADR 0037 (decision 16: the server's gzip uses miniz).
 
 ## Context
 

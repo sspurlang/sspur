@@ -250,7 +250,7 @@ More examples:
 | [`examples/ffi/`](examples/ffi) | Calling libc and libm, and calling SSPUR from C |
 | [`examples/packages/`](examples/packages) | A text library and an app that depends on it by path, with its lockfile |
 | [`examples/bare/`](examples/bare) | Bare-metal hello world on QEMU riscv64 and aarch64 and a Cortex-M4 (MPS2 AN386); [`tests/bare/`](tests/bare) adds a timer interrupt, inline asm, statics shared with an interrupt handler, floats and two cores |
-| [`tests/programs/`](tests/programs) | 16 runnable programs, one per area, covering every language feature and library area |
+| [`tests/programs/`](tests/programs) | 22 runnable programs, one per area, covering every language feature and library area |
 
 ## Using SSPUR with AI agents
 
@@ -277,7 +277,7 @@ The documentation is an mdBook in [`docs/`](docs/), published at [sspurlang.gith
 | [Playground](https://sspurlang.github.io/sspur/play/) | Check, run, test and format programs in the browser, with completions, hover types and quick fixes from the compiler. Its source is [`docs/play/`](docs/play/) and [`crates/sspur-wasm`](crates/sspur-wasm/); `tools/build_playground.sh` builds it |
 | [Get Started](https://sspurlang.github.io/sspur/get-started/five-minutes.html) | SSPUR in 5 minutes, pages for [TypeScript](https://sspurlang.github.io/sspur/get-started/from-typescript.html), [Python](https://sspurlang.github.io/sspur/get-started/from-python.html) and [Go and Rust](https://sspurlang.github.io/sspur/get-started/from-go-rust.html) programmers, [SSPUR for AI agents](https://sspurlang.github.io/sspur/get-started/agents.html) and [installation](https://sspurlang.github.io/sspur/get-started/installation.html) |
 | [Editor setup](https://sspurlang.github.io/sspur/get-started/editors.html) | `sspur lsp` in VS Code (the extension in [`packaging/vscode/`](packaging/vscode/)) and its forks, Zed (the extension in [`packaging/zed/`](packaging/zed/)), Neovim, Vim, Helix, Emacs, Sublime Text, JetBrains IDEs, Kate and Eclipse |
-| [Handbook](https://sspurlang.github.io/sspur/handbook/index.html) | The language in fifteen pages, from the basics to traits, concurrency, networking, databases, crypto and packages |
+| [Handbook](https://sspurlang.github.io/sspur/handbook/index.html) | The language in sixteen pages, from the basics to traits, concurrency, networking, databases, crypto and packages |
 | [Reference](https://sspurlang.github.io/sspur/reference/language.html) | The [full language reference](docs/reference/language.md) (what `sspur spec --full` prints), the [standard library](https://sspurlang.github.io/sspur/reference/stdlib.html), [effects](https://sspurlang.github.io/sspur/reference/effects.html), [error codes](https://sspurlang.github.io/sspur/reference/errors.html), the [command line](https://sspurlang.github.io/sspur/reference/cli.html), the [agent reference](docs/agent/agent-spec.md) and [JSON schemas](https://sspurlang.github.io/sspur/reference/schema.html) |
 | [Tutorials](https://sspurlang.github.io/sspur/tutorials/index.html) | A web app with accounts (`sspur new web-app`), a CRUD service, migrations and hot swap, calling C, bare metal, GPU kernels, and a multi-agent codebase |
 | [Project Configuration](https://sspurlang.github.io/sspur/config/sspur-toml.html) | `sspur.toml`, `sspur.lock`, build options and environment variables |

@@ -70,7 +70,7 @@ The whole everyday language on one page. Every line below is from one file that 
 | `x += 1` | `x := x + 1` on a `var` |
 | `{` in a string | `\{` |
 | `f(g(_))` for `x => f(g(x))` | write the lambda; `_` binds to the innermost call |
-| a `match` nested in an arm | a helper function |
+| inner `match` arms at the outer arms' column | indent the inner arms deeper |
 
 ## Commands
 
@@ -79,7 +79,7 @@ The whole everyday language on one page. Every line below is from one file that 
 | Run, test, check, format | `sspur run F`, `sspur test F`, `sspur check F`, `sspur fmt F --write` |
 | Property-test and prove contracts | `sspur fuzz F`, `sspur verify F` |
 | Agent loop on a codebase | `sspur start NAME...`, `sspur q pack NAME`, `sspur edit --test change.ssp` |
-| Packages | `sspur add PATH-OR-URL`, `sspur deps update`, `sspur deps tree` |
+| Packages | `sspur add NAME` (or a path or git URL), `sspur deps update`, `sspur deps tree` |
 | Services | `sspur deploy plan F`, `sspur deploy local F` |
 
 The [command line reference](reference/cli.md) has the rest.

@@ -2,7 +2,7 @@
 
 These are constructs no mainstream language has. Each one removes a failure mode that agents hit repeatedly in today's languages. Some will look strange to humans; they're designed for a reader who sees every signature and never gets tired.
 
-Status: implemented in v0 are `Guess[T]` (1.1), `Secret`, `Pii`, and `Untrusted` (1.3), deep updates with `with` (1.5), decision tables with `rule` (3.1), and examples with `ex` (section 4).
+Status: implemented so far are `Guess[T]` (1.1), `Secret`, `Pii`, and `Untrusted` (1.3), deep updates with `with` (1.5), decision tables with `rule` (3.1), and examples with `ex` (section 4).
 
 Priority: **P0** lands in Phases 3 and 4. **P1** lands in Phases 5 and 6. **P2** is research.
 

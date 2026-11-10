@@ -83,7 +83,7 @@ Hidden tests (`tasks/<id>/hidden.ssp`, `hidden.py`, `ts/hidden.test.ts`, `go/hid
 
 ### Large-codebase tasks
 
-Up to run 15 the large-codebase result rested on one cell, s1_shop. There are now six large tasks, s1 to s6, on three generated codebases. No agent has run s2 to s6 yet.
+Up to run 15 the large-codebase result rested on one cell, s1_shop. There are now six large tasks, s1 to s6, on three generated codebases. Runs L1 to L3 ran all six (see [Results, large codebases](#results-large-codebases)).
 
 | Codebase | Tasks | Definitions | SSPUR | Python | TypeScript | Go |
 |---|---|---|---|---|---|---|
@@ -1093,13 +1093,13 @@ python3 bench/agent/xlang/friction.py RUN_DIR
 python3 bench/agent/xlang/trace.py RUN_DIR go/s1_shop   # per-call trace of one cell
 # run 10: the change.ssp edit line is the default (--r9 gives runs 8 and 9's)
 python3 bench/agent/setup.py /tmp/sspur-agent-r10 --tmo --langs=sspur        # and --b; setup_scale.py for s1
-python3 bench/agent/xlang/report5.py runs/2026-10-09-r10   # run 10 SSPUR against run 9's Python, TypeScript and Go
+python3 bench/agent/xlang/report5.py bench/agent/runs/2026-10-09-r10   # run 10 SSPUR against run 9's Python, TypeScript and Go
 # run 11: the shorter prompt is the default (--r10 gives run 10's); compiler frozen at ef439aa
-python3 bench/agent/xlang/report5.py runs/2026-10-09-r11
+python3 bench/agent/xlang/report5.py bench/agent/runs/2026-10-09-r11
 # the six large-codebase tasks (s1_shop to s6_fleet), four languages
-SSPUR=target/sspur-frozen-be2f46b python3 bench/agent/large/score_large.py ref
-SSPUR=target/sspur-frozen-be2f46b python3 bench/agent/large/setup_large.py /tmp/sspur-agent-large   # --langs=..., --tasks=...
-SSPUR=target/sspur-frozen-be2f46b python3 bench/agent/large/score_large.py run /tmp/sspur-agent-large
+SSPUR=target/sspur-frozen-6a6f851 python3 bench/agent/large/score_large.py ref
+SSPUR=target/sspur-frozen-6a6f851 python3 bench/agent/large/setup_large.py /tmp/sspur-agent-large   # --langs=..., --tasks=...
+SSPUR=target/sspur-frozen-6a6f851 python3 bench/agent/large/score_large.py run /tmp/sspur-agent-large
 python3 bench/agent/tokens.py /tmp/sspur-agent-large/agents.json /tmp/sspur-agent-large/tokens.json
 python3 bench/agent/xlang/report5.py /tmp/sspur-agent-large --large   # --with DIR adds cells from another run directory
 ```

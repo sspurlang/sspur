@@ -1,4 +1,4 @@
-# SSPUR v0 Reference
+# Language reference
 
 This is everything the current compiler implements, and it's all an agent needs to write correct SSPUR. The spec docs (00 to 06) describe the full design; anything not listed here is not implemented yet.
 
@@ -49,7 +49,7 @@ A `|` at the start of a line still begins a match arm, a variant or a rule row, 
 |---|---|
 | Primitives | `Int` (i64), `F64`, `Bool`, `Str`, `Unit` |
 | Built-in generics | `List[T]`, `Opt[T]`, `Res[T, E]`, `Map[K, V]`, `Set[T]`, `Heap[T]`, `HashMap[K, V]`, `HashSet[T]`, tuples `(A, B)` |
-| Built-in std types | `StrBuf` (string builder), `Bits` (fixed-size bitset), `Time` and `Duration` (UTC milliseconds), `BigInt`, `Dec` (fixed-point decimal), `Regex`. A user type with the same name shadows any of these and the generics `Set`, `Heap`, `HashMap`, `HashSet` |
+| Built-in std types | `StrBuf` (string builder), `Bits` (fixed-size bitset), `Time` and `Duration` (UTC milliseconds), `BigInt`, `Dec` (fixed-point decimal), `Ratio`, `Complex`, `Regex`, `Locale`, `Zone`, `Rng`, `File`, `Bytes`, `FlatMap[K, V]`, `MdSpan[T]`, `View[T]`, and `Request`, `Response`, `Server` and `HttpErr` for HTTP ([Standard library](stdlib.md)). A user type with the same name shadows any of these and the generics `Set`, `Heap`, `HashMap`, `HashSet` |
 | Function types | `A -> B`, `(A, B) -> C`, `A -> B ! e` (effect row `e`) |
 | Record | `type P = {x: Int, y: Int}` |
 | Sum | `type S = A | B{f: Int}`. Variant names are capitalized and globally unique. `type E = Bad` declares a single-variant sum |
@@ -210,12 +210,13 @@ Every function declares what it does after `!`. Undeclared effects are compile e
 | `yield[T]` | `yield(x)` where `x: T` (built in, for generators) |
 | `ffi` | Calling an `extern fn` |
 | `dev` | Calling a `kernel fn`, `dev_f32 dev_f64 dev_i32 dev_u32 dev_int`, `DevBuf.to_list`, `gpu_sync()` |
-| `fs` | `read_file write_file append_file remove_file list_dir read_bytes write_bytes mkdir mkdir_all remove_dir rename exists is_dir file_size modified_ms` |
+| `fs` | `read_file write_file append_file remove_file list_dir read_bytes write_bytes mkdir mkdir_all remove_dir rename exists is_dir file_size modified_ms copy_file symlink read_link is_symlink file_mode set_mode open_file with_file read_bin write_bin`, and the `File` methods |
 | `io` | `read_line read_lines` (stdin), `eprint` (stderr) |
 | `proc` | `run_cmd exit proc.spawn`, and the `Proc` methods |
-| `time` | `now_ms mono_ns sleep_ms now` |
+| `time` | `now_ms mono_ns sleep_ms now time_zone local_zone` |
 | `env` | `env_var args` |
 | `net` | `http.get post send fetch download serve serve_with` |
+| `db`, `rand` | SQLite (`db.open exec query one opt tx migrate`); `crypto.random token key seal hash_password keypair`, `uuid.v4 v7` (see [Effects](effects.md)) |
 
 Effects flow through lambdas: `xs.map(x => noisy(x))` performs `noisy`'s effects.
 
@@ -608,12 +609,12 @@ Conversions are explicit, with one exception. The calls of the std namespaces (`
 
 ## Builtins
 
-Global: `log(Str)`, `some(x)`, `ok(x)`, `err(e)`, `empty_map()`, `empty_set()`, `empty_heap()`, `str_buf()`, `min(a, b)`, `max(a, b)`, `clamp(x, lo, hi)`, `range(start, end, step)` (excludes `end`; a negative step counts down; step 0 traps), `from_bytes(List[Int])` and `from_codes(List[Int])` (both `Opt[Str]`, `none` unless valid UTF-8 or code points), `rand(seed)`, `rand_int(seed, lo, hi)`, `rand_f64(seed)`, `rand_normal(seed, mean, sd)`, `rand_uniform(seed, lo, hi)`, `rand_exp(seed, rate)`, `rand_bool(seed, p)`, `pi() euler() inf() nan()`, `hash_map()`, `hash_set()`, `bits(n)`, `big(n)`, `parse_big(s)` and `decimal(s)` (`Opt`), `regex(p)` (`Res[Regex, Str]`), `time_ms(ms)`, `date(y, m, d)` and `datetime(y, mo, d, h, mi, s)` (`Opt[Time]`, `none` when invalid), `parse_time(s)` (`Opt[Time]`), `millis(n) secs(n) mins(n) hours(n) days(n)` (`Duration`), `ratio(n, d)` and `ratio_big(n, d)` (`Ratio`; a zero denominator traps), `parse_ratio(s)` (`Opt[Ratio]`, `[+-]digits[/digits]`), `locale(tag)` (`Opt[Locale]` for `en-US en-GB de-DE fr-FR ja-JP hi-IN`).
+Global: `log(Str)`, `some(x)`, `ok(x)`, `err(e)`, `empty_map()`, `empty_set()`, `empty_heap()`, `str_buf()`, `min(a, b)`, `max(a, b)`, `clamp(x, lo, hi)`, `range(start, end, step)` (excludes `end`; a negative step counts down; step 0 traps), `from_bytes(List[Int])` and `from_codes(List[Int])` (both `Opt[Str]`, `none` unless valid UTF-8 or code points), `rand(seed)`, `rand_int(seed, lo, hi)`, `rand_f64(seed)`, `rand_normal(seed, mean, sd)`, `rand_uniform(seed, lo, hi)`, `rand_exp(seed, rate)`, `rand_bool(seed, p)`, `pi() euler() inf() nan()`, `hash_map()`, `hash_set()`, `bits(n)`, `big(n)`, `parse_big(s)` and `decimal(s)` (`Opt`), `regex(p)` (`Res[Regex, Str]`), `time_ms(ms)`, `date(y, m, d)` and `datetime(y, mo, d, h, mi, s)` (`Opt[Time]`, `none` when invalid), `parse_time(s)` (`Opt[Time]`), `millis(n) secs(n) mins(n) hours(n) days(n)` (`Duration`), `ratio(n, d)` and `ratio_big(n, d)` (`Ratio`; a zero denominator traps), `parse_ratio(s)` (`Opt[Ratio]`, `[+-]digits[/digits]`), `locale(tag)` (`Opt[Locale]` for `en-US en-GB de-DE fr-FR ja-JP hi-IN`), `rand_binomial(seed, n, p)`, `rand_poisson(seed, mean)`, `rand_geometric(seed, p)`, `rand_gamma(seed, shape, scale)`, `rand_beta(seed, a, b)`, `rand_weighted(seed, ws)`, `rng(seed)` (`Rng`), `complex(re, im)` and `polar(r, theta)` (`Complex`), `empty_flat_map()` (`FlatMap`), `mdspan(xs, shape)` (`MdSpan`), `iota(a, b)` and `iterate(x, f, n)` (`View`), `fixed_zone(minutes)` (`Zone`; `time_zone(name)` and `local_zone()` read the system's zones under `time`).
 
 | Receiver | Methods |
 |---|---|
 | `List[A]` | `len is_empty map flat_map filter fold(init, (acc, x) => ..) any all find sort_by(key) sum push(x) concat(ys) take(n) drop(n) reverse sort unique contains(x) first last get(i) min max counts zip(ys) enumerate join(sep)`, and `sort_with((a, b) => Int) binary_search(x) lower_bound(x) upper_bound(x) index_of(x) find_index(f) slice(from, to) chunks(n) windows(n) group_by(key) partition(f) scan(init, f) flatten push_front(x) pop_front pop_back take_while(f) drop_while(f) rotate(k) repeat(n) merge(ys) next_perm shuffle(seed) choice(seed) to_set to_heap to_hash_set to_hash_map to_bits(n)` (`[0].repeat(n)` is `n` zeros; `merge` expects both lists sorted; `next_perm` is the next lexicographic permutation or `none`; `to_hash_map` needs a list of pairs) |
-| `Str` | `len is_empty lower upper trim split(sep) words chars take(n) drop(n) reverse get(i) first last contains starts_with ends_with replace(a, b) repeat(n) to_int is_alpha byte_len byte(i)`, and `split_once(sep) index_of(sub) pad_left(n, fill) pad_right(n, fill) to_f64 bytes codes format(spec)` (single characters are `Str`; `byte(i)` is the UTF-8 byte at `i`, and traps out of range) |
+| `Str` | `len is_empty lower upper trim split(sep) words chars take(n) drop(n) reverse get(i) first last contains starts_with ends_with replace(a, b) repeat(n) to_int is_alpha byte_len byte(i)`, and `split_once(sep) index_of(sub) pad_left(n, fill) pad_right(n, fill) to_f64 bytes codes format(spec) fold_case compare_ci(t)` (`fold_case` uppercases then lowercases; `compare_ci` is -1, 0 or 1 on the folded strings; single characters are `Str`; `byte(i)` is the UTF-8 byte at `i`, and traps out of range) |
 | `Opt[A]` | `or(default) is_some is_none get map(f) and_then(f) ok_or(err)` (`ok_or` raises `err` when the option is `none`; `get` traps on `none`) |
 | `Res[A, E]` | `is_ok is_err get or(default) map(f) and_then(f)` (`get` raises the error) |
 | `Map[K, V]` | `get(k) put(k, v) remove(k) has(k) keys values items len is_empty` (immutable: `put` returns a new map) |
@@ -623,11 +624,17 @@ Global: `log(Str)`, `some(x)`, `ok(x)`, `err(e)`, `empty_map()`, `empty_set()`, 
 | `HashMap[K, V]` | `get(k) put(k, v) remove(k) has(k) keys values items len is_empty` (persistent hash trie; `keys`, `items` and display are in key order) |
 | `HashSet[A]` | `add(x) remove(x) has(x) len is_empty items union(s) inter(s) diff(s)` |
 | `Bits` | `has(i) set(i) clear(i) flip(i) len count union(b) inter(b) diff(b) xor(b) flip_all items` (out-of-range indexes and size mismatches trap; prints as `bits(8){0, 3}`) |
-| `Time` | `unix_ms year month day hour minute second milli weekday` (1 is Monday) `yday date` (midnight) `iso format(pat) add(d) sub(d) since(t) add_months(n) add_years(n)` (the day is clamped to the month's end). `format` takes `%Y %m %d %H %M %S %L %j %u %a %A %b %B %F %T %%`. Prints as ISO 8601 |
+| `FlatMap[K, V]` | fields `keys values` (sorted parallel lists); `get(k) has(k) put(k, v) remove(k) len is_empty items lower_bound(k) between(lo, hi)` (`get`, `has` and `lower_bound` are binary searches; `between` is the keys in `lo..hi`, a slice that copies nothing; `put` and `remove` copy) |
+| `MdSpan[T]` | fields `data offset shape strides`; `rank size get(idx) set(idx, x) slice(dim, lo, hi) sub(i) transpose to_list` (`idx` is a `List[Int]` with one index per dimension; `slice` keeps `lo..hi` of dimension `dim`, `sub(i)` fixes the first index, and neither they nor `transpose` copy elements; bad indexes and shapes trap) |
+| `View[A]` | `map(f) filter(f) take(n) drop(n) take_while(f) drop_while(f) enumerate zip(v) chain(v)`, which are lazy, and `to_list fold(init, f) len sum first find(f) any(f) all(f)` and `for x in v`, which pull (stage functions must be pure; a view can't be compared, encoded or printed) |
+| `Time` | `unix_ms year month day hour minute second milli weekday` (1 is Monday) `yday date` (midnight) `iso format(pat) add(d) sub(d) since(t) add_months(n) add_years(n)` (the day is clamped to the month's end), and for a `Zone` `format_in(z, pat)` and `iso_in(z)`. `format` takes `%Y %m %d %H %M %S %L %j %u %a %A %b %B %F %T %%`. Prints as ISO 8601 |
 | `Duration` | `ms secs mins hours days` (truncated `Int`s) `add(d) sub(d) mul(k) div(k) neg abs`; prints like `1h30m0s`, `1.5s`, `250ms` |
+| `Zone` | `offset(t)` (a `Duration`) `abbr(t) is_dst(t) local(t)` (the wall-clock time, as a `Time`) `utc(wall)` (`none` in a gap, the earlier instant in an overlap) |
 | `BigInt` | `add(b) sub(b) mul(b) div(b) rem(b) divmod(b) pow(e) neg abs sign to_int to_f64 to_dec` (division truncates like `Int`) |
 | `Dec` | `add(d) sub(d) mul(d) div(d, scale) round(scale) scale neg abs sign to_f64`; `add sub mul` are exact, `div` and `round` round half to even; prints like `12.50`. Equal values with different scales differ (`1.5 < 1.50`) |
 | `Ratio` | fields `num den` (`BigInt`, always normalized: gcd 1, `den > 0`), `add(r) sub(r) mul(r) div(r) neg abs inv pow(k) sign is_int floor ceil trunc round to_f64 to_dec(scale)` (`floor ceil trunc round` give `BigInt`, `round` is half to even; `to_f64` is correctly rounded). `< <= > >=` and sorting compare values; prints as `3/4` or `5`. Division by zero traps |
+| `Complex` | fields `re im`; `add(w) sub(w) mul(w) div(w) pow(w) scale(k) neg conj abs arg norm exp ln sqrt sin cos tan sinh cosh tanh asin acos atan asinh acosh atanh` (`abs` is the magnitude, `norm` its square, `arg` the angle; `pow(0, 0)` is 1; the inverse functions take the principal branch) |
+| `Rng` | fields `state gamma`; `next int(lo, hi) f64 normal(mean, sd) uniform(lo, hi) exp(rate) bool(p) binomial(n, p) poisson(mean) geometric(p) gamma(shape, scale) beta(a, b) weighted(ws) split stream(k)`: each gives `(value, next_rng)`, `split` gives two independent generators and `stream(k)` the `k`th independent stream |
 | `Locale` | field `tag`; `compare(a, b)` (-1, 0, 1: base letters, then accents, then case, lowercase first, then code points), `sort(xs)`, `format_int(n)`, `format_f64(x, digits)`, `format_dec(d)` (the locale's grouping and decimal separators: `1,234.5`, de-DE `1.234,5`, fr-FR `1 234,5` with U+202F, hi-IN `12,34,567`), `format_date(t)` (`3/7/2026`, `07/03/2026`, `07.03.2026`, `07/03/2026`, `2026/03/07`, `7/3/2026`), `format_date_long(t)` (`March 7, 2026`, `7. März 2026`, `2026年3月7日`, ...), `format_time(t)` (`3:04 PM`, `15:04`, `3:04 pm` in hi-IN). Times are formatted in UTC; convert with a `Zone` first. The rules are bundled, never read from the host (ADR 0018 decisions 37 and 38) |
 | `Regex` | `is_match(s) find(s) span(s) find_all(s) captures(s) replace(s, rep) split(s)`: `find` gives `Opt[Str]`, `span` the character range `Opt[(Int, Int)]`, `captures` `Opt[List[Str]]` with group 0 first and `""` for groups that did not take part; `replace` expands `$0` to `$9` and `$$` |
 | `Int` | `abs to_f64 band(m) bor(m) bxor(m) shl(n) shr(n) bnot popcount clz ctz rotl(n) rotr(n) byteswap gcd(b) lcm(b) wrapping_add(b) wrapping_sub(b) wrapping_mul(b) checked_add(b) checked_sub(b) checked_mul(b) checked_div(b) saturating_add(b) saturating_sub(b) saturating_mul(b) format(spec)` (bitwise on the 64-bit pattern; `shr` is logical; a shift outside `0..63` gives 0; `checked_*` give `Opt`; `gcd` and `lcm` trap on overflow) |
@@ -662,6 +669,9 @@ Regex syntax: literals, `.` (not newline), `[a-z]`, `[^...]`, `\d \w \s` (ASCII)
 | `now()` | `Time ! time` |
 | `run_cmd(prog, args, input)` | `Res[(Int, Str, Str), Str] ! proc`: runs `prog` (searched in `PATH`) with `input` on stdin and gives the exit status (128 + signal when killed), stdout and stderr; `"prog: not found"` style errors |
 | `exit(code)` | `Unit ! proc`: ends the program with that status |
+| `open_file(path, mode)` | `Res[File, Str] ! fs`, with `mode` one of `r w a r+ w+ a+` |
+| `with_file(path, mode, f)` | `Res[A, Str] ! fs`: opens the file, passes the handle to `f` and closes it when `f` returns or raises |
+| `File` methods | `read(n)` (`List[Int]` bytes), `read_line` (`Opt[Str]`, `none` at the end), `read_all`, `lines`, `fold_lines(init, f)`, `write(s)`, `write_bytes(bs)`, `seek(pos)`, `tell`, `size`, `close`, each a `Res` `! fs`; a closed handle gives `"{path}: file is closed"` |
 | `proc.spawn(prog, args, env)` | `Res[Proc, Str] ! proc`: starts `prog` (searched in `PATH`) with the extra environment pairs `env`, without waiting for it; stdin is empty and stdout and stderr are read line by line |
 | `p.line(timeout_ms)` | `Opt[Str] ! proc`: the next line `p` printed, or `none` at the end of its output or after `timeout_ms` |
 | `p.running()` | `Bool ! proc`: whether `p` has not exited yet |
@@ -715,7 +725,7 @@ In a codebase, `edit` accepts `use` lines (stored as the definition `use lib`; r
 
 `sspur suggest [file] [fn]` runs each function on the arguments its tests and examples pass, on small inputs (`0`, `[]`, `[0]`, `""`, ...) and on fuzzed ones, and proposes contracts: the `post` clauses from a fixed set (`r >= 0`, `r > 0`, `r.len <= xs.len`, `r == x`, `r == r.sort`, comparisons of the result, its length or fields with each parameter) that held on every run, minus the ones another kept clause implies, and the simplest `pre` (or pair) that is true on every input that ran and false on every one that trapped, such as `pre xs.len > 0`. Each line says `proved` when Z3 proves it, or `held on N runs`; a `pre` says how many inputs trap without it. `--json` gives them as `refine` fixes; nothing is applied without `--apply`.
 
-The codebase is edited only through transactions, using `sspur apply` or the MCP tool `sspur_apply`:
+The codebase is edited only through transactions, using `sspur apply` or the MCP tool `apply`:
 
 ```json
 {"agent": "a1", "reason": "add total", "ops": [
@@ -767,4 +777,4 @@ Queries (`sspur q <query> [target] [--budget N]`, or the MCP tool `query`; see `
 | `impact X` | Everything that depends on X, including tests |
 | `holes`, `diag`, `log` | Open holes, all diagnostics, or the edit history |
 
-Reading the spec and the code in one call: `sspur start [NAME|PATTERN...]` (the MCP tool `start`, with `names`) prints the agent spec (`docs/agent/agent-spec.md`), then the codebase: all of it when the source is at most 12,000 bytes, otherwise the counts per kind, `q pack` of the arguments that name a definition and `q find` of the others. `sspur spec [--full] [src] [QUERY TARGET...]` prints the spec (or this reference) followed by `src` and the given queries, for example `sspur spec find 'ship|tax' pack money,tax_rate`; `list`, `holes`, `diag` and `log` take no target there.
+Reading the spec and the code in one call: `sspur start [NAME|PATTERN...]` (the MCP tool `start`, with `names`) prints the agent spec (`docs/agent/agent-spec.md`), then the codebase: all of it when the source is at most 12,000 bytes, otherwise the counts per kind, `q pack` of the arguments that name a definition and `q find` of the others. `sspur spec [--more|--full] [src] [QUERY TARGET...]` prints the spec (`--more` prints the rest of the builtins instead, `--full` this reference) followed by `src` and the given queries, for example `sspur spec find 'ship|tax' pack money,tax_rate`; `list`, `holes`, `diag` and `log` take no target there.

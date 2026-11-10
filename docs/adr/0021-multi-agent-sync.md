@@ -1,6 +1,6 @@
 # ADR 0021: Multi-agent sync, replicas and the global check cache
 
-Status: accepted, 2026-10-04
+Status: accepted, 2026-10-04. Decision 14 superseded by ADR 0022.
 
 ## Delivered
 

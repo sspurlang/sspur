@@ -26,7 +26,7 @@ All three are checked whenever the function runs, and a violation stops the prog
 {{#include ../snippets/handbook/contracts.out:test}}
 ```
 
-Inside `sspur edit --test` a failing test prints the values it compared (`left 7, right 8`), so you rarely need to add logging.
+A failing test prints the values it compared (`FAIL  bad: left 7, right 8`), in `sspur test` and in `sspur edit --test`, so you rarely need to add logging.
 
 ## Fuzzing
 

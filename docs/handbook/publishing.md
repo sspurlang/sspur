@@ -125,7 +125,7 @@ When something fails, the pull request stays open with each failure at its file 
 
 ## What the checks look for
 
-The [standards](https://github.com/sspurlang/sspur-packages/blob/main/CONTRIBUTING.md) list all 37 checks with their reasons and fixes. In short:
+The [standards](https://github.com/sspurlang/sspur-packages/blob/main/CONTRIBUTING.md) list all 39 checks with their reasons and fixes. In short:
 
 - the source parses, typechecks with no warnings, is formatted the way `sspur fmt` prints it (which keeps comments), and its tests pass natively and in the interpreter;
 - the version is new and matches the API change: removing or changing a public signature needs a new major version (a new minor version in 0.x), adding one a new minor version;

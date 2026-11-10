@@ -1,6 +1,6 @@
 # ADR 0032: `e is p` anywhere, guard clauses and long lines
 
-Status: accepted, 2026-10-12
+Status: accepted, 2026-10-12. Decision 18 superseded by ADR 0040.
 
 ## Problem
 

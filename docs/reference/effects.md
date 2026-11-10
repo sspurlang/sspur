@@ -9,11 +9,11 @@ A function's effect row, after `!`, lists everything it may do besides return a 
 | `log` | `log(msg)`. An ordinary effect with one operation, so a `handle` can capture it |
 | `fail[E]` | `raise e` with `e: E`, `opt.ok_or(e)`, `res.get`, or calling a function with `fail[E]` |
 | `div` | A `while` loop, which may not terminate |
-| `fs` | `read_file write_file append_file remove_file list_dir read_bytes write_bytes mkdir mkdir_all remove_dir rename exists is_dir file_size modified_ms copy_file symlink read_link is_symlink file_mode set_mode` |
+| `fs` | `read_file write_file append_file remove_file list_dir read_bytes write_bytes mkdir mkdir_all remove_dir rename exists is_dir file_size modified_ms copy_file symlink read_link is_symlink file_mode set_mode open_file with_file read_bin write_bin`, the `File` methods, `gzip` and `zstd` `compress_file decompress_file`, `csv.read fold`, `config.load` |
 | `io` | `read_line read_lines` (stdin) and `eprint` (stderr) |
-| `proc` | `run_cmd exit` |
-| `time` | `now_ms mono_ns sleep_ms now` |
-| `env` | `env_var args` |
+| `proc` | `run_cmd exit proc.spawn`, and the `Proc` methods |
+| `time` | `now_ms mono_ns sleep_ms now time_zone local_zone`, `uuid.v7` |
+| `env` | `env_var args`, `config.load` |
 | `net` | `http.get post send fetch download serve serve_with` ([Networking](stdlib/network.md)) |
 | `db` | SQLite: `db.open exec query one opt tx migrate` ([Databases](stdlib/data-libs.md)) |
 | `rand` | `crypto.random token key seal hash_password keypair`, `uuid.v4 v7` |

@@ -16,7 +16,7 @@ A server is a `svc`: a list of routes, each naming an ordinary function. Path se
 {{#include ../snippets/handbook/net/server.ssp:main}}
 ```
 
-Results become responses the same way as in a deployed service ([ADR 0016](../adr/0016-deployer.md)): a value is `200` with its JSON (`201` for a POST), `Unit` is `204`, an `Opt` that is `none` is `404`, and a raised error is `{"error": value}` with a status taken from the variant's name (`NotFound` is 404, `Conflict` 409, `Invalid` 400, others 422). A handler that returns a `Response` sends exactly that. Parameters that don't parse are `400` with a message, and a handler that traps is `500` and a line in the log:
+Results become responses the same way as in a deployed service ([ADR 0016](../adr/0016-deployer.md)): a value is `200` with its JSON (`201` for a POST), `Unit` is `204`, an `Opt` that is `none` is `404`, and a raised error is `{"error": value}` with a status taken from the variant's name (`NotFound` is 404, `Conflict` 409, `Invalid` 400, `Unauthorized` 401, `Forbidden` 403, `TooMany` 429, others 422). A handler that returns a `Response` sends exactly that. Parameters that don't parse are `400` with a message, and a handler that traps is `500` and a line in the log:
 
 ```console
 {{#include ../snippets/handbook/net/net.out:serve}}
@@ -62,7 +62,7 @@ A handler is also just a function from `Request` to `Response`, so anything else
 {{#include ../snippets/handbook/net/net.out:client}}
 ```
 
-`HttpErr` is `Dns{msg}`, `Connect{msg}`, `Tls{msg}`, `Timeout{msg}`, `HttpStatus{code, body}` (from `http.fetch`) or `Io{msg}`. The client follows redirects, decodes gzip, uses the proxy in `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`, and with `retries` it retries connection failures, timeouts, `429` and `5xx` with exponential backoff (honoring `Retry-After`). `SSL_CERT_FILE` names a PEM file of certificates to trust instead of the system's. `http.download(request, path)` writes the body to a file (also `! fs`), which is how to get binary content, since a body in memory is a `Str` and must be UTF-8.
+`HttpErr` is `Dns{msg}`, `Connect{msg}`, `Tls{msg}`, `Timeout{msg}`, `HttpStatus{code, body}` (from `http.fetch`) or `Io{msg}`. The client follows redirects, decodes gzip, uses the proxy in `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY`, and with `retries` it retries connection failures, timeouts, `429`, `500`, `502`, `503` and `504` with exponential backoff (honoring `Retry-After`). `SSL_CERT_FILE` names a PEM file of certificates to trust instead of the system's. `http.download(request, path)` writes the body to a file (also `! fs`), which is how to get binary content, since a body in memory is a `Str` and must be UTF-8.
 
 ## Configuration and logs
 
@@ -84,6 +84,6 @@ A handler is also just a function from `Request` to `Response`, so anything else
 
 ## In the playground
 
-The playground runs in a browser, which can't open sockets: the client returns `Io{msg: "networking is not available in the playground"}` and `http.serve` stops with the same message. Everything else, including `Request` and `Response` values, works.
+The playground runs in a browser, which can't open sockets: the client returns `Io{msg: "networking is not available in the playground"}` and `http.serve` stops with `serving HTTP is not available in the playground`. Everything else, including `Request` and `Response` values, works.
 
 Next: [Packages](packages.md).

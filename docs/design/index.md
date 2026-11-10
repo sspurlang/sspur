@@ -19,7 +19,7 @@ These describe the system as a whole. They were written before most of the compi
 
 ## Decisions
 
-The [ADR index](../adr/index.md) lists all 34 architecture decision records, from the foundations to running an unchanged program from the cache.
+The [ADR index](../adr/index.md) lists all 44 architecture decision records, from the foundations to proving `F64` to `Int` conversions safe.
 
 ## Measurements
 

@@ -14,7 +14,7 @@ SSP-T is how a graph slice is shown to a model and how a model writes new nodes.
 ## 2. Lexical
 
 - Identifiers: `snake_case` for values, `Pascal` for types. Lowercase type params are effect rows.
-- Comments do not exist. Rationale lives in node provenance (`prov.reason`).
+- Comments are `//` lines. They aren't stored in the graph or hashed, and `sspur fmt` keeps them in files (ADR 0042). Rationale lives in node provenance (`prov.reason`).
 - Literals: `42`, `4_096`, `0xff`, `3.14`, `1e9`, `12.50d` (Dec), `"str {interp}"`, `b"bytes"`, `true`, `none`, `5ms`, `2kb`.
 - Holes: `?`, or `?name` for a named hole.
 - References: a plain name resolves through the pack. Use `#k3f9q` to pin an exact hash.

@@ -11,6 +11,9 @@ The built-in effects:
 | `div` | a `while` loop, which may not terminate |
 | `fs`, `io`, `proc`, `time`, `env` | files, stdin and stderr, child processes, the clock, environment variables and arguments |
 | `conc` | atomics and channels ([Concurrency](concurrency.md)) |
+| `net` | HTTP clients and servers ([Networking](networking.md)) |
+| `db` | SQLite databases ([Databases](databases.md)) |
+| `rand` | keys, tokens, salts and UUIDs ([Security and Crypto](security.md)) |
 | `db.read[S]`, `db.write[S]` | reading and writing the store `S` in a service |
 | `yield[T]` | `yield(x)` in a generator |
 

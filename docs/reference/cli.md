@@ -38,8 +38,8 @@ These are for working on SSPUR itself or for scripts, so the usage text doesn't 
 | `sspur q list --tests` | Lists the tests only |
 | `sspur fuzz --gen N --from K` | Starts the generated programs at index `K` (to rerun a range) |
 | `sspur fuzz --reduce FILE` | Shrinks a program while it still typechecks and still shows the behavior: a mismatch between `--modes`, `--want-skip TEXT` (a native skip reason), `--want-build TEXT` (a build error) or `--want-hang "ARGS FILE"` (a child `sspur ARGS` that crashes or hangs) |
-| `sspur sync serve --max N` | Stops after `N` requests |
-| `sspur sync push\|pull REMOTE --agent NAME` | Records `NAME` as the agent of the merge (default `sync`) |
+| `sspur q pack NAME --full` | Also prints the estimated tokens and what was included and omitted, on stderr |
+| `sspur init FILE --json`, `sspur sync push\|pull\|resolve --json` | Print the result as JSON |
 | `sspur publish --tests-json` | Runs the package's tests in both tiers and prints them as JSON, for the registry's test job |
 
 ## Starting a project
@@ -69,7 +69,7 @@ The query API is how an agent reads a large codebase without printing all of it.
 | `q body A,B` | the source of several definitions |
 | `q pack A,B,C` | each definition with the types and signatures it uses, its tests and its callers, and a line saying whether that list is complete |
 | `q callers NAME`, `q callees NAME` | the call graph around one definition |
-| `q effects NAME` | the effect row, with the call that introduced each effect |
+| `q effects NAME` | the declared effect row of one definition |
 | `q diag`, `q log` | every diagnostic, and the history of edits |
 
 ## Holes and suggested contracts
@@ -92,7 +92,7 @@ The MCP server has both as the tools `fill` and `suggest` ([MCP](../agent/mcp.md
 | `sspur search [QUERY] [--json]` | Packages whose name, keywords or description match, with their newest version |
 | `sspur source NAME[@VERSION] [DIR]` | Downloads a version's source into DIR (default `NAME-VERSION`, with `/` as `-` for a scoped name), verified against its snapshot SHA-256, without building or running it. `@1.2.3` is exactly that version, `@^1.2` the newest that matches |
 | `sspur publish` | Runs the registry checks on the package at `HEAD` and every module in it (their tests natively and in the interpreter too, side by side, in a copy of the commit), prints the report, and when no blocking check fails, opens the publish request: with the GitHub CLI if it is signed in, else by printing the prefilled form URL. `--dry-run` only checks, `--ack net,fs` acknowledges new capability effects, `--ref TAG` names the tag (default the tag at `HEAD`), `--repo URL` the GitHub repository (default the `origin` remote), `--no-tests` skips the tests, `--no-gh` prints the URL, `--json` prints the report as JSON |
-| `sspur yank NAME@VERSION` | Opens a request to yank the version (`acme/money@1.0.0` for a scoped name); `--undo` unyanks, `--deprecate MESSAGE` deprecates (with `--undo`, undeprecates), `--reason TEXT` explains |
+| `sspur yank NAME@VERSION` | Opens a request to yank the version (`acme/money@1.0.0` for a scoped name); `--undo` unyanks, `--deprecate MESSAGE` deprecates (with `--undo`, undeprecates), `--reason TEXT` explains, `--no-gh` prints the URL |
 | `sspur api [--json] [--rev REV]` | The package's public API with lines and doc comments; `--json` gives the facts the checks read (diagnostics, formatting, definitions, effects, export hash, and in a git repository the files of `REV`) |
 | `sspur archive [--rev REV] [-o FILE]` | Builds the source snapshot of a commit (default `HEAD`) as the registry stores it, a deterministic tar, and prints its SHA-256 and size |
 

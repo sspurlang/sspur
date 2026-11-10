@@ -41,7 +41,7 @@ Nothing more is ever granted. Widening a permission requires changing code, whic
 
 ## 3. Targets
 
-`sspur ship` lowers a `svc` to a target backend. v0 has one backend: **AWS** (Lambda or ECS Fargate chosen by the cost model, DynamoDB, S3, SQS, SNS, EventBridge, IAM, CloudWatch). The backend interface is pluggable for other clouds and bare metal.
+`sspur deploy plan` lowers a `svc` to a target backend. There is one backend, **AWS**: Lambda behind an HTTP API, DynamoDB, IAM, CloudWatch and CodeDeploy (ADR 0016). The backend interface is pluggable for other clouds and bare metal.
 
 ## 4. Typed evolution
 

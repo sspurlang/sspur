@@ -79,7 +79,7 @@ and a repeat failure is a bug.
   peak RSS (`/usr/bin/time -l`), not elapsed time.
 - **The baseline is the previous `main`** for regressions, and the last release for release notes.
 - **The playground's size** is the gzip -9 size of `pkg/sspur_wasm_bg.wasm`, built on the same
-  machine for both sides. `tools/build_playground.sh` prints it and enforces the budget.
+  machine for both sides. `tools/build_playground.sh` prints it.
 - **The macOS binary's layout** is ordered by `tools/order/hot.txt` (ADR 0043). Regenerate it with
   `tools/order/gen.sh` when a hot command's code path changes, and check RSS again.
 
@@ -193,8 +193,8 @@ its source failed and it kept the previous snapshot.
 
 - `main` and release tags of `sspur` are protected by rulesets; `sspur-grammar`'s `main` blocks
   force pushes and deletion. Secret scanning is on where GitHub offers it.
-- Workflows run with `contents: read` by default and ask for more per job; only `attest` can mint an
-  OIDC token.
+- Workflows run with `contents: read` by default and ask for more per job; only the release's `attest`
+  job and the Pages `deploy` job can mint an OIDC token.
 - Reports follow [SECURITY.md](SECURITY.md); fixes go into the latest 1.x release.
 
 ## When something breaks
